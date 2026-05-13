@@ -29,19 +29,12 @@ Prefer fewer, well-named things over many small helpers.
 ## Repository Layout
 
 ```
-parse_sdp.lua        library entry point AND CLI executable (dual-purpose)
+parse_sdp.lua        single-file library AND CLI executable (dual-purpose)
                      `require("parse_sdp")` loads the library; running it
                      directly (`lua parse_sdp.lua` or `./parse_sdp.lua`)
                      activates the argparse CLI (parse / serialize subcommands)
-lib/
-  grammar.lua        LPEG grammar for RFC 4566 line and field parsing
-  parser.lua         full parse loop; R1 trailing-content strictness
-  util.lua           shared helpers (find_attr)
-  validate.lua       RFC 4566 doc validator (called by all three tiers)
-  st2110.lua         ST 2110 validation (operates on parsed doc table)
-  ipmx.lua           IPMX validation (operates on parsed doc table)
-  serialize.lua      doc → valid SDP text
-  errors.lua         error table construction and formatting
+                     Internal sections (in order): errors · util · grammar ·
+                     validate · serialize · st2110 · ipmx · parser · public API · CLI
 spec/
   sdp_spec.lua       RFC 4566 parser tests
   st2110_spec.lua    ST 2110 validation tests
@@ -90,8 +83,10 @@ doc.media[1].port
   All public functions return `result, err`. `error()` is reserved for programming
   mistakes (wrong argument type).
 - **No global state.** Module state lives in the returned table only.
-- **LPEG patterns are named constants** defined at the top of `lib/grammar.lua`,
-  never constructed inline at call sites.
+- **LPEG patterns are named constants** defined in the `── Grammar ──` section of
+  `parse_sdp.lua`, never constructed inline at call sites.
+- **`M._grammar` and `M._errors`** are exposed on the returned module for spec
+  access only; they are not part of the public contract.
 - **Strict by default.** If RFC 4566 says a field is required, the parser rejects
   input that omits it — no silent defaults, no forgiveness.
 - **dkjson** is the only external runtime dependency beyond LPEG.

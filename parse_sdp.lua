@@ -1,12 +1,741 @@
 #!/usr/bin/env lua
-local parser    = require("lib.parser")
-local validate  = require("lib.validate")
-local serialize = require("lib.serialize")
-local st2110    = require("lib.st2110")
-local ipmx      = require("lib.ipmx")
-local errors    = require("lib.errors")
-local dkjson    = require("dkjson")
+-- ── External dependencies ─────────────────────────────────────────────────────
+local lpeg   = require("lpeg")
+local dkjson = require("dkjson")
+local P, R, C, Cp, Ct = lpeg.P, lpeg.R, lpeg.C, lpeg.Cp, lpeg.Ct
 
+-- ── Errors ────────────────────────────────────────────────────────────────────
+local errors = {}
+
+function errors.new(msg, opts)
+  local o = opts or {}
+  return {
+    message    = msg,
+    line       = o.line    or 0,
+    col        = o.col     or 0,
+    context    = o.context or "",
+    code       = o.code    or "MISSING_FIELD",
+    field_path = o.field_path,
+    spec_ref   = o.spec_ref,
+  }
+end
+
+function errors.format(err)
+  if not err then return "error: unknown" end
+  local code_part = err.code and ("[" .. err.code .. "] ") or ""
+  local out = { "error: " .. code_part .. (err.message or "unknown error") }
+  if err.field_path and err.field_path ~= "" then
+    out[#out + 1] = " --> field: " .. err.field_path
+  elseif err.line and err.line > 0 then
+    out[#out + 1] = string.format(" --> line %d, col %d", err.line, err.col or 1)
+    if err.context and err.context ~= "" then
+      local col = err.col or 1
+      out[#out + 1] = "  |"
+      out[#out + 1] = string.format("%2d | %s", err.line, err.context)
+      out[#out + 1] = "   | " .. string.rep(" ", col - 1) .. "^"
+    end
+  end
+  if err.spec_ref and err.spec_ref ~= "" then
+    out[#out + 1] = "  = note: required by " .. err.spec_ref
+  end
+  return table.concat(out, "\n")
+end
+
+-- ── Util ──────────────────────────────────────────────────────────────────────
+local util = {}
+
+function util.find_attr(attrs, name)
+  for _, a in ipairs(attrs or {}) do
+    if a.name == name then return a end
+  end
+end
+
+local find_attr = util.find_attr
+
+-- ── Grammar ───────────────────────────────────────────────────────────────────
+local grammar = {}
+
+local alpha      = R("az", "AZ")
+local digit      = R("09")
+local line_end   = P("\r\n") + P("\n")
+local value_char = 1 - line_end
+local SP         = P(" ")
+local token      = (P(1) - SP - line_end) ^ 1
+
+-- Matches one SDP line: type char, '=', non-empty value, then line end or EOS.
+-- Returns: type_char, value, byte_offset_of_value
+local line_pat =
+  C(alpha) * P("=") * Cp() * C(value_char ^ 1) * (line_end + -P(1))
+
+-- Best-effort partial match to find failure byte position when line_pat fails.
+local line_partial =
+      alpha * P("=") * value_char ^ 0 * Cp()
+    + alpha * Cp()
+    + Cp()
+
+function grammar.tokenize_line(s)
+  local t, offset, v = line_pat:match(s)
+  if t then return t, v, offset end
+  return nil, line_partial:match(s)
+end
+
+local version_pat = P("0") * -P(1)
+
+function grammar.parse_version(s)
+  if version_pat:match(s) then return "0" end
+  return nil, 1
+end
+
+local nettype  = P("IN")
+local addrtype = P("IP4") + P("IP6")
+
+local origin_pat =
+  C(token) * SP *
+  C(digit ^ 1) * SP *
+  C(digit ^ 1) * SP *
+  C(nettype) * SP *
+  C(addrtype) * SP *
+  C(token) *
+  -P(1)
+
+function grammar.parse_origin(s)
+  local user, sid, sver, ntype, atype, addr = origin_pat:match(s)
+  if user then
+    return {
+      username        = user,
+      sess_id         = sid,
+      sess_version    = sver,
+      net_type        = ntype,
+      addr_type       = atype,
+      unicast_address = addr,
+    }
+  end
+  return nil, 1
+end
+
+function grammar.parse_session_name(s) return s end
+function grammar.parse_info(s)         return s end
+function grammar.parse_uri(s)          return s end
+function grammar.parse_email(s)        return s end
+function grammar.parse_phone(s)        return s end
+
+local timing_pat = C(digit ^ 1) * SP * C(digit ^ 1) * -P(1)
+
+function grammar.parse_timing(s)
+  local start_s, stop_s = timing_pat:match(s)
+  if start_s then
+    return { start = tonumber(start_s), stop = tonumber(stop_s) }
+  end
+  return nil, 1
+end
+
+local connection_pat = C(nettype) * SP * C(addrtype) * SP * C(token) * -P(1)
+
+function grammar.parse_connection(s)
+  local ntype, atype, addr = connection_pat:match(s)
+  if ntype then
+    return { net_type = ntype, addr_type = atype, address = addr }
+  end
+  return nil, 1
+end
+
+local bw_bwtype = (P(1) - P(":") - SP - line_end) ^ 1
+local bw_pat    = C(bw_bwtype) * P(":") * C(digit ^ 1) * -P(1)
+
+function grammar.parse_bandwidth(s)
+  local bwtype, bwval = bw_pat:match(s)
+  if bwtype then
+    return { type = bwtype, value = tonumber(bwval) }
+  end
+  return nil, 1
+end
+
+local att_field   = (P(1) - P(":") - SP - line_end) ^ 1
+local attr_kv_pat = C(att_field) * P(":") * C(value_char ^ 1) * -P(1)
+local attr_k_pat  = C(att_field) * -P(1)
+
+function grammar.parse_attribute(s)
+  local name, val = attr_kv_pat:match(s)
+  if name then return { name = name, value = val } end
+  local flag = attr_k_pat:match(s)
+  if flag then return { name = flag } end
+  return nil, 1
+end
+
+-- port_field captures the port token whole (e.g. "49170" or "49170/2"); split below.
+local media_pat =
+  C(token) * SP *
+  C(token) * SP *
+  C(token) * SP *
+  Ct(C(token) * (SP * C(token)) ^ 0) *
+  -P(1)
+
+function grammar.parse_media(s)
+  local mtype, port_field, proto, fmts = media_pat:match(s)
+  if not mtype then return nil, 1 end
+  local port_str, count_str = port_field:match("^(%d+)/(%d+)$")
+  if not port_str then port_str = port_field:match("^(%d+)$") end
+  if not port_str then return nil, 1 end
+  return {
+    media      = mtype,
+    port       = tonumber(port_str),
+    port_count = count_str and tonumber(count_str) or nil,
+    proto      = proto,
+    fmts       = fmts,
+  }
+end
+
+-- ── Validate ──────────────────────────────────────────────────────────────────
+local validate = {}
+
+function validate.sdp(doc)
+  if type(doc) ~= "table" then
+    return nil, errors.new("doc must be a table", { code = "INVALID_VALUE" })
+  end
+  if doc.version ~= "0" then
+    return nil, errors.new("version must be '0'", { code = "INVALID_VALUE" })
+  end
+
+  local o = doc.origin
+  if type(o) ~= "table" then
+    return nil, errors.new("origin is required", { code = "MISSING_FIELD" })
+  end
+  for _, f in ipairs({ "username", "sess_id", "sess_version",
+                        "net_type", "addr_type", "unicast_address" }) do
+    if type(o[f]) ~= "string" then
+      return nil, errors.new("origin." .. f .. " is required", { code = "MISSING_FIELD" })
+    end
+  end
+  if o.net_type ~= "IN" then
+    return nil, errors.new("origin.net_type must be 'IN'", { code = "INVALID_VALUE" })
+  end
+  if o.addr_type ~= "IP4" and o.addr_type ~= "IP6" then
+    return nil, errors.new("origin.addr_type must be 'IP4' or 'IP6'", { code = "INVALID_VALUE" })
+  end
+
+  local s = doc.session
+  if type(s) ~= "table" then
+    return nil, errors.new("session is required", { code = "MISSING_FIELD" })
+  end
+  if type(s.name) ~= "string" or s.name == "" then
+    return nil, errors.new("session.name is required", { code = "MISSING_FIELD" })
+  end
+  local tim = s.timing
+  if type(tim) ~= "table" or type(tim.start) ~= "number" or type(tim.stop) ~= "number" then
+    return nil, errors.new("session.timing with numeric start and stop is required",
+      { code = "MISSING_FIELD" })
+  end
+
+  if type(doc.media) ~= "table" then
+    return nil, errors.new("media must be a table", { code = "INVALID_VALUE" })
+  end
+  for i, m in ipairs(doc.media) do
+    if type(m.media) ~= "string" or m.media == "" then
+      return nil, errors.new(string.format("media[%d].media is required", i),
+        { code = "MISSING_FIELD" })
+    end
+    if type(m.port) ~= "number" then
+      return nil, errors.new(string.format("media[%d].port must be a number", i),
+        { code = "INVALID_VALUE" })
+    end
+    if type(m.proto) ~= "string" or m.proto == "" then
+      return nil, errors.new(string.format("media[%d].proto is required", i),
+        { code = "MISSING_FIELD" })
+    end
+    if type(m.fmts) ~= "table" or #m.fmts < 1 then
+      return nil, errors.new(string.format("media[%d].fmts must be non-empty", i),
+        { code = "MISSING_FIELD" })
+    end
+  end
+
+  return true
+end
+
+-- ── Serialize ─────────────────────────────────────────────────────────────────
+local serialize = {}
+
+local function ln(t, v)
+  return t .. "=" .. v .. "\r\n"
+end
+
+local function ser_connection(c)
+  return ln("c", c.net_type .. " " .. c.addr_type .. " " .. c.address)
+end
+
+local function ser_bandwidth(b)
+  return ln("b", b.type .. ":" .. tostring(b.value))
+end
+
+local function ser_attribute(a)
+  if a.value then return ln("a", a.name .. ":" .. a.value) end
+  return ln("a", a.name)
+end
+
+local function ser_media_block(m)
+  local port_field = tostring(m.port)
+  if m.port_count then port_field = port_field .. "/" .. tostring(m.port_count) end
+  local out = ln("m", m.media .. " " .. port_field .. " " .. m.proto
+                      .. " " .. table.concat(m.fmts, " "))
+  if m.info       then out = out .. ln("i", m.info) end
+  if m.connection then out = out .. ser_connection(m.connection) end
+  for _, b in ipairs(m.bandwidths or {}) do out = out .. ser_bandwidth(b) end
+  for _, a in ipairs(m.attributes or {}) do out = out .. ser_attribute(a) end
+  return out
+end
+
+function serialize.serialize(doc)
+  local s = doc.session
+  local o = doc.origin
+  local out = ""
+  out = out .. ln("v", doc.version)
+  out = out .. ln("o", o.username .. " " .. o.sess_id .. " " .. o.sess_version
+                       .. " " .. o.net_type .. " " .. o.addr_type
+                       .. " " .. o.unicast_address)
+  out = out .. ln("s", s.name)
+  if s.info then out = out .. ln("i", s.info) end
+  if s.uri  then out = out .. ln("u", s.uri) end
+  for _, e in ipairs(s.emails     or {}) do out = out .. ln("e", e) end
+  for _, p in ipairs(s.phones     or {}) do out = out .. ln("p", p) end
+  if s.connection then out = out .. ser_connection(s.connection) end
+  for _, b in ipairs(s.bandwidths or {}) do out = out .. ser_bandwidth(b) end
+  out = out .. ln("t", tostring(s.timing.start) .. " " .. tostring(s.timing.stop))
+  for _, a in ipairs(s.attributes or {}) do out = out .. ser_attribute(a) end
+  for _, m in ipairs(doc.media    or {}) do out = out .. ser_media_block(m) end
+  return out
+end
+
+-- ── ST 2110 ───────────────────────────────────────────────────────────────────
+local st2110 = {}
+
+local function rtpmap_clock_rate(value)
+  local rest = value:match("^%d+%s+(.+)$")
+  if not rest then return nil end
+  local rate = rest:match("^[^/]+/(%d+)")
+  return rate and tonumber(rate)
+end
+
+local function valid_tsrefclk(value)
+  if value == "gps" or value == "gal" or value == "glonass" then return true end
+  local addr = value:match("^ntp=(.+)$")
+  if addr then
+    if addr:match("%s") then return nil, "invalid ts-refclk ntp address" end
+    return true
+  end
+  local mac = value:match("^localmac=(.+)$")
+  if mac then
+    local count = 0
+    for octet in mac:gmatch("[^%-]+") do
+      if not octet:match("^%x%x$") then return nil, "invalid ts-refclk localmac value" end
+      count = count + 1
+    end
+    if count ~= 6 then return nil, "invalid ts-refclk localmac value" end
+    return true
+  end
+  local ptp_rest = value:match("^ptp=(.+)$")
+  if ptp_rest then
+    -- version:gmid[:domain] — GMID must be 8 HH-separated hex octets
+    local _, gmid = ptp_rest:match("^([^:]+):([^:]+)")
+    if not gmid then return nil, "invalid ts-refclk ptp value" end
+    local count = 0
+    for octet in gmid:gmatch("[^%-]+") do
+      if not octet:match("^%x%x$") then return nil, "invalid ts-refclk ptp value" end
+      count = count + 1
+    end
+    if count ~= 8 then return nil, "invalid ts-refclk ptp value" end
+    return true
+  end
+  return nil, "unrecognized ts-refclk clock source"
+end
+
+local function valid_mediaclk(value)
+  if value == "sender" then return true end
+  local offset = value:match("^direct=(.+)$")
+  if offset then
+    if offset:match("^%-?%d+$") then return true end
+    return nil, "invalid mediaclk direct= value"
+  end
+  return nil, "unrecognized mediaclk value"
+end
+
+-- Parse semicolon-separated key=value pairs from fmtp value "PT param1=v1; param2=v2; ..."
+local function fmtp_params(value)
+  local params_str = value:match("^%d+%s+(.+)$")
+  if not params_str then return {} end
+  local params = {}
+  for kv in params_str:gmatch("[^;]+") do
+    local trimmed = kv:match("^%s*(.-)%s*$")
+    if trimmed ~= "" then
+      local k, v = trimmed:match("^([^=%s]+)%s*=%s*(.-)$")
+      if not k then return nil, "malformed fmtp parameter: " .. trimmed end
+      params[k] = v
+    end
+  end
+  return params
+end
+
+function st2110.st2110(doc)
+  local ok, e = validate.sdp(doc)
+  if not ok then return nil, e end
+
+  if #doc.media < 1 then
+    return nil, errors.new("ST 2110 requires at least one media block",
+      { field_path = "media", spec_ref = "ST 2110-10 §7" })
+  end
+
+  local sess_attrs = doc.session.attributes or {}
+
+  for i, m in ipairs(doc.media) do
+    local mpath  = string.format("media[%d]", i)
+    local mattrs = m.attributes or {}
+
+    local tsrefclk = find_attr(sess_attrs, "ts-refclk") or find_attr(mattrs, "ts-refclk")
+    if not tsrefclk then
+      return nil, errors.new("missing required attribute 'ts-refclk'", {
+        field_path = mpath .. ".attributes[ts-refclk]",
+        spec_ref   = "ST 2110-10 §7.2",
+      })
+    end
+    local trok, trmsg = valid_tsrefclk(tsrefclk.value or "")
+    if not trok then
+      return nil, errors.new("invalid ts-refclk: " .. (trmsg or ""), {
+        field_path = mpath .. ".attributes[ts-refclk]",
+        spec_ref   = "ST 2110-10 §7.2",
+        code       = "INVALID_VALUE",
+      })
+    end
+
+    local mediaclk = find_attr(mattrs, "mediaclk")
+    if not mediaclk then
+      return nil, errors.new("missing required attribute 'mediaclk'", {
+        field_path = mpath .. ".attributes[mediaclk]",
+        spec_ref   = "ST 2110-10 §7.3",
+      })
+    end
+    local mcok, mcmsg = valid_mediaclk(mediaclk.value or "")
+    if not mcok then
+      return nil, errors.new("invalid mediaclk: " .. (mcmsg or ""), {
+        field_path = mpath .. ".attributes[mediaclk]",
+        spec_ref   = "ST 2110-10 §7.3",
+        code       = "INVALID_VALUE",
+      })
+    end
+
+    local rtpmap = find_attr(mattrs, "rtpmap")
+    if not rtpmap then
+      return nil, errors.new("missing required attribute 'rtpmap'", {
+        field_path = mpath .. ".attributes[rtpmap]",
+        spec_ref   = "ST 2110-10 §7",
+      })
+    end
+
+    local fmtp = find_attr(mattrs, "fmtp")
+    if not fmtp then
+      return nil, errors.new("missing required attribute 'fmtp'", {
+        field_path = mpath .. ".attributes[fmtp]",
+        spec_ref   = "ST 2110-10 §7",
+      })
+    end
+
+    if m.media == "video" then
+      local clock_rate = rtpmap_clock_rate(rtpmap.value or "")
+      if clock_rate ~= 90000 then
+        return nil, errors.new(
+          string.format("rtpmap clock rate must be 90000 for video (got %s)", tostring(clock_rate)),
+          {
+            field_path = mpath .. ".attributes[rtpmap]",
+            spec_ref   = "ST 2110-20 §7.2",
+            code       = "INVALID_VALUE",
+          }
+        )
+      end
+      local params, fmtp_err = fmtp_params(fmtp.value or "")
+      if not params then
+        return nil, errors.new("invalid fmtp: " .. fmtp_err, {
+          field_path = mpath .. ".attributes[fmtp]",
+          spec_ref   = "ST 2110-20 §7.2",
+          code       = "INVALID_VALUE",
+        })
+      end
+      if not params.sampling then
+        return nil, errors.new("fmtp missing required 'sampling' parameter for video", {
+          field_path = mpath .. ".attributes[fmtp]",
+          spec_ref   = "ST 2110-20 §7.2",
+        })
+      end
+    end
+
+    if m.media == "audio" then
+      local params, fmtp_err = fmtp_params(fmtp.value or "")
+      if not params then
+        return nil, errors.new("invalid fmtp: " .. fmtp_err, {
+          field_path = mpath .. ".attributes[fmtp]",
+          spec_ref   = "ST 2110-30 §7.2",
+          code       = "INVALID_VALUE",
+        })
+      end
+      if not params["channel-order"] then
+        return nil, errors.new("fmtp missing required 'channel-order' parameter for audio", {
+          field_path = mpath .. ".attributes[fmtp]",
+          spec_ref   = "ST 2110-30 §7.2",
+        })
+      end
+    end
+  end
+
+  return true
+end
+
+-- ── IPMX ──────────────────────────────────────────────────────────────────────
+local ipmx = {}
+
+function ipmx.ipmx(doc)
+  local ok, e = st2110.st2110(doc)
+  if not ok then return nil, e end
+
+  local has_extmap = find_attr(doc.session.attributes, "extmap") ~= nil
+  if not has_extmap then
+    for _, m in ipairs(doc.media) do
+      if find_attr(m.attributes or {}, "extmap") then
+        has_extmap = true
+        break
+      end
+    end
+  end
+
+  if not has_extmap then
+    return nil, errors.new("missing required attribute 'extmap'", {
+      field_path = "session.attributes[extmap]",
+      spec_ref   = "IPMX §6",
+    })
+  end
+
+  return true
+end
+
+-- ── Parser ────────────────────────────────────────────────────────────────────
+local parser = {}
+
+local function split_lines(text)
+  local lines = {}
+  local i = 1
+  while i <= #text do
+    local j = text:find("\n", i, true)
+    if j then
+      local line = text:sub(i, j - 1)
+      if line:sub(-1) == "\r" then line = line:sub(1, -2) end
+      lines[#lines + 1] = line
+      i = j + 1
+    else
+      local tail = text:sub(i)
+      if tail ~= "" then lines[#lines + 1] = tail end
+      break
+    end
+  end
+  return lines
+end
+
+local function parse_required(lines, pos, type_char, parse_value)
+  if pos > #lines then
+    return nil, errors.new(
+      string.format("missing required field '%s='", type_char),
+      { line = pos, col = 1, context = "", code = "MISSING_FIELD" }
+    )
+  end
+  local line = lines[pos]
+  local tc, v, offset = grammar.tokenize_line(line)
+  if not tc then
+    return nil, errors.new("malformed line",
+      { line = pos, col = v or 1, context = line, code = "MALFORMED_LINE" })
+  end
+  if tc ~= type_char then
+    return nil, errors.new(
+      string.format("expected '%s=' but found '%s='", type_char, tc),
+      { line = pos, col = 1, context = line, code = "WRONG_ORDER" }
+    )
+  end
+  local parsed, fail_col = parse_value(v)
+  if not parsed then
+    return nil, errors.new(
+      string.format("invalid value for '%s='", type_char),
+      { line = pos, col = offset + (fail_col or 1) - 1, context = line, code = "INVALID_VALUE" }
+    )
+  end
+  return parsed
+end
+
+local function peek_type(lines, pos)
+  local tc = grammar.tokenize_line(lines[pos])
+  return tc
+end
+
+function parser.parse(text, mode)
+  local lines = split_lines(text)
+  local n     = #lines
+  local pos   = 1
+  local e
+
+  local version
+  version, e = parse_required(lines, pos, "v", grammar.parse_version)
+  if not version then return nil, e end
+  pos = pos + 1
+
+  local origin
+  origin, e = parse_required(lines, pos, "o", grammar.parse_origin)
+  if not origin then return nil, e end
+  pos = pos + 1
+
+  local session_name
+  session_name, e = parse_required(lines, pos, "s", grammar.parse_session_name)
+  if not session_name then return nil, e end
+  pos = pos + 1
+
+  local info
+  if pos <= n and peek_type(lines, pos) == "i" then
+    info, e = parse_required(lines, pos, "i", grammar.parse_info)
+    if not info then return nil, e end
+    pos = pos + 1
+  end
+
+  local uri
+  if pos <= n and peek_type(lines, pos) == "u" then
+    uri, e = parse_required(lines, pos, "u", grammar.parse_uri)
+    if not uri then return nil, e end
+    pos = pos + 1
+  end
+
+  local emails = {}
+  while pos <= n and peek_type(lines, pos) == "e" do
+    local v
+    v, e = parse_required(lines, pos, "e", grammar.parse_email)
+    if not v then return nil, e end
+    emails[#emails + 1] = v
+    pos = pos + 1
+  end
+
+  local phones = {}
+  while pos <= n and peek_type(lines, pos) == "p" do
+    local v
+    v, e = parse_required(lines, pos, "p", grammar.parse_phone)
+    if not v then return nil, e end
+    phones[#phones + 1] = v
+    pos = pos + 1
+  end
+
+  local connection
+  if pos <= n and peek_type(lines, pos) == "c" then
+    connection, e = parse_required(lines, pos, "c", grammar.parse_connection)
+    if not connection then return nil, e end
+    pos = pos + 1
+  end
+
+  local bandwidths = {}
+  while pos <= n and peek_type(lines, pos) == "b" do
+    local v
+    v, e = parse_required(lines, pos, "b", grammar.parse_bandwidth)
+    if not v then return nil, e end
+    bandwidths[#bandwidths + 1] = v
+    pos = pos + 1
+  end
+
+  local timing
+  timing, e = parse_required(lines, pos, "t", grammar.parse_timing)
+  if not timing then return nil, e end
+  pos = pos + 1
+
+  local attributes = {}
+  while pos <= n and peek_type(lines, pos) == "a" do
+    local v
+    v, e = parse_required(lines, pos, "a", grammar.parse_attribute)
+    if not v then return nil, e end
+    attributes[#attributes + 1] = v
+    pos = pos + 1
+  end
+
+  local media = {}
+  while pos <= n and peek_type(lines, pos) == "m" do
+    local m
+    m, e = parse_required(lines, pos, "m", grammar.parse_media)
+    if not m then return nil, e end
+    pos = pos + 1
+
+    if pos <= n and peek_type(lines, pos) == "i" then
+      m.info, e = parse_required(lines, pos, "i", grammar.parse_info)
+      if not m.info then return nil, e end
+      pos = pos + 1
+    end
+
+    if pos <= n and peek_type(lines, pos) == "c" then
+      m.connection, e = parse_required(lines, pos, "c", grammar.parse_connection)
+      if not m.connection then return nil, e end
+      pos = pos + 1
+    end
+
+    m.bandwidths = {}
+    while pos <= n and peek_type(lines, pos) == "b" do
+      local v
+      v, e = parse_required(lines, pos, "b", grammar.parse_bandwidth)
+      if not v then return nil, e end
+      m.bandwidths[#m.bandwidths + 1] = v
+      pos = pos + 1
+    end
+
+    m.attributes = {}
+    while pos <= n and peek_type(lines, pos) == "a" do
+      local v
+      v, e = parse_required(lines, pos, "a", grammar.parse_attribute)
+      if not v then return nil, e end
+      m.attributes[#m.attributes + 1] = v
+      pos = pos + 1
+    end
+
+    media[#media + 1] = m
+  end
+
+  if pos <= n then
+    local line = lines[pos]
+    local tc = peek_type(lines, pos)
+    if tc then
+      return nil, errors.new(
+        string.format("unexpected field '%s=' after all SDP fields", tc),
+        { line = pos, col = 1, context = line, code = "WRONG_ORDER" }
+      )
+    else
+      return nil, errors.new(
+        "unexpected content at end of SDP",
+        { line = pos, col = 1, context = line, code = "MALFORMED_LINE" }
+      )
+    end
+  end
+
+  local doc = {
+    version = version,
+    origin  = origin,
+    session = {
+      name        = session_name,
+      info        = info,
+      uri         = uri,
+      emails      = emails,
+      phones      = phones,
+      connection  = connection,
+      bandwidths  = bandwidths,
+      timing      = timing,
+      attributes  = attributes,
+    },
+    media = media,
+  }
+
+  if mode == "st2110" then
+    local ok, ve = st2110.st2110(doc)
+    if not ok then return nil, ve end
+  elseif mode == "ipmx" then
+    local ok, ve = ipmx.ipmx(doc)
+    if not ok then return nil, ve end
+  end
+
+  return doc
+end
+
+-- ── Public API ────────────────────────────────────────────────────────────────
 local M  = {}
 local mt = {}
 mt.__index = mt
@@ -19,9 +748,9 @@ function mt:validate(mode)
   return nil, errors.new("unknown mode: " .. tostring(mode))
 end
 
-function mt:is_sdp()
-  return validate.sdp(self) == true
-end
+function mt:is_sdp()    return validate.sdp(self) == true end
+function mt:is_st2110() return st2110.st2110(self) == true end
+function mt:is_ipmx()   return ipmx.ipmx(self) == true end
 
 function mt:to_json()
   return dkjson.encode(self)
@@ -29,14 +758,6 @@ end
 
 function mt:to_sdp()
   return serialize.serialize(self)
-end
-
-function mt:is_st2110()
-  return st2110.st2110(self) == true
-end
-
-function mt:is_ipmx()
-  return ipmx.ipmx(self) == true
 end
 
 function M.parse(text, mode)
@@ -49,7 +770,11 @@ function M.new(t)
   return setmetatable(t, mt)
 end
 
--- ── CLI (detect-if-main) ─────────────────────────────────────────────────────
+-- Exposed for spec access; not part of the public contract.
+M._grammar = grammar
+M._errors  = errors
+
+-- ── CLI (detect-if-main) ──────────────────────────────────────────────────────
 if arg and arg[0] and arg[0]:match("parse_sdp") then
   local argparse = require("argparse")
 

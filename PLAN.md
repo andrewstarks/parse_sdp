@@ -996,3 +996,26 @@ end)
 
 **Done when:** `busted spec/` passes (including the new `--help` tests); `parse_sdp --help` and
 `parse_sdp parse --help` print actionable usage with examples; `cli.lua` is gone.
+
+---
+
+### R9 — Collapse `lib/` into `parse_sdp.lua` ✓
+
+**Goal.** The library is a single file plus external dependencies (lpeg, dkjson, argparse). No
+`lib/` directory. The file is large but navigable via section banner comments.
+
+**Approach.**
+
+All seven `lib/` modules inlined into `parse_sdp.lua` as local tables in dependency order:
+`errors → util → grammar → validate → serialize → st2110 → ipmx → parser`
+
+Each section opens with a `-- ── Section Name ──` banner. Private locals (LPEG patterns, helper
+functions) remain at file scope in the section where they originate. `find_attr` is hoisted to one
+declaration after `util` and shared by `st2110` and `ipmx`. All intra-lib `require("lib.xxx")`
+calls are removed; the locals are already in scope.
+
+`M._grammar` and `M._errors` added to the returned module for spec access (not public contract).
+`spec/sdp_spec.lua` and `spec/errors_spec.lua` updated to use these instead of direct lib requires.
+`lib/` directory deleted.
+
+**Done when:** `busted spec/` passes with 169 successes; `lib/` is gone.

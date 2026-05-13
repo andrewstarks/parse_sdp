@@ -6,7 +6,7 @@ describe("parse_sdp", function()
 end)
 
 describe("grammar.tokenize_line", function()
-  local grammar = require("lib.grammar")
+  local grammar = require("parse_sdp")._grammar
 
   it("parses a valid CRLF line", function()
     local t, v, offset = grammar.tokenize_line("v=0\r\n")
@@ -86,7 +86,7 @@ describe("grammar.tokenize_line", function()
 end)
 
 describe("grammar.parse_version", function()
-  local grammar = require("lib.grammar")
+  local grammar = require("parse_sdp")._grammar
 
   it("accepts '0'", function()
     local v = grammar.parse_version("0")
@@ -113,7 +113,7 @@ describe("grammar.parse_version", function()
 end)
 
 describe("grammar.parse_origin", function()
-  local grammar = require("lib.grammar")
+  local grammar = require("parse_sdp")._grammar
 
   it("parses a valid origin value", function()
     local o = grammar.parse_origin("- 1234567890 1 IN IP4 192.0.2.1")
@@ -159,7 +159,7 @@ describe("grammar.parse_origin", function()
 end)
 
 describe("grammar.parse_timing", function()
-  local grammar = require("lib.grammar")
+  local grammar = require("parse_sdp")._grammar
 
   it("parses '0 0'", function()
     local t = grammar.parse_timing("0 0")
@@ -467,7 +467,7 @@ describe("sdp.parse — optional session fields (M4)", function()
 end)
 
 describe("grammar.parse_media", function()
-  local grammar = require("lib.grammar")
+  local grammar = require("parse_sdp")._grammar
 
   it("parses a minimal m= value", function()
     local m = grammar.parse_media("video 49170 RTP/AVP 96")

@@ -1,4 +1,4 @@
-local errors = require("lib.errors")
+local errors = require("parse_sdp")._errors
 
 describe("errors.format", function()
 
