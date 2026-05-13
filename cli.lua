@@ -56,6 +56,36 @@ function subcommands.parse(args)
   os.exit(0)
 end
 
+function subcommands.serialize(args)
+  local file = args[1]
+
+  local json_text
+  if file then
+    local f, err = io.open(file, "r")
+    if not f then
+      die({ message = "cannot open file: " .. (err or file), line = 0, col = 0, context = "" })
+    end
+    json_text = f:read("*a")
+    f:close()
+  else
+    json_text = io.read("*a")
+  end
+
+  local tbl, _, err = dkjson.decode(json_text)
+  if not tbl then
+    die({ message = "invalid JSON: " .. (err or "parse error"), line = 0, col = 0, context = "" })
+  end
+
+  local doc = sdp.new(tbl)
+  local ok, result = pcall(function() return doc:to_sdp() end)
+  if not ok then
+    die({ message = "serialize error: " .. tostring(result), line = 0, col = 0, context = "" })
+  end
+
+  io.write(result)
+  os.exit(0)
+end
+
 -- ── Entry ─────────────────────────────────────────────────────────────────────
 
 local cmd_name = arg and arg[1]

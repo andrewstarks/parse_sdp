@@ -222,12 +222,12 @@ Covers: `i=`, `u=`, `e=`, `p=`, `c=`, `b=`, `a=` (zero or more of each where all
 
 ---
 
-### M12 — CLI: `serialize` subcommand
+### M12 — CLI: `serialize` subcommand ✓
 
 **Done when:** `parse_sdp serialize [file.json]` produces valid SDP on stdout.
 
-- [ ] Read JSON, call `sdp.new()`, call `doc:serialize()`
-- [ ] Integration tests
+- [x] Read JSON, call `sdp.new()`, call `doc:to_sdp()`
+- [x] Integration tests
 
 ---
 

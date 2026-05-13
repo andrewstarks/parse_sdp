@@ -100,3 +100,68 @@ describe("CLI: parse subcommand", function()
   end)
 
 end)
+
+-- ── serialize subcommand ──────────────────────────────────────────────────────
+
+describe("CLI: serialize subcommand", function()
+
+  -- Parse a fixture to JSON, return the JSON string.
+  local function fixture_json(sdp_file)
+    local h = io.popen("lua cli.lua parse " .. sdp_file, "r")
+    local json = h:read("*a")
+    h:close()
+    return json
+  end
+
+  it("serializes JSON from stdin → SDP text on stdout, exit 0", function()
+    local json = fixture_json("spec/fixtures/minimal.sdp")
+    local stdout, stderr, code = run("serialize", json)
+    assert.equal(0, code)
+    assert.equal("", stderr)
+    assert.truthy(stdout:find("v=0", 1, true))
+    assert.truthy(stdout:find("s=Minimal", 1, true))
+  end)
+
+  it("serializes JSON from file → SDP text on stdout, exit 0", function()
+    local json = fixture_json("spec/fixtures/minimal.sdp")
+    local tmp = os.tmpname()
+    local f = assert(io.open(tmp, "w"))
+    f:write(json)
+    f:close()
+    local stdout, stderr, code = run("serialize " .. tmp)
+    os.remove(tmp)
+    assert.equal(0, code)
+    assert.equal("", stderr)
+    assert.truthy(stdout:find("v=0", 1, true))
+  end)
+
+  it("invalid JSON → JSON error on stderr, exit 1", function()
+    local stdout, stderr, code = run("serialize", "not { valid } json")
+    assert.equal(1, code)
+    assert.equal("", stdout)
+    local decoded = dkjson.decode(stderr)
+    assert.is_table(decoded)
+    assert.is_string(decoded.message)
+  end)
+
+  it("missing file → JSON error on stderr, exit 1", function()
+    local stdout, stderr, code = run("serialize spec/fixtures/no_such.json")
+    assert.equal(1, code)
+    assert.equal("", stdout)
+    local decoded = dkjson.decode(stderr)
+    assert.is_table(decoded)
+    assert.is_string(decoded.message)
+  end)
+
+  it("round-trip: parse → serialize produces re-parseable SDP", function()
+    local json = fixture_json("spec/fixtures/minimal.sdp")
+    local stdout, _, code = run("serialize", json)
+    assert.equal(0, code)
+    local sdp = require("parse_sdp")
+    local doc = sdp.parse(stdout)
+    assert.is_table(doc)
+    assert.equal("0", doc.version)
+    assert.equal("Minimal", doc.session.name)
+  end)
+
+end)
