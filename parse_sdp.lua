@@ -1,4 +1,9 @@
 #!/usr/bin/env lua
+--- parse_sdp — RFC 4566 / ST 2110 / IPMX SDP parser, validator, and serializer.
+-- Single-file library and CLI executable.  `require("parse_sdp")` loads the
+-- library; running it directly activates the argparse CLI.
+-- @module parse_sdp
+
 -- ── External dependencies ─────────────────────────────────────────────────────
 local lpeg   = require("lpeg")
 local dkjson = require("dkjson")
@@ -7,6 +12,11 @@ local P, R, C, Cp, Ct = lpeg.P, lpeg.R, lpeg.C, lpeg.Cp, lpeg.Ct
 -- ── Errors ────────────────────────────────────────────────────────────────────
 local errors = {}
 
+--- Build a structured error table.
+-- @param msg string   Human-readable description of the error.
+-- @param opts table   Optional fields: code, line, col, context, field_path, spec_ref.
+--                     code defaults to "MISSING_FIELD".
+-- @return table  Error table with message, code, line, col, context, field_path, spec_ref.
 function errors.new(msg, opts)
   local o = opts or {}
   return {
@@ -20,6 +30,11 @@ function errors.new(msg, opts)
   }
 end
 
+--- Format an error table into a human-readable multi-line string.
+-- Produces `error: [CODE] message`, a location arrow, context line with caret,
+-- and an optional spec note — suitable for writing directly to stderr.
+-- @param err table   Error table as returned by errors.new, or nil.
+-- @return string  Formatted error text.
 function errors.format(err)
   if not err then return "error: unknown" end
   local code_part = err.code and ("[" .. err.code .. "] ") or ""
@@ -44,6 +59,10 @@ end
 -- ── Util ──────────────────────────────────────────────────────────────────────
 local util = {}
 
+--- Find the first attribute in a list whose name matches.
+-- @param attrs table   Array of attribute tables ({name[, value]}).
+-- @param name string   Attribute name to search for.
+-- @return table|nil  First matching attribute table, or nil if not found.
 function util.find_attr(attrs, name)
   for _, a in ipairs(attrs or {}) do
     if a.name == name then return a end
@@ -62,8 +81,8 @@ local value_char = 1 - line_end
 local SP         = P(" ")
 local token      = (P(1) - SP - line_end) ^ 1
 
--- Matches one SDP line: type char, '=', non-empty value, then line end or EOS.
--- Returns: type_char, value, byte_offset_of_value
+-- Matches one SDP line: alpha type char, '=', non-empty value, then line end or EOS.
+-- Capture order: type_char (C), value_start_offset (Cp), value (C).
 local line_pat =
   C(alpha) * P("=") * Cp() * C(value_char ^ 1) * (line_end + -P(1))
 
@@ -73,6 +92,10 @@ local line_partial =
     + alpha * Cp()
     + Cp()
 
+--- Parse one SDP line into its type char, value, and value byte offset.
+-- @param s string  Raw line text, with or without trailing CRLF or LF.
+-- @return string, string, number  type_char, value, byte_offset_of_value on success.
+-- @return nil, number  nil + failure byte position on malformed input.
 function grammar.tokenize_line(s)
   local t, offset, v = line_pat:match(s)
   if t then return t, v, offset end
@@ -81,6 +104,10 @@ end
 
 local version_pat = P("0") * -P(1)
 
+--- Parse a v= field value; only "0" is valid per RFC 4566.
+-- @param s string  Field value string.
+-- @return string  "0" on success.
+-- @return nil, number  nil + failure column on invalid value.
 function grammar.parse_version(s)
   if version_pat:match(s) then return "0" end
   return nil, 1
@@ -98,6 +125,10 @@ local origin_pat =
   C(token) *
   -P(1)
 
+--- Parse an o= field value into an origin table.
+-- @param s string  Field value string.
+-- @return table   {username, sess_id, sess_version, net_type, addr_type, unicast_address} on success.
+-- @return nil, number  nil + failure column on invalid value.
 function grammar.parse_origin(s)
   local user, sid, sver, ntype, atype, addr = origin_pat:match(s)
   if user then
@@ -113,14 +144,37 @@ function grammar.parse_origin(s)
   return nil, 1
 end
 
+--- Parse an s= field value; returns the raw string unchanged.
+-- @param s string  Field value string.
+-- @return string  Session name.
 function grammar.parse_session_name(s) return s end
+
+--- Parse an i= field value; returns the raw string unchanged.
+-- @param s string  Field value string.
+-- @return string  Session or media information text.
 function grammar.parse_info(s)         return s end
+
+--- Parse a u= field value; returns the raw string unchanged.
+-- @param s string  Field value string.
+-- @return string  URI.
 function grammar.parse_uri(s)          return s end
+
+--- Parse an e= field value; returns the raw string unchanged.
+-- @param s string  Field value string.
+-- @return string  Email address.
 function grammar.parse_email(s)        return s end
+
+--- Parse a p= field value; returns the raw string unchanged.
+-- @param s string  Field value string.
+-- @return string  Phone number.
 function grammar.parse_phone(s)        return s end
 
 local timing_pat = C(digit ^ 1) * SP * C(digit ^ 1) * -P(1)
 
+--- Parse a t= field value into a timing table.
+-- @param s string  Field value string (e.g. "0 0" or two NTP timestamps).
+-- @return table   {start=number, stop=number} on success.
+-- @return nil, number  nil + failure column on invalid value.
 function grammar.parse_timing(s)
   local start_s, stop_s = timing_pat:match(s)
   if start_s then
@@ -131,6 +185,10 @@ end
 
 local connection_pat = C(nettype) * SP * C(addrtype) * SP * C(token) * -P(1)
 
+--- Parse a c= field value into a connection table.
+-- @param s string  Field value string (e.g. "IN IP4 224.2.1.1").
+-- @return table   {net_type, addr_type, address} on success.
+-- @return nil, number  nil + failure column on invalid value.
 function grammar.parse_connection(s)
   local ntype, atype, addr = connection_pat:match(s)
   if ntype then
@@ -142,6 +200,10 @@ end
 local bw_bwtype = (P(1) - P(":") - SP - line_end) ^ 1
 local bw_pat    = C(bw_bwtype) * P(":") * C(digit ^ 1) * -P(1)
 
+--- Parse a b= field value into a bandwidth table.
+-- @param s string  Field value string (e.g. "AS:128").
+-- @return table   {type=string, value=number} on success.
+-- @return nil, number  nil + failure column on invalid value.
 function grammar.parse_bandwidth(s)
   local bwtype, bwval = bw_pat:match(s)
   if bwtype then
@@ -154,6 +216,10 @@ local att_field   = (P(1) - P(":") - SP - line_end) ^ 1
 local attr_kv_pat = C(att_field) * P(":") * C(value_char ^ 1) * -P(1)
 local attr_k_pat  = C(att_field) * -P(1)
 
+--- Parse an a= field value into an attribute table.
+-- @param s string  Field value string (e.g. "recvonly" or "rtpmap:96 H264/90000").
+-- @return table   {name=string} for flag attributes; {name, value=string} for key-value attributes.
+-- @return nil, number  nil + failure column on invalid value.
 function grammar.parse_attribute(s)
   local name, val = attr_kv_pat:match(s)
   if name then return { name = name, value = val } end
@@ -170,6 +236,10 @@ local media_pat =
   Ct(C(token) * (SP * C(token)) ^ 0) *
   -P(1)
 
+--- Parse an m= field value into a media table.
+-- @param s string  Field value string (e.g. "video 49170 RTP/AVP 96 97").
+-- @return table   {media, port=number, port_count=number|nil, proto, fmts=array} on success.
+-- @return nil, number  nil + failure column on invalid value.
 function grammar.parse_media(s)
   local mtype, port_field, proto, fmts = media_pat:match(s)
   if not mtype then return nil, 1 end
@@ -188,6 +258,12 @@ end
 -- ── Validate ──────────────────────────────────────────────────────────────────
 local validate = {}
 
+--- Validate an SDP document table against RFC 4566 structural requirements.
+-- Checks version, all origin fields, session name, timing, and each media block's
+-- required fields (media type, port, proto, fmts).
+-- @param doc table  SDP document table.
+-- @return true  on success.
+-- @return nil, err  on failure; err is an error table from errors.new.
 function validate.sdp(doc)
   if type(doc) ~= "table" then
     return nil, errors.new("doc must be a table", { code = "INVALID_VALUE" })
@@ -254,6 +330,7 @@ end
 -- ── Serialize ─────────────────────────────────────────────────────────────────
 local serialize = {}
 
+-- Emit one SDP field line with CRLF ending.
 local function ln(t, v)
   return t .. "=" .. v .. "\r\n"
 end
@@ -274,39 +351,50 @@ end
 local function ser_media_block(m)
   local port_field = tostring(m.port)
   if m.port_count then port_field = port_field .. "/" .. tostring(m.port_count) end
-  local out = ln("m", m.media .. " " .. port_field .. " " .. m.proto
-                      .. " " .. table.concat(m.fmts, " "))
-  if m.info       then out = out .. ln("i", m.info) end
-  if m.connection then out = out .. ser_connection(m.connection) end
-  for _, b in ipairs(m.bandwidths or {}) do out = out .. ser_bandwidth(b) end
-  for _, a in ipairs(m.attributes or {}) do out = out .. ser_attribute(a) end
-  return out
+  local parts = {
+    ln("m", m.media .. " " .. port_field .. " " .. m.proto .. " " .. table.concat(m.fmts, " "))
+  }
+  if m.info       then parts[#parts + 1] = ln("i", m.info) end
+  if m.connection then parts[#parts + 1] = ser_connection(m.connection) end
+  for _, b in ipairs(m.bandwidths or {}) do parts[#parts + 1] = ser_bandwidth(b) end
+  for _, a in ipairs(m.attributes or {}) do parts[#parts + 1] = ser_attribute(a) end
+  return table.concat(parts)
 end
 
+--- Serialize an SDP document table to an RFC 4566 text string.
+-- Field order follows RFC 4566 §5.  All lines use CRLF endings.
+-- The caller is responsible for ensuring doc is structurally valid; no validation
+-- is performed here.
+-- @param doc table  SDP document table with version, origin, session, media fields.
+-- @return string  SDP text with CRLF line endings.
 function serialize.serialize(doc)
   local s = doc.session
   local o = doc.origin
-  local out = ""
-  out = out .. ln("v", doc.version)
-  out = out .. ln("o", o.username .. " " .. o.sess_id .. " " .. o.sess_version
-                       .. " " .. o.net_type .. " " .. o.addr_type
-                       .. " " .. o.unicast_address)
-  out = out .. ln("s", s.name)
-  if s.info then out = out .. ln("i", s.info) end
-  if s.uri  then out = out .. ln("u", s.uri) end
-  for _, e in ipairs(s.emails     or {}) do out = out .. ln("e", e) end
-  for _, p in ipairs(s.phones     or {}) do out = out .. ln("p", p) end
-  if s.connection then out = out .. ser_connection(s.connection) end
-  for _, b in ipairs(s.bandwidths or {}) do out = out .. ser_bandwidth(b) end
-  out = out .. ln("t", tostring(s.timing.start) .. " " .. tostring(s.timing.stop))
-  for _, a in ipairs(s.attributes or {}) do out = out .. ser_attribute(a) end
-  for _, m in ipairs(doc.media    or {}) do out = out .. ser_media_block(m) end
-  return out
+  local parts = {}
+  local function add(line) parts[#parts + 1] = line end
+
+  add(ln("v", doc.version))
+  add(ln("o", o.username .. " " .. o.sess_id .. " " .. o.sess_version
+              .. " " .. o.net_type .. " " .. o.addr_type
+              .. " " .. o.unicast_address))
+  add(ln("s", s.name))
+  if s.info then add(ln("i", s.info)) end
+  if s.uri  then add(ln("u", s.uri)) end
+  for _, e in ipairs(s.emails     or {}) do add(ln("e", e)) end
+  for _, p in ipairs(s.phones     or {}) do add(ln("p", p)) end
+  if s.connection then add(ser_connection(s.connection)) end
+  for _, b in ipairs(s.bandwidths or {}) do add(ser_bandwidth(b)) end
+  add(ln("t", tostring(s.timing.start) .. " " .. tostring(s.timing.stop)))
+  for _, a in ipairs(s.attributes or {}) do add(ser_attribute(a)) end
+  for _, m in ipairs(doc.media    or {}) do add(ser_media_block(m)) end
+  return table.concat(parts)
 end
 
 -- ── ST 2110 ───────────────────────────────────────────────────────────────────
 local st2110 = {}
 
+-- Extract the RTP clock rate from an rtpmap value (e.g. "96 raw/90000" → 90000).
+-- Returns nil if the value does not match the expected encoding/clock format.
 local function rtpmap_clock_rate(value)
   local rest = value:match("^%d+%s+(.+)$")
   if not rest then return nil end
@@ -314,6 +402,8 @@ local function rtpmap_clock_rate(value)
   return rate and tonumber(rate)
 end
 
+-- Validate the value of a ts-refclk attribute per ST 2110-10 §7.2.
+-- Returns true on success, or nil + error message string on failure.
 local function valid_tsrefclk(value)
   if value == "gps" or value == "gal" or value == "glonass" then return true end
   local addr = value:match("^ntp=(.+)$")
@@ -347,6 +437,8 @@ local function valid_tsrefclk(value)
   return nil, "unrecognized ts-refclk clock source"
 end
 
+-- Validate the value of a mediaclk attribute per ST 2110-10 §7.3.
+-- Returns true on success, or nil + error message string on failure.
 local function valid_mediaclk(value)
   if value == "sender" then return true end
   local offset = value:match("^direct=(.+)$")
@@ -357,7 +449,9 @@ local function valid_mediaclk(value)
   return nil, "unrecognized mediaclk value"
 end
 
--- Parse semicolon-separated key=value pairs from fmtp value "PT param1=v1; param2=v2; ..."
+-- Parse semicolon-separated key=value pairs from an fmtp attribute value.
+-- Input format: "PT param1=v1; param2=v2; ..." (PT is the payload type prefix).
+-- Returns a params table on success, or nil + error string if a token lacks '='.
 local function fmtp_params(value)
   local params_str = value:match("^%d+%s+(.+)$")
   if not params_str then return {} end
@@ -373,6 +467,14 @@ local function fmtp_params(value)
   return params
 end
 
+--- Validate an SDP document against SMPTE ST 2110 requirements.
+-- Runs RFC 4566 validation first, then for each media block checks:
+-- ts-refclk (session or media level), mediaclk, rtpmap, fmtp, and
+-- media-type-specific fmtp parameters (sampling for video,
+-- channel-order for audio).
+-- @param doc table  SDP document table.
+-- @return true  on success.
+-- @return nil, err  on failure; err includes field_path and spec_ref.
 function st2110.st2110(doc)
   local ok, e = validate.sdp(doc)
   if not ok then return nil, e end
@@ -488,6 +590,12 @@ end
 -- ── IPMX ──────────────────────────────────────────────────────────────────────
 local ipmx = {}
 
+--- Validate an SDP document against IPMX requirements.
+-- Runs ST 2110 validation first, then checks that a=extmap is present at
+-- session level or in at least one media block.
+-- @param doc table  SDP document table.
+-- @return true  on success.
+-- @return nil, err  on failure; err includes field_path and spec_ref.
 function ipmx.ipmx(doc)
   local ok, e = st2110.st2110(doc)
   if not ok then return nil, e end
@@ -515,6 +623,8 @@ end
 -- ── Parser ────────────────────────────────────────────────────────────────────
 local parser = {}
 
+-- Split SDP text into lines, stripping CRLF or LF endings.
+-- Returns an array of raw line strings without any line-ending characters.
 local function split_lines(text)
   local lines = {}
   local i = 1
@@ -534,6 +644,10 @@ local function split_lines(text)
   return lines
 end
 
+-- Consume and validate the line at lines[pos] against the expected type_char.
+-- Fails with a typed error if the line is absent, malformed, the wrong type,
+-- or if parse_value rejects the value.
+-- @return parsed_value on success, or nil + error table on failure.
 local function parse_required(lines, pos, type_char, parse_value)
   if pos > #lines then
     return nil, errors.new(
@@ -563,11 +677,19 @@ local function parse_required(lines, pos, type_char, parse_value)
   return parsed
 end
 
+-- Return the SDP type char of lines[pos], or nil if absent or malformed.
 local function peek_type(lines, pos)
   local tc = grammar.tokenize_line(lines[pos])
   return tc
 end
 
+--- Parse SDP text into a raw document table (no metatable attached).
+-- Enforces RFC 4566 §5 field ordering strictly.  Optionally runs ST 2110
+-- or IPMX validation after a successful RFC 4566 parse.
+-- @param text string  Raw SDP text (CRLF or LF line endings).
+-- @param mode string  Optional: "st2110" or "ipmx" for extended validation.
+-- @return table  Raw SDP document table on success.
+-- @return nil, err  on parse or validation failure.
 function parser.parse(text, mode)
   local lines = split_lines(text)
   local n     = #lines
@@ -740,32 +862,61 @@ local M  = {}
 local mt = {}
 mt.__index = mt
 
+local validators = {
+  sdp    = validate.sdp,
+  st2110 = st2110.st2110,
+  ipmx   = ipmx.ipmx,
+}
+
+--- Validate the document against the given tier.
+-- @param mode string  "sdp" (default), "st2110", or "ipmx".
+-- @return true  on success.
+-- @return nil, err  on failure; err is an error table from errors.new.
 function mt:validate(mode)
   mode = mode or "sdp"
-  if mode == "sdp"    then return validate.sdp(self) end
-  if mode == "st2110" then return st2110.st2110(self) end
-  if mode == "ipmx"   then return ipmx.ipmx(self) end
-  return nil, errors.new("unknown mode: " .. tostring(mode))
+  local fn = validators[mode]
+  if not fn then return nil, errors.new("unknown mode: " .. tostring(mode)) end
+  return fn(self)
 end
 
+--- Test whether the document is a valid RFC 4566 SDP.
+-- @return boolean
 function mt:is_sdp()    return validate.sdp(self) == true end
+
+--- Test whether the document satisfies SMPTE ST 2110 requirements.
+-- @return boolean
 function mt:is_st2110() return st2110.st2110(self) == true end
+
+--- Test whether the document satisfies IPMX requirements.
+-- @return boolean
 function mt:is_ipmx()   return ipmx.ipmx(self) == true end
 
+--- Encode the document as a JSON string using dkjson.
+-- @return string  JSON representation of the document.
 function mt:to_json()
   return dkjson.encode(self)
 end
 
+--- Serialize the document back to RFC 4566 SDP text.
+-- @return string  SDP text with CRLF line endings.
 function mt:to_sdp()
   return serialize.serialize(self)
 end
 
+--- Parse SDP text and return a doc object with metatable methods attached.
+-- @param text string  Raw SDP text (CRLF or LF line endings).
+-- @param mode string  Optional validation tier: "st2110" or "ipmx".
+-- @return doc  Parsed SDP document on success.
+-- @return nil, err  on parse or validation failure.
 function M.parse(text, mode)
   local doc, e = parser.parse(text, mode)
   if not doc then return nil, e end
   return setmetatable(doc, mt)
 end
 
+--- Wrap an existing table as a doc object without parsing or validation.
+-- @param t table  Any table to wrap.
+-- @return doc  The table with SDP metatable methods attached.
 function M.new(t)
   return setmetatable(t, mt)
 end

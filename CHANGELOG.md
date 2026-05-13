@@ -9,6 +9,27 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 
+### Changed (code quality pass)
+
+- `parse_sdp.lua`: comprehensive ldoc annotations added to all public functions and significant
+  internal helpers (`errors.new`, `errors.format`, `util.find_attr`, all grammar parsers,
+  `validate.sdp`, `serialize.serialize`, `st2110.st2110`, `ipmx.ipmx`, `parser.parse`,
+  `M.parse`, `M.new`, all `mt:` methods)
+- `serialize.serialize`: refactored from O(n²) string concatenation to O(n) table accumulation
+  (`table.insert` + `table.concat`); `ser_media_block` likewise
+- `mt:validate`: sequential `if` dispatch replaced with a lookup table (`validators`)
+- 5 new tests: `st2110_spec` — rtpmap missing, fmtp missing, audio channel-order missing;
+  `ipmx_spec` — extmap at session level only; `sdp_spec` — timing rejects trailing content
+- `GUIDE.md`: 5 accuracy fixes — stale `lib/` manual-install reference removed; error code
+  `UNKNOWN_FIELD` corrected to `MALFORMED_LINE`; `ts-refclk` format expanded to show all six
+  accepted forms; ST 2110-20 fmtp table now shows which parameters are validated vs. specified;
+  IPMX section rewritten with accurate implementation description and unimplemented-extensions
+  table (HKEP, PEP, USB, FEC)
+- `README.md`: stale `doc:serialize()` call corrected to `doc:to_sdp()`; project layout updated
+  to reflect R9 (`lib/` removed, all spec files listed)
+- `PLAN.md`: M14 (ST 2110-40/41 ancillary data and fast metadata) and M15 (IPMX protocol
+  extensions: HKEP, PEP, USB, FEC) added
+
 ### Changed (R9)
 
 - R9: `lib/` directory deleted; all modules (errors, util, grammar, validate, serialize, st2110, ipmx, parser) inlined into `parse_sdp.lua` as ordered local-table sections with banner comments; `M._grammar` and `M._errors` exposed for spec access; `spec/sdp_spec.lua` and `spec/errors_spec.lua` updated to use `require("parse_sdp")._grammar` / `._errors`

@@ -102,8 +102,7 @@ Requires Lua 5.3–5.5 and LPEG. For CLI use, also install argparse: `luarocks i
 
 ### Manual
 
-Copy `parse_sdp.lua` and the `lib/` directory into your project. Install LPEG and
-dkjson separately.
+Copy `parse_sdp.lua` into your project. Install LPEG, dkjson, and argparse separately.
 
 ### Docker
 
@@ -395,7 +394,7 @@ validation failures.
 | `line` | integer | 1-based line number |
 | `col` | integer | 1-based column number |
 | `context` | string | The full text of the offending line |
-| `code` | string | Machine-readable code: `MISSING_FIELD`, `INVALID_VALUE`, `WRONG_ORDER`, `UNKNOWN_FIELD` |
+| `code` | string | Machine-readable code: `MISSING_FIELD`, `INVALID_VALUE`, `WRONG_ORDER`, `MALFORMED_LINE` |
 
 ST 2110 and IPMX errors also include:
 
@@ -439,24 +438,28 @@ Error at line 4, col 1: missing required field 't='
 
 | Attribute | Requirement |
 | --- | --- |
-| `a=ts-refclk` | Required. Format: `ptp=<profile>:<domain-or-gmid>` |
+| `a=ts-refclk` | Required. Accepted: `ptp=<version>:<gmid>[:<domain>]`; `localmac=<mac>`; `ntp=<addr>`; `gps`; `gal`; `glonass` |
 | `a=mediaclk` | Required. Typically `direct=0` |
 | `a=rtpmap` | Required. Clock rate must match media type |
 | `a=fmtp` | Required. Key=value pairs validated per sub-standard |
 
-### ST 2110-20 (video) required `fmtp` parameters
+### ST 2110-20 (video) `fmtp` parameters
 
-| Parameter | Example |
-| --- | --- |
-| `sampling` | `YCbCr-4:2:2` |
-| `width` | `1920` |
-| `height` | `1080` |
-| `exactframerate` | `30000/1001` |
-| `depth` | `10` |
-| `TCS` | `SDR` |
-| `colorimetry` | `BT709` |
-| `PM` | `2110GPM` |
-| `SSN` | `ST2110-20:2022` |
+ST 2110-20 §7.2 requires `sampling`, `width`, `height`, `exactframerate`, `depth`, `TCS`,
+`colorimetry`, `PM`, and `SSN`. The library currently validates only `sampling`; the rest
+are parsed but not checked for presence.
+
+| Parameter | Example | Validated |
+| --- | --- | --- |
+| `sampling` | `YCbCr-4:2:2` | yes |
+| `width` | `1920` | no |
+| `height` | `1080` | no |
+| `exactframerate` | `30000/1001` | no |
+| `depth` | `10` | no |
+| `TCS` | `SDR` | no |
+| `colorimetry` | `BT709` | no |
+| `PM` | `2110GPM` | no |
+| `SSN` | `ST2110-20:2022` | no |
 
 ### ST 2110-30 (audio) required `fmtp` parameters
 
@@ -471,11 +474,17 @@ Error at line 4, col 1: missing required field 't='
 `sdp.parse(text, "ipmx")` or `doc:validate("ipmx")` runs ST 2110 validation first,
 then checks IPMX-specific requirements:
 
-- Required `a=extmap` entries for IPMX RTP header extensions are present.
-- `a=ts-refclk` uses an IPMX-approved profile.
-- Additional IPMX capability attributes are validated.
+- At least one `a=extmap` attribute must be present (at session level or in any media block).
 
-*(This section will be expanded as the IPMX validation layer is implemented.)*
+The following IPMX extensions are not yet validated. When present their SDP representation
+must be well-formed; their absence is not an error.
+
+| Extension | Spec | SDP indicator |
+| --- | --- | --- |
+| HDCP Key Exchange (HKEP) | VSF TR-10-5 | `a=hkep` |
+| Privacy Encryption Protocol (PEP) | VSF TR-10-13 | `a=pep` |
+| USB transport | VSF TR-10-14 | `m=application … TCP usb`, `a=setup:passive`, `a=ipmx_bus_id` |
+| FEC (ST 2022-5/9) | ST 2110-10, RFC 5956 | `a=group:FEC`, repair `m=` blocks |
 
 ---
 

@@ -186,6 +186,12 @@ describe("grammar.parse_timing", function()
     assert.is_nil(t)
     assert.is_number(pos)
   end)
+
+  it("rejects trailing content after stop time", function()
+    local t, pos = grammar.parse_timing("0 0 extra")
+    assert.is_nil(t)
+    assert.is_number(pos)
+  end)
 end)
 
 describe("sdp.parse — required session fields", function()

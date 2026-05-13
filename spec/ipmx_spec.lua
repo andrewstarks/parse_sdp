@@ -100,6 +100,30 @@ describe("IPMX validation", function()
     end)
   end)
 
+  describe("doc:validate('ipmx') — extmap location", function()
+    it("returns true when extmap is at session level only", function()
+      local text = table.concat({
+        "v=0",
+        "o=- 1234567890 1 IN IP4 192.168.1.1",
+        "s=IPMX Video",
+        "t=0 0",
+        "a=ts-refclk:localmac=AA-BB-CC-DD-EE-FF",
+        "a=extmap:1 urn:ietf:params:rtp-hdrext:smpte-tc",
+        "m=video 5000 RTP/AVP 96",
+        "c=IN IP4 239.100.0.1/64",
+        "a=rtpmap:96 raw/90000",
+        "a=fmtp:96 sampling=YCbCr-4:2:2; width=1920; height=1080; exactframerate=25; depth=10; colorimetry=BT709; PM=2110GPM; TP=2110TPN",
+        "a=mediaclk:direct=0",
+        "a=ts-refclk:localmac=AA-BB-CC-DD-EE-FF",
+      }, "\r\n")
+      local doc = sdp.parse(text)
+      assert.is_table(doc)
+      local ok, err = doc:validate("ipmx")
+      assert.is_nil(err)
+      assert.equal(true, ok)
+    end)
+  end)
+
   describe("doc:is_ipmx()", function()
     it("returns true for valid IPMX SDP", function()
       local doc = sdp.parse(IPMX_VIDEO_SDP)

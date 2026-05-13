@@ -188,6 +188,67 @@ describe("ST 2110 validation", function()
       assert.matches("90000", err.message)
     end)
 
+    it("errors when rtpmap is missing from media block", function()
+      local text = table.concat({
+        "v=0",
+        "o=- 1234567890 1 IN IP4 192.168.1.1",
+        "s=ST2110 Video",
+        "t=0 0",
+        "a=ts-refclk:ptp=IEEE1588-2008:00-11-22-FF-FE-33-44-55:0",
+        "m=video 5000 RTP/AVP 96",
+        "c=IN IP4 239.100.0.1/64",
+        "a=fmtp:96 sampling=YCbCr-4:2:2; width=1920; height=1080; exactframerate=25; depth=10; colorimetry=BT709; PM=2110GPM; TP=2110TPN",
+        "a=mediaclk:direct=0",
+        "a=ts-refclk:ptp=IEEE1588-2008:00-11-22-FF-FE-33-44-55:0",
+      }, "\r\n")
+      local doc = sdp.parse(text)
+      local ok, err = doc:validate("st2110")
+      assert.is_nil(ok)
+      assert.is_table(err)
+      assert.matches("rtpmap", err.message)
+    end)
+
+    it("errors when fmtp is missing from media block", function()
+      local text = table.concat({
+        "v=0",
+        "o=- 1234567890 1 IN IP4 192.168.1.1",
+        "s=ST2110 Video",
+        "t=0 0",
+        "a=ts-refclk:ptp=IEEE1588-2008:00-11-22-FF-FE-33-44-55:0",
+        "m=video 5000 RTP/AVP 96",
+        "c=IN IP4 239.100.0.1/64",
+        "a=rtpmap:96 raw/90000",
+        "a=mediaclk:direct=0",
+        "a=ts-refclk:ptp=IEEE1588-2008:00-11-22-FF-FE-33-44-55:0",
+      }, "\r\n")
+      local doc = sdp.parse(text)
+      local ok, err = doc:validate("st2110")
+      assert.is_nil(ok)
+      assert.is_table(err)
+      assert.matches("fmtp", err.message)
+    end)
+
+    it("errors when audio fmtp lacks channel-order parameter", function()
+      local text = table.concat({
+        "v=0",
+        "o=- 1234567890 1 IN IP4 192.168.1.1",
+        "s=ST2110 Audio",
+        "t=0 0",
+        "a=ts-refclk:ptp=IEEE1588-2008:00-11-22-FF-FE-33-44-55:0",
+        "m=audio 5010 RTP/AVP 97",
+        "c=IN IP4 239.100.0.2/64",
+        "a=rtpmap:97 L24/48000/8",
+        "a=fmtp:97 some-param=value",
+        "a=mediaclk:direct=0",
+        "a=ts-refclk:ptp=IEEE1588-2008:00-11-22-FF-FE-33-44-55:0",
+      }, "\r\n")
+      local doc = sdp.parse(text)
+      local ok, err = doc:validate("st2110")
+      assert.is_nil(ok)
+      assert.is_table(err)
+      assert.matches("channel%-order", err.message)
+    end)
+
     it("errors when video fmtp has a token without '=' sign", function()
       local text = table.concat({
         "v=0",

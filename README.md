@@ -46,7 +46,7 @@ print(doc.media[1].port)
 
 -- It also has methods
 local ok, err = doc:validate("st2110")   -- re-validate after mutation
-local text     = doc:serialize()          -- → valid SDP string
+local text     = doc:to_sdp()             -- → valid SDP string
 local json     = doc:to_json()            -- → JSON string
 print(doc:is_st2110())                    -- bool
 
@@ -81,18 +81,13 @@ Exit code `0` on success, `1` on error (detail on stderr as JSON).
 
 ```text
 parse_sdp/
-├── parse_sdp.lua        # library entry point AND CLI executable
-├── lib/
-│   ├── grammar.lua      # LPEG grammar (RFC 4566)
-│   ├── validate.lua     # RFC 4566 doc validator
-│   ├── st2110.lua       # ST 2110 validation layer
-│   ├── ipmx.lua         # IPMX validation layer
-│   ├── serialize.lua    # doc → SDP text
-│   └── errors.lua       # error construction and formatting
+├── parse_sdp.lua        # single-file library AND CLI executable
 ├── spec/                # busted test suite
 │   ├── sdp_spec.lua
 │   ├── st2110_spec.lua
 │   ├── ipmx_spec.lua
+│   ├── errors_spec.lua
+│   ├── cli_spec.lua
 │   └── fixtures/        # sample .sdp files used by tests
 ├── examples/
 │   ├── examples.lua     # runnable API walkthrough

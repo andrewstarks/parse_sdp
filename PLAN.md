@@ -242,6 +242,87 @@ Covers: `i=`, `u=`, `e=`, `p=`, `c=`, `b=`, `a=` (zero or more of each where all
 
 ---
 
+### M14 — ST 2110-40/41: ancillary data and fast metadata
+
+**Done when:** ST 2110-40 ancillary data flows and ST 2110-41 fast metadata flows validate
+correctly at the ST 2110 tier (and therefore at the IPMX tier).
+
+ST 2110-40 maps SMPTE ST 291-1 ancillary packets (captions, timecodes, VBI) to RTP using
+encoding name `smpte291` at 90 kHz (RFC 8331). ST 2110-41 carries fast metadata (subtitles,
+ad-insertion cues) using encoding name `ST2110-41/<rate>`.
+
+**New checks in `st2110.st2110`:**
+
+When the rtpmap encoding name is `smpte291` (ST 2110-40):
+
+- Clock rate must be 90000.
+- `fmtp` must include at least one `DID_SDID={0xHH,0xHH}` entry; each octet must be exactly
+  two hex digits.
+- `VPID_Code=<decimal>` is optional and accepted.
+
+When the rtpmap encoding name is `ST2110-41` (ST 2110-41):
+
+- `fmtp` must contain `SSN=ST2110-41:...`.
+- `fmtp` must contain at least one `DIT=<hex-list>` entry.
+
+**Tests (write first):**
+
+- Valid ST 2110-40 SDP (`smpte291/90000`, `DID_SDID={0x61,0x02}`) → success
+- ST 2110-40 fmtp missing `DID_SDID` → `nil, err` matching `"DID_SDID"`
+- ST 2110-40 `DID_SDID` with non-hex octet → `nil, err`
+- Valid ST 2110-41 SDP (`ST2110-41/90000`, `SSN=ST2110-41:2024; DIT=100`) → success
+- ST 2110-41 fmtp missing `SSN` → `nil, err` matching `"SSN"`
+- ST 2110-41 fmtp missing `DIT` → `nil, err` matching `"DIT"`
+
+**Spec references:**
+
+- RFC 8331: RTP Payload for SMPTE ST 291-1 Ancillary Data
+- SMPTE ST 2110-40:2023
+- SMPTE ST 2110-41:2024
+
+---
+
+### M15 — IPMX protocol extensions: HKEP, PEP, USB, FEC
+
+**Done when:** When HKEP, PEP, USB, and FEC extensions are present in an IPMX SDP, their
+representation is validated; malformed or inconsistent usage is rejected. Absence of any
+of these extensions is not an error.
+
+| Extension | Spec | SDP presence indicator |
+| --- | --- | --- |
+| HDCP Key Exchange (HKEP) | VSF TR-10-5 | `a=hkep` attribute |
+| Privacy Encryption Protocol (PEP) | VSF TR-10-13 | `a=pep` attribute |
+| USB transport | VSF TR-10-14 | `m=application … TCP usb` |
+| FEC (ST 2022-5/9) | ST 2110-10, RFC 5956 | `a=group:FEC`, repair `m=` blocks |
+
+**New checks in `ipmx.ipmx`:**
+
+- `a=hkep`: if present, validate attribute format per VSF TR-10-5.
+- `a=pep`: if present, validate attribute format per VSF TR-10-13.
+- USB flow (`m=application … TCP usb`): require `a=setup:passive` and `a=ipmx_bus_id`.
+  USB blocks bypass ST 2110 media-block validation (not RTP/AVP streams).
+- FEC (`a=group:FEC <src-id> <repair-id>`): each named flow must correspond to an existing
+  `m=` block; repair flows bypass ST 2110 media-block validation.
+
+**Open questions — resolve before writing tests:**
+
+1. Are HKEP and PEP mutually exclusive, or can both be present in one session?
+2. Confirm exact `a=hkep` and `a=pep` attribute value syntax from VSF TR-10-5/13.
+3. Does a USB `m=application` block require its own `a=extmap`, or does the session-level
+   extmap suffice for the IPMX `extmap` check?
+4. Per RFC 5956 and ST 2110-10: must FEC repair `m=` blocks be excluded from all ST 2110
+   attribute checks (ts-refclk, mediaclk, rtpmap, fmtp)?
+
+**Spec references:**
+
+- VSF TR-10-5 (2024): IPMX HDCP Key Exchange Protocol
+- VSF TR-10-13 (2024): IPMX Privacy Encryption Protocol
+- VSF TR-10-14: IPMX USB transport — AMWA BCP-007-02
+- RFC 5956: Forward Error Correction Grouping Semantics in SDP
+- SMPTE ST 2110-10: System timing and synchronization
+
+---
+
 ## Commit Gates
 
 Before any commit:
@@ -402,7 +483,7 @@ it is safe.**
 
 4. **`CHANGELOG.md`** — add under `[Unreleased]`:
 
-   ```
+   ```text
    - Changed: `doc:serialize()` renamed to `doc:to_sdp()`; old name removed
    ```
 
