@@ -207,5 +207,23 @@ describe("ST 2110 validation", function()
       assert.is_table(doc)
       assert.equal(false, doc:is_st2110())
     end)
+
+    it("accepts localmac ts-refclk (PTP is not required)", function()
+      local text = table.concat({
+        "v=0",
+        "o=- 1234567890 1 IN IP4 192.168.1.1",
+        "s=ST2110 Video",
+        "t=0 0",
+        "m=video 5000 RTP/AVP 96",
+        "c=IN IP4 239.100.0.1/64",
+        "a=rtpmap:96 raw/90000",
+        "a=fmtp:96 sampling=YCbCr-4:2:2; width=1920; height=1080; exactframerate=25; depth=10; colorimetry=BT709; PM=2110GPM; TP=2110TPN",
+        "a=mediaclk:direct=0",
+        "a=ts-refclk:localmac=AA-BB-CC-DD-EE-FF",
+      }, "\r\n")
+      local doc = sdp.parse(text)
+      assert.is_table(doc)
+      assert.equal(true, doc and doc:is_st2110())
+    end)
   end)
 end)

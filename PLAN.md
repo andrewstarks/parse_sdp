@@ -146,7 +146,7 @@ Covers: `i=`, `u=`, `e=`, `p=`, `c=`, `b=`, `a=` (zero or more of each where all
 - [x] `doc:is_st2110()` → bool
 - [x] Required checks:
   - At least one `m=` block
-  - `a=ts-refclk` present and format-valid
+  - `a=ts-refclk` present (session or per-media); clock source type not mandated — PTP is common but not required
   - `a=mediaclk` present
   - `a=rtpmap` with correct clock rate for media type
   - `a=fmtp` present; key=value pairs validated per sub-standard
@@ -159,13 +159,16 @@ Covers: `i=`, `u=`, `e=`, `p=`, `c=`, `b=`, `a=` (zero or more of each where all
 
 ---
 
-### M9 — IPMX validation
+### M9 — IPMX validation ✓
 
 **Done when:** `sdp.parse(text, "ipmx")` and `doc:validate("ipmx")` work correctly.
 
-- [ ] `lib/ipmx.lua`: validates IPMX-specific attributes (runs ST 2110 first)
-- [ ] `doc:is_ipmx()` → bool
-- [ ] Tests:
+- [x] `lib/ipmx.lua`: validates IPMX-specific attributes (runs ST 2110 first)
+- [x] `doc:is_ipmx()` → bool
+- [x] Note: PTP is **optional** in IPMX. `a=ts-refclk` presence is inherited from ST 2110 validation, but the clock source value (`ptp=`, `localmac=`, etc.) is never required to be PTP at either tier.
+- [x] Required checks (IPMX-specific, beyond ST 2110):
+  - `a=extmap` present with at least one extension URI
+- [x] Tests:
   - Valid IPMX SDP → success
   - ST 2110 SDP (non-IPMX) fails IPMX validate
   - Missing IPMX `a=extmap` → error

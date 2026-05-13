@@ -2,6 +2,7 @@ local grammar   = require("lib.grammar")
 local validate  = require("lib.validate")
 local serialize = require("lib.serialize")
 local st2110    = require("lib.st2110")
+local ipmx      = require("lib.ipmx")
 
 local M  = {}
 local mt = {}
@@ -11,6 +12,7 @@ function mt:validate(mode)
   mode = mode or "sdp"
   if mode == "sdp"    then return validate.sdp(self) end
   if mode == "st2110" then return st2110.st2110(self) end
+  if mode == "ipmx"   then return ipmx.ipmx(self) end
   return nil, { message = "unknown mode: " .. tostring(mode), line = 0, col = 0, context = "" }
 end
 
@@ -27,7 +29,7 @@ function mt:is_st2110()
 end
 
 function mt:is_ipmx()
-  return false  -- implemented in M9
+  return ipmx.ipmx(self) == true
 end
 
 -- ── Helpers ───────────────────────────────────────────────────────────────────
@@ -248,6 +250,9 @@ function M.parse(text, mode)
 
   if mode == "st2110" then
     local ok, ve = st2110.st2110(doc)
+    if not ok then return nil, ve end
+  elseif mode == "ipmx" then
+    local ok, ve = ipmx.ipmx(doc)
     if not ok then return nil, ve end
   end
 

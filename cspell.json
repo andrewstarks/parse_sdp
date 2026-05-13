@@ -13,6 +13,7 @@
     "gmid",
     "ipmx",
     "IPMX",
+    "localmac",
     "lpeg",
     "LPEG",
     "luarocks",
