@@ -62,16 +62,16 @@ Each milestone: write tests → confirm they fail → implement → confirm they
 
 ---
 
-### M3 — Required session fields
+### M3 — Required session fields ✓
 
 **Done when:** `sdp.parse` returns a doc table for minimal valid SDP; returns `nil, err` for anything invalid.
 
 Covers: `v=`, `o=`, `s=`, `t=` in required order.
 
-- [ ] `lib/grammar.lua`: patterns for each field value format
-- [ ] `parse_sdp.lua`: `parse(text)` wires tokenizer → field parsers → table
-- [ ] Error table shape: `{ message, line, col, context }`
-- [ ] Tests:
+- [x] `lib/grammar.lua`: patterns for each field value format
+- [x] `parse_sdp.lua`: `parse(text)` wires tokenizer → field parsers → table
+- [x] Error table shape: `{ message, line, col, context }`
+- [x] Tests:
   - Minimal valid SDP (`v o s t`) → doc table
   - Missing `v=` → error at line 1
   - Wrong order (e.g. `s=` before `o=`) → error with correct position
