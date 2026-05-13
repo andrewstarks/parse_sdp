@@ -812,3 +812,111 @@ describe("doc:serialize() (M7)", function()
     assert.same(doc1, doc2)
   end)
 end)
+
+-- ── M10: to_json ──────────────────────────────────────────────────────────────
+
+describe("to_json", function()
+  local sdp = require("parse_sdp")
+
+  local full_text = table.concat({
+    "v=0",
+    "o=- 1234567890 1 IN IP4 192.168.1.1",
+    "s=Test Session",
+    "t=0 0",
+    "a=tool:test",
+    "m=video 5000 RTP/AVP 96",
+    "c=IN IP4 239.100.0.1",
+    "a=rtpmap:96 H264/90000",
+  }, "\r\n") .. "\r\n"
+
+  it("to_json method exists on parsed doc", function()
+    local doc = sdp.parse(full_text)
+    assert.is_table(doc)
+    assert.is_function(doc.to_json)
+  end)
+
+  it("returns a string", function()
+    local doc = sdp.parse(full_text)
+    local out = doc:to_json()
+    assert.is_string(out)
+  end)
+
+  it("output is valid JSON (parses back without error)", function()
+    local dkjson = require("dkjson")
+    local doc = sdp.parse(full_text)
+    local out = doc:to_json()
+    local decoded, _, err = dkjson.decode(out)
+    assert.is_nil(err)
+    assert.is_table(decoded)
+  end)
+
+  it("JSON contains top-level doc fields (version, origin, session, media)", function()
+    local dkjson = require("dkjson")
+    local doc = sdp.parse(full_text)
+    local decoded = dkjson.decode(doc:to_json())
+    assert.equal("0", decoded.version)
+    assert.is_table(decoded.origin)
+    assert.is_table(decoded.session)
+    assert.is_table(decoded.media)
+  end)
+
+  it("JSON origin fields are correct", function()
+    local dkjson = require("dkjson")
+    local doc = sdp.parse(full_text)
+    local decoded = dkjson.decode(doc:to_json())
+    assert.equal("192.168.1.1", decoded.origin.unicast_address)
+    assert.equal("IN",          decoded.origin.net_type)
+    assert.equal("IP4",         decoded.origin.addr_type)
+  end)
+
+  it("JSON session attributes array is present", function()
+    local dkjson = require("dkjson")
+    local doc = sdp.parse(full_text)
+    local decoded = dkjson.decode(doc:to_json())
+    assert.is_table(decoded.session.attributes)
+    assert.equal(1, #decoded.session.attributes)
+    assert.equal("tool", decoded.session.attributes[1].name)
+  end)
+
+  it("JSON media array has correct entry", function()
+    local dkjson = require("dkjson")
+    local doc = sdp.parse(full_text)
+    local decoded = dkjson.decode(doc:to_json())
+    assert.equal(1, #decoded.media)
+    assert.equal("video", decoded.media[1].media)
+    assert.equal(5000,    decoded.media[1].port)
+  end)
+
+  it("sdp.new({}) has to_json method", function()
+    local doc = sdp.new({})
+    assert.is_function(doc.to_json)
+  end)
+end)
+
+describe("to_sdp", function()
+  local sdp = require("parse_sdp")
+
+  local text = table.concat({
+    "v=0",
+    "o=- 1234567890 1 IN IP4 192.168.1.1",
+    "s=Test Session",
+    "t=0 0",
+  }, "\r\n") .. "\r\n"
+
+  it("to_sdp method exists on parsed doc", function()
+    local doc = sdp.parse(text)
+    assert.is_table(doc)
+    assert.is_function(doc.to_sdp)
+  end)
+
+  it("returns same output as serialize", function()
+    local doc = sdp.parse(text)
+    assert.is_table(doc)
+    assert.equal(doc:serialize(), doc:to_sdp())
+  end)
+
+  it("sdp.new({}) has to_sdp method", function()
+    local doc = sdp.new({})
+    assert.is_function(doc.to_sdp)
+  end)
+end)

@@ -3,6 +3,7 @@ local validate  = require("lib.validate")
 local serialize = require("lib.serialize")
 local st2110    = require("lib.st2110")
 local ipmx      = require("lib.ipmx")
+local dkjson    = require("dkjson")
 
 local M  = {}
 local mt = {}
@@ -21,6 +22,14 @@ function mt:is_sdp()
 end
 
 function mt:serialize()
+  return serialize.serialize(self)
+end
+
+function mt:to_json()
+  return dkjson.encode(self)
+end
+
+function mt:to_sdp()
   return serialize.serialize(self)
 end
 

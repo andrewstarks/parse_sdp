@@ -90,6 +90,9 @@ Covers: `i=`, `u=`, `e=`, `p=`, `c=`, `b=`, `a=` (zero or more of each where all
   - Multiple `e=`, `p=`, `b=`, `a=` → arrays in correct order
   - `c=` with IPv4 and IPv6 addresses
   - `b=` with `AS:`, `CT:`, `X-` prefixes
+- [ ] Tests (rejection — grammar already enforces these, tests would immediately pass):
+  - `c=OUT IP4 127.0.0.1` → rejected (bad nettype)
+  - `c=IN IP9 127.0.0.1` → rejected (bad addrtype)
 
 ---
 
@@ -105,6 +108,9 @@ Covers: `i=`, `u=`, `e=`, `p=`, `c=`, `b=`, `a=` (zero or more of each where all
   - Two media blocks (video + audio)
   - `m=` with port count (`/2`)
   - Missing required `m=` field → error
+- [ ] Tests (rejection — same grammar as session-level `c=`, would immediately pass):
+  - Per-media `c=` with bad nettype → rejected
+  - Per-media `c=` with bad addrtype → rejected
 
 ---
 
@@ -140,22 +146,38 @@ Covers: `i=`, `u=`, `e=`, `p=`, `c=`, `b=`, `a=` (zero or more of each where all
 
 ### M8 — ST 2110 validation ✓
 
-**Done when:** `sdp.parse(text, "st2110")` and `doc:validate("st2110")` work correctly.
+**Done when:** `sdp.parse(text, "st2110")` and `doc:validate("st2110")` work correctly, including value format checks.
 
 - [x] `lib/st2110.lua`: validates required attributes on parsed doc
 - [x] `doc:is_st2110()` → bool
-- [x] Required checks:
+- [x] Presence checks:
   - At least one `m=` block
-  - `a=ts-refclk` present (session or per-media); clock source type not mandated — PTP is common but not required
-  - `a=mediaclk` present
-  - `a=rtpmap` with correct clock rate for media type
-  - `a=fmtp` present; key=value pairs validated per sub-standard
-- [x] Tests:
+  - `a=ts-refclk` present (session or per-media)
+  - `a=mediaclk` present (per-media)
+  - `a=rtpmap` present (per-media); clock rate = 90000 for video
+  - `a=fmtp` present (per-media); `sampling` required for video, `channel-order` required for audio
+- [x] Value format checks (presence is necessary but not sufficient):
+  - `a=ts-refclk` value must be a recognized clock source; PTP is not required — all of these are valid:
+    - `ptp=<version>:<gmid>[:<domain>]` where GMID is 8 hex octets (`HH-HH-HH-HH-HH-HH-HH-HH`)
+    - `localmac=<mac>` where MAC is 6 hex octets (`HH-HH-HH-HH-HH-HH`)
+    - `gps`, `gal`, `glonass` (bare tokens)
+    - `ntp=<address>` (non-empty address)
+    - Any unrecognized format → error
+  - `a=mediaclk` value must be `direct=<integer>` or `sender`; any other value → error
+- [x] Tests (presence and media-type logic):
   - Valid ST 2110-20 (video) SDP → success
   - Valid ST 2110-30 (audio) SDP → success
   - Missing `a=ts-refclk` → error with `field_path` and `spec_ref`
   - Invalid `fmtp` (missing `sampling`) → error
   - Generic valid SDP fails ST 2110 validate
+  - `localmac=` ts-refclk accepted (PTP not required)
+- [x] Tests (value format):
+  - `a=ts-refclk:garbage` → error
+  - `a=ts-refclk:ptp=IEEE1588-2008` (no GMID) → error
+  - `a=ts-refclk:localmac=GG-BB-CC-DD-EE-FF` (non-hex octet) → error
+  - `a=ts-refclk:localmac=AA-BB-CC` (wrong octet count) → error
+  - `a=mediaclk:garbage` → error
+  - `a=mediaclk:direct=notanumber` → error
 
 ---
 
@@ -175,15 +197,17 @@ Covers: `i=`, `u=`, `e=`, `p=`, `c=`, `b=`, `a=` (zero or more of each where all
 
 ---
 
-### M10 — JSON output
+### M10 — JSON output ✓
 
 **Done when:** `doc:to_json()` returns a valid JSON string.
 
-- [ ] Wire dkjson in `parse_sdp.lua`
-- [ ] `doc:to_json()` method
-- [ ] Tests:
+- [x] Wire dkjson in `parse_sdp.lua`
+- [x] `doc:to_json()` method
+- [x] `doc:to_sdp()` alias for `serialize` (symmetric pair with `to_json`)
+- [x] Tests:
   - `to_json()` output is valid JSON (parse it back)
   - All doc fields present in JSON output
+  - `to_sdp()` returns same output as `serialize`
 
 ---
 
