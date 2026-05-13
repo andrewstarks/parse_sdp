@@ -67,12 +67,12 @@ docker compose run --rm test lua examples/examples.lua
 
 ```sh
 # SDP → JSON
-parse_sdp parse session.sdp
-parse_sdp parse --mode st2110 --pretty session.sdp
-cat session.sdp | parse_sdp parse --mode ipmx
+parse_sdp to_json session.sdp
+parse_sdp to_json --mode st2110 --pretty session.sdp
+cat session.sdp | parse_sdp to_json --mode ipmx
 
 # JSON → SDP
-parse_sdp serialize doc.json > out.sdp
+parse_sdp to_sdp doc.json > out.sdp
 ```
 
 Exit code `0` on success, `1` on error (detail on stderr as JSON).

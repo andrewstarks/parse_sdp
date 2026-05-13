@@ -9,6 +9,11 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 
+### Changed
+
+- CLI subcommands renamed: `parse` → `to_json`, `serialize` → `to_sdp` — names now
+  mirror the doc methods `doc:to_json()` and `doc:to_sdp()`
+
 ### Changed (code quality — DRY pass)
 
 - **`rtpmap_parse`** replaces the two separate `rtpmap_clock_rate` / `rtpmap_encoding`

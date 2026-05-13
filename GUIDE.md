@@ -259,12 +259,12 @@ parse_sdp <subcommand> [options] [file]
 
 If `file` is omitted, reads from stdin.
 
-### `parse_sdp parse`
+### `parse_sdp to_json`
 
 Parse and validate an SDP file. Outputs JSON to stdout.
 
 ```text
-parse_sdp parse [--mode sdp|st2110|ipmx] [--pretty] [file]
+parse_sdp to_json [--mode sdp|st2110|ipmx] [--pretty] [file]
 ```
 
 | Flag | Description |
@@ -283,45 +283,35 @@ On success, prints a JSON object to stdout:
 }
 ```
 
-On failure, prints a JSON error to stderr and exits `1`:
+On failure, prints an error message to stderr and exits `1`.
 
-```json
-{
-  "error": true,
-  "message": "missing required field 't='",
-  "line": 4,
-  "col": 1,
-  "context": "a=recvonly"
-}
-```
-
-### `parse_sdp serialize`
+### `parse_sdp to_sdp`
 
 Convert a JSON doc back to SDP text. Outputs to stdout.
 
 ```text
-parse_sdp serialize [file.json]
+parse_sdp to_sdp [file.json]
 ```
 
 ```sh
-parse_sdp serialize doc.json > session.sdp
-cat doc.json | parse_sdp serialize
+parse_sdp to_sdp doc.json > session.sdp
+cat doc.json | parse_sdp to_sdp
 ```
 
 ### Examples
 
 ```sh
 # Validate a file as generic SDP
-parse_sdp parse session.sdp
+parse_sdp to_json session.sdp
 
 # Validate as ST 2110 with pretty JSON output
-parse_sdp parse --mode st2110 --pretty session.sdp
+parse_sdp to_json --mode st2110 --pretty session.sdp
 
 # Pipe-friendly
-cat session.sdp | parse_sdp parse --mode ipmx
+cat session.sdp | parse_sdp to_json --mode ipmx
 
 # Round-trip: SDP → JSON → SDP
-parse_sdp parse session.sdp | parse_sdp serialize > out.sdp
+parse_sdp to_json session.sdp | parse_sdp to_sdp > out.sdp
 ```
 
 ---

@@ -32,12 +32,12 @@ local function run(args_str, stdin_text)
   return stdout, stderr, code or 0
 end
 
--- ── parse subcommand ──────────────────────────────────────────────────────────
+-- ── to_json subcommand ───────────────────────────────────────────────────────
 
-describe("CLI: parse subcommand", function()
+describe("CLI: to_json subcommand", function()
 
   it("parses a valid SDP file → JSON on stdout, exit 0", function()
-    local stdout, stderr, code = run("parse spec/fixtures/minimal.sdp")
+    local stdout, stderr, code = run("to_json spec/fixtures/minimal.sdp")
     assert.equal(0, code)
     assert.equal("", stderr)
     local decoded = dkjson.decode(stdout)
@@ -47,7 +47,7 @@ describe("CLI: parse subcommand", function()
 
   it("reads from stdin when no file given → JSON on stdout, exit 0", function()
     local sdp_text = "v=0\r\no=- 1 1 IN IP4 127.0.0.1\r\ns=Test\r\nt=0 0\r\n"
-    local stdout, stderr, code = run("parse", sdp_text)
+    local stdout, stderr, code = run("to_json", sdp_text)
     assert.equal(0, code)
     assert.equal("", stderr)
     local decoded = dkjson.decode(stdout)
@@ -55,28 +55,28 @@ describe("CLI: parse subcommand", function()
   end)
 
   it("invalid SDP → human-readable error on stderr, exit 1", function()
-    local stdout, stderr, code = run("parse spec/fixtures/invalid.sdp")
+    local stdout, stderr, code = run("to_json spec/fixtures/invalid.sdp")
     assert.equal(1, code)
     assert.equal("", stdout)
     assert.truthy(stderr:match("^error:"))
   end)
 
   it("--mode st2110 with valid ST 2110 file → exit 0", function()
-    local stdout, _, code = run("parse --mode st2110 spec/fixtures/st2110_video.sdp")
+    local stdout, _, code = run("to_json --mode st2110 spec/fixtures/st2110_video.sdp")
     assert.equal(0, code)
     local decoded = dkjson.decode(stdout)
     assert.is_table(decoded)
   end)
 
   it("--mode st2110 with plain SDP → human-readable error on stderr, exit 1", function()
-    local stdout, stderr, code = run("parse --mode st2110 spec/fixtures/minimal.sdp")
+    local stdout, stderr, code = run("to_json --mode st2110 spec/fixtures/minimal.sdp")
     assert.equal(1, code)
     assert.equal("", stdout)
     assert.truthy(stderr:match("^error:"))
   end)
 
   it("--pretty produces indented JSON", function()
-    local stdout, _, code = run("parse --pretty spec/fixtures/minimal.sdp")
+    local stdout, _, code = run("to_json --pretty spec/fixtures/minimal.sdp")
     assert.equal(0, code)
     assert.truthy(stdout:find("\n", 2, true))
   end)
@@ -87,7 +87,7 @@ describe("CLI: parse subcommand", function()
   end)
 
   it("missing file → human-readable error on stderr, exit 1", function()
-    local stdout, stderr, code = run("parse spec/fixtures/no_such_file.sdp")
+    local stdout, stderr, code = run("to_json spec/fixtures/no_such_file.sdp")
     assert.equal(1, code)
     assert.equal("", stdout)
     assert.truthy(stderr:match("^error:"))
@@ -99,21 +99,21 @@ describe("CLI: parse subcommand", function()
     assert.truthy(stdout:find("parse_sdp", 1, true))
   end)
 
-  it("parse --help exits 0 and mentions --mode", function()
-    local stdout, _, code = run("parse --help")
+  it("to_json --help exits 0 and mentions --mode", function()
+    local stdout, _, code = run("to_json --help")
     assert.equal(0, code)
     assert.truthy(stdout:find("--mode", 1, true))
   end)
 
 end)
 
--- ── serialize subcommand ──────────────────────────────────────────────────────
+-- ── to_sdp subcommand ────────────────────────────────────────────────────────
 
-describe("CLI: serialize subcommand", function()
+describe("CLI: to_sdp subcommand", function()
 
   -- Parse a fixture to JSON, return the JSON string.
   local function fixture_json(sdp_file)
-    local h = io.popen("lua parse_sdp.lua parse " .. sdp_file, "r")
+    local h = io.popen("lua parse_sdp.lua to_json " .. sdp_file, "r")
     local json = h:read("*a")
     h:close()
     return json
@@ -121,7 +121,7 @@ describe("CLI: serialize subcommand", function()
 
   it("serializes JSON from stdin → SDP text on stdout, exit 0", function()
     local json = fixture_json("spec/fixtures/minimal.sdp")
-    local stdout, stderr, code = run("serialize", json)
+    local stdout, stderr, code = run("to_sdp", json)
     assert.equal(0, code)
     assert.equal("", stderr)
     assert.truthy(stdout:find("v=0", 1, true))
@@ -134,7 +134,7 @@ describe("CLI: serialize subcommand", function()
     local f = assert(io.open(tmp, "w"))
     f:write(json)
     f:close()
-    local stdout, stderr, code = run("serialize " .. tmp)
+    local stdout, stderr, code = run("to_sdp " .. tmp)
     os.remove(tmp)
     assert.equal(0, code)
     assert.equal("", stderr)
@@ -142,22 +142,22 @@ describe("CLI: serialize subcommand", function()
   end)
 
   it("invalid JSON → human-readable error on stderr, exit 1", function()
-    local stdout, stderr, code = run("serialize", "not { valid } json")
+    local stdout, stderr, code = run("to_sdp", "not { valid } json")
     assert.equal(1, code)
     assert.equal("", stdout)
     assert.truthy(stderr:match("^error:"))
   end)
 
   it("missing file → human-readable error on stderr, exit 1", function()
-    local stdout, stderr, code = run("serialize spec/fixtures/no_such.json")
+    local stdout, stderr, code = run("to_sdp spec/fixtures/no_such.json")
     assert.equal(1, code)
     assert.equal("", stdout)
     assert.truthy(stderr:match("^error:"))
   end)
 
-  it("round-trip: parse → serialize produces re-parseable SDP", function()
+  it("round-trip: to_json → to_sdp produces re-parseable SDP", function()
     local json = fixture_json("spec/fixtures/minimal.sdp")
-    local stdout, _, code = run("serialize", json)
+    local stdout, _, code = run("to_sdp", json)
     assert.equal(0, code)
     local sdp = require("parse_sdp")
     local doc = sdp.parse(stdout)

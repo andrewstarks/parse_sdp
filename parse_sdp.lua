@@ -1212,24 +1212,24 @@ if arg and arg[0] and arg[0]:match("parse_sdp") then
   local ap = argparse("parse_sdp", "Parse, validate, and serialize SDP (RFC 4566 / ST 2110 / IPMX).")
   ap:epilog(table.concat({
     "Examples:",
-    "  parse_sdp parse session.sdp",
-    "  parse_sdp parse --mode st2110 --pretty session.sdp",
-    "  parse_sdp parse < session.sdp | parse_sdp serialize",
-    "  parse_sdp serialize session.json",
+    "  parse_sdp to_json session.sdp",
+    "  parse_sdp to_json --mode st2110 --pretty session.sdp",
+    "  parse_sdp to_json < session.sdp | parse_sdp to_sdp",
+    "  parse_sdp to_sdp session.json",
   }, "\n"))
   ap:command_target("command")
 
-  local cmd_parse = ap:command("parse", "Parse and validate an SDP file; output JSON.")
+  local cmd_parse = ap:command("to_json", "Parse and validate an SDP file; output JSON.")
   cmd_parse:argument("file", "Path to .sdp file. Reads stdin if omitted."):args("?")
   cmd_parse:option("--mode", "Validation tier: 'st2110' or 'ipmx'. Defaults to RFC 4566 only.")
   cmd_parse:flag("--pretty", "Pretty-print JSON output with indentation.")
 
-  local cmd_ser = ap:command("serialize", "Convert a JSON SDP document back to SDP text.")
+  local cmd_ser = ap:command("to_sdp", "Convert a JSON SDP document back to SDP text.")
   cmd_ser:argument("file", "Path to .json file. Reads stdin if omitted."):args("?")
 
   local parsed = ap:parse()
 
-  if parsed.command == "parse" then
+  if parsed.command == "to_json" then
     local text = read_input(parsed.file)
     local doc, perr = M.parse(text, parsed.mode)
     if not doc then die(perr) end
@@ -1237,7 +1237,7 @@ if arg and arg[0] and arg[0]:match("parse_sdp") then
     io.write(dkjson.encode(doc, encode_opts) .. "\n")
     os.exit(0)
 
-  elseif parsed.command == "serialize" then
+  elseif parsed.command == "to_sdp" then
     local json_text = read_input(parsed.file)
     local tbl, _, jsonerr = dkjson.decode(json_text)
     if not tbl then
@@ -1246,7 +1246,7 @@ if arg and arg[0] and arg[0]:match("parse_sdp") then
     local doc = M.new(tbl)
     local ok, result = pcall(function() return doc:to_sdp() end)
     if not ok then
-      die(errors.new("serialize error: " .. tostring(result)))
+      die(errors.new("to_sdp error: " .. tostring(result)))
     end
     io.write(result)
     os.exit(0)
