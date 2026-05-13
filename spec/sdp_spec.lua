@@ -451,3 +451,161 @@ describe("sdp.parse — optional session fields (M4)", function()
     assert.is_nil(doc.session.connection)
   end)
 end)
+
+describe("grammar.parse_media", function()
+  local grammar = require("lib.grammar")
+
+  it("parses a minimal m= value", function()
+    local m = grammar.parse_media("video 49170 RTP/AVP 96")
+    assert.is_table(m)
+    assert.equal("video",   m.media)
+    assert.equal(49170,     m.port)
+    assert.is_nil(m.port_count)
+    assert.equal("RTP/AVP", m.proto)
+    assert.equal(1,         #m.fmts)
+    assert.equal("96",      m.fmts[1])
+  end)
+
+  it("parses m= with port count", function()
+    local m = grammar.parse_media("video 49170/2 RTP/AVP 96")
+    assert.is_table(m)
+    assert.equal(49170, m.port)
+    assert.equal(2,     m.port_count)
+  end)
+
+  it("parses multiple fmt tokens", function()
+    local m = grammar.parse_media("video 49170 RTP/AVP 96 97 98")
+    assert.is_table(m)
+    assert.equal(3,    #m.fmts)
+    assert.equal("96", m.fmts[1])
+    assert.equal("97", m.fmts[2])
+    assert.equal("98", m.fmts[3])
+  end)
+
+  it("rejects value missing port/proto/fmt", function()
+    local m, pos = grammar.parse_media("audio")
+    assert.is_nil(m)
+    assert.is_number(pos)
+  end)
+
+  it("rejects value with non-numeric port", function()
+    local m, pos = grammar.parse_media("audio abc RTP/AVP 0")
+    assert.is_nil(m)
+    assert.is_number(pos)
+  end)
+end)
+
+describe("sdp.parse — media blocks (M5)", function()
+  local sdp = require("parse_sdp")
+
+  local base = {
+    "v=0",
+    "o=- 1 1 IN IP4 127.0.0.1",
+    "s=Test",
+    "t=0 0",
+  }
+
+  local function make(media_lines)
+    local lines = {}
+    for _, l in ipairs(base) do lines[#lines + 1] = l end
+    for _, l in ipairs(media_lines or {}) do lines[#lines + 1] = l end
+    return table.concat(lines, "\r\n") .. "\r\n"
+  end
+
+  it("produces an empty media array when no m= blocks are present", function()
+    local doc, err = sdp.parse(make())
+    assert.is_nil(err)
+    assert.is_table(doc.media)
+    assert.equal(0, #doc.media)
+  end)
+
+  it("parses one video m= block with an attribute", function()
+    local doc, err = sdp.parse(make({
+      "m=video 49170 RTP/AVP 96",
+      "a=rtpmap:96 H264/90000",
+    }))
+    assert.is_nil(err)
+    assert.equal(1,               #doc.media)
+    local m = doc.media[1]
+    assert.equal("video",         m.media)
+    assert.equal(49170,           m.port)
+    assert.is_nil(m.port_count)
+    assert.equal("RTP/AVP",       m.proto)
+    assert.equal(1,               #m.fmts)
+    assert.equal("96",            m.fmts[1])
+    assert.equal(1,               #m.attributes)
+    assert.equal("rtpmap",        m.attributes[1].name)
+    assert.equal("96 H264/90000", m.attributes[1].value)
+  end)
+
+  it("parses two media blocks in order", function()
+    local doc, err = sdp.parse(make({
+      "m=video 49170 RTP/AVP 96",
+      "a=rtpmap:96 H264/90000",
+      "m=audio 49172 RTP/AVP 0",
+      "a=rtpmap:0 PCMU/8000",
+    }))
+    assert.is_nil(err)
+    assert.equal(2,       #doc.media)
+    assert.equal("video", doc.media[1].media)
+    assert.equal(49170,   doc.media[1].port)
+    assert.equal("audio", doc.media[2].media)
+    assert.equal(49172,   doc.media[2].port)
+  end)
+
+  it("parses m= with port count (/2)", function()
+    local doc, err = sdp.parse(make({
+      "m=video 49170/2 RTP/AVP 96",
+    }))
+    assert.is_nil(err)
+    assert.equal(49170, doc.media[1].port)
+    assert.equal(2,     doc.media[1].port_count)
+  end)
+
+  it("parses multiple fmt tokens in a single m= block", function()
+    local doc, err = sdp.parse(make({
+      "m=video 49170 RTP/AVP 96 97 98",
+    }))
+    assert.is_nil(err)
+    assert.equal(3,    #doc.media[1].fmts)
+    assert.equal("96", doc.media[1].fmts[1])
+    assert.equal("97", doc.media[1].fmts[2])
+    assert.equal("98", doc.media[1].fmts[3])
+  end)
+
+  it("parses per-media i= and c= fields", function()
+    local doc, err = sdp.parse(make({
+      "m=video 49170 RTP/AVP 96",
+      "i=A video stream",
+      "c=IN IP4 224.2.1.1",
+    }))
+    assert.is_nil(err)
+    assert.equal("A video stream", doc.media[1].info)
+    assert.is_table(doc.media[1].connection)
+    assert.equal("224.2.1.1",      doc.media[1].connection.address)
+  end)
+
+  it("parses per-media b= and a= fields", function()
+    local doc, err = sdp.parse(make({
+      "m=video 49170 RTP/AVP 96",
+      "b=AS:1000",
+      "a=recvonly",
+    }))
+    assert.is_nil(err)
+    assert.equal(1,        #doc.media[1].bandwidths)
+    assert.equal("AS",     doc.media[1].bandwidths[1].type)
+    assert.equal(1000,     doc.media[1].bandwidths[1].value)
+    assert.equal(1,        #doc.media[1].attributes)
+    assert.equal("recvonly", doc.media[1].attributes[1].name)
+  end)
+
+  it("returns nil, err for a malformed m= value", function()
+    local doc, err = sdp.parse(make({
+      "m=audio",
+    }))
+    assert.is_nil(doc)
+    assert.is_table(err)
+    assert.is_string(err.message)
+    assert.is_number(err.line)
+  end)
+end)

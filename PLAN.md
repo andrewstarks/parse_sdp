@@ -93,14 +93,14 @@ Covers: `i=`, `u=`, `e=`, `p=`, `c=`, `b=`, `a=` (zero or more of each where all
 
 ---
 
-### M5 — Media blocks
+### M5 — Media blocks ✓
 
 **Done when:** `sdp.parse` handles one or more `m=` blocks with their per-media fields.
 
-- [ ] `m=` line: type, port, `/count`, proto, format list
-- [ ] Per-media: `i=`, `c=`, `b=`, `a=` (same rules as session level)
-- [ ] Multiple media blocks in sequence
-- [ ] Tests:
+- [x] `m=` line: type, port, `/count`, proto, format list
+- [x] Per-media: `i=`, `c=`, `b=`, `a=` (same rules as session level)
+- [x] Multiple media blocks in sequence
+- [x] Tests:
   - One video `m=` block with attributes
   - Two media blocks (video + audio)
   - `m=` with port count (`/2`)

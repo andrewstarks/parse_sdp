@@ -1,5 +1,5 @@
 local lpeg = require("lpeg")
-local P, R, C, Cp = lpeg.P, lpeg.R, lpeg.C, lpeg.Cp
+local P, R, C, Cp, Ct = lpeg.P, lpeg.R, lpeg.C, lpeg.Cp, lpeg.Ct
 
 local M = {}
 
@@ -135,6 +135,32 @@ function M.parse_attribute(s)
   local flag = attr_k_pat:match(s)
   if flag then return { name = flag } end
   return nil, 1
+end
+
+-- m= : <media> SP <port>[/<portcount>] SP <proto> SP <fmt-list>
+-- port_field captures the port token whole (e.g. "49170" or "49170/2"); split in Lua.
+local media_pat =
+  C(token) * SP *
+  C(token) * SP *
+  C(token) * SP *
+  Ct(C(token) * (SP * C(token)) ^ 0) *
+  -P(1)
+
+function M.parse_media(s)
+  local mtype, port_field, proto, fmts = media_pat:match(s)
+  if not mtype then return nil, 1 end
+  local port_str, count_str = port_field:match("^(%d+)/(%d+)$")
+  if not port_str then
+    port_str = port_field:match("^(%d+)$")
+  end
+  if not port_str then return nil, 1 end
+  return {
+    media      = mtype,
+    port       = tonumber(port_str),
+    port_count = count_str and tonumber(count_str) or nil,
+    proto      = proto,
+    fmts       = fmts,
+  }
 end
 
 return M

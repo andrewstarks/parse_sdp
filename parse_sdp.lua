@@ -162,6 +162,47 @@ function M.parse(text, _mode)
     pos = pos + 1
   end
 
+  -- zero or more m= blocks, each with optional per-media fields
+  local media = {}
+  while pos <= n and peek_type(lines, pos) == "m" do
+    local m
+    m, e = parse_required(lines, pos, "m", grammar.parse_media)
+    if not m then return nil, e end
+    pos = pos + 1
+
+    if pos <= n and peek_type(lines, pos) == "i" then
+      m.info, e = parse_required(lines, pos, "i", grammar.parse_info)
+      if not m.info then return nil, e end
+      pos = pos + 1
+    end
+
+    if pos <= n and peek_type(lines, pos) == "c" then
+      m.connection, e = parse_required(lines, pos, "c", grammar.parse_connection)
+      if not m.connection then return nil, e end
+      pos = pos + 1
+    end
+
+    m.bandwidths = {}
+    while pos <= n and peek_type(lines, pos) == "b" do
+      local v
+      v, e = parse_required(lines, pos, "b", grammar.parse_bandwidth)
+      if not v then return nil, e end
+      m.bandwidths[#m.bandwidths + 1] = v
+      pos = pos + 1
+    end
+
+    m.attributes = {}
+    while pos <= n and peek_type(lines, pos) == "a" do
+      local v
+      v, e = parse_required(lines, pos, "a", grammar.parse_attribute)
+      if not v then return nil, e end
+      m.attributes[#m.attributes + 1] = v
+      pos = pos + 1
+    end
+
+    media[#media + 1] = m
+  end
+
   return setmetatable({
     version = version,
     origin  = origin,
@@ -176,6 +217,7 @@ function M.parse(text, _mode)
       timing      = timing,
       attributes  = attributes,
     },
+    media = media,
   }, mt)
 end
 

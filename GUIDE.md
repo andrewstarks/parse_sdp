@@ -356,17 +356,17 @@ parse_sdp parse session.sdp | parse_sdp serialize > out.sdp
 
   media = {                        -- one entry per m= block
     {
-      type       = "video",
-      port       = 5004,
-      port_count = nil,            -- /count suffix, if present
-      proto      = "RTP/AVP",
-      formats    = { "96" },
+      media      = "video",        -- m=  media type
+      port       = 5004,           -- m=  port
+      port_count = nil,            -- m=  /count suffix, if present
+      proto      = "RTP/AVP",      -- m=  transport protocol
+      fmts       = { "96" },       -- m=  fmt list (array of strings)
       info       = nil,            -- i=  (optional)
       connection = nil,            -- c=  (optional)
-      bandwidth  = {},             -- b=  (array)
+      bandwidths = {},             -- b=  (array, zero or more)
       attributes = {               -- a=  (array, preserves order)
-        { key = "rtpmap", value = "96 raw/90000" },
-        { key = "fmtp",   value = "96 sampling=YCbCr-4:2:2; width=1920; ..." },
+        { name = "rtpmap", value = "96 raw/90000" },
+        { name = "fmtp",   value = "96 sampling=YCbCr-4:2:2; width=1920; ..." },
       },
     },
   },
