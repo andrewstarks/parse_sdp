@@ -79,13 +79,13 @@ Covers: `v=`, `o=`, `s=`, `t=` in required order.
 
 ---
 
-### M4 — Optional session fields
+### M4 — Optional session fields ✓
 
 **Done when:** All optional session-level fields parse correctly.
 
 Covers: `i=`, `u=`, `e=`, `p=`, `c=`, `b=`, `a=` (zero or more of each where allowed).
 
-- [ ] Tests:
+- [x] Tests:
   - SDP with every optional field present → correct table
   - Multiple `e=`, `p=`, `b=`, `a=` → arrays in correct order
   - `c=` with IPv4 and IPv6 addresses

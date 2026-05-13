@@ -64,32 +64,117 @@ local function parse_required(lines, pos, type_char, parse_value)
   return parsed
 end
 
+local function peek_type(lines, pos)
+  local t = grammar.tokenize_line(lines[pos])
+  return t
+end
+
 -- ── Public API ────────────────────────────────────────────────────────────────
 
 function M.parse(text, _mode)
   local lines = split_lines(text)
+  local n     = #lines
+  local pos   = 1
+  local e
 
-  local version, e = parse_required(lines, 1, "v", grammar.parse_version)
+  local version
+  version, e = parse_required(lines, pos, "v", grammar.parse_version)
   if not version then return nil, e end
+  pos = pos + 1
 
   local origin
-  origin, e = parse_required(lines, 2, "o", grammar.parse_origin)
+  origin, e = parse_required(lines, pos, "o", grammar.parse_origin)
   if not origin then return nil, e end
+  pos = pos + 1
 
   local session_name
-  session_name, e = parse_required(lines, 3, "s", grammar.parse_session_name)
+  session_name, e = parse_required(lines, pos, "s", grammar.parse_session_name)
   if not session_name then return nil, e end
+  pos = pos + 1
 
+  -- optional i=
+  local info
+  if pos <= n and peek_type(lines, pos) == "i" then
+    info, e = parse_required(lines, pos, "i", grammar.parse_info)
+    if not info then return nil, e end
+    pos = pos + 1
+  end
+
+  -- optional u=
+  local uri
+  if pos <= n and peek_type(lines, pos) == "u" then
+    uri, e = parse_required(lines, pos, "u", grammar.parse_uri)
+    if not uri then return nil, e end
+    pos = pos + 1
+  end
+
+  -- zero or more e=
+  local emails = {}
+  while pos <= n and peek_type(lines, pos) == "e" do
+    local v
+    v, e = parse_required(lines, pos, "e", grammar.parse_email)
+    if not v then return nil, e end
+    emails[#emails + 1] = v
+    pos = pos + 1
+  end
+
+  -- zero or more p=
+  local phones = {}
+  while pos <= n and peek_type(lines, pos) == "p" do
+    local v
+    v, e = parse_required(lines, pos, "p", grammar.parse_phone)
+    if not v then return nil, e end
+    phones[#phones + 1] = v
+    pos = pos + 1
+  end
+
+  -- optional c=
+  local connection
+  if pos <= n and peek_type(lines, pos) == "c" then
+    connection, e = parse_required(lines, pos, "c", grammar.parse_connection)
+    if not connection then return nil, e end
+    pos = pos + 1
+  end
+
+  -- zero or more b=
+  local bandwidths = {}
+  while pos <= n and peek_type(lines, pos) == "b" do
+    local v
+    v, e = parse_required(lines, pos, "b", grammar.parse_bandwidth)
+    if not v then return nil, e end
+    bandwidths[#bandwidths + 1] = v
+    pos = pos + 1
+  end
+
+  -- required t=
   local timing
-  timing, e = parse_required(lines, 4, "t", grammar.parse_timing)
+  timing, e = parse_required(lines, pos, "t", grammar.parse_timing)
   if not timing then return nil, e end
+  pos = pos + 1
+
+  -- zero or more a=
+  local attributes = {}
+  while pos <= n and peek_type(lines, pos) == "a" do
+    local v
+    v, e = parse_required(lines, pos, "a", grammar.parse_attribute)
+    if not v then return nil, e end
+    attributes[#attributes + 1] = v
+    pos = pos + 1
+  end
 
   return setmetatable({
     version = version,
     origin  = origin,
     session = {
-      name   = session_name,
-      timing = timing,
+      name        = session_name,
+      info        = info,
+      uri         = uri,
+      emails      = emails,
+      phones      = phones,
+      connection  = connection,
+      bandwidths  = bandwidths,
+      timing      = timing,
+      attributes  = attributes,
     },
   }, mt)
 end

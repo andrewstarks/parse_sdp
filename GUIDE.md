@@ -194,7 +194,7 @@ local doc = sdp.new({
   origin  = { username="-", sess_id="1", sess_version="1",
                net_type="IN", addr_type="IP4", unicast_address="192.0.2.1" },
   session = { name="My Session", timing={ start=0, stop=0 },
-               email={}, phone={}, bandwidth={}, attributes={} },
+               emails={}, phones={}, bandwidths={}, attributes={} },
   media   = {},
 })
 ```
@@ -343,15 +343,15 @@ parse_sdp parse session.sdp | parse_sdp serialize > out.sdp
   },
 
   session = {
-    name       = "My Session",     -- s=  (required)
-    info       = nil,              -- i=  (optional)
-    uri        = nil,              -- u=  (optional)
-    email      = {},               -- e=  (array, zero or more)
-    phone      = {},               -- p=  (array, zero or more)
-    connection = nil,              -- c=  (optional)
-    bandwidth  = {},               -- b=  (array, zero or more)
-    timing     = { start=0, stop=0 },  -- t=  (required)
-    attributes = {},               -- a=  (array, preserves order)
+    name        = "My Session",    -- s=  (required)
+    info        = nil,             -- i=  (optional)
+    uri         = nil,             -- u=  (optional)
+    emails      = {},              -- e=  (array, zero or more)
+    phones      = {},              -- p=  (array, zero or more)
+    connection  = nil,             -- c=  (optional)
+    bandwidths  = {},              -- b=  (array, zero or more)
+    timing      = { start=0, stop=0 },  -- t=  (required)
+    attributes  = {},              -- a=  (array, preserves order)
   },
 
   media = {                        -- one entry per m= block
@@ -373,9 +373,14 @@ parse_sdp parse session.sdp | parse_sdp serialize > out.sdp
 }
 ```
 
-All array fields (`email`, `phone`, `bandwidth`, `attributes`, `media`) are always
+All array fields (`emails`, `phones`, `bandwidths`, `attributes`, `media`) are always
 present as tables, even when empty. Optional scalar fields absent from the source
 SDP are `nil`.
+
+`connection` (when present) is a table `{ net_type, addr_type, address }`.
+`bandwidths` entries are tables `{ type, value }` where `value` is a number.
+`attributes` entries are tables `{ name, value }` where `value` is `nil` for
+flag-only attributes (e.g. `a=recvonly`).
 
 ---
 

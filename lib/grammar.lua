@@ -92,4 +92,49 @@ function M.parse_timing(s)
   return nil, 1
 end
 
+-- ── Optional session-field parsers ────────────────────────────────────────────
+
+-- i=, u=, e=, p= : free text (non-empty guaranteed by tokenize_line)
+function M.parse_info(s)  return s end
+function M.parse_uri(s)   return s end
+function M.parse_email(s) return s end
+function M.parse_phone(s) return s end
+
+-- c= : <nettype> SP <addrtype> SP <connection-address>
+local connection_pat =
+  C(nettype) * SP * C(addrtype) * SP * C(token) * -P(1)
+
+function M.parse_connection(s)
+  local ntype, atype, addr = connection_pat:match(s)
+  if ntype then
+    return { net_type = ntype, addr_type = atype, address = addr }
+  end
+  return nil, 1
+end
+
+-- b= : <bwtype>:<bandwidth>
+local bw_bwtype = (P(1) - P(":") - SP - line_end) ^ 1
+local bw_pat    = C(bw_bwtype) * P(":") * C(digit ^ 1) * -P(1)
+
+function M.parse_bandwidth(s)
+  local bwtype, bwval = bw_pat:match(s)
+  if bwtype then
+    return { type = bwtype, value = tonumber(bwval) }
+  end
+  return nil, 1
+end
+
+-- a= : <att-field> or <att-field>:<att-value>
+local att_field   = (P(1) - P(":") - SP - line_end) ^ 1
+local attr_kv_pat = C(att_field) * P(":") * C(value_char ^ 1) * -P(1)
+local attr_k_pat  = C(att_field) * -P(1)
+
+function M.parse_attribute(s)
+  local name, val = attr_kv_pat:match(s)
+  if name then return { name = name, value = val } end
+  local flag = attr_k_pat:match(s)
+  if flag then return { name = flag } end
+  return nil, 1
+end
+
 return M

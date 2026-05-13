@@ -294,3 +294,160 @@ describe("sdp.parse — required session fields", function()
     assert.is_table(doc)
   end)
 end)
+
+describe("sdp.parse — optional session fields (M4)", function()
+  local sdp = require("parse_sdp")
+
+  local base = {
+    "v=0",
+    "o=- 1 1 IN IP4 127.0.0.1",
+    "s=Test",
+  }
+
+  local function make(before_t, after_t)
+    local lines = {}
+    for _, l in ipairs(base) do lines[#lines + 1] = l end
+    for _, l in ipairs(before_t or {}) do lines[#lines + 1] = l end
+    lines[#lines + 1] = "t=0 0"
+    for _, l in ipairs(after_t or {}) do lines[#lines + 1] = l end
+    return table.concat(lines, "\r\n") .. "\r\n"
+  end
+
+  it("parses i= session information", function()
+    local doc, err = sdp.parse(make({"i=A test session"}))
+    assert.is_nil(err)
+    assert.equal("A test session", doc.session.info)
+  end)
+
+  it("parses u= URI", function()
+    local doc, err = sdp.parse(make({"u=http://example.com/seminar.pdf"}))
+    assert.is_nil(err)
+    assert.equal("http://example.com/seminar.pdf", doc.session.uri)
+  end)
+
+  it("parses multiple e= fields into an array in order", function()
+    local doc, err = sdp.parse(make({"e=j.doe@example.com", "e=r.smith@example.net"}))
+    assert.is_nil(err)
+    assert.is_table(doc.session.emails)
+    assert.equal(2,                    #doc.session.emails)
+    assert.equal("j.doe@example.com",   doc.session.emails[1])
+    assert.equal("r.smith@example.net", doc.session.emails[2])
+  end)
+
+  it("parses multiple p= fields into an array in order", function()
+    local doc, err = sdp.parse(make({"p=+1 617 555 6011", "p=+44 171 380 7777"}))
+    assert.is_nil(err)
+    assert.is_table(doc.session.phones)
+    assert.equal(2,                  #doc.session.phones)
+    assert.equal("+1 617 555 6011",  doc.session.phones[1])
+    assert.equal("+44 171 380 7777", doc.session.phones[2])
+  end)
+
+  it("parses c= with IPv4 connection address", function()
+    local doc, err = sdp.parse(make({"c=IN IP4 224.2.1.1"}))
+    assert.is_nil(err)
+    assert.is_table(doc.session.connection)
+    assert.equal("IN",        doc.session.connection.net_type)
+    assert.equal("IP4",       doc.session.connection.addr_type)
+    assert.equal("224.2.1.1", doc.session.connection.address)
+  end)
+
+  it("parses c= with IPv6 connection address", function()
+    local doc, err = sdp.parse(make({"c=IN IP6 FF15::101"}))
+    assert.is_nil(err)
+    assert.is_table(doc.session.connection)
+    assert.equal("IP6",       doc.session.connection.addr_type)
+    assert.equal("FF15::101", doc.session.connection.address)
+  end)
+
+  it("parses b= with AS: bandwidth type", function()
+    local doc, err = sdp.parse(make({"b=AS:128"}))
+    assert.is_nil(err)
+    assert.is_table(doc.session.bandwidths)
+    assert.equal(1,    #doc.session.bandwidths)
+    assert.equal("AS", doc.session.bandwidths[1].type)
+    assert.equal(128,  doc.session.bandwidths[1].value)
+  end)
+
+  it("parses b= with CT: bandwidth type", function()
+    local doc, err = sdp.parse(make({"b=CT:1000"}))
+    assert.is_nil(err)
+    assert.equal("CT", doc.session.bandwidths[1].type)
+    assert.equal(1000, doc.session.bandwidths[1].value)
+  end)
+
+  it("parses b= with X- extension bandwidth type", function()
+    local doc, err = sdp.parse(make({"b=X-YZ:256"}))
+    assert.is_nil(err)
+    assert.equal("X-YZ", doc.session.bandwidths[1].type)
+    assert.equal(256,    doc.session.bandwidths[1].value)
+  end)
+
+  it("parses multiple b= fields into an array in order", function()
+    local doc, err = sdp.parse(make({"b=AS:128", "b=CT:1000"}))
+    assert.is_nil(err)
+    assert.equal(2,    #doc.session.bandwidths)
+    assert.equal("AS", doc.session.bandwidths[1].type)
+    assert.equal("CT", doc.session.bandwidths[2].type)
+  end)
+
+  it("parses a= flag attribute after t=", function()
+    local doc, err = sdp.parse(make({}, {"a=recvonly"}))
+    assert.is_nil(err)
+    assert.is_table(doc.session.attributes)
+    assert.equal(1,          #doc.session.attributes)
+    assert.equal("recvonly", doc.session.attributes[1].name)
+    assert.is_nil(doc.session.attributes[1].value)
+  end)
+
+  it("parses a= attribute with value after t=", function()
+    local doc, err = sdp.parse(make({}, {"a=rtpmap:99 h263-1998/90000"}))
+    assert.is_nil(err)
+    assert.equal("rtpmap",             doc.session.attributes[1].name)
+    assert.equal("99 h263-1998/90000", doc.session.attributes[1].value)
+  end)
+
+  it("parses multiple a= attributes in order", function()
+    local doc, err = sdp.parse(make({}, {"a=recvonly", "a=rtpmap:99 h263-1998/90000"}))
+    assert.is_nil(err)
+    assert.equal(2,          #doc.session.attributes)
+    assert.equal("recvonly", doc.session.attributes[1].name)
+    assert.equal("rtpmap",   doc.session.attributes[2].name)
+  end)
+
+  it("parses an SDP with all optional session fields present", function()
+    local doc, err = sdp.parse(make(
+      {"i=A description", "u=http://example.com", "e=user@example.com",
+       "p=+1 617 555 6011", "c=IN IP4 224.2.1.1", "b=AS:128"},
+      {"a=recvonly"}
+    ))
+    assert.is_nil(err)
+    assert.equal("A description",      doc.session.info)
+    assert.equal("http://example.com", doc.session.uri)
+    assert.equal(1,                    #doc.session.emails)
+    assert.equal("user@example.com",   doc.session.emails[1])
+    assert.equal(1,                    #doc.session.phones)
+    assert.is_table(doc.session.connection)
+    assert.equal("224.2.1.1",          doc.session.connection.address)
+    assert.equal(1,                    #doc.session.bandwidths)
+    assert.equal("AS",                 doc.session.bandwidths[1].type)
+    assert.equal(1,                    #doc.session.attributes)
+    assert.equal("recvonly",           doc.session.attributes[1].name)
+  end)
+
+  it("minimal SDP has empty optional field collections", function()
+    local doc, err = sdp.parse(make())
+    assert.is_nil(err)
+    assert.is_table(doc.session.emails)
+    assert.equal(0, #doc.session.emails)
+    assert.is_table(doc.session.phones)
+    assert.equal(0, #doc.session.phones)
+    assert.is_table(doc.session.bandwidths)
+    assert.equal(0, #doc.session.bandwidths)
+    assert.is_table(doc.session.attributes)
+    assert.equal(0, #doc.session.attributes)
+    assert.is_nil(doc.session.info)
+    assert.is_nil(doc.session.uri)
+    assert.is_nil(doc.session.connection)
+  end)
+end)
