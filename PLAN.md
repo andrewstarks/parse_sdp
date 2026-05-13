@@ -138,19 +138,19 @@ Covers: `i=`, `u=`, `e=`, `p=`, `c=`, `b=`, `a=` (zero or more of each where all
 
 ---
 
-### M8 — ST 2110 validation
+### M8 — ST 2110 validation ✓
 
 **Done when:** `sdp.parse(text, "st2110")` and `doc:validate("st2110")` work correctly.
 
-- [ ] `lib/st2110.lua`: validates required attributes on parsed doc
-- [ ] `doc:is_st2110()` → bool
-- [ ] Required checks:
+- [x] `lib/st2110.lua`: validates required attributes on parsed doc
+- [x] `doc:is_st2110()` → bool
+- [x] Required checks:
   - At least one `m=` block
   - `a=ts-refclk` present and format-valid
   - `a=mediaclk` present
   - `a=rtpmap` with correct clock rate for media type
   - `a=fmtp` present; key=value pairs validated per sub-standard
-- [ ] Tests:
+- [x] Tests:
   - Valid ST 2110-20 (video) SDP → success
   - Valid ST 2110-30 (audio) SDP → success
   - Missing `a=ts-refclk` → error with `field_path` and `spec_ref`

@@ -1,6 +1,7 @@
 local grammar   = require("lib.grammar")
 local validate  = require("lib.validate")
 local serialize = require("lib.serialize")
+local st2110    = require("lib.st2110")
 
 local M  = {}
 local mt = {}
@@ -8,9 +9,8 @@ mt.__index = mt
 
 function mt:validate(mode)
   mode = mode or "sdp"
-  if mode == "sdp" then
-    return validate.sdp(self)
-  end
+  if mode == "sdp"    then return validate.sdp(self) end
+  if mode == "st2110" then return st2110.st2110(self) end
   return nil, { message = "unknown mode: " .. tostring(mode), line = 0, col = 0, context = "" }
 end
 
@@ -23,7 +23,7 @@ function mt:serialize()
 end
 
 function mt:is_st2110()
-  return false  -- implemented in M8
+  return st2110.st2110(self) == true
 end
 
 function mt:is_ipmx()
@@ -97,7 +97,7 @@ end
 
 -- ── Public API ────────────────────────────────────────────────────────────────
 
-function M.parse(text, _mode)
+function M.parse(text, mode)
   local lines = split_lines(text)
   local n     = #lines
   local pos   = 1
@@ -229,7 +229,7 @@ function M.parse(text, _mode)
     media[#media + 1] = m
   end
 
-  return setmetatable({
+  local doc = setmetatable({
     version = version,
     origin  = origin,
     session = {
@@ -245,6 +245,13 @@ function M.parse(text, _mode)
     },
     media = media,
   }, mt)
+
+  if mode == "st2110" then
+    local ok, ve = st2110.st2110(doc)
+    if not ok then return nil, ve end
+  end
+
+  return doc
 end
 
 function M.new(t)
