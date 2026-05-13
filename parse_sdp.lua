@@ -402,6 +402,13 @@ local function rtpmap_clock_rate(value)
   return rate and tonumber(rate)
 end
 
+-- Extract the encoding name from an rtpmap value (e.g. "96 raw/90000" → "raw").
+local function rtpmap_encoding(value)
+  local rest = value:match("^%d+%s+(.+)$")
+  if not rest then return nil end
+  return rest:match("^([^/]+)")
+end
+
 -- Validate the value of a ts-refclk attribute per ST 2110-10 §7.2.
 -- Returns true on success, or nil + error message string on failure.
 local function valid_tsrefclk(value)
@@ -437,6 +444,12 @@ local function valid_tsrefclk(value)
   return nil, "unrecognized ts-refclk clock source"
 end
 
+-- Validate a DID_SDID fmtp value; expected format: {0xHH,0xHH}.
+local function valid_did_sdid(value)
+  if value:match("^{0x%x%x,0x%x%x}$") then return true end
+  return nil, "invalid DID_SDID value (expected {0xHH,0xHH})"
+end
+
 -- Validate the value of a mediaclk attribute per ST 2110-10 §7.3.
 -- Returns true on success, or nil + error message string on failure.
 local function valid_mediaclk(value)
@@ -460,8 +473,13 @@ local function fmtp_params(value)
     local trimmed = kv:match("^%s*(.-)%s*$")
     if trimmed ~= "" then
       local k, v = trimmed:match("^([^=%s]+)%s*=%s*(.-)$")
-      if not k then return nil, "malformed fmtp parameter: " .. trimmed end
-      params[k] = v
+      if k then
+        params[k] = v
+      elseif trimmed:match("^[%w_%-]+$") then
+        params[trimmed] = true  -- bare flag token (e.g. "interlace" in ST 2110-20)
+      else
+        return nil, "malformed fmtp parameter: " .. trimmed
+      end
     end
   end
   return params
@@ -538,47 +556,86 @@ function st2110.st2110(doc)
       })
     end
 
-    if m.media == "video" then
+    local enc = rtpmap_encoding(rtpmap.value or "")
+
+    if enc == "smpte291" then
+      -- ST 2110-40: ancillary data (RFC 8331 / SMPTE ST 2110-40)
       local clock_rate = rtpmap_clock_rate(rtpmap.value or "")
       if clock_rate ~= 90000 then
         return nil, errors.new(
-          string.format("rtpmap clock rate must be 90000 for video (got %s)", tostring(clock_rate)),
-          {
-            field_path = mpath .. ".attributes[rtpmap]",
-            spec_ref   = "ST 2110-20 §7.2",
-            code       = "INVALID_VALUE",
-          }
+          string.format("rtpmap clock rate must be 90000 for smpte291 (got %s)", tostring(clock_rate)),
+          { field_path = mpath .. ".attributes[rtpmap]", spec_ref = "ST 2110-40 §7.2", code = "INVALID_VALUE" }
         )
       end
       local params, fmtp_err = fmtp_params(fmtp.value or "")
       if not params then
         return nil, errors.new("invalid fmtp: " .. fmtp_err, {
-          field_path = mpath .. ".attributes[fmtp]",
-          spec_ref   = "ST 2110-20 §7.2",
-          code       = "INVALID_VALUE",
+          field_path = mpath .. ".attributes[fmtp]", spec_ref = "ST 2110-40 §7.2", code = "INVALID_VALUE",
+        })
+      end
+      if not params["DID_SDID"] then
+        return nil, errors.new("fmtp missing required 'DID_SDID' parameter for ST 2110-40 (smpte291)", {
+          field_path = mpath .. ".attributes[fmtp]", spec_ref = "ST 2110-40 §7.2",
+        })
+      end
+      local dok, derr = valid_did_sdid(params["DID_SDID"])
+      if not dok then
+        return nil, errors.new("invalid DID_SDID: " .. derr, {
+          field_path = mpath .. ".attributes[fmtp]", spec_ref = "ST 2110-40 §7.2", code = "INVALID_VALUE",
+        })
+      end
+
+    elseif enc == "ST2110-41" then
+      -- ST 2110-41: fast metadata
+      local params, fmtp_err = fmtp_params(fmtp.value or "")
+      if not params then
+        return nil, errors.new("invalid fmtp: " .. fmtp_err, {
+          field_path = mpath .. ".attributes[fmtp]", spec_ref = "ST 2110-41 §7.2", code = "INVALID_VALUE",
+        })
+      end
+      if not params["SSN"] then
+        return nil, errors.new("fmtp missing required 'SSN' parameter for ST 2110-41", {
+          field_path = mpath .. ".attributes[fmtp]", spec_ref = "ST 2110-41 §7.2",
+        })
+      end
+      if not params["DIT"] then
+        return nil, errors.new("fmtp missing required 'DIT' parameter for ST 2110-41", {
+          field_path = mpath .. ".attributes[fmtp]", spec_ref = "ST 2110-41 §7.2",
+        })
+      end
+
+    elseif m.media == "video" then
+      -- ST 2110-20: uncompressed video
+      local clock_rate = rtpmap_clock_rate(rtpmap.value or "")
+      if clock_rate ~= 90000 then
+        return nil, errors.new(
+          string.format("rtpmap clock rate must be 90000 for video (got %s)", tostring(clock_rate)),
+          { field_path = mpath .. ".attributes[rtpmap]", spec_ref = "ST 2110-20 §7.2", code = "INVALID_VALUE" }
+        )
+      end
+      local params, fmtp_err = fmtp_params(fmtp.value or "")
+      if not params then
+        return nil, errors.new("invalid fmtp: " .. fmtp_err, {
+          field_path = mpath .. ".attributes[fmtp]", spec_ref = "ST 2110-20 §7.2", code = "INVALID_VALUE",
         })
       end
       if not params.sampling then
         return nil, errors.new("fmtp missing required 'sampling' parameter for video", {
-          field_path = mpath .. ".attributes[fmtp]",
-          spec_ref   = "ST 2110-20 §7.2",
+          field_path = mpath .. ".attributes[fmtp]", spec_ref = "ST 2110-20 §7.2",
         })
       end
-    end
 
-    if m.media == "audio" then
+    elseif m.media == "audio" then
+      -- ST 2110-30: audio (PCM)
       local params, fmtp_err = fmtp_params(fmtp.value or "")
       if not params then
         return nil, errors.new("invalid fmtp: " .. fmtp_err, {
-          field_path = mpath .. ".attributes[fmtp]",
-          spec_ref   = "ST 2110-30 §7.2",
-          code       = "INVALID_VALUE",
+          field_path = mpath .. ".attributes[fmtp]", spec_ref = "ST 2110-30 §7.2", code = "INVALID_VALUE",
         })
       end
       if not params["channel-order"] then
         return nil, errors.new("fmtp missing required 'channel-order' parameter for audio", {
-          field_path = mpath .. ".attributes[fmtp]",
-          spec_ref   = "ST 2110-30 §7.2",
+          field_path = mpath .. ".attributes[fmtp]", spec_ref = "ST 2110-30 §7.2",
         })
       end
     end

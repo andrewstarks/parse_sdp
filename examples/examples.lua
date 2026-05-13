@@ -69,7 +69,7 @@ section("2. Validation modes — sdp.parse(text, mode)")
 -- ─────────────────────────────────────────────────────────────────────────────
 
 -- The same file can be validated against different tiers by passing a mode.
--- "st2110" validates ST 2110-10/20/30/40 rules on top of RFC 4566.
+-- "st2110" validates ST 2110-10/20/30/40/41 rules on top of RFC 4566.
 -- "ipmx" validates IPMX rules (which first run ST 2110, which first runs RFC 4566).
 
 local ipmx_text = read("examples/ipmx/valid/02_typical.sdp")
@@ -232,7 +232,7 @@ sweep({
   "examples/generic/invalid/04_bad_version.sdp",
 }, nil, false)
 
-subsection("st2110  (ST 2110-10/20/30/40 + RFC 4566)")
+subsection("st2110  (ST 2110-10/20/30/40/41 + RFC 4566)")
 print("  valid:")
 sweep({
   "examples/st2110/valid/01_simple_video.sdp",
@@ -241,6 +241,8 @@ sweep({
   "examples/st2110/valid/04_typical_4k_video.sdp",
   "examples/st2110/valid/05_typical_multistream.sdp",
   "examples/st2110/valid/06_pathological.sdp",
+  "examples/st2110/valid/07_ancillary_data.sdp",
+  "examples/st2110/valid/08_fast_metadata.sdp",
 }, "st2110", true)
 print("  invalid:")
 sweep({
@@ -250,6 +252,8 @@ sweep({
   "examples/st2110/invalid/04_bad_tsrefclk_gmid.sdp",
   "examples/st2110/invalid/05_missing_sampling.sdp",
   "examples/st2110/invalid/06_missing_channel_order.sdp",
+  "examples/st2110/invalid/07_missing_did_sdid.sdp",
+  "examples/st2110/invalid/08_missing_ssn.sdp",
 }, "st2110", false)
 
 subsection("ipmx  (IPMX + ST 2110 + RFC 4566)")

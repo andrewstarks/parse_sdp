@@ -431,6 +431,94 @@ describe("ST 2110 validation", function()
     end)
   end)
 
+  -- ── ST 2110-40: ancillary data (smpte291) ──────────────────────────────────
+
+  describe("ST 2110-40 ancillary data (smpte291)", function()
+    local function ancillary_sdp(fmtp_str)
+      return table.concat({
+        "v=0",
+        "o=- 1234567890 1 IN IP4 192.168.1.1",
+        "s=ST2110 Ancillary",
+        "t=0 0",
+        "a=ts-refclk:ptp=IEEE1588-2008:00-11-22-FF-FE-33-44-55:0",
+        "m=video 5020 RTP/AVP 96",
+        "c=IN IP4 239.100.0.3/64",
+        "a=rtpmap:96 smpte291/90000",
+        "a=fmtp:96 " .. fmtp_str,
+        "a=mediaclk:direct=0",
+        "a=ts-refclk:ptp=IEEE1588-2008:00-11-22-FF-FE-33-44-55:0",
+      }, "\r\n")
+    end
+
+    it("accepts valid smpte291 SDP with DID_SDID", function()
+      local doc, err = sdp.parse(ancillary_sdp("DID_SDID={0x61,0x02}"), "st2110")
+      assert.is_nil(err)
+      assert.is_table(doc)
+    end)
+
+    it("errors when fmtp is missing DID_SDID", function()
+      local doc = sdp.parse(ancillary_sdp("VPID_Code=133"))
+      assert.is_table(doc)
+      local ok, err = doc:validate("st2110")
+      assert.is_nil(ok)
+      assert.is_table(err)
+      assert.matches("DID_SDID", err.message)
+    end)
+
+    it("errors when DID_SDID has a non-hex octet", function()
+      local doc = sdp.parse(ancillary_sdp("DID_SDID={0xGG,0x02}"))
+      assert.is_table(doc)
+      local ok, err = doc:validate("st2110")
+      assert.is_nil(ok)
+      assert.is_table(err)
+      assert.matches("DID_SDID", err.message)
+    end)
+  end)
+
+  -- ── ST 2110-41: fast metadata ───────────────────────────────────────────────
+
+  describe("ST 2110-41 fast metadata", function()
+    local function metadata_sdp(fmtp_str)
+      return table.concat({
+        "v=0",
+        "o=- 1234567890 1 IN IP4 192.168.1.1",
+        "s=ST2110 Metadata",
+        "t=0 0",
+        "a=ts-refclk:ptp=IEEE1588-2008:00-11-22-FF-FE-33-44-55:0",
+        "m=video 5030 RTP/AVP 96",
+        "c=IN IP4 239.100.0.4/64",
+        "a=rtpmap:96 ST2110-41/90000",
+        "a=fmtp:96 " .. fmtp_str,
+        "a=mediaclk:direct=0",
+        "a=ts-refclk:ptp=IEEE1588-2008:00-11-22-FF-FE-33-44-55:0",
+      }, "\r\n")
+    end
+
+    it("accepts valid ST2110-41 SDP with SSN and DIT", function()
+      local doc, err = sdp.parse(metadata_sdp("SSN=ST2110-41:2024; DIT=100"), "st2110")
+      assert.is_nil(err)
+      assert.is_table(doc)
+    end)
+
+    it("errors when fmtp is missing SSN", function()
+      local doc = sdp.parse(metadata_sdp("DIT=100"))
+      assert.is_table(doc)
+      local ok, err = doc:validate("st2110")
+      assert.is_nil(ok)
+      assert.is_table(err)
+      assert.matches("SSN", err.message)
+    end)
+
+    it("errors when fmtp is missing DIT", function()
+      local doc = sdp.parse(metadata_sdp("SSN=ST2110-41:2024"))
+      assert.is_table(doc)
+      local ok, err = doc:validate("st2110")
+      assert.is_nil(ok)
+      assert.is_table(err)
+      assert.matches("DIT", err.message)
+    end)
+  end)
+
   -- ── mediaclk value format ───────────────────────────────────────────────────
 
   describe("mediaclk value format", function()

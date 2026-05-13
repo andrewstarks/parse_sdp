@@ -60,11 +60,11 @@ m=application 22000 RTP/AVP 102
 i=ANC — VANC/HANC line 9 CEA-708 captions
 c=IN IP4 239.100.12.1/64
 a=rtpmap:102 smpte291/90000
-a=fmtp:102 DID_SDID=0x6101; VPID_Code=148
+a=fmtp:102 DID_SDID={0x61,0x01}; VPID_Code=148
 a=mediaclk:direct=0
 m=application 22002 RTP/AVP 103
 i=ANC — AFD and bar data
 c=IN IP4 239.100.12.2/64
 a=rtpmap:103 smpte291/90000
-a=fmtp:103 DID_SDID=0x4105; VPID_Code=148
+a=fmtp:103 DID_SDID={0x41,0x05}; VPID_Code=148
 a=mediaclk:direct=0

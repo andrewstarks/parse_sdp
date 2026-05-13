@@ -467,6 +467,26 @@ are parsed but not checked for presence.
 | --- | --- |
 | `channel-order` | `SMPTE2110.(ST)` |
 
+### ST 2110-40 (smpte291 ancillary data) `fmtp` parameters
+
+Ancillary data flows use rtpmap encoding name `smpte291` at clock rate 90000 (RFC 8331).
+
+| Parameter | Example | Validated |
+| --- | --- | --- |
+| `DID_SDID` | `{0x61,0x02}` | yes — required; each octet must be exactly two hex digits |
+| `VPID_Code` | `133` | no |
+
+Multiple `DID_SDID` entries are allowed in the SDP; at least one must be present and valid.
+
+### ST 2110-41 (fast metadata) `fmtp` parameters
+
+Fast metadata flows use rtpmap encoding name `ST2110-41` at clock rate 90000.
+
+| Parameter | Example | Validated |
+| --- | --- | --- |
+| `SSN` | `ST2110-41:2024` | yes — required; must start with `ST2110-41:` |
+| `DIT` | `100` | yes — required (presence only) |
+
 ---
 
 ## IPMX Validation

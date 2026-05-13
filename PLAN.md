@@ -242,7 +242,7 @@ Covers: `i=`, `u=`, `e=`, `p=`, `c=`, `b=`, `a=` (zero or more of each where all
 
 ---
 
-### M14 — ST 2110-40/41: ancillary data and fast metadata
+### M14 — ST 2110-40/41: ancillary data and fast metadata ✓
 
 **Done when:** ST 2110-40 ancillary data flows and ST 2110-41 fast metadata flows validate
 correctly at the ST 2110 tier (and therefore at the IPMX tier).
@@ -265,14 +265,22 @@ When the rtpmap encoding name is `ST2110-41` (ST 2110-41):
 - `fmtp` must contain `SSN=ST2110-41:...`.
 - `fmtp` must contain at least one `DIT=<hex-list>` entry.
 
-**Tests (write first):**
-
-- Valid ST 2110-40 SDP (`smpte291/90000`, `DID_SDID={0x61,0x02}`) → success
-- ST 2110-40 fmtp missing `DID_SDID` → `nil, err` matching `"DID_SDID"`
-- ST 2110-40 `DID_SDID` with non-hex octet → `nil, err`
-- Valid ST 2110-41 SDP (`ST2110-41/90000`, `SSN=ST2110-41:2024; DIT=100`) → success
-- ST 2110-41 fmtp missing `SSN` → `nil, err` matching `"SSN"`
-- ST 2110-41 fmtp missing `DIT` → `nil, err` matching `"DIT"`
+- [x] `rtpmap_encoding` helper extracts encoding name from rtpmap value
+- [x] `valid_did_sdid` helper validates `{0xHH,0xHH}` format
+- [x] `st2110.st2110` dispatches on encoding name before media type:
+  - `smpte291` → ST 2110-40 checks (clock rate 90000, DID_SDID presence + format)
+  - `ST2110-41` → ST 2110-41 checks (SSN presence, DIT presence)
+  - `m.media == "video"` → existing ST 2110-20 checks
+  - `m.media == "audio"` → existing ST 2110-30 checks
+- [x] Tests (6 new in `spec/st2110_spec.lua`):
+  - Valid ST 2110-40 SDP (`smpte291/90000`, `DID_SDID={0x61,0x02}`) → success
+  - ST 2110-40 fmtp missing `DID_SDID` → `nil, err` matching `"DID_SDID"`
+  - ST 2110-40 `DID_SDID` with non-hex octet → `nil, err`
+  - Valid ST 2110-41 SDP (`ST2110-41/90000`, `SSN=ST2110-41:2024; DIT=100`) → success
+  - ST 2110-41 fmtp missing `SSN` → `nil, err` matching `"SSN"`
+  - ST 2110-41 fmtp missing `DIT` → `nil, err` matching `"DIT"`
+- [x] 4 new example fixtures (2 valid, 2 invalid)
+- [x] `GUIDE.md` updated with ST 2110-40 and ST 2110-41 fmtp tables
 
 **Spec references:**
 

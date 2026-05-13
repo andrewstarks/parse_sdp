@@ -9,6 +9,28 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 
+### Added (M14 — ST 2110-40/41)
+
+- ST 2110-40 ancillary data validation: when `a=rtpmap` encoding name is `smpte291`, the
+  library now requires clock rate 90000 and at least one `DID_SDID={0xHH,0xHH}` entry in
+  `a=fmtp`; each octet is validated as exactly two hex digits (RFC 8331 / ST 2110-40 §7.2)
+- ST 2110-41 fast metadata validation: when encoding name is `ST2110-41`, the library now
+  requires `SSN=ST2110-41:…` and `DIT=…` in `a=fmtp` (ST 2110-41 §7.2)
+- 6 new tests in `spec/st2110_spec.lua` covering the above (3 per sub-standard)
+- 4 new example fixtures: `examples/st2110/valid/07_ancillary_data.sdp`,
+  `examples/st2110/valid/08_fast_metadata.sdp`,
+  `examples/st2110/invalid/07_missing_did_sdid.sdp`,
+  `examples/st2110/invalid/08_missing_ssn.sdp`
+- `GUIDE.md`: ST 2110-40 and ST 2110-41 fmtp parameter tables added
+
+### Fixed
+
+- `fmtp_params`: bare flag tokens (e.g. `interlace` per ST 2110-20 §7.2) are now accepted
+  and stored as `params[key] = true`; only genuinely malformed tokens (containing spaces or
+  other non-identifier characters) are rejected
+- Corrected `DID_SDID` notation in three example fixtures from the non-standard `0xNNNN`
+  form to the RFC 8331-specified `{0xHH,0xHH}` pair format
+
 ### Changed (code quality pass)
 
 - `parse_sdp.lua`: comprehensive ldoc annotations added to all public functions and significant

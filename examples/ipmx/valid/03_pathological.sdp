@@ -51,5 +51,5 @@ m=application 32000 RTP/AVP 101
 i=ANC — CEA-708 captions
 c=IN IP4 239.201.12.1/64
 a=rtpmap:101 smpte291/90000
-a=fmtp:101 DID_SDID=0x6101; VPID_Code=148
+a=fmtp:101 DID_SDID={0x61,0x01}; VPID_Code=148
 a=mediaclk:direct=0
