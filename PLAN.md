@@ -290,7 +290,7 @@ When the rtpmap encoding name is `ST2110-41` (ST 2110-41):
 
 ---
 
-### M15 — IPMX protocol extensions: HKEP, PEP, USB, FEC
+### M15 — IPMX protocol extensions: HKEP, PEP, USB, FEC ✓
 
 **Done when:** When HKEP, PEP, USB, and FEC extensions are present in an IPMX SDP, their
 representation is validated; malformed or inconsistent usage is rejected. Absence of any
@@ -299,35 +299,33 @@ of these extensions is not an error.
 | Extension | Spec | SDP presence indicator |
 | --- | --- | --- |
 | HDCP Key Exchange (HKEP) | VSF TR-10-5 | `a=hkep` attribute |
-| Privacy Encryption Protocol (PEP) | VSF TR-10-13 | `a=pep` attribute |
-| USB transport | VSF TR-10-14 | `m=application … TCP usb` |
-| FEC (ST 2022-5/9) | ST 2110-10, RFC 5956 | `a=group:FEC`, repair `m=` blocks |
+| Privacy Encryption Protocol (PEP) | VSF TR-10-13 | `a=privacy` attribute |
+| USB transport | VSF TR-10-14 | `m=application … TCP …` |
+| FEC (TR-10-6) | VSF TR-10-6 | `FECPROFILE` in `a=fmtp` |
 
-**New checks in `ipmx.ipmx`:**
+**Completed checks in `ipmx.ipmx`:**
 
-- `a=hkep`: if present, validate attribute format per VSF TR-10-5.
-- `a=pep`: if present, validate attribute format per VSF TR-10-13.
-- USB flow (`m=application … TCP usb`): require `a=setup:passive` and `a=ipmx_bus_id`.
-  USB blocks bypass ST 2110 media-block validation (not RTP/AVP streams).
-- FEC (`a=group:FEC <src-id> <repair-id>`): each named flow must correspond to an existing
-  `m=` block; repair flows bypass ST 2110 media-block validation.
+- [x] IPMX fmtp marker: every non-USB block's `a=fmtp` must contain bare `IPMX` flag (TR-10-1 §10.1)
+- [x] `a=hkep`: if present, validates `<port> IN <addrtype> <addr> <node-id> <port-id>` format (TR-10-5 §10)
+- [x] `a=privacy`: if present, validates all 6 required parameters; 12 valid modes for RTP, 4 AAD-only modes for USB blocks (TR-10-13 §13, TR-10-14 §12)
+- [x] USB blocks (`m=application` + TCP): bypass ST 2110 media-block validation (TR-10-14)
+- [x] `FECPROFILE` in fmtp: must be `profile-a`; `FEC_ADD_LATENCY_VIDEO`/`_AUDIO` must be non-negative integers (TR-10-6 §7.6)
+- [x] HKEP and PEP are NOT mutually exclusive — both may appear in the same session
+- [x] 26 new tests added to `spec/ipmx_spec.lua`
 
-**Open questions — resolve before writing tests:**
+**Notes from spec review:**
 
-1. Are HKEP and PEP mutually exclusive, or can both be present in one session?
-2. Confirm exact `a=hkep` and `a=pep` attribute value syntax from VSF TR-10-5/13.
-3. Does a USB `m=application` block require its own `a=extmap`, or does the session-level
-   extmap suffice for the IPMX `extmap` check?
-4. Per RFC 5956 and ST 2110-10: must FEC repair `m=` blocks be excluded from all ST 2110
-   attribute checks (ts-refclk, mediaclk, rtpmap, fmtp)?
+- The SDP attribute is `a=privacy` (not `a=pep`); the protocol name is PEP (Privacy Encryption Protocol)
+- TR-10-6 FEC uses port offsets (main+2 column, main+4 row) — no separate repair `m=` blocks
+- USB session-level `a=extmap` satisfies the IPMX extmap requirement; no per-block extmap needed
 
 **Spec references:**
 
-- VSF TR-10-5 (2024): IPMX HDCP Key Exchange Protocol
-- VSF TR-10-13 (2024): IPMX Privacy Encryption Protocol
-- VSF TR-10-14: IPMX USB transport — AMWA BCP-007-02
-- RFC 5956: Forward Error Correction Grouping Semantics in SDP
-- SMPTE ST 2110-10: System timing and synchronization
+- VSF TR-10-5 (2026-02-17 v2): IPMX HDCP Key Exchange Protocol
+- VSF TR-10-13 (2026-02-17 v2): IPMX Privacy Encryption Protocol
+- VSF TR-10-14 (2026-04-07): IPMX USB transport — AMWA BCP-007-02
+- VSF TR-10-6 (2023-08-07): IPMX Forward Error Correction
+- VSF TR-10-1 (2024-02-23): IPMX core system requirements
 
 ---
 

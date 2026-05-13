@@ -9,6 +9,32 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 
+### Added (M15 — IPMX protocol extensions)
+
+- **IPMX fmtp marker** (TR-10-1 §10.1): every non-USB media block's `a=fmtp` must now
+  contain the bare `IPMX` flag; absence is rejected with a `TR-10-1 §10.1` error
+- **`a=hkep` validation** (TR-10-5 §10): when present at session level, the HDCP Key
+  Exchange attribute is validated against the required format
+  `<port> IN <IP4|IP6> <addr> <node-id> <port-id>` (UUID node-id, five-octet port-id)
+- **`a=privacy` validation** (TR-10-13 §13): when present at session or media level,
+  all six required parameters (`protocol`, `mode`, `iv`, `key_generator`, `key_version`,
+  `key_id`) are checked; `protocol` must be `RTP` or `RTP_KV`; `mode` must be one of the
+  12 defined AES variants; hex parameters must be valid hex strings
+- **USB transport bypass** (TR-10-14): `m=application` blocks with TCP transport are now
+  identified as USB flows and exempt from ST 2110 media-block validation; any `a=privacy`
+  on a USB block is validated with the stricter AAD-only mode set (four modes)
+- **FEC parameter validation** (TR-10-6 §7.6): when `FECPROFILE` appears in `a=fmtp`, it
+  must equal `profile-a`; `FEC_ADD_LATENCY_VIDEO` and `FEC_ADD_LATENCY_AUDIO`, if present,
+  must be non-negative integers (microseconds)
+- 26 new tests in `spec/ipmx_spec.lua` covering all of the above
+
+### Fixed (M15)
+
+- Updated existing `spec/ipmx_spec.lua` fixtures to include the `IPMX` bare flag in
+  `a=fmtp` — they were missing it, silently passing a check that is now enforced
+
+---
+
 ### Added (M14 — ST 2110-40/41)
 
 - ST 2110-40 ancillary data validation: when `a=rtpmap` encoding name is `smpte291`, the

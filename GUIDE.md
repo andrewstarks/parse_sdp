@@ -491,20 +491,76 @@ Fast metadata flows use rtpmap encoding name `ST2110-41` at clock rate 90000.
 
 ## IPMX Validation
 
-`sdp.parse(text, "ipmx")` or `doc:validate("ipmx")` runs ST 2110 validation first,
-then checks IPMX-specific requirements:
+`sdp.parse(text, "ipmx")` or `doc:validate("ipmx")` runs ST 2110 validation first
+on all non-USB media blocks, then checks IPMX-specific requirements:
 
-- At least one `a=extmap` attribute must be present (at session level or in any media block).
+### Core requirements
 
-The following IPMX extensions are not yet validated. When present their SDP representation
-must be well-formed; their absence is not an error.
-
-| Extension | Spec | SDP indicator |
+| Check | Spec ref | Detail |
 | --- | --- | --- |
-| HDCP Key Exchange (HKEP) | VSF TR-10-5 | `a=hkep` |
-| Privacy Encryption Protocol (PEP) | VSF TR-10-13 | `a=pep` |
-| USB transport | VSF TR-10-14 | `m=application … TCP usb`, `a=setup:passive`, `a=ipmx_bus_id` |
-| FEC (ST 2022-5/9) | ST 2110-10, RFC 5956 | `a=group:FEC`, repair `m=` blocks |
+| `a=extmap` present | IPMX §6 | Must appear at session level or in at least one RTP media block |
+| `IPMX` bare flag in every `a=fmtp` | TR-10-1 §10.1 | Required in all non-USB media blocks |
+
+### Optional extensions (validated when present)
+
+#### HDCP Key Exchange — `a=hkep` (TR-10-5 §10)
+
+When present at session level, the `a=hkep` attribute is validated against:
+
+```text
+a=hkep:<port> IN <IP4|IP6> <unicast-address> <node-id> <port-id>
+```
+
+| Field | Validation |
+| --- | --- |
+| `<port>` | Integer 0–65535 |
+| nettype | Must be `IN` |
+| addrtype | Must be `IP4` or `IP6` |
+| `<node-id>` | UUID format: `xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx` (hex digits) |
+| `<port-id>` | Five hex-digit pairs: `xx-xx-xx-xx-xx` |
+
+Multiple `a=hkep` lines are allowed (ordered by Sender preference). HKEP and PEP
+may coexist in the same session.
+
+#### Privacy Encryption Protocol — `a=privacy` (TR-10-13 §13)
+
+When present (at session or media level), the `a=privacy` attribute is validated:
+
+```text
+a=privacy: protocol=<p>; mode=<m>; iv=<iv>; key_generator=<kg>; key_version=<kv>; key_id=<kid>
+```
+
+| Parameter | Valid values |
+| --- | --- |
+| `protocol` | `RTP` or `RTP_KV` |
+| `mode` | Any of the 12 AES modes below |
+| `iv`, `key_generator`, `key_version`, `key_id` | Hex strings (non-empty) |
+
+**Valid `mode` values:**
+`AES-128-CTR`, `AES-256-CTR`, `AES-128-CTR_CMAC-64`, `AES-256-CTR_CMAC-64`,
+`AES-128-CTR_CMAC-64-AAD`, `AES-256-CTR_CMAC-64-AAD`,
+`ECDH_AES-128-CTR`, `ECDH_AES-256-CTR`, `ECDH_AES-128-CTR_CMAC-64`,
+`ECDH_AES-256-CTR_CMAC-64`, `ECDH_AES-128-CTR_CMAC-64-AAD`, `ECDH_AES-256-CTR_CMAC-64-AAD`
+
+On **USB blocks** (`m=application` with TCP), only the four AAD variants are accepted
+(TR-10-14 §12): `AES-128-CTR_CMAC-64-AAD`, `AES-256-CTR_CMAC-64-AAD`,
+`ECDH_AES-128-CTR_CMAC-64-AAD`, `ECDH_AES-256-CTR_CMAC-64-AAD`.
+
+#### USB transport — TR-10-14
+
+Media blocks with `m=application … TCP …` are identified as USB blocks and bypass
+ST 2110 media-block validation (they are not RTP streams). Any `a=privacy` on a USB
+block is validated with the stricter AAD-only mode set.
+
+#### FEC — `FECPROFILE` and latency parameters (TR-10-6 §7.6)
+
+When the `FECPROFILE` key appears in a media block's `a=fmtp`, the library validates:
+
+| Parameter | Validation |
+| --- | --- |
+| `FECPROFILE` | Must be `profile-a` |
+| `FEC_ADD_LATENCY_VIDEO` | Non-negative integer (microseconds), if present |
+| `FEC_ADD_LATENCY_AUDIO` | Non-negative integer (microseconds), if present |
 
 ---
 

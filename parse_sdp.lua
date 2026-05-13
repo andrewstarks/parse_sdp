@@ -647,31 +647,213 @@ end
 -- ── IPMX ──────────────────────────────────────────────────────────────────────
 local ipmx = {}
 
+-- Validate an a=hkep attribute value per VSF TR-10-5 §10.
+-- Format: <port> IN <IP4|IP6> <addr> <node-id> <port-id>
+-- node-id: xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx (UUID, hex, no braces)
+-- port-id: xx-xx-xx-xx-xx (5 groups of 2 hex digits)
+local function valid_hkep(value)
+  local port_s, nettype, addrtype, _, node_id, port_id =
+    value:match("^(%S+)%s+(%S+)%s+(%S+)%s+(%S+)%s+(%S+)%s+(%S+)$")
+  if not port_s then
+    return nil, "expected '<port> IN <addrtype> <addr> <node-id> <port-id>'"
+  end
+  local port = tonumber(port_s)
+  if not port or port < 0 or port > 65535 or port ~= math.floor(port) then
+    return nil, "invalid port number"
+  end
+  if nettype ~= "IN" then return nil, "nettype must be 'IN'" end
+  if addrtype ~= "IP4" and addrtype ~= "IP6" then
+    return nil, "addrtype must be 'IP4' or 'IP6'"
+  end
+  if not node_id:match(
+    "^%x%x%x%x%x%x%x%x%-%x%x%x%x%-%x%x%x%x%-%x%x%x%x%-%x%x%x%x%x%x%x%x%x%x%x%x$") then
+    return nil, "invalid node-id (expected xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx)"
+  end
+  if not port_id:match("^%x%x%-%x%x%-%x%x%-%x%x%-%x%x$") then
+    return nil, "invalid port-id (expected xx-xx-xx-xx-xx)"
+  end
+  return true
+end
+
+-- Valid protocol values for a=privacy (TR-10-13 §13).
+local PRIVACY_PROTOCOLS = { RTP = true, RTP_KV = true }
+
+-- All valid mode values for a=privacy (TR-10-13 §13).
+local PRIVACY_MODES = {
+  ["AES-128-CTR"]                  = true, ["AES-256-CTR"]                  = true,
+  ["AES-128-CTR_CMAC-64"]          = true, ["AES-256-CTR_CMAC-64"]          = true,
+  ["AES-128-CTR_CMAC-64-AAD"]      = true, ["AES-256-CTR_CMAC-64-AAD"]      = true,
+  ["ECDH_AES-128-CTR"]             = true, ["ECDH_AES-256-CTR"]             = true,
+  ["ECDH_AES-128-CTR_CMAC-64"]     = true, ["ECDH_AES-256-CTR_CMAC-64"]     = true,
+  ["ECDH_AES-128-CTR_CMAC-64-AAD"] = true, ["ECDH_AES-256-CTR_CMAC-64-AAD"] = true,
+}
+
+-- Modes allowed on USB transport blocks only — must be AAD variants (TR-10-14 §12).
+local PRIVACY_USB_MODES = {
+  ["AES-128-CTR_CMAC-64-AAD"]      = true, ["AES-256-CTR_CMAC-64-AAD"]      = true,
+  ["ECDH_AES-128-CTR_CMAC-64-AAD"] = true, ["ECDH_AES-256-CTR_CMAC-64-AAD"] = true,
+}
+
+-- Validate an a=privacy attribute value per VSF TR-10-13 §13.
+-- Format: protocol=<p>; mode=<m>; iv=<iv>; key_generator=<kg>; key_version=<kv>; key_id=<kid>
+-- Pass usb_only=true to restrict to the four AAD modes required by TR-10-14 §12.
+local function valid_privacy(value, usb_only)
+  local params = {}
+  for kv in (value:match("^%s*(.-)%s*$")):gmatch("[^;]+") do
+    local trimmed = kv:match("^%s*(.-)%s*$")
+    if trimmed ~= "" then
+      local k, v = trimmed:match("^([^=]+)%s*=%s*(.*)$")
+      if not k then return nil, "malformed parameter: " .. trimmed end
+      params[k:match("^%s*(.-)%s*$")] = v
+    end
+  end
+  for _, f in ipairs({ "protocol", "mode", "iv", "key_generator", "key_version", "key_id" }) do
+    if not params[f] then return nil, "missing required '" .. f .. "' parameter" end
+  end
+  if not PRIVACY_PROTOCOLS[params.protocol] then
+    return nil, "invalid protocol '" .. params.protocol .. "' (must be RTP or RTP_KV)"
+  end
+  local modes = usb_only and PRIVACY_USB_MODES or PRIVACY_MODES
+  if not modes[params.mode] then
+    return nil, "invalid mode '" .. params.mode .. "'"
+  end
+  for _, f in ipairs({ "iv", "key_generator", "key_version", "key_id" }) do
+    if not params[f]:match("^%x+$") then
+      return nil, "invalid " .. f .. " value (must be hexadecimal)"
+    end
+  end
+  return true
+end
+
 --- Validate an SDP document against IPMX requirements.
--- Runs ST 2110 validation first, then checks that a=extmap is present at
--- session level or in at least one media block.
+-- Runs ST 2110 validation first on all non-USB media blocks, then checks:
+-- a=extmap presence, IPMX fmtp marker (TR-10-1 §10.1), a=hkep format
+-- (TR-10-5 §10), a=privacy format (TR-10-13 §13), FEC params (TR-10-6 §7.6).
+-- USB blocks (m=application with TCP transport, TR-10-14) bypass ST 2110
+-- media-block checks.
 -- @param doc table  SDP document table.
 -- @return true  on success.
 -- @return nil, err  on failure; err includes field_path and spec_ref.
 function ipmx.ipmx(doc)
-  local ok, e = st2110.st2110(doc)
-  if not ok then return nil, e end
+  -- Identify USB media blocks: m=application with TCP transport (TR-10-14).
+  local usb_set = {}
+  for i, m in ipairs(doc.media) do
+    if m.media == "application" and type(m.proto) == "string" and m.proto:match("TCP") then
+      usb_set[i] = true
+    end
+  end
 
+  -- Build a filtered media list (non-USB) for ST 2110 validation.
+  local rtp_media = {}
+  for i, m in ipairs(doc.media) do
+    if not usb_set[i] then rtp_media[#rtp_media + 1] = m end
+  end
+
+  if #rtp_media > 0 then
+    local filtered = { version = doc.version, origin = doc.origin,
+                       session = doc.session, media = rtp_media }
+    local ok, e = st2110.st2110(filtered)
+    if not ok then return nil, e end
+  else
+    local ok, e = validate.sdp(doc)
+    if not ok then return nil, e end
+  end
+
+  -- Check for a=extmap at session level or in at least one non-USB media block.
   local has_extmap = find_attr(doc.session.attributes, "extmap") ~= nil
   if not has_extmap then
-    for _, m in ipairs(doc.media) do
-      if find_attr(m.attributes or {}, "extmap") then
+    for i, m in ipairs(doc.media) do
+      if not usb_set[i] and find_attr(m.attributes or {}, "extmap") then
         has_extmap = true
         break
       end
     end
   end
-
   if not has_extmap then
     return nil, errors.new("missing required attribute 'extmap'", {
       field_path = "session.attributes[extmap]",
       spec_ref   = "IPMX §6",
     })
+  end
+
+  -- Check IPMX fmtp marker and optional FEC params in each non-USB block (TR-10-1 §10.1).
+  for i, m in ipairs(doc.media) do
+    if not usb_set[i] then
+      local mpath = string.format("media[%d]", i)
+      local fmtp  = find_attr(m.attributes or {}, "fmtp")
+      if fmtp then
+        local params, ferr = fmtp_params(fmtp.value or "")
+        if not params then
+          return nil, errors.new("invalid fmtp: " .. ferr, {
+            field_path = mpath .. ".attributes[fmtp]",
+            spec_ref   = "TR-10-1 §10.1", code = "INVALID_VALUE",
+          })
+        end
+        if not params["IPMX"] then
+          return nil, errors.new("fmtp missing required 'IPMX' marker", {
+            field_path = mpath .. ".attributes[fmtp]",
+            spec_ref   = "TR-10-1 §10.1",
+          })
+        end
+        if params["FECPROFILE"] and params["FECPROFILE"] ~= "profile-a" then
+          return nil, errors.new(
+            "invalid FECPROFILE '" .. params["FECPROFILE"] .. "' (expected 'profile-a')",
+            { field_path = mpath .. ".attributes[fmtp]",
+              spec_ref = "TR-10-6 §7.6", code = "INVALID_VALUE" }
+          )
+        end
+        for _, lat in ipairs({ "FEC_ADD_LATENCY_VIDEO", "FEC_ADD_LATENCY_AUDIO" }) do
+          if params[lat] then
+            local n = tonumber(params[lat])
+            if not n or n < 0 or n ~= math.floor(n) then
+              return nil, errors.new(
+                "invalid " .. lat .. " value (must be a non-negative integer)",
+                { field_path = mpath .. ".attributes[fmtp]",
+                  spec_ref = "TR-10-6 §7.6", code = "INVALID_VALUE" }
+              )
+            end
+          end
+        end
+      end
+    end
+  end
+
+  -- Validate a=hkep at session level if present; multiple lines allowed (TR-10-5 §10).
+  for _, attr in ipairs(doc.session.attributes or {}) do
+    if attr.name == "hkep" then
+      local ok, herr = valid_hkep(attr.value or "")
+      if not ok then
+        return nil, errors.new("invalid a=hkep: " .. herr, {
+          field_path = "session.attributes[hkep]",
+          spec_ref   = "TR-10-5 §10", code = "INVALID_VALUE",
+        })
+      end
+    end
+  end
+
+  -- Validate a=privacy wherever it appears; USB blocks require AAD-only modes (TR-10-13/14).
+  local function check_privacy(attrs, path, is_usb)
+    for _, attr in ipairs(attrs or {}) do
+      if attr.name == "privacy" then
+        local ok, perr = valid_privacy(attr.value or "", is_usb)
+        if not ok then
+          return nil, errors.new("invalid a=privacy: " .. perr, {
+            field_path = path .. ".attributes[privacy]",
+            spec_ref   = is_usb and "TR-10-14 §12" or "TR-10-13 §13",
+            code       = "INVALID_VALUE",
+          })
+        end
+      end
+    end
+    return true
+  end
+
+  local pok, perr = check_privacy(doc.session.attributes, "session", false)
+  if not pok then return nil, perr end
+  for i, m in ipairs(doc.media) do
+    local pok2, perr2 = check_privacy(
+      m.attributes, string.format("media[%d]", i), usb_set[i] == true)
+    if not pok2 then return nil, perr2 end
   end
 
   return true
