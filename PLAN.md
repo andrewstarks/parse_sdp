@@ -211,14 +211,14 @@ Covers: `i=`, `u=`, `e=`, `p=`, `c=`, `b=`, `a=` (zero or more of each where all
 
 ---
 
-### M11 — CLI: `parse` subcommand
+### M11 — CLI: `parse` subcommand ✓
 
 **Done when:** `parse_sdp parse [--mode MODE] [--pretty] [file]` works end-to-end.
 
-- [ ] `cli.lua`: argument parsing, stdin fallback, exit codes
-- [ ] JSON to stdout on success; JSON error to stderr on failure
-- [ ] Exit `0` success, `1` parse error
-- [ ] Integration tests (via `io.popen`)
+- [x] `cli.lua`: argument parsing, stdin fallback, exit codes
+- [x] JSON to stdout on success; JSON error to stderr on failure
+- [x] Exit `0` success, `1` parse error
+- [x] Integration tests (via `io.popen`)
 
 ---
 

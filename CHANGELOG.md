@@ -11,6 +11,7 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ### Added
 
+- M11: `cli.lua` — `parse` subcommand: `parse_sdp parse [--mode MODE] [--pretty] [file]`; reads file or stdin; JSON to stdout on success, JSON error to stderr on failure; exit 0/1; 8 integration tests in `spec/cli_spec.lua`
 - M10: `parse_sdp.lua` — `mt:to_sdp()` alias for `serialize`; symmetric pair with `to_json`; 3 tests confirming method presence, identical output to `serialize`, and `sdp.new({})` availability
 - M10: `parse_sdp.lua` — `mt:to_json()` method using dkjson; 8 tests in `spec/sdp_spec.lua` covering method presence, string return, valid JSON round-trip, field structure (version, origin, session attributes, media), and `sdp.new({})` method availability
 - M8: `lib/st2110.lua` — value format checks for `ts-refclk` (ptp=, localmac=, gps/gal/glonass, ntp=; rejects unrecognized sources and malformed MACs/GMIDs) and `mediaclk` (`direct=<integer>` or `sender`; rejects anything else)
