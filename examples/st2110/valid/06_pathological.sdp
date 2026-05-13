@@ -1,0 +1,70 @@
+v=0
+o=- 1122334455667788 99 IN IP4 10.10.0.1
+s=Broadcast Complex: 4 video + 4 audio + 2 ANC — full redundant production
+i=Pathological but valid ST2110 session — all streams, session-level PTP reference
+t=0 0
+a=ts-refclk:ptp=IEEE1588-2008:00-11-22-FF-FE-33-44-55:0
+m=video 20000 RTP/AVP 96
+i=Primary — 1080p50 YCbCr-4:2:2 10-bit
+c=IN IP4 239.100.10.1/64
+b=AS:2970000
+a=rtpmap:96 raw/90000
+a=fmtp:96 sampling=YCbCr-4:2:2; width=1920; height=1080; exactframerate=50; depth=10; TCS=SDR; colorimetry=BT709; PM=2110GPM; TP=2110TPN; SSN=ST2110-20:2017
+a=mediaclk:direct=0
+m=video 20002 RTP/AVP 96
+i=Primary redundant — same essence, separate path
+c=IN IP4 239.100.10.2/64
+b=AS:2970000
+a=rtpmap:96 raw/90000
+a=fmtp:96 sampling=YCbCr-4:2:2; width=1920; height=1080; exactframerate=50; depth=10; TCS=SDR; colorimetry=BT709; PM=2110GPM; TP=2110TPN; SSN=ST2110-20:2017
+a=mediaclk:direct=0
+m=video 20004 RTP/AVP 97
+i=Secondary — 1080i29.97 YCbCr-4:2:2 10-bit
+c=IN IP4 239.100.10.3/64
+b=AS:1485000
+a=rtpmap:97 raw/90000
+a=fmtp:97 sampling=YCbCr-4:2:2; width=1920; height=1080; interlace; exactframerate=30000/1001; depth=10; TCS=SDR; colorimetry=BT709; PM=2110GPM; TP=2110TPNL; SSN=ST2110-20:2017
+a=mediaclk:direct=0
+m=video 20006 RTP/AVP 98
+i=Preview — 720p50 RGB 8-bit
+c=IN IP4 239.100.10.4/64
+b=AS:995000
+a=rtpmap:98 raw/90000
+a=fmtp:98 sampling=RGB; width=1280; height=720; exactframerate=50; depth=8; TCS=SDR; colorimetry=BT709; PM=2110GPM; TP=2110TPN; SSN=ST2110-20:2017
+a=mediaclk:direct=0
+m=audio 21000 RTP/AVP 99
+i=Main audio — English 5.1 L24 48kHz
+c=IN IP4 239.100.11.1/64
+a=rtpmap:99 L24/48000/6
+a=fmtp:99 channel-order=SMPTE2110.(51)
+a=mediaclk:direct=0
+m=audio 21002 RTP/AVP 99
+i=Main audio redundant — separate path
+c=IN IP4 239.100.11.2/64
+a=rtpmap:99 L24/48000/6
+a=fmtp:99 channel-order=SMPTE2110.(51)
+a=mediaclk:direct=0
+m=audio 21004 RTP/AVP 100
+i=Secondary audio — Spanish stereo L24 48kHz
+c=IN IP4 239.100.11.3/64
+a=rtpmap:100 L24/48000/2
+a=fmtp:100 channel-order=SMPTE2110.(ST)
+a=mediaclk:direct=0
+m=audio 21006 RTP/AVP 101
+i=Backup audio — mono program mix L16 48kHz
+c=IN IP4 239.100.11.4/64
+a=rtpmap:101 L16/48000/1
+a=fmtp:101 channel-order=SMPTE2110.(M)
+a=mediaclk:direct=0
+m=application 22000 RTP/AVP 102
+i=ANC — VANC/HANC line 9 CEA-708 captions
+c=IN IP4 239.100.12.1/64
+a=rtpmap:102 smpte291/90000
+a=fmtp:102 DID_SDID=0x6101; VPID_Code=148
+a=mediaclk:direct=0
+m=application 22002 RTP/AVP 103
+i=ANC — AFD and bar data
+c=IN IP4 239.100.12.2/64
+a=rtpmap:103 smpte291/90000
+a=fmtp:103 DID_SDID=0x4105; VPID_Code=148
+a=mediaclk:direct=0

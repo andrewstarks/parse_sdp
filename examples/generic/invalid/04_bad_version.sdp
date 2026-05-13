@@ -1,0 +1,4 @@
+v=1
+o=- 1000 1 IN IP4 127.0.0.1
+s=Wrong SDP Version
+t=0 0

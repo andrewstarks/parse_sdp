@@ -55,6 +55,14 @@ local doc2 = sdp.new({ version="0", origin={...}, session={...}, media={} })
 doc2:validate()
 ```
 
+See `examples/examples.lua` for a full walkthrough of the API with real SDP files:
+
+```sh
+lua examples/examples.lua
+# or inside the container:
+docker compose run --rm test lua examples/examples.lua
+```
+
 ## CLI Example
 
 ```sh
@@ -76,6 +84,7 @@ parse_sdp/
 ├── parse_sdp.lua        # library entry point
 ├── lib/
 │   ├── grammar.lua      # LPEG grammar (RFC 4566)
+│   ├── validate.lua     # RFC 4566 doc validator
 │   ├── st2110.lua       # ST 2110 validation layer
 │   ├── ipmx.lua         # IPMX validation layer
 │   ├── serialize.lua    # doc → SDP text
@@ -85,7 +94,12 @@ parse_sdp/
 │   ├── sdp_spec.lua
 │   ├── st2110_spec.lua
 │   ├── ipmx_spec.lua
-│   └── fixtures/        # sample .sdp files
+│   └── fixtures/        # sample .sdp files used by tests
+├── examples/
+│   ├── examples.lua     # runnable API walkthrough
+│   ├── generic/         # RFC 4566 SDP samples (valid/ and invalid/)
+│   ├── st2110/          # ST 2110 SDP samples (valid/ and invalid/)
+│   └── ipmx/            # IPMX SDP samples (valid/ and invalid/)
 ├── Dockerfile
 ├── docker-compose.yml
 ├── GUIDE.md             # full documentation

@@ -1,0 +1,11 @@
+v=0
+o=- 5551234568 1 IN IP4 192.168.0.11
+s=Master Control — 4K UHD 50p YCbCr 10-bit
+t=0 0
+a=ts-refclk:ptp=IEEE1588-2008:08-00-11-FF-FE-22-33-55:127
+m=video 20000 RTP/AVP 96
+c=IN IP4 239.150.1.1/64
+b=AS:8910000
+a=rtpmap:96 raw/90000
+a=fmtp:96 sampling=YCbCr-4:2:2; width=3840; height=2160; exactframerate=50; depth=10; TCS=SDR; colorimetry=BT2020; PM=2110GPM; TP=2110TPN; SSN=ST2110-20:2017
+a=mediaclk:direct=0

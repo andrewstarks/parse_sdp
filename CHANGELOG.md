@@ -11,6 +11,9 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ### Added
 
+- `examples/` — 27 annotated SDP fixtures (generic, ST 2110, IPMX; valid and invalid) plus `examples/examples.lua`, a runnable API walkthrough covering all public entry points, doc methods, error anatomy, and a full sweep of every example file
+- `PLAN.md` — R1–R7 refactor milestones: trailing-content strictness bug, serialize→to_sdp rename, find_attr deduplication, unified error builder, parser extraction to lib/parser.lua, fmtp/ntp strictness, and test audit
+
 - M13: `lib/errors.lua` — new module; `errors.format(err)` renders human-readable output: `error: [CODE] message`, location arrow, context line + caret at column, spec clause note; 11 tests in `spec/errors_spec.lua`
 - M13: error codes added to all error constructors — `MISSING_FIELD`, `INVALID_VALUE`, `WRONG_ORDER`, `MALFORMED_LINE` in `parse_sdp.lua`, `lib/validate.lua`, `lib/st2110.lua`, `lib/ipmx.lua`
 - M13: `cli.lua` — stderr now uses `errors.format()` instead of raw JSON; CLI tests updated accordingly

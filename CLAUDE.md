@@ -32,6 +32,7 @@ Prefer fewer, well-named things over many small helpers.
 parse_sdp.lua        library entry point (thin facade, attaches metatable)
 lib/
   grammar.lua        LPEG grammar for RFC 4566 line and field parsing
+  validate.lua       RFC 4566 doc validator (called by all three tiers)
   st2110.lua         ST 2110 validation (operates on parsed doc table)
   ipmx.lua           IPMX validation (operates on parsed doc table)
   serialize.lua      doc → valid SDP text
@@ -41,7 +42,14 @@ spec/
   sdp_spec.lua       RFC 4566 parser tests
   st2110_spec.lua    ST 2110 validation tests
   ipmx_spec.lua      IPMX validation tests
+  errors_spec.lua    error formatting tests
+  cli_spec.lua       CLI integration tests
   fixtures/          sample .sdp files used by tests
+examples/
+  examples.lua       runnable API walkthrough (lua examples/examples.lua)
+  generic/           RFC 4566 SDP samples — valid/ and invalid/
+  st2110/            ST 2110 SDP samples — valid/ and invalid/
+  ipmx/              IPMX SDP samples — valid/ and invalid/
 ```
 
 ## Public API
