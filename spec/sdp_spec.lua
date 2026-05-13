@@ -609,3 +609,77 @@ describe("sdp.parse — media blocks (M5)", function()
     assert.is_number(err.line)
   end)
 end)
+
+describe("sdp — doc object (M6)", function()
+  local sdp = require("parse_sdp")
+
+  local minimal = table.concat({
+    "v=0",
+    "o=- 1 1 IN IP4 127.0.0.1",
+    "s=Test",
+    "t=0 0",
+  }, "\r\n") .. "\r\n"
+
+  it("parsed doc has validate, is_sdp, is_st2110, is_ipmx methods", function()
+    local doc = sdp.parse(minimal)
+    assert.is_function(doc.validate)
+    assert.is_function(doc.is_sdp)
+    assert.is_function(doc.is_st2110)
+    assert.is_function(doc.is_ipmx)
+  end)
+
+  it("sdp.new({}) has validate and is_sdp methods", function()
+    local doc = sdp.new({})
+    assert.is_function(doc.validate)
+    assert.is_function(doc.is_sdp)
+  end)
+
+  it("doc:validate() returns true for a valid parsed doc", function()
+    local doc = sdp.parse(minimal)
+    local ok, err = doc:validate()
+    assert.is_true(ok)
+    assert.is_nil(err)
+  end)
+
+  it("doc:validate('sdp') also returns true", function()
+    local doc = sdp.parse(minimal)
+    local ok, err = doc:validate("sdp")
+    assert.is_true(ok)
+    assert.is_nil(err)
+  end)
+
+  it("doc:is_sdp() returns true for a valid parsed doc", function()
+    local doc = sdp.parse(minimal)
+    assert.is_true(doc:is_sdp())
+  end)
+
+  it("doc:is_sdp() returns false after mutation removes version", function()
+    local doc = sdp.parse(minimal)
+    doc.version = nil
+    assert.is_false(doc:is_sdp())
+  end)
+
+  it("doc:validate() returns nil, err with message after mutation", function()
+    local doc = sdp.parse(minimal)
+    doc.version = nil
+    local ok, err = doc:validate()
+    assert.is_nil(ok)
+    assert.is_table(err)
+    assert.is_string(err.message)
+  end)
+
+  it("sdp.new({}) is_sdp() returns false", function()
+    local doc = sdp.new({})
+    assert.is_false(doc:is_sdp())
+  end)
+
+  it("doc:is_st2110() returns false for plain RFC 4566 SDP", function()
+    local doc = sdp.parse(minimal)
+    assert.is_false(doc:is_st2110())
+  end)
+
+  it("doc:is_ipmx() returns false for plain RFC 4566 SDP", function()
+    local doc = sdp.parse(minimal)
+    assert.is_false(doc:is_ipmx())
+  end)
+end)

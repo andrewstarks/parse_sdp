@@ -108,15 +108,15 @@ Covers: `i=`, `u=`, `e=`, `p=`, `c=`, `b=`, `a=` (zero or more of each where all
 
 ---
 
-### M6 — doc object
+### M6 — doc object ✓
 
 **Done when:** `sdp.parse` returns a table with working methods; `sdp.new` wraps any table.
 
-- [ ] Metatable on the table returned by `parse`
-- [ ] `sdp.new(table)` attaches same metatable, no validation
-- [ ] `doc:is_sdp()` → runs RFC 4566 validate, returns bool
-- [ ] `doc:validate()` and `doc:validate("sdp")` → `true` or `nil, err`
-- [ ] Tests:
+- [x] Metatable on the table returned by `parse`
+- [x] `sdp.new(table)` attaches same metatable, no validation
+- [x] `doc:is_sdp()` → runs RFC 4566 validate, returns bool
+- [x] `doc:validate()` and `doc:validate("sdp")` → `true` or `nil, err`
+- [x] Tests:
   - Parsed doc has methods
   - `sdp.new({})` has methods
   - `doc:is_sdp()` true for valid, false for mutated-invalid

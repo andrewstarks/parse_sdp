@@ -1,8 +1,29 @@
-local grammar = require("lib.grammar")
+local grammar  = require("lib.grammar")
+local validate = require("lib.validate")
 
 local M  = {}
 local mt = {}
 mt.__index = mt
+
+function mt:validate(mode)
+  mode = mode or "sdp"
+  if mode == "sdp" then
+    return validate.sdp(self)
+  end
+  return nil, { message = "unknown mode: " .. tostring(mode), line = 0, col = 0, context = "" }
+end
+
+function mt:is_sdp()
+  return validate.sdp(self) == true
+end
+
+function mt:is_st2110()
+  return false  -- implemented in M8
+end
+
+function mt:is_ipmx()
+  return false  -- implemented in M9
+end
 
 -- ── Helpers ───────────────────────────────────────────────────────────────────
 
