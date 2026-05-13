@@ -448,12 +448,12 @@ When `a=group:DUP <mid1> <mid2> …` is present at session level, the library va
 ### ST 2110-20 (video) `fmtp` parameters
 
 ST 2110-20 §7.2 requires `sampling`, `width`, `height`, `exactframerate`, `depth`, `TCS`,
-`colorimetry`, `PM`, and `SSN`. The library currently validates only `sampling`; the rest
-are parsed but not checked for presence.
+`colorimetry`, `PM`, and `SSN`. The library currently validates only `sampling` for presence;
+value format and the remaining required fields are not yet checked (see M18 in PLAN.md).
 
 | Parameter | Example | Validated |
 | --- | --- | --- |
-| `sampling` | `YCbCr-4:2:2` | yes |
+| `sampling` | `YCbCr-4:2:2` | yes — required (presence only; value format not yet checked) |
 | `width` | `1920` | no |
 | `height` | `1080` | no |
 | `exactframerate` | `30000/1001` | no |
@@ -465,9 +465,11 @@ are parsed but not checked for presence.
 
 ### ST 2110-30 (audio) required `fmtp` parameters
 
-| Parameter | Example |
-| --- | --- |
-| `channel-order` | `SMPTE2110.(ST)` |
+`channel-order` is validated for presence only; value format is not yet checked (see M18 in PLAN.md).
+
+| Parameter | Example | Validated |
+| --- | --- | --- |
+| `channel-order` | `SMPTE2110.(ST)` | yes — required (presence only) |
 
 ### ST 2110-40 (smpte291 ancillary data) `fmtp` parameters
 

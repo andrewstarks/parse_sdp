@@ -9,6 +9,11 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 
+### Added
+
+- M18 added to PLAN.md: ST 2110-20 full fmtp validation (9 required fields + value formats) and ST 2110-30 `channel-order` format check — not yet implemented
+- GUIDE.md: `sampling` and `channel-order` explicitly documented as presence-only; remaining ST 2110-20 fmtp fields noted as known gaps
+
 ### Fixed
 
 - ST 2110-41: clock rate (90000) is now validated (was accepted without a check)
@@ -145,7 +150,7 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 - R6: `lib/st2110.lua` — `fmtp_params` rejects tokens without `=`; `valid_tsrefclk` rejects `ntp=` with whitespace
 - R7: test coverage added (gal, glonass, ntp=, ptp-no-domain, direct-negative, fmtp-malformed, unknown-mode); low-value method-existence tests removed
 
-### Added
+### Added (M11–M13)
 
 - `examples/` — 27 annotated SDP fixtures (generic, ST 2110, IPMX; valid and invalid) plus `examples/examples.lua`, a runnable API walkthrough covering all public entry points, doc methods, error anatomy, and a full sweep of every example file
 - `PLAN.md` — R1–R7 refactor milestones: trailing-content strictness bug, serialize→to_sdp rename, find_attr deduplication, unified error builder, parser extraction to lib/parser.lua, fmtp/ntp strictness, and test audit
