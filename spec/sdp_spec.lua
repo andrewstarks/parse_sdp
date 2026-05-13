@@ -293,6 +293,20 @@ describe("sdp.parse — required session fields", function()
     assert.is_nil(err)
     assert.is_table(doc)
   end)
+
+  it("rejects unrecognized field type after all SDP fields", function()
+    local doc, err = sdp.parse(minimal .. "z=garbage\r\n")
+    assert.is_nil(doc)
+    assert.is_table(err)
+    assert.equal("WRONG_ORDER", err.code)
+  end)
+
+  it("rejects malformed content at end of SDP", function()
+    local doc, err = sdp.parse(minimal .. "not-a-field\r\n")
+    assert.is_nil(doc)
+    assert.is_table(err)
+    assert.is_string(err.message)
+  end)
 end)
 
 describe("sdp.parse — optional session fields (M4)", function()
@@ -682,9 +696,17 @@ describe("sdp — doc object (M6)", function()
     local doc = sdp.parse(minimal)
     assert.is_false(doc:is_ipmx())
   end)
+
+  it("doc:validate() returns nil, err for unknown mode", function()
+    local doc = sdp.parse(minimal)
+    local ok, err = doc:validate("unknown")
+    assert.is_nil(ok)
+    assert.is_table(err)
+    assert.matches("unknown mode", err.message)
+  end)
 end)
 
-describe("doc:serialize() (M7)", function()
+describe("doc:to_sdp() (M7)", function()
   local sdp = require("parse_sdp")
 
   local minimal_text = table.concat({
@@ -727,25 +749,20 @@ describe("doc:serialize() (M7)", function()
     return t
   end
 
-  it("doc:serialize() is a method", function()
-    local doc = sdp.parse(minimal_text)
-    assert.is_function(doc.serialize)
-  end)
-
   it("serializes minimal SDP to a string", function()
     local doc = sdp.parse(minimal_text)
-    assert.is_string(doc:serialize())
+    assert.is_string(doc:to_sdp())
   end)
 
   it("uses CRLF line endings (no bare LF)", function()
-    local out = sdp.parse(minimal_text):serialize()
+    local out = sdp.parse(minimal_text):to_sdp()
     local crlf = select(2, out:gsub("\r\n", ""))
     local lf   = select(2, out:gsub("\n",   ""))
     assert.equal(crlf, lf)
   end)
 
   it("field order: v o s t for minimal SDP", function()
-    local ls = lines_of(sdp.parse(minimal_text):serialize())
+    local ls = lines_of(sdp.parse(minimal_text):to_sdp())
     assert.equal("v=0",                        ls[1])
     assert.equal("o=- 1 1 IN IP4 127.0.0.1",  ls[2])
     assert.equal("s=Test",                     ls[3])
@@ -753,7 +770,7 @@ describe("doc:serialize() (M7)", function()
   end)
 
   it("re-parses cleanly", function()
-    local out = sdp.parse(minimal_text):serialize()
+    local out = sdp.parse(minimal_text):to_sdp()
     local doc2, err = sdp.parse(out)
     assert.is_nil(err)
     assert.is_table(doc2)
@@ -761,12 +778,12 @@ describe("doc:serialize() (M7)", function()
 
   it("round-trip: parse → serialize → parse is deep-equal for minimal SDP", function()
     local doc1 = sdp.parse(minimal_text)
-    local doc2 = sdp.parse(doc1:serialize())
+    local doc2 = sdp.parse(doc1:to_sdp())
     assert.same(doc1, doc2)
   end)
 
   it("field order: v o s i u e p c b t a for full session", function()
-    local ls = lines_of(sdp.parse(full_text):serialize())
+    local ls = lines_of(sdp.parse(full_text):to_sdp())
     assert.equal("v=0",                        ls[1])
     assert.equal("o=- 1 1 IN IP4 127.0.0.1",  ls[2])
     assert.equal("s=My Session",               ls[3])
@@ -782,12 +799,12 @@ describe("doc:serialize() (M7)", function()
 
   it("round-trip: full session SDP", function()
     local doc1 = sdp.parse(full_text)
-    local doc2 = sdp.parse(doc1:serialize())
+    local doc2 = sdp.parse(doc1:to_sdp())
     assert.same(doc1, doc2)
   end)
 
   it("serializes two media blocks in order", function()
-    local ls = lines_of(sdp.parse(media_text):serialize())
+    local ls = lines_of(sdp.parse(media_text):to_sdp())
     assert.equal("t=0 0",                        ls[4])
     assert.equal("m=video 49170 RTP/AVP 96",     ls[5])
     assert.equal("c=IN IP4 224.2.1.1",           ls[6])
@@ -802,13 +819,13 @@ describe("doc:serialize() (M7)", function()
       "v=0", "o=- 1 1 IN IP4 127.0.0.1", "s=Test", "t=0 0",
       "m=video 49170/2 RTP/AVP 96",
     }, "\r\n") .. "\r\n"
-    local out = sdp.parse(text):serialize()
+    local out = sdp.parse(text):to_sdp()
     assert.truthy(out:find("m=video 49170/2 RTP/AVP 96", 1, true))
   end)
 
   it("round-trip: two media blocks", function()
     local doc1 = sdp.parse(media_text)
-    local doc2 = sdp.parse(doc1:serialize())
+    local doc2 = sdp.parse(doc1:to_sdp())
     assert.same(doc1, doc2)
   end)
 end)
@@ -890,33 +907,5 @@ describe("to_json", function()
   it("sdp.new({}) has to_json method", function()
     local doc = sdp.new({})
     assert.is_function(doc.to_json)
-  end)
-end)
-
-describe("to_sdp", function()
-  local sdp = require("parse_sdp")
-
-  local text = table.concat({
-    "v=0",
-    "o=- 1234567890 1 IN IP4 192.168.1.1",
-    "s=Test Session",
-    "t=0 0",
-  }, "\r\n") .. "\r\n"
-
-  it("to_sdp method exists on parsed doc", function()
-    local doc = sdp.parse(text)
-    assert.is_table(doc)
-    assert.is_function(doc.to_sdp)
-  end)
-
-  it("returns same output as serialize", function()
-    local doc = sdp.parse(text)
-    assert.is_table(doc)
-    assert.equal(doc:serialize(), doc:to_sdp())
-  end)
-
-  it("sdp.new({}) has to_sdp method", function()
-    local doc = sdp.new({})
-    assert.is_function(doc.to_sdp)
   end)
 end)

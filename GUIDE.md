@@ -148,7 +148,7 @@ print(doc:is_sdp())    -- still true
 print(doc:is_st2110()) -- depends on content
 
 -- Serialize back to SDP text
-local out = doc:serialize()
+local out = doc:to_sdp()
 io.open("out.sdp", "w"):write(out)
 
 -- Or get JSON
@@ -226,7 +226,7 @@ Convenience boolean checks. Each runs the corresponding validation and returns
 if doc:is_st2110() then ... end
 ```
 
-#### `doc:serialize()`
+#### `doc:to_sdp()`
 
 Converts the doc to a valid RFC 4566 SDP string.
 
@@ -239,7 +239,7 @@ Returns a `string`. Raises `error()` if the doc is structurally malformed (missi
 required fields) — call `doc:validate()` first if unsure.
 
 ```lua
-local text = doc:serialize()
+local text = doc:to_sdp()
 ```
 
 #### `doc:to_json()`
@@ -481,7 +481,7 @@ then checks IPMX-specific requirements:
 
 ## Serialization
 
-`doc:serialize()` produces RFC 4566-compliant SDP text. Field order follows the
+`doc:to_sdp()` produces RFC 4566-compliant SDP text. Field order follows the
 spec exactly (RFC 4566 §5):
 
 ```text

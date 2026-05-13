@@ -32,6 +32,8 @@ Prefer fewer, well-named things over many small helpers.
 parse_sdp.lua        library entry point (thin facade, attaches metatable)
 lib/
   grammar.lua        LPEG grammar for RFC 4566 line and field parsing
+  parser.lua         full parse loop; R1 trailing-content strictness
+  util.lua           shared helpers (find_attr)
   validate.lua       RFC 4566 doc validator (called by all three tiers)
   st2110.lua         ST 2110 validation (operates on parsed doc table)
   ipmx.lua           IPMX validation (operates on parsed doc table)
@@ -70,7 +72,7 @@ doc:validate("ipmx")      -- validate as IPMX; true or nil, err
 doc:is_sdp()              -- bool
 doc:is_st2110()           -- bool
 doc:is_ipmx()             -- bool
-doc:serialize()           -- → SDP text string (CRLF, strict RFC 4566 ordering)
+doc:to_sdp()           -- → SDP text string (CRLF, strict RFC 4566 ordering)
 doc:to_json()             -- → JSON string (via dkjson)
 
 -- doc is also a plain table
@@ -129,5 +131,5 @@ doc.media[1].port
 - ST 2110 `fmtp` values are semicolon-separated `key=value` pairs — parse as a
   sub-grammar, not with string splits.
 - IPMX validation runs ST 2110 validation first; never skip the lower tier.
-- `doc:serialize()` must produce output that re-parses cleanly. Round-trip is a
+- `doc:to_sdp()` must produce output that re-parses cleanly. Round-trip is a
   hard invariant tested on every serializer change.

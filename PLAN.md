@@ -855,3 +855,144 @@ end)
   The remaining to_json tests ("returns a string", "output is valid JSON", etc.) are worth keeping.
 
 **Done when:** `busted spec/` passes with zero failures and all items above are addressed.
+
+---
+
+### R8 — CLI: merge into `parse_sdp.lua`, add argparse, shebang
+
+**Goal.** Users interact with one file, not two. `parse_sdp.lua` is both the library and the
+executable. `cli.lua` is deleted.
+
+**Design decisions:**
+
+- `argparse` (LuaRocks) replaces the hand-rolled `parse_flags`. It handles `--help` / `-h`,
+  argument errors, subcommand dispatch, and usage text. It is only `require`d inside the
+  detect-if-main block so it is never a library dependency.
+- **Help is first-class.** Every subcommand, option, and flag gets a description string.
+  The top-level parser gets an epilog with short examples so `parse_sdp --help` is
+  immediately useful to a new user without reading any docs.
+- Detect-if-main check: `if arg and arg[0] and arg[0]:match("parse_sdp") then`. When
+  `require("parse_sdp")` is called by busted or application code, `arg[0]` is the outer
+  script and the block is skipped. When `lua parse_sdp.lua` is run directly, `arg[0]` matches
+  and the CLI runs, always ending in `os.exit()`.
+- `#!/usr/bin/env lua` as the first line; `chmod +x parse_sdp.lua` so it can be invoked
+  directly (or symlinked as `parse_sdp`).
+
+**Step 1 — install argparse:**
+
+```sh
+luarocks install argparse
+```
+
+Add `argparse` to the rockspec `dependencies` when the rockspec is written.
+
+**Step 2 — update `parse_sdp.lua`:**
+
+Add shebang as the very first line:
+
+```lua
+#!/usr/bin/env lua
+```
+
+Add the CLI block immediately before `return M`:
+
+```lua
+-- ── CLI (detect-if-main) ──────────────────────────────────────────────────────
+if arg and arg[0] and arg[0]:match("parse_sdp") then
+  local argparse = require("argparse")
+
+  local function die(err_table)
+    io.stderr:write(errors.format(err_table) .. "\n")
+    os.exit(1)
+  end
+
+  local function read_input(file)
+    if file then
+      local f, ioerr = io.open(file, "r")
+      if not f then die(errors.new("cannot open file: " .. (ioerr or file))); return end
+      local text = f:read("*a")
+      f:close()
+      return text
+    end
+    return io.read("*a")
+  end
+
+  local ap = argparse("parse_sdp", "Parse, validate, and serialize SDP (RFC 4566 / ST 2110 / IPMX).")
+  ap:epilog(table.concat({
+    "Examples:",
+    "  parse_sdp parse session.sdp",
+    "  parse_sdp parse --mode st2110 --pretty session.sdp",
+    "  parse_sdp parse < session.sdp | parse_sdp serialize",
+    "  parse_sdp serialize session.json",
+  }, "\n"))
+  ap:command_target("command")
+
+  local cmd_parse = ap:command("parse", "Parse and validate an SDP file; output JSON.")
+  cmd_parse:argument("file", "Path to .sdp file. Reads stdin if omitted."):args("?")
+  cmd_parse:option("--mode", "Validation tier: 'st2110' or 'ipmx'. Defaults to RFC 4566 only.")
+  cmd_parse:flag("--pretty", "Pretty-print JSON output with indentation.")
+
+  local cmd_ser = ap:command("serialize", "Convert a JSON SDP document back to SDP text.")
+  cmd_ser:argument("file", "Path to .json file. Reads stdin if omitted."):args("?")
+
+  local parsed = ap:parse()
+
+  if parsed.command == "parse" then
+    local text = read_input(parsed.file)
+    local doc, perr = M.parse(text, parsed.mode)
+    if not doc then die(perr) end
+    local encode_opts = parsed.pretty and { indent = true } or nil
+    io.write(dkjson.encode(doc, encode_opts) .. "\n")
+    os.exit(0)
+
+  elseif parsed.command == "serialize" then
+    local json_text = read_input(parsed.file)
+    local tbl, _, jsonerr = dkjson.decode(json_text)
+    if not tbl then
+      die(errors.new("invalid JSON: " .. (jsonerr or "parse error")))
+    end
+    local doc = M.new(tbl)
+    local ok, result = pcall(function() return doc:to_sdp() end)
+    if not ok then
+      die(errors.new("serialize error: " .. tostring(result)))
+    end
+    io.write(result)
+    os.exit(0)
+  end
+end
+```
+
+Note: `errors`, `dkjson`, and `M` are already in scope from the library section above the block.
+
+**Step 3 — update `spec/cli_spec.lua`:**
+
+Replace every `lua cli.lua` with `lua parse_sdp.lua` (two locations: the `run()` helper and the
+`fixture_json()` helper inside the serialize describe block).
+
+Add help tests:
+
+```lua
+it("--help exits 0 and prints usage", function()
+  local stdout, _, code = run("--help")
+  assert.equal(0, code)
+  assert.truthy(stdout:find("parse_sdp", 1, true))
+end)
+
+it("parse --help exits 0 and mentions --mode", function()
+  local stdout, _, code = run("parse --help")
+  assert.equal(0, code)
+  assert.truthy(stdout:find("--mode", 1, true))
+end)
+```
+
+**Step 4 — delete `cli.lua`.**
+
+**Step 5 — update `CLAUDE.md`:**
+
+- Remove `cli.lua` from the repository layout table.
+- Add a note that `parse_sdp.lua` is dual-purpose: library entry point and CLI executable.
+
+**Step 6 — `chmod +x parse_sdp.lua` in the repo** (or document it; the shebang is inert without it).
+
+**Done when:** `busted spec/` passes (including the new `--help` tests); `parse_sdp --help` and
+`parse_sdp parse --help` print actionable usage with examples; `cli.lua` is gone.

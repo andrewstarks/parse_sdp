@@ -187,6 +187,28 @@ describe("ST 2110 validation", function()
       assert.is_table(err)
       assert.matches("90000", err.message)
     end)
+
+    it("errors when video fmtp has a token without '=' sign", function()
+      local text = table.concat({
+        "v=0",
+        "o=- 1234567890 1 IN IP4 192.168.1.1",
+        "s=ST2110 Video",
+        "t=0 0",
+        "a=ts-refclk:ptp=IEEE1588-2008:00-11-22-FF-FE-33-44-55:0",
+        "m=video 5000 RTP/AVP 96",
+        "c=IN IP4 239.100.0.1/64",
+        "a=rtpmap:96 raw/90000",
+        "a=fmtp:96 noequalssign",
+        "a=mediaclk:direct=0",
+        "a=ts-refclk:ptp=IEEE1588-2008:00-11-22-FF-FE-33-44-55:0",
+      }, "\r\n")
+      local doc = sdp.parse(text)
+      assert.is_table(doc)
+      local ok, err = doc:validate("st2110")
+      assert.is_nil(ok)
+      assert.is_table(err)
+      assert.matches("fmtp", err.message)
+    end)
   end)
 
   describe("doc:is_st2110()", function()
@@ -305,6 +327,47 @@ describe("ST 2110 validation", function()
       assert.is_table(err)
       assert.matches("ts%-refclk", err.message)
     end)
+
+    it("accepts bare 'gal'", function()
+      local doc = sdp.parse(with_tsrefclk("gal"))
+      assert.is_table(doc)
+      local ok, err = doc:validate("st2110")
+      assert.is_nil(err)
+      assert.equal(true, ok)
+    end)
+
+    it("accepts bare 'glonass'", function()
+      local doc = sdp.parse(with_tsrefclk("glonass"))
+      assert.is_table(doc)
+      local ok, err = doc:validate("st2110")
+      assert.is_nil(err)
+      assert.equal(true, ok)
+    end)
+
+    it("accepts ntp= with a valid address", function()
+      local doc = sdp.parse(with_tsrefclk("ntp=192.0.2.1"))
+      assert.is_table(doc)
+      local ok, err = doc:validate("st2110")
+      assert.is_nil(err)
+      assert.equal(true, ok)
+    end)
+
+    it("rejects ntp= with whitespace in address", function()
+      local doc = sdp.parse(with_tsrefclk("ntp=192.0.2.1 extra"))
+      assert.is_table(doc)
+      local ok, err = doc:validate("st2110")
+      assert.is_nil(ok)
+      assert.is_table(err)
+      assert.matches("ts%-refclk", err.message)
+    end)
+
+    it("accepts ptp= with version and GMID but no domain", function()
+      local doc = sdp.parse(with_tsrefclk("ptp=IEEE1588-2008:00-11-22-33-44-55-66-77"))
+      assert.is_table(doc)
+      local ok, err = doc:validate("st2110")
+      assert.is_nil(err)
+      assert.equal(true, ok)
+    end)
   end)
 
   -- ── mediaclk value format ───────────────────────────────────────────────────
@@ -358,6 +421,14 @@ describe("ST 2110 validation", function()
       assert.is_nil(ok)
       assert.is_table(err)
       assert.matches("mediaclk", err.message)
+    end)
+
+    it("accepts 'direct=' with a negative integer offset", function()
+      local doc = sdp.parse(with_mediaclk("direct=-1"))
+      assert.is_table(doc)
+      local ok, err = doc:validate("st2110")
+      assert.is_nil(err)
+      assert.equal(true, ok)
     end)
   end)
 end)

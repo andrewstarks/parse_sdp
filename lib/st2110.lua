@@ -1,22 +1,8 @@
+local util   = require("lib.util")
+local errors = require("lib.errors")
 local M = {}
 
-local function st2110_err(msg, field_path, spec_ref, code)
-  return {
-    message    = msg,
-    line       = 0,
-    col        = 0,
-    context    = "",
-    field_path = field_path or "",
-    spec_ref   = spec_ref or "",
-    code       = code or "MISSING_FIELD",
-  }
-end
-
-local function find_attr(attrs, name)
-  for _, a in ipairs(attrs or {}) do
-    if a.name == name then return a end
-  end
-end
+local find_attr = util.find_attr
 
 -- Parse clock rate from rtpmap value "PT encoding-name/clock-rate[/params]"
 local function rtpmap_clock_rate(value)
@@ -33,7 +19,10 @@ local function valid_tsrefclk(value)
     return true
   end
   local addr = value:match("^ntp=(.+)$")
-  if addr then return true end
+  if addr then
+    if addr:match("%s") then return nil, "invalid ts-refclk ntp address" end
+    return true
+  end
   local mac = value:match("^localmac=(.+)$")
   if mac then
     local count = 0
@@ -72,13 +61,20 @@ local function valid_mediaclk(value)
 end
 
 -- Parse semicolon-separated key=value pairs from fmtp value "PT param1=v1; param2=v2; ..."
+-- Returns params table, or nil + error message on malformed input.
 local function fmtp_params(value)
   local params_str = value:match("^%d+%s+(.+)$")
   if not params_str then return {} end
   local params = {}
   for kv in params_str:gmatch("[^;]+") do
-    local k, v = kv:match("^%s*([^=%s]+)%s*=%s*(.-)%s*$")
-    if k then params[k] = v end
+    local trimmed = kv:match("^%s*(.-)%s*$")
+    if trimmed ~= "" then
+      local k, v = trimmed:match("^([^=%s]+)%s*=%s*(.-)$")
+      if not k then
+        return nil, "malformed fmtp parameter: " .. trimmed
+      end
+      params[k] = v
+    end
   end
   return params
 end
@@ -89,11 +85,8 @@ function M.st2110(doc)
   if not ok then return nil, e end
 
   if #doc.media < 1 then
-    return nil, st2110_err(
-      "ST 2110 requires at least one media block",
-      "media",
-      "ST 2110-10 §7"
-    )
+    return nil, errors.new("ST 2110 requires at least one media block",
+      { field_path = "media", spec_ref = "ST 2110-10 §7" })
   end
 
   local sess_attrs = doc.session.attributes or {}
@@ -104,89 +97,94 @@ function M.st2110(doc)
 
     local tsrefclk = find_attr(sess_attrs, "ts-refclk") or find_attr(mattrs, "ts-refclk")
     if not tsrefclk then
-      return nil, st2110_err(
-        "missing required attribute 'ts-refclk'",
-        mpath .. ".attributes[ts-refclk]",
-        "ST 2110-10 §7.2"
-      )
+      return nil, errors.new("missing required attribute 'ts-refclk'", {
+        field_path = mpath .. ".attributes[ts-refclk]",
+        spec_ref   = "ST 2110-10 §7.2",
+      })
     end
     local trok, trmsg = valid_tsrefclk(tsrefclk.value or "")
     if not trok then
-      return nil, st2110_err(
-        "invalid ts-refclk: " .. (trmsg or ""),
-        mpath .. ".attributes[ts-refclk]",
-        "ST 2110-10 §7.2",
-        "INVALID_VALUE"
-      )
+      return nil, errors.new("invalid ts-refclk: " .. (trmsg or ""), {
+        field_path = mpath .. ".attributes[ts-refclk]",
+        spec_ref   = "ST 2110-10 §7.2",
+        code       = "INVALID_VALUE",
+      })
     end
 
     local mediaclk = find_attr(mattrs, "mediaclk")
     if not mediaclk then
-      return nil, st2110_err(
-        "missing required attribute 'mediaclk'",
-        mpath .. ".attributes[mediaclk]",
-        "ST 2110-10 §7.3"
-      )
+      return nil, errors.new("missing required attribute 'mediaclk'", {
+        field_path = mpath .. ".attributes[mediaclk]",
+        spec_ref   = "ST 2110-10 §7.3",
+      })
     end
     local mcok, mcmsg = valid_mediaclk(mediaclk.value or "")
     if not mcok then
-      return nil, st2110_err(
-        "invalid mediaclk: " .. (mcmsg or ""),
-        mpath .. ".attributes[mediaclk]",
-        "ST 2110-10 §7.3",
-        "INVALID_VALUE"
-      )
+      return nil, errors.new("invalid mediaclk: " .. (mcmsg or ""), {
+        field_path = mpath .. ".attributes[mediaclk]",
+        spec_ref   = "ST 2110-10 §7.3",
+        code       = "INVALID_VALUE",
+      })
     end
 
     local rtpmap = find_attr(mattrs, "rtpmap")
     if not rtpmap then
-      return nil, st2110_err(
-        "missing required attribute 'rtpmap'",
-        mpath .. ".attributes[rtpmap]",
-        "ST 2110-10 §7"
-      )
+      return nil, errors.new("missing required attribute 'rtpmap'", {
+        field_path = mpath .. ".attributes[rtpmap]",
+        spec_ref   = "ST 2110-10 §7",
+      })
     end
 
     local fmtp = find_attr(mattrs, "fmtp")
     if not fmtp then
-      return nil, st2110_err(
-        "missing required attribute 'fmtp'",
-        mpath .. ".attributes[fmtp]",
-        "ST 2110-10 §7"
-      )
+      return nil, errors.new("missing required attribute 'fmtp'", {
+        field_path = mpath .. ".attributes[fmtp]",
+        spec_ref   = "ST 2110-10 §7",
+      })
     end
 
     if m.media == "video" then
       local clock_rate = rtpmap_clock_rate(rtpmap.value or "")
       if clock_rate ~= 90000 then
-        return nil, st2110_err(
-          string.format(
-            "rtpmap clock rate must be 90000 for video (got %s)",
-            tostring(clock_rate)
-          ),
-          mpath .. ".attributes[rtpmap]",
-          "ST 2110-20 §7.2",
-          "INVALID_VALUE"
+        return nil, errors.new(
+          string.format("rtpmap clock rate must be 90000 for video (got %s)", tostring(clock_rate)),
+          {
+            field_path = mpath .. ".attributes[rtpmap]",
+            spec_ref   = "ST 2110-20 §7.2",
+            code       = "INVALID_VALUE",
+          }
         )
       end
-      local params = fmtp_params(fmtp.value or "")
+      local params, fmtp_err = fmtp_params(fmtp.value or "")
+      if not params then
+        return nil, errors.new("invalid fmtp: " .. fmtp_err, {
+          field_path = mpath .. ".attributes[fmtp]",
+          spec_ref   = "ST 2110-20 §7.2",
+          code       = "INVALID_VALUE",
+        })
+      end
       if not params.sampling then
-        return nil, st2110_err(
-          "fmtp missing required 'sampling' parameter for video",
-          mpath .. ".attributes[fmtp]",
-          "ST 2110-20 §7.2"
-        )
+        return nil, errors.new("fmtp missing required 'sampling' parameter for video", {
+          field_path = mpath .. ".attributes[fmtp]",
+          spec_ref   = "ST 2110-20 §7.2",
+        })
       end
     end
 
     if m.media == "audio" then
-      local params = fmtp_params(fmtp.value or "")
+      local params, fmtp_err = fmtp_params(fmtp.value or "")
+      if not params then
+        return nil, errors.new("invalid fmtp: " .. fmtp_err, {
+          field_path = mpath .. ".attributes[fmtp]",
+          spec_ref   = "ST 2110-30 §7.2",
+          code       = "INVALID_VALUE",
+        })
+      end
       if not params["channel-order"] then
-        return nil, st2110_err(
-          "fmtp missing required 'channel-order' parameter for audio",
-          mpath .. ".attributes[fmtp]",
-          "ST 2110-30 §7.2"
-        )
+        return nil, errors.new("fmtp missing required 'channel-order' parameter for audio", {
+          field_path = mpath .. ".attributes[fmtp]",
+          spec_ref   = "ST 2110-30 §7.2",
+        })
       end
     end
   end

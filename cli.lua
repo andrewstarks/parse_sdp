@@ -15,7 +15,7 @@ local function parse_flags(args)
     if a == "--mode" then
       i = i + 1
       if not args[i] then
-        die({ message = "--mode requires a value", line = 0, col = 0, context = "" })
+        die(errors.new("--mode requires a value"))
       end
       opts.mode = args[i]
     elseif a == "--pretty" then
@@ -23,7 +23,7 @@ local function parse_flags(args)
     elseif a:sub(1, 1) ~= "-" then
       opts.file = a
     else
-      die({ message = "unknown flag: " .. a, line = 0, col = 0, context = "" })
+      die(errors.new("unknown flag: " .. a))
     end
     i = i + 1
   end
@@ -39,7 +39,7 @@ function subcommands.parse(args)
   if opts.file then
     local f, err = io.open(opts.file, "r")
     if not f then
-      die({ message = "cannot open file: " .. (err or opts.file), line = 0, col = 0, context = "" })
+      die(errors.new("cannot open file: " .. (err or opts.file)))
     end
     text = f:read("*a")
     f:close()
@@ -64,7 +64,7 @@ function subcommands.serialize(args)
   if file then
     local f, err = io.open(file, "r")
     if not f then
-      die({ message = "cannot open file: " .. (err or file), line = 0, col = 0, context = "" })
+      die(errors.new("cannot open file: " .. (err or file)))
     end
     json_text = f:read("*a")
     f:close()
@@ -74,13 +74,13 @@ function subcommands.serialize(args)
 
   local tbl, _, err = dkjson.decode(json_text)
   if not tbl then
-    die({ message = "invalid JSON: " .. (err or "parse error"), line = 0, col = 0, context = "" })
+    die(errors.new("invalid JSON: " .. (err or "parse error")))
   end
 
   local doc = sdp.new(tbl)
   local ok, result = pcall(function() return doc:to_sdp() end)
   if not ok then
-    die({ message = "serialize error: " .. tostring(result), line = 0, col = 0, context = "" })
+    die(errors.new("serialize error: " .. tostring(result)))
   end
 
   io.write(result)
@@ -91,7 +91,7 @@ end
 
 local cmd_name = arg and arg[1]
 if not cmd_name then
-  die({ message = "usage: parse_sdp <subcommand> [options] [file]", line = 0, col = 0, context = "" })
+  die(errors.new("usage: parse_sdp <subcommand> [options] [file]"))
 end
 
 local sub_args = {}
@@ -101,7 +101,7 @@ end
 
 local fn = subcommands[cmd_name]
 if not fn then
-  die({ message = "unknown subcommand: " .. cmd_name, line = 0, col = 0, context = "" })
+  die(errors.new("unknown subcommand: " .. cmd_name))
 end
 
 fn(sub_args)

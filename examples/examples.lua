@@ -87,7 +87,7 @@ local d3 = sdp.parse(ipmx_text, "ipmx")
 print("  sdp.parse(text, 'ipmx')   →  " .. (d3 and "doc  (IPMX valid)" or "nil"))
 
 -- ─────────────────────────────────────────────────────────────────────────────
-section("3. doc methods — validate, is_*, serialize, to_json")
+section("3. doc methods — validate, is_*, to_sdp, to_json")
 -- ─────────────────────────────────────────────────────────────────────────────
 
 -- sdp.parse() with no mode still gives a full doc with all methods.
@@ -110,8 +110,8 @@ print("  doc:is_sdp()    →  " .. tostring(mdoc:is_sdp()))
 print("  doc:is_st2110() →  " .. tostring(mdoc:is_st2110()))
 print("  doc:is_ipmx()   →  " .. tostring(mdoc:is_ipmx()))
 
-subsection("doc:serialize()  →  SDP text (CRLF, RFC 4566 field order)")
-local serialized = mdoc:serialize()
+subsection("doc:to_sdp()  →  SDP text (CRLF, RFC 4566 field order)")
+local serialized = mdoc:to_sdp()
 print("  First 4 lines of output:")
 local n = 0
 for line in (serialized .. "\n"):gmatch("([^\n]*)\n") do
@@ -154,8 +154,8 @@ local raw = {
 
 local built = sdp.new(raw)
 print("  sdp.new(raw):is_sdp()   →  " .. tostring(built:is_sdp()))
-print("  built:serialize():")
-print("  " .. built:serialize():gsub("\r\n", "\\r\\n\n  "))
+print("  built:to_sdp():")
+print("  " .. built:to_sdp():gsub("\r\n", "\\r\\n\n  "))
 
 -- ─────────────────────────────────────────────────────────────────────────────
 section("5. Error anatomy — what a failure looks like")

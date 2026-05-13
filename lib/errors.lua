@@ -1,5 +1,20 @@
 local M = {}
 
+-- Construct a normalised error table.
+-- opts (optional): line, col, context, code, field_path, spec_ref.
+function M.new(msg, opts)
+  local o = opts or {}
+  return {
+    message    = msg,
+    line       = o.line    or 0,
+    col        = o.col     or 0,
+    context    = o.context or "",
+    code       = o.code    or "MISSING_FIELD",
+    field_path = o.field_path,
+    spec_ref   = o.spec_ref,
+  }
+end
+
 -- Format an error table into a human-readable string.
 -- Recognised fields: message, code, line, col, context, field_path, spec_ref.
 function M.format(err)

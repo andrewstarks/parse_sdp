@@ -80,3 +80,35 @@ describe("errors.format", function()
   end)
 
 end)
+
+describe("errors.new", function()
+
+  it("returns a table with the given message", function()
+    local e = errors.new("something went wrong")
+    assert.is_table(e)
+    assert.equal("something went wrong", e.message)
+  end)
+
+  it("defaults code to MISSING_FIELD", function()
+    local e = errors.new("field missing")
+    assert.equal("MISSING_FIELD", e.code)
+  end)
+
+  it("accepts explicit code override", function()
+    local e = errors.new("bad value", { code = "INVALID_VALUE" })
+    assert.equal("INVALID_VALUE", e.code)
+  end)
+
+  it("field_path and spec_ref are nil when not given", function()
+    local e = errors.new("err")
+    assert.is_nil(e.field_path)
+    assert.is_nil(e.spec_ref)
+  end)
+
+  it("sets field_path and spec_ref when given", function()
+    local e = errors.new("err", { field_path = "media[1]", spec_ref = "ST 2110-10 §7" })
+    assert.equal("media[1]",       e.field_path)
+    assert.equal("ST 2110-10 §7", e.spec_ref)
+  end)
+
+end)

@@ -9,6 +9,16 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 
+### Changed (R1–R7 refactor)
+
+- R1: `lib/parser.lua` — trailing-content guard: any field or content after the last recognized SDP block is rejected (`WRONG_ORDER` or `MALFORMED_LINE`)
+- R2: `doc:serialize()` renamed to `doc:to_sdp()` for symmetry with `doc:to_json()`; all call sites updated (examples, GUIDE.md, spec, CLAUDE.md)
+- R3: `lib/util.lua` — new module; `util.find_attr` extracted from `lib/st2110.lua` and `lib/ipmx.lua`
+- R4: `errors.new(msg, opts)` added to `lib/errors.lua`; all ad-hoc error literals across `parse_sdp.lua`, `lib/validate.lua`, `lib/st2110.lua`, `lib/ipmx.lua`, `cli.lua` replaced
+- R5: parse loop (split_lines, parse_required, mode dispatch) extracted to `lib/parser.lua`; `parse_sdp.lua` is now a ~50-line facade
+- R6: `lib/st2110.lua` — `fmtp_params` rejects tokens without `=`; `valid_tsrefclk` rejects `ntp=` with whitespace
+- R7: test coverage added (gal, glonass, ntp=, ptp-no-domain, direct-negative, fmtp-malformed, unknown-mode); low-value method-existence tests removed
+
 ### Added
 
 - `examples/` — 27 annotated SDP fixtures (generic, ST 2110, IPMX; valid and invalid) plus `examples/examples.lua`, a runnable API walkthrough covering all public entry points, doc methods, error anatomy, and a full sweep of every example file

@@ -1,22 +1,8 @@
+local util   = require("lib.util")
+local errors = require("lib.errors")
 local M = {}
 
-local function ipmx_err(msg, field_path, spec_ref, code)
-  return {
-    message    = msg,
-    line       = 0,
-    col        = 0,
-    context    = "",
-    field_path = field_path or "",
-    spec_ref   = spec_ref or "",
-    code       = code or "MISSING_FIELD",
-  }
-end
-
-local function find_attr(attrs, name)
-  for _, a in ipairs(attrs or {}) do
-    if a.name == name then return a end
-  end
-end
+local find_attr = util.find_attr
 
 function M.ipmx(doc)
   local st2110 = require("lib.st2110")
@@ -35,11 +21,10 @@ function M.ipmx(doc)
   end
 
   if not has_extmap then
-    return nil, ipmx_err(
-      "missing required attribute 'extmap'",
-      "session.attributes[extmap]",
-      "IPMX §6"
-    )
+    return nil, errors.new("missing required attribute 'extmap'", {
+      field_path = "session.attributes[extmap]",
+      spec_ref   = "IPMX §6",
+    })
   end
 
   return true
