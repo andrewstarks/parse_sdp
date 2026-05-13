@@ -9,6 +9,28 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 
+### Changed (code quality — DRY pass)
+
+- **`rtpmap_parse`** replaces the two separate `rtpmap_clock_rate` / `rtpmap_encoding`
+  helpers; call sites now receive encoding name and clock rate in one call
+- **`fmtp_params`** is now called once per media block (before the encoding branch)
+  instead of once per branch — eliminates four copies of identical error handling
+- **`each_dup_group(doc, spec_ref, callback)`** extracts the duplicated DUP group
+  iteration that existed separately in `st2110.validate` and `ipmx.validate`
+- **`attr_err(msg, mpath, attr, spec_ref, code)`** helper eliminates 21 repeated
+  `errors.new(…, { field_path = mpath .. ".attributes[…]", … })` constructions
+- Module entry points renamed: `st2110.validate`, `ipmx.validate`, `serialize.to_sdp`
+  (previously `st2110.st2110`, `ipmx.ipmx`, `serialize.serialize`)
+- **`check_privacy`** hoisted from a closure inside `ipmx.validate` to a module-level
+  local alongside the other `valid_*` helpers
+- Milestone tags (`M16:`, `M17:`) removed from inline code comments; spec references
+  (`TR-10-13 §13`, `TR-10-1 §8.7`) are sufficient
+- Redundant ldoc blocks stripped from five one-liner pass-through grammar functions
+  (`parse_session_name`, `parse_info`, `parse_uri`, `parse_email`, `parse_phone`)
+- `valid_hkep`: the captured-but-unused host address token is now named `_` with a
+  comment explaining TR-10-5 §10 does not constrain its format
+- 226 tests pass; file reduced from 1337 to 1256 lines
+
 ### Added (M16 — ST 2022-7 DUP grouping)
 
 - **`a=group:DUP` validation** (ST 2110-10 §8.5): when present at session level, all

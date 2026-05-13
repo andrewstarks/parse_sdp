@@ -144,29 +144,10 @@ function grammar.parse_origin(s)
   return nil, 1
 end
 
---- Parse an s= field value; returns the raw string unchanged.
--- @param s string  Field value string.
--- @return string  Session name.
 function grammar.parse_session_name(s) return s end
-
---- Parse an i= field value; returns the raw string unchanged.
--- @param s string  Field value string.
--- @return string  Session or media information text.
 function grammar.parse_info(s)         return s end
-
---- Parse a u= field value; returns the raw string unchanged.
--- @param s string  Field value string.
--- @return string  URI.
 function grammar.parse_uri(s)          return s end
-
---- Parse an e= field value; returns the raw string unchanged.
--- @param s string  Field value string.
--- @return string  Email address.
 function grammar.parse_email(s)        return s end
-
---- Parse a p= field value; returns the raw string unchanged.
--- @param s string  Field value string.
--- @return string  Phone number.
 function grammar.parse_phone(s)        return s end
 
 local timing_pat = C(digit ^ 1) * SP * C(digit ^ 1) * -P(1)
@@ -367,7 +348,7 @@ end
 -- is performed here.
 -- @param doc table  SDP document table with version, origin, session, media fields.
 -- @return string  SDP text with CRLF line endings.
-function serialize.serialize(doc)
+function serialize.to_sdp(doc)
   local s = doc.session
   local o = doc.origin
   local parts = {}
@@ -393,20 +374,59 @@ end
 -- ── ST 2110 ───────────────────────────────────────────────────────────────────
 local st2110 = {}
 
--- Extract the RTP clock rate from an rtpmap value (e.g. "96 raw/90000" → 90000).
--- Returns nil if the value does not match the expected encoding/clock format.
-local function rtpmap_clock_rate(value)
-  local rest = value:match("^%d+%s+(.+)$")
-  if not rest then return nil end
-  local rate = rest:match("^[^/]+/(%d+)")
-  return rate and tonumber(rate)
+-- Build a structured attribute-path error; shorthand used throughout st2110/ipmx.
+local function attr_err(msg, mpath, attr_name, spec_ref, code)
+  return nil, errors.new(msg, {
+    field_path = mpath .. ".attributes[" .. attr_name .. "]",
+    spec_ref   = spec_ref,
+    code       = code,
+  })
 end
 
--- Extract the encoding name from an rtpmap value (e.g. "96 raw/90000" → "raw").
-local function rtpmap_encoding(value)
+-- Call callback(legs) for every a=group:DUP entry in doc.session.attributes.
+-- legs is an array of { idx=number, block=table } for each named MID.
+-- Returns nil, err (using spec_ref) if a DUP references an undefined a=mid.
+-- Returns nil, err if the callback itself returns nil, err.
+local function each_dup_group(doc, spec_ref, callback)
+  local mid_index = {}
+  for i, m in ipairs(doc.media) do
+    local ma = find_attr(m.attributes or {}, "mid")
+    if ma and ma.value then
+      mid_index[ma.value] = { idx = i, block = m }
+    end
+  end
+  for _, attr in ipairs(doc.session.attributes or {}) do
+    if attr.name == "group" then
+      local val = attr.value or ""
+      local semantics, rest = val:match("^(%S+)%s+(.+)$")
+      if semantics == "DUP" and rest then
+        local legs = {}
+        for mid in rest:gmatch("%S+") do
+          local entry = mid_index[mid]
+          if not entry then
+            return nil, errors.new(
+              "a=group:DUP references undefined mid '" .. mid .. "'",
+              { field_path = "session.attributes[group]",
+                spec_ref = spec_ref, code = "INVALID_VALUE" })
+          end
+          legs[#legs + 1] = entry
+        end
+        local ok, err = callback(legs)
+        if not ok then return nil, err end
+      end
+    end
+  end
+  return true
+end
+
+-- Parse an rtpmap value (e.g. "96 raw/90000") into encoding name and clock rate.
+-- Returns encoding (string), clock_rate (number), or nil if the format does not match.
+local function rtpmap_parse(value)
   local rest = value:match("^%d+%s+(.+)$")
   if not rest then return nil end
-  return rest:match("^([^/]+)")
+  local enc, rate_s = rest:match("^([^/]+)/(%d+)")
+  if not enc then return nil end
+  return enc, tonumber(rate_s)
 end
 
 -- Validate the value of a ts-refclk attribute per ST 2110-10 §7.2.
@@ -493,7 +513,7 @@ end
 -- @param doc table  SDP document table.
 -- @return true  on success.
 -- @return nil, err  on failure; err includes field_path and spec_ref.
-function st2110.st2110(doc)
+function st2110.validate(doc)
   local ok, e = validate.sdp(doc)
   if not ok then return nil, e end
 
@@ -510,177 +530,99 @@ function st2110.st2110(doc)
 
     local tsrefclk = find_attr(sess_attrs, "ts-refclk") or find_attr(mattrs, "ts-refclk")
     if not tsrefclk then
-      return nil, errors.new("missing required attribute 'ts-refclk'", {
-        field_path = mpath .. ".attributes[ts-refclk]",
-        spec_ref   = "ST 2110-10 §7.2",
-      })
+      return attr_err("missing required attribute 'ts-refclk'", mpath, "ts-refclk", "ST 2110-10 §7.2")
     end
     local trok, trmsg = valid_tsrefclk(tsrefclk.value or "")
     if not trok then
-      return nil, errors.new("invalid ts-refclk: " .. (trmsg or ""), {
-        field_path = mpath .. ".attributes[ts-refclk]",
-        spec_ref   = "ST 2110-10 §7.2",
-        code       = "INVALID_VALUE",
-      })
+      return attr_err("invalid ts-refclk: " .. (trmsg or ""), mpath, "ts-refclk", "ST 2110-10 §7.2", "INVALID_VALUE")
     end
 
     local mediaclk = find_attr(mattrs, "mediaclk")
     if not mediaclk then
-      return nil, errors.new("missing required attribute 'mediaclk'", {
-        field_path = mpath .. ".attributes[mediaclk]",
-        spec_ref   = "ST 2110-10 §7.3",
-      })
+      return attr_err("missing required attribute 'mediaclk'", mpath, "mediaclk", "ST 2110-10 §7.3")
     end
     local mcok, mcmsg = valid_mediaclk(mediaclk.value or "")
     if not mcok then
-      return nil, errors.new("invalid mediaclk: " .. (mcmsg or ""), {
-        field_path = mpath .. ".attributes[mediaclk]",
-        spec_ref   = "ST 2110-10 §7.3",
-        code       = "INVALID_VALUE",
-      })
+      return attr_err("invalid mediaclk: " .. (mcmsg or ""), mpath, "mediaclk", "ST 2110-10 §7.3", "INVALID_VALUE")
     end
 
     local rtpmap = find_attr(mattrs, "rtpmap")
     if not rtpmap then
-      return nil, errors.new("missing required attribute 'rtpmap'", {
-        field_path = mpath .. ".attributes[rtpmap]",
-        spec_ref   = "ST 2110-10 §7",
-      })
+      return attr_err("missing required attribute 'rtpmap'", mpath, "rtpmap", "ST 2110-10 §7")
     end
 
     local fmtp = find_attr(mattrs, "fmtp")
     if not fmtp then
-      return nil, errors.new("missing required attribute 'fmtp'", {
-        field_path = mpath .. ".attributes[fmtp]",
-        spec_ref   = "ST 2110-10 §7",
-      })
+      return attr_err("missing required attribute 'fmtp'", mpath, "fmtp", "ST 2110-10 §7")
     end
 
-    local enc = rtpmap_encoding(rtpmap.value or "")
+    local enc, clock_rate = rtpmap_parse(rtpmap.value or "")
+
+    local params, fmtp_err = fmtp_params(fmtp.value or "")
+    if not params then
+      return attr_err("invalid fmtp: " .. fmtp_err, mpath, "fmtp", "ST 2110-10 §7", "INVALID_VALUE")
+    end
 
     if enc == "smpte291" then
       -- ST 2110-40: ancillary data (RFC 8331 / SMPTE ST 2110-40)
-      local clock_rate = rtpmap_clock_rate(rtpmap.value or "")
       if clock_rate ~= 90000 then
-        return nil, errors.new(
+        return attr_err(
           string.format("rtpmap clock rate must be 90000 for smpte291 (got %s)", tostring(clock_rate)),
-          { field_path = mpath .. ".attributes[rtpmap]", spec_ref = "ST 2110-40 §7.2", code = "INVALID_VALUE" }
-        )
-      end
-      local params, fmtp_err = fmtp_params(fmtp.value or "")
-      if not params then
-        return nil, errors.new("invalid fmtp: " .. fmtp_err, {
-          field_path = mpath .. ".attributes[fmtp]", spec_ref = "ST 2110-40 §7.2", code = "INVALID_VALUE",
-        })
+          mpath, "rtpmap", "ST 2110-40 §7.2", "INVALID_VALUE")
       end
       if not params["DID_SDID"] then
-        return nil, errors.new("fmtp missing required 'DID_SDID' parameter for ST 2110-40 (smpte291)", {
-          field_path = mpath .. ".attributes[fmtp]", spec_ref = "ST 2110-40 §7.2",
-        })
+        return attr_err("fmtp missing required 'DID_SDID' parameter for ST 2110-40 (smpte291)",
+          mpath, "fmtp", "ST 2110-40 §7.2")
       end
       local dok, derr = valid_did_sdid(params["DID_SDID"])
       if not dok then
-        return nil, errors.new("invalid DID_SDID: " .. derr, {
-          field_path = mpath .. ".attributes[fmtp]", spec_ref = "ST 2110-40 §7.2", code = "INVALID_VALUE",
-        })
+        return attr_err("invalid DID_SDID: " .. derr, mpath, "fmtp", "ST 2110-40 §7.2", "INVALID_VALUE")
       end
 
     elseif enc == "ST2110-41" then
       -- ST 2110-41: fast metadata
-      local params, fmtp_err = fmtp_params(fmtp.value or "")
-      if not params then
-        return nil, errors.new("invalid fmtp: " .. fmtp_err, {
-          field_path = mpath .. ".attributes[fmtp]", spec_ref = "ST 2110-41 §7.2", code = "INVALID_VALUE",
-        })
-      end
       if not params["SSN"] then
-        return nil, errors.new("fmtp missing required 'SSN' parameter for ST 2110-41", {
-          field_path = mpath .. ".attributes[fmtp]", spec_ref = "ST 2110-41 §7.2",
-        })
+        return attr_err("fmtp missing required 'SSN' parameter for ST 2110-41", mpath, "fmtp", "ST 2110-41 §7.2")
       end
       if not params["DIT"] then
-        return nil, errors.new("fmtp missing required 'DIT' parameter for ST 2110-41", {
-          field_path = mpath .. ".attributes[fmtp]", spec_ref = "ST 2110-41 §7.2",
-        })
+        return attr_err("fmtp missing required 'DIT' parameter for ST 2110-41", mpath, "fmtp", "ST 2110-41 §7.2")
       end
 
     elseif m.media == "video" then
       -- ST 2110-20: uncompressed video
-      local clock_rate = rtpmap_clock_rate(rtpmap.value or "")
       if clock_rate ~= 90000 then
-        return nil, errors.new(
+        return attr_err(
           string.format("rtpmap clock rate must be 90000 for video (got %s)", tostring(clock_rate)),
-          { field_path = mpath .. ".attributes[rtpmap]", spec_ref = "ST 2110-20 §7.2", code = "INVALID_VALUE" }
-        )
-      end
-      local params, fmtp_err = fmtp_params(fmtp.value or "")
-      if not params then
-        return nil, errors.new("invalid fmtp: " .. fmtp_err, {
-          field_path = mpath .. ".attributes[fmtp]", spec_ref = "ST 2110-20 §7.2", code = "INVALID_VALUE",
-        })
+          mpath, "rtpmap", "ST 2110-20 §7.2", "INVALID_VALUE")
       end
       if not params.sampling then
-        return nil, errors.new("fmtp missing required 'sampling' parameter for video", {
-          field_path = mpath .. ".attributes[fmtp]", spec_ref = "ST 2110-20 §7.2",
-        })
+        return attr_err("fmtp missing required 'sampling' parameter for video", mpath, "fmtp", "ST 2110-20 §7.2")
       end
 
     elseif m.media == "audio" then
       -- ST 2110-30: audio (PCM)
-      local params, fmtp_err = fmtp_params(fmtp.value or "")
-      if not params then
-        return nil, errors.new("invalid fmtp: " .. fmtp_err, {
-          field_path = mpath .. ".attributes[fmtp]", spec_ref = "ST 2110-30 §7.2", code = "INVALID_VALUE",
-        })
-      end
       if not params["channel-order"] then
-        return nil, errors.new("fmtp missing required 'channel-order' parameter for audio", {
-          field_path = mpath .. ".attributes[fmtp]", spec_ref = "ST 2110-30 §7.2",
-        })
+        return attr_err("fmtp missing required 'channel-order' parameter for audio", mpath, "fmtp", "ST 2110-30 §7.2")
       end
     end
   end
 
   -- Validate a=group:DUP grouping per ST 2110-10 §8.5 + RFC 7104.
-  -- Build a mid → media-block index for cross-leg checks.
-  local mid_index = {}
-  for i, m in ipairs(doc.media) do
-    local mid_attr = find_attr(m.attributes or {}, "mid")
-    if mid_attr and mid_attr.value then
-      mid_index[mid_attr.value] = { idx = i, block = m }
-    end
-  end
-
-  for _, attr in ipairs(sess_attrs) do
-    if attr.name == "group" then
-      local val = attr.value or ""
-      local semantics, rest = val:match("^(%S+)%s+(.+)$")
-      if semantics == "DUP" and rest then
-        local dup_entries = {}
-        for mid in rest:gmatch("%S+") do
-          local entry = mid_index[mid]
-          if not entry then
-            return nil, errors.new(
-              "a=group:DUP references undefined mid '" .. mid .. "'",
-              { field_path = "session.attributes[group]",
-                spec_ref = "ST 2110-10 §8.5", code = "INVALID_VALUE" })
-          end
-          dup_entries[#dup_entries + 1] = entry
-        end
-        if #dup_entries >= 2 then
-          local base_type = dup_entries[1].block.media
-          for j = 2, #dup_entries do
-            if dup_entries[j].block.media ~= base_type then
-              return nil, errors.new(
-                "a=group:DUP legs must have the same media type",
-                { field_path = "session.attributes[group]",
-                  spec_ref = "ST 2110-10 §8.5", code = "INVALID_VALUE" })
-            end
-          end
+  local dup_ok, dup_err = each_dup_group(doc, "ST 2110-10 §8.5", function(legs)
+    if #legs >= 2 then
+      local base_type = legs[1].block.media
+      for j = 2, #legs do
+        if legs[j].block.media ~= base_type then
+          return nil, errors.new(
+            "a=group:DUP legs must have the same media type",
+            { field_path = "session.attributes[group]",
+              spec_ref = "ST 2110-10 §8.5", code = "INVALID_VALUE" })
         end
       end
     end
-  end
+    return true
+  end)
+  if not dup_ok then return nil, dup_err end
 
   return true
 end
@@ -693,6 +635,8 @@ local ipmx = {}
 -- node-id: xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx (UUID, hex, no braces)
 -- port-id: xx-xx-xx-xx-xx (5 groups of 2 hex digits)
 local function valid_hkep(value)
+  -- addr (4th token) is captured but not format-checked; TR-10-5 §10 constrains
+  -- only that a host is present, not its specific syntax.
   local port_s, nettype, addrtype, _, node_id, port_id =
     value:match("^(%S+)%s+(%S+)%s+(%S+)%s+(%S+)%s+(%S+)%s+(%S+)$")
   if not port_s then
@@ -766,6 +710,25 @@ local function valid_privacy(value, usb_only)
   return true
 end
 
+-- Validate every a=privacy attribute in attrs.
+-- path is the field_path prefix (e.g. "session" or "media[1]").
+-- Pass is_usb=true to restrict to the four AAD-only modes required by TR-10-14 §12.
+local function check_privacy(attrs, path, is_usb)
+  for _, attr in ipairs(attrs or {}) do
+    if attr.name == "privacy" then
+      local ok, perr = valid_privacy(attr.value or "", is_usb)
+      if not ok then
+        return nil, errors.new("invalid a=privacy: " .. perr, {
+          field_path = path .. ".attributes[privacy]",
+          spec_ref   = is_usb and "TR-10-14 §12" or "TR-10-13 §13",
+          code       = "INVALID_VALUE",
+        })
+      end
+    end
+  end
+  return true
+end
+
 --- Validate an SDP document against IPMX requirements.
 -- Runs ST 2110 validation first on all non-USB media blocks, then checks:
 -- a=extmap presence, IPMX fmtp marker (TR-10-1 §10.1), a=hkep format
@@ -775,7 +738,7 @@ end
 -- @param doc table  SDP document table.
 -- @return true  on success.
 -- @return nil, err  on failure; err includes field_path and spec_ref.
-function ipmx.ipmx(doc)
+function ipmx.validate(doc)
   -- Identify USB media blocks: m=application with TCP transport (TR-10-14).
   local usb_set = {}
   for i, m in ipairs(doc.media) do
@@ -793,7 +756,7 @@ function ipmx.ipmx(doc)
   if #rtp_media > 0 then
     local filtered = { version = doc.version, origin = doc.origin,
                        session = doc.session, media = rtp_media }
-    local ok, e = st2110.st2110(filtered)
+    local ok, e = st2110.validate(filtered)
     if not ok then return nil, e end
   else
     local ok, e = validate.sdp(doc)
@@ -825,33 +788,23 @@ function ipmx.ipmx(doc)
       if fmtp then
         local params, ferr = fmtp_params(fmtp.value or "")
         if not params then
-          return nil, errors.new("invalid fmtp: " .. ferr, {
-            field_path = mpath .. ".attributes[fmtp]",
-            spec_ref   = "TR-10-1 §10.1", code = "INVALID_VALUE",
-          })
+          return attr_err("invalid fmtp: " .. ferr, mpath, "fmtp", "TR-10-1 §10.1", "INVALID_VALUE")
         end
         if not params["IPMX"] then
-          return nil, errors.new("fmtp missing required 'IPMX' marker", {
-            field_path = mpath .. ".attributes[fmtp]",
-            spec_ref   = "TR-10-1 §10.1",
-          })
+          return attr_err("fmtp missing required 'IPMX' marker", mpath, "fmtp", "TR-10-1 §10.1")
         end
         if params["FECPROFILE"] and params["FECPROFILE"] ~= "profile-a" then
-          return nil, errors.new(
+          return attr_err(
             "invalid FECPROFILE '" .. params["FECPROFILE"] .. "' (expected 'profile-a')",
-            { field_path = mpath .. ".attributes[fmtp]",
-              spec_ref = "TR-10-6 §7.6", code = "INVALID_VALUE" }
-          )
+            mpath, "fmtp", "TR-10-6 §7.6", "INVALID_VALUE")
         end
         for _, lat in ipairs({ "FEC_ADD_LATENCY_VIDEO", "FEC_ADD_LATENCY_AUDIO" }) do
           if params[lat] then
             local n = tonumber(params[lat])
             if not n or n < 0 or n ~= math.floor(n) then
-              return nil, errors.new(
+              return attr_err(
                 "invalid " .. lat .. " value (must be a non-negative integer)",
-                { field_path = mpath .. ".attributes[fmtp]",
-                  spec_ref = "TR-10-6 §7.6", code = "INVALID_VALUE" }
-              )
+                mpath, "fmtp", "TR-10-6 §7.6", "INVALID_VALUE")
             end
           end
         end
@@ -872,23 +825,6 @@ function ipmx.ipmx(doc)
     end
   end
 
-  -- Validate a=privacy wherever it appears; USB blocks require AAD-only modes (TR-10-13/14).
-  local function check_privacy(attrs, path, is_usb)
-    for _, attr in ipairs(attrs or {}) do
-      if attr.name == "privacy" then
-        local ok, perr = valid_privacy(attr.value or "", is_usb)
-        if not ok then
-          return nil, errors.new("invalid a=privacy: " .. perr, {
-            field_path = path .. ".attributes[privacy]",
-            spec_ref   = is_usb and "TR-10-14 §12" or "TR-10-13 §13",
-            code       = "INVALID_VALUE",
-          })
-        end
-      end
-    end
-    return true
-  end
-
   local pok, perr = check_privacy(doc.session.attributes, "session", false)
   if not pok then return nil, perr end
   for i, m in ipairs(doc.media) do
@@ -897,54 +833,38 @@ function ipmx.ipmx(doc)
     if not pok2 then return nil, perr2 end
   end
 
-  -- M16: DUP group privacy consistency (TR-10-13 §13 lines 329/335).
-  -- Build mid → block index for IPMX-level cross-leg checks.
-  local mid_idx = {}
-  for _, m in ipairs(doc.media) do
-    local ma = find_attr(m.attributes or {}, "mid")
-    if ma and ma.value then mid_idx[ma.value] = m end
-  end
-
-  for _, attr in ipairs(doc.session.attributes or {}) do
-    if attr.name == "group" then
-      local val = attr.value or ""
-      local semantics, rest = val:match("^(%S+)%s+(.+)$")
-      if semantics == "DUP" and rest then
-        local priv_vals = {}
-        for mid in rest:gmatch("%S+") do
-          local blk = mid_idx[mid]
-          if blk then
-            local pattr = find_attr(blk.attributes or {}, "privacy")
-            -- use false as "absent" sentinel so nil doesn't create table holes
-            priv_vals[#priv_vals + 1] = pattr and pattr.value or false
-          end
-        end
-        if #priv_vals >= 2 then
-          local first = priv_vals[1]
-          for j = 2, #priv_vals do
-            if priv_vals[j] ~= first then
-              return nil, errors.new(
-                "a=privacy values must be identical on all DUP group legs",
-                { field_path = "session.attributes[group]",
-                  spec_ref = "TR-10-13 §13", code = "INVALID_VALUE" })
-            end
-          end
+  -- DUP group privacy consistency (TR-10-13 §13).
+  -- Undefined mids were already rejected by st2110.validate above.
+  local dup_ok, dup_err = each_dup_group(doc, "TR-10-13 §13", function(legs)
+    if #legs >= 2 then
+      local first_pattr = find_attr(legs[1].block.attributes or {}, "privacy")
+      -- use false as "absent" sentinel so nil doesn't create table holes
+      local first_val = first_pattr and first_pattr.value or false
+      for j = 2, #legs do
+        local pattr = find_attr(legs[j].block.attributes or {}, "privacy")
+        local val = pattr and pattr.value or false
+        if val ~= first_val then
+          return nil, errors.new(
+            "a=privacy values must be identical on all DUP group legs",
+            { field_path = "session.attributes[group]",
+              spec_ref = "TR-10-13 §13", code = "INVALID_VALUE" })
         end
       end
     end
-  end
+    return true
+  end)
+  if not dup_ok then return nil, dup_err end
 
-  -- M17: RTCP port convention (TR-10-1 §8.7) — IPMX only.
+  -- RTCP port convention (TR-10-1 §8.7) — IPMX only.
   for i, m in ipairs(doc.media) do
     if not usb_set[i] then
       local mpath  = string.format("media[%d]", i)
       local mattrs = m.attributes or {}
 
       if find_attr(mattrs, "rtcp-mux") then
-        return nil, errors.new(
+        return attr_err(
           "a=rtcp-mux is not permitted (IPMX requires RTCP on media port+1)",
-          { field_path = mpath .. ".attributes[rtcp-mux]",
-            spec_ref = "TR-10-1 §8.7", code = "INVALID_VALUE" })
+          mpath, "rtcp-mux", "TR-10-1 §8.7", "INVALID_VALUE")
       end
 
       local rtcp_attr = find_attr(mattrs, "rtcp")
@@ -952,11 +872,10 @@ function ipmx.ipmx(doc)
         local port_s = (rtcp_attr.value or ""):match("^(%d+)")
         local port   = port_s and tonumber(port_s)
         if not port or port ~= (m.port + 1) then
-          return nil, errors.new(
+          return attr_err(
             string.format("a=rtcp port must be media port+1 (expected %d, got %s)",
               m.port + 1, tostring(port)),
-            { field_path = mpath .. ".attributes[rtcp]",
-              spec_ref = "TR-10-1 §8.7", code = "INVALID_VALUE" })
+            mpath, "rtcp", "TR-10-1 §8.7", "INVALID_VALUE")
         end
       end
     end
@@ -1192,10 +1111,10 @@ function parser.parse(text, mode)
   }
 
   if mode == "st2110" then
-    local ok, ve = st2110.st2110(doc)
+    local ok, ve = st2110.validate(doc)
     if not ok then return nil, ve end
   elseif mode == "ipmx" then
-    local ok, ve = ipmx.ipmx(doc)
+    local ok, ve = ipmx.validate(doc)
     if not ok then return nil, ve end
   end
 
@@ -1209,8 +1128,8 @@ mt.__index = mt
 
 local validators = {
   sdp    = validate.sdp,
-  st2110 = st2110.st2110,
-  ipmx   = ipmx.ipmx,
+  st2110 = st2110.validate,
+  ipmx   = ipmx.validate,
 }
 
 --- Validate the document against the given tier.
@@ -1230,11 +1149,11 @@ function mt:is_sdp()    return validate.sdp(self) == true end
 
 --- Test whether the document satisfies SMPTE ST 2110 requirements.
 -- @return boolean
-function mt:is_st2110() return st2110.st2110(self) == true end
+function mt:is_st2110() return st2110.validate(self) == true end
 
 --- Test whether the document satisfies IPMX requirements.
 -- @return boolean
-function mt:is_ipmx()   return ipmx.ipmx(self) == true end
+function mt:is_ipmx()   return ipmx.validate(self) == true end
 
 --- Encode the document as a JSON string using dkjson.
 -- @return string  JSON representation of the document.
@@ -1245,7 +1164,7 @@ end
 --- Serialize the document back to RFC 4566 SDP text.
 -- @return string  SDP text with CRLF line endings.
 function mt:to_sdp()
-  return serialize.serialize(self)
+  return serialize.to_sdp(self)
 end
 
 --- Parse SDP text and return a doc object with metatable methods attached.

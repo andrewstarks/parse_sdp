@@ -1209,3 +1209,21 @@ calls are removed; the locals are already in scope.
 `lib/` directory deleted.
 
 **Done when:** `busted spec/` passes with 169 successes; `lib/` is gone.
+
+---
+
+### R10 — DRY / clarity pass ✓
+
+**Goal.** Address code-quality issues identified during review: duplicated logic, redundant naming, comment rot, and a correctness documentation gap.
+
+- [x] `rtpmap_parse` replaces separate `rtpmap_clock_rate` / `rtpmap_encoding` helpers
+- [x] `fmtp_params` lifted above the encoding branch in `st2110.validate` (was called once per branch)
+- [x] `each_dup_group(doc, spec_ref, cb)` extracts duplicated DUP iteration from `st2110.validate` and `ipmx.validate`
+- [x] `attr_err(msg, mpath, attr, spec_ref, code)` eliminates 21 repeated error-table constructions
+- [x] Module entry points renamed: `st2110.validate`, `ipmx.validate`, `serialize.to_sdp`
+- [x] `check_privacy` hoisted from closure to module-level local
+- [x] Milestone tags (`M16:`, `M17:`) removed from inline comments
+- [x] Redundant ldoc stripped from five one-liner pass-through grammar functions
+- [x] `valid_hkep` addr token documented with comment explaining why format is not checked
+
+**Done when:** `busted spec/` passes with 226 successes; 1337 → 1256 lines.
