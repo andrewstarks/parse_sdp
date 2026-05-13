@@ -570,19 +570,36 @@ function st2110.validate(doc)
           string.format("rtpmap clock rate must be 90000 for smpte291 (got %s)", tostring(clock_rate)),
           mpath, "rtpmap", "ST 2110-40 §7.2", "INVALID_VALUE")
       end
-      if not params["DID_SDID"] then
+      -- DID_SDID may appear multiple times; collect and validate every occurrence.
+      local did_sdid_list = {}
+      for v in (fmtp.value or ""):gmatch("DID_SDID=([^;%s]+)") do
+        did_sdid_list[#did_sdid_list + 1] = v
+      end
+      if #did_sdid_list == 0 then
         return attr_err("fmtp missing required 'DID_SDID' parameter for ST 2110-40 (smpte291)",
           mpath, "fmtp", "ST 2110-40 §7.2")
       end
-      local dok, derr = valid_did_sdid(params["DID_SDID"])
-      if not dok then
-        return attr_err("invalid DID_SDID: " .. derr, mpath, "fmtp", "ST 2110-40 §7.2", "INVALID_VALUE")
+      for _, dsval in ipairs(did_sdid_list) do
+        local dok, derr = valid_did_sdid(dsval)
+        if not dok then
+          return attr_err("invalid DID_SDID: " .. derr, mpath, "fmtp", "ST 2110-40 §7.2", "INVALID_VALUE")
+        end
       end
 
     elseif enc == "ST2110-41" then
       -- ST 2110-41: fast metadata
-      if not params["SSN"] then
+      if clock_rate ~= 90000 then
+        return attr_err(
+          string.format("rtpmap clock rate must be 90000 for ST2110-41 (got %s)", tostring(clock_rate)),
+          mpath, "rtpmap", "ST 2110-41 §7.2", "INVALID_VALUE")
+      end
+      local ssn = params["SSN"]
+      if not ssn then
         return attr_err("fmtp missing required 'SSN' parameter for ST 2110-41", mpath, "fmtp", "ST 2110-41 §7.2")
+      end
+      if not ssn:match("^ST2110%-41:") then
+        return attr_err("invalid SSN format (must start with 'ST2110-41:')",
+          mpath, "fmtp", "ST 2110-41 §7.2", "INVALID_VALUE")
       end
       if not params["DIT"] then
         return attr_err("fmtp missing required 'DIT' parameter for ST 2110-41", mpath, "fmtp", "ST 2110-41 §7.2")

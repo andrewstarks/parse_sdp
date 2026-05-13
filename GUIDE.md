@@ -436,10 +436,12 @@ When `a=group:DUP <mid1> <mid2> …` is present at session level, the library va
 
 ### Per media block
 
+`a=ts-refclk` may appear at session level (applying to all media blocks) or at each media-block level; the library accepts either location. All other attributes in this table must be per-media.
+
 | Attribute | Requirement |
 | --- | --- |
 | `a=ts-refclk` | Required. Accepted: `ptp=<version>:<gmid>[:<domain>]`; `localmac=<mac>`; `ntp=<addr>`; `gps`; `gal`; `glonass` |
-| `a=mediaclk` | Required. Typically `direct=0` |
+| `a=mediaclk` | Required. Accepted: `direct=<integer>` (sample offset, may be negative); `sender` |
 | `a=rtpmap` | Required. Clock rate must match media type |
 | `a=fmtp` | Required. Key=value pairs validated per sub-standard |
 
@@ -476,15 +478,15 @@ Ancillary data flows use rtpmap encoding name `smpte291` at clock rate 90000 (RF
 | `DID_SDID` | `{0x61,0x02}` | yes — required; each octet must be exactly two hex digits |
 | `VPID_Code` | `133` | no |
 
-Multiple `DID_SDID` entries are allowed in the SDP; at least one must be present and valid.
+Multiple `DID_SDID` entries are allowed in the SDP; at least one must be present. All entries are validated — any entry with a malformed value is rejected.
 
 ### ST 2110-41 (fast metadata) `fmtp` parameters
 
-Fast metadata flows use rtpmap encoding name `ST2110-41` at clock rate 90000.
+Fast metadata flows use rtpmap encoding name `ST2110-41` at clock rate 90000. The clock rate is validated and must be exactly 90000.
 
 | Parameter | Example | Validated |
 | --- | --- | --- |
-| `SSN` | `ST2110-41:2024` | yes — required; must start with `ST2110-41:` |
+| `SSN` | `ST2110-41:2024` | yes — required; value must start with `ST2110-41:` |
 | `DIT` | `100` | yes — required (presence only) |
 
 ---

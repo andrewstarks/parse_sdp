@@ -9,13 +9,16 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 
+### Fixed
+
+- ST 2110-41: clock rate (90000) is now validated (was accepted without a check)
+- ST 2110-41: SSN value is now validated to start with `ST2110-41:` (was presence-only)
+- ST 2110-40 (smpte291): all `DID_SDID` entries in `a=fmtp` are now validated; previously only the last occurrence was checked
+
 ### Changed
 
 - CLI subcommands renamed: `parse` → `to_json`, `serialize` → `to_sdp` — names now
   mirror the doc methods `doc:to_json()` and `doc:to_sdp()`
-
-### Changed (code quality — DRY pass)
-
 - **`rtpmap_parse`** replaces the two separate `rtpmap_clock_rate` / `rtpmap_encoding`
   helpers; call sites now receive encoding name and clock rate in one call
 - **`fmtp_params`** is now called once per media block (before the encoding branch)
