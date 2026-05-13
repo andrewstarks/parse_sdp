@@ -1,6 +1,6 @@
 local M = {}
 
-local function st2110_err(msg, field_path, spec_ref)
+local function st2110_err(msg, field_path, spec_ref, code)
   return {
     message    = msg,
     line       = 0,
@@ -8,6 +8,7 @@ local function st2110_err(msg, field_path, spec_ref)
     context    = "",
     field_path = field_path or "",
     spec_ref   = spec_ref or "",
+    code       = code or "MISSING_FIELD",
   }
 end
 
@@ -114,7 +115,8 @@ function M.st2110(doc)
       return nil, st2110_err(
         "invalid ts-refclk: " .. (trmsg or ""),
         mpath .. ".attributes[ts-refclk]",
-        "ST 2110-10 §7.2"
+        "ST 2110-10 §7.2",
+        "INVALID_VALUE"
       )
     end
 
@@ -131,7 +133,8 @@ function M.st2110(doc)
       return nil, st2110_err(
         "invalid mediaclk: " .. (mcmsg or ""),
         mpath .. ".attributes[mediaclk]",
-        "ST 2110-10 §7.3"
+        "ST 2110-10 §7.3",
+        "INVALID_VALUE"
       )
     end
 
@@ -162,7 +165,8 @@ function M.st2110(doc)
             tostring(clock_rate)
           ),
           mpath .. ".attributes[rtpmap]",
-          "ST 2110-20 §7.2"
+          "ST 2110-20 §7.2",
+          "INVALID_VALUE"
         )
       end
       local params = fmtp_params(fmtp.value or "")

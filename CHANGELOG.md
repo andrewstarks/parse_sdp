@@ -11,6 +11,9 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ### Added
 
+- M13: `lib/errors.lua` — new module; `errors.format(err)` renders human-readable output: `error: [CODE] message`, location arrow, context line + caret at column, spec clause note; 11 tests in `spec/errors_spec.lua`
+- M13: error codes added to all error constructors — `MISSING_FIELD`, `INVALID_VALUE`, `WRONG_ORDER`, `MALFORMED_LINE` in `parse_sdp.lua`, `lib/validate.lua`, `lib/st2110.lua`, `lib/ipmx.lua`
+- M13: `cli.lua` — stderr now uses `errors.format()` instead of raw JSON; CLI tests updated accordingly
 - M12: `cli.lua` — `serialize` subcommand: reads JSON from file or stdin, decodes with dkjson, calls `sdp.new()` + `doc:to_sdp()`; JSON error to stderr on invalid JSON or serialize failure; exit 0/1; 5 integration tests including round-trip
 - M11: `cli.lua` — `parse` subcommand: `parse_sdp parse [--mode MODE] [--pretty] [file]`; reads file or stdin; JSON to stdout on success, JSON error to stderr on failure; exit 0/1; 8 integration tests in `spec/cli_spec.lua`
 - M10: `parse_sdp.lua` — `mt:to_sdp()` alias for `serialize`; symmetric pair with `to_json`; 3 tests confirming method presence, identical output to `serialize`, and `sdp.new({})` availability

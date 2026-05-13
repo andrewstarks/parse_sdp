@@ -1,8 +1,9 @@
 local sdp    = require("parse_sdp")
 local dkjson = require("dkjson")
+local errors = require("lib.errors")
 
 local function die(err_table)
-  io.stderr:write(dkjson.encode(err_table) .. "\n")
+  io.stderr:write(errors.format(err_table) .. "\n")
   os.exit(1)
 end
 

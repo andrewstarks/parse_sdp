@@ -1,6 +1,6 @@
 local M = {}
 
-local function ipmx_err(msg, field_path, spec_ref)
+local function ipmx_err(msg, field_path, spec_ref, code)
   return {
     message    = msg,
     line       = 0,
@@ -8,6 +8,7 @@ local function ipmx_err(msg, field_path, spec_ref)
     context    = "",
     field_path = field_path or "",
     spec_ref   = spec_ref or "",
+    code       = code or "MISSING_FIELD",
   }
 end
 

@@ -66,8 +66,8 @@ local function split_lines(text)
   return lines
 end
 
-local function make_err(msg, line_num, col, context)
-  return { message = msg, line = line_num, col = col, context = context }
+local function make_err(msg, line_num, col, context, code)
+  return { message = msg, line = line_num, col = col, context = context, code = code }
 end
 
 -- Reads one required field from lines[pos], validates its type char and value.
@@ -77,25 +77,25 @@ local function parse_required(lines, pos, type_char, parse_value)
   if pos > #lines then
     return nil, make_err(
       string.format("missing required field '%s='", type_char),
-      pos, 1, ""
+      pos, 1, "", "MISSING_FIELD"
     )
   end
   local line = lines[pos]
   local t, v, offset = grammar.tokenize_line(line)
   if not t then
-    return nil, make_err("malformed line", pos, v or 1, line)
+    return nil, make_err("malformed line", pos, v or 1, line, "MALFORMED_LINE")
   end
   if t ~= type_char then
     return nil, make_err(
       string.format("expected '%s=' but found '%s='", type_char, t),
-      pos, 1, line
+      pos, 1, line, "WRONG_ORDER"
     )
   end
   local parsed, fail_col = parse_value(v)
   if not parsed then
     return nil, make_err(
       string.format("invalid value for '%s='", type_char),
-      pos, offset + (fail_col or 1) - 1, line
+      pos, offset + (fail_col or 1) - 1, line, "INVALID_VALUE"
     )
   end
   return parsed

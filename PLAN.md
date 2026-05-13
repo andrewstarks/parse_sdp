@@ -231,14 +231,14 @@ Covers: `i=`, `u=`, `e=`, `p=`, `c=`, `b=`, `a=` (zero or more of each where all
 
 ---
 
-### M13 — Error UX
+### M13 — Error UX ✓
 
 **Done when:** Every error message is actionable without reading the spec.
 
-- [ ] Caret display: offending line + `^` at column
-- [ ] ST 2110 / IPMX errors include spec clause (`ST 2110-20 §7.2`)
-- [ ] Consistent error codes (`MISSING_FIELD`, `INVALID_VALUE`, `WRONG_ORDER`, etc.)
-- [ ] Review all existing error messages for clarity
+- [x] Caret display: offending line + `^` at column
+- [x] ST 2110 / IPMX errors include spec clause (`ST 2110-20 §7.2`)
+- [x] Consistent error codes (`MISSING_FIELD`, `INVALID_VALUE`, `WRONG_ORDER`, `MALFORMED_LINE`)
+- [x] Review all existing error messages for clarity
 
 ---
 
