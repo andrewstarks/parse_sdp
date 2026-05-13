@@ -1,5 +1,6 @@
-local grammar  = require("lib.grammar")
-local validate = require("lib.validate")
+local grammar   = require("lib.grammar")
+local validate  = require("lib.validate")
+local serialize = require("lib.serialize")
 
 local M  = {}
 local mt = {}
@@ -15,6 +16,10 @@ end
 
 function mt:is_sdp()
   return validate.sdp(self) == true
+end
+
+function mt:serialize()
+  return serialize.serialize(self)
 end
 
 function mt:is_st2110()

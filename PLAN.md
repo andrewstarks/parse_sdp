@@ -124,14 +124,14 @@ Covers: `i=`, `u=`, `e=`, `p=`, `c=`, `b=`, `a=` (zero or more of each where all
 
 ---
 
-### M7 — Serializer
+### M7 — Serializer ✓
 
 **Done when:** `doc:serialize()` produces strict RFC 4566 SDP text; round-trip holds.
 
-- [ ] `lib/serialize.lua`: field output in RFC 4566 §5 order
-- [ ] CRLF line endings
-- [ ] `doc:serialize()` method
-- [ ] Tests:
+- [x] `lib/serialize.lua`: field output in RFC 4566 §5 order
+- [x] CRLF line endings
+- [x] `doc:serialize()` method
+- [x] Tests:
   - Serialized output re-parses without error
   - Field order matches spec (`v o s i u e p c b t a m ...`)
   - Round-trip: `parse(serialize(parse(text)))` equals `parse(text)` (deep equal)

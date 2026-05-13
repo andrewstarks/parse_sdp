@@ -683,3 +683,132 @@ describe("sdp — doc object (M6)", function()
     assert.is_false(doc:is_ipmx())
   end)
 end)
+
+describe("doc:serialize() (M7)", function()
+  local sdp = require("parse_sdp")
+
+  local minimal_text = table.concat({
+    "v=0",
+    "o=- 1 1 IN IP4 127.0.0.1",
+    "s=Test",
+    "t=0 0",
+  }, "\r\n") .. "\r\n"
+
+  local full_text = table.concat({
+    "v=0",
+    "o=- 1 1 IN IP4 127.0.0.1",
+    "s=My Session",
+    "i=A description",
+    "u=http://example.com",
+    "e=user@example.com",
+    "p=+1 617 555 6011",
+    "c=IN IP4 224.2.1.1",
+    "b=AS:128",
+    "t=0 0",
+    "a=recvonly",
+  }, "\r\n") .. "\r\n"
+
+  local media_text = table.concat({
+    "v=0",
+    "o=- 1 1 IN IP4 127.0.0.1",
+    "s=Test",
+    "t=0 0",
+    "m=video 49170 RTP/AVP 96",
+    "c=IN IP4 224.2.1.1",
+    "b=AS:1000",
+    "a=rtpmap:96 H264/90000",
+    "m=audio 49172 RTP/AVP 0",
+    "a=rtpmap:0 PCMU/8000",
+  }, "\r\n") .. "\r\n"
+
+  local function lines_of(s)
+    local t = {}
+    for l in s:gmatch("[^\r\n]+") do t[#t + 1] = l end
+    return t
+  end
+
+  it("doc:serialize() is a method", function()
+    local doc = sdp.parse(minimal_text)
+    assert.is_function(doc.serialize)
+  end)
+
+  it("serializes minimal SDP to a string", function()
+    local doc = sdp.parse(minimal_text)
+    assert.is_string(doc:serialize())
+  end)
+
+  it("uses CRLF line endings (no bare LF)", function()
+    local out = sdp.parse(minimal_text):serialize()
+    local crlf = select(2, out:gsub("\r\n", ""))
+    local lf   = select(2, out:gsub("\n",   ""))
+    assert.equal(crlf, lf)
+  end)
+
+  it("field order: v o s t for minimal SDP", function()
+    local ls = lines_of(sdp.parse(minimal_text):serialize())
+    assert.equal("v=0",                        ls[1])
+    assert.equal("o=- 1 1 IN IP4 127.0.0.1",  ls[2])
+    assert.equal("s=Test",                     ls[3])
+    assert.equal("t=0 0",                      ls[4])
+  end)
+
+  it("re-parses cleanly", function()
+    local out = sdp.parse(minimal_text):serialize()
+    local doc2, err = sdp.parse(out)
+    assert.is_nil(err)
+    assert.is_table(doc2)
+  end)
+
+  it("round-trip: parse → serialize → parse is deep-equal for minimal SDP", function()
+    local doc1 = sdp.parse(minimal_text)
+    local doc2 = sdp.parse(doc1:serialize())
+    assert.same(doc1, doc2)
+  end)
+
+  it("field order: v o s i u e p c b t a for full session", function()
+    local ls = lines_of(sdp.parse(full_text):serialize())
+    assert.equal("v=0",                        ls[1])
+    assert.equal("o=- 1 1 IN IP4 127.0.0.1",  ls[2])
+    assert.equal("s=My Session",               ls[3])
+    assert.equal("i=A description",            ls[4])
+    assert.equal("u=http://example.com",       ls[5])
+    assert.equal("e=user@example.com",         ls[6])
+    assert.equal("p=+1 617 555 6011",          ls[7])
+    assert.equal("c=IN IP4 224.2.1.1",         ls[8])
+    assert.equal("b=AS:128",                   ls[9])
+    assert.equal("t=0 0",                      ls[10])
+    assert.equal("a=recvonly",                 ls[11])
+  end)
+
+  it("round-trip: full session SDP", function()
+    local doc1 = sdp.parse(full_text)
+    local doc2 = sdp.parse(doc1:serialize())
+    assert.same(doc1, doc2)
+  end)
+
+  it("serializes two media blocks in order", function()
+    local ls = lines_of(sdp.parse(media_text):serialize())
+    assert.equal("t=0 0",                        ls[4])
+    assert.equal("m=video 49170 RTP/AVP 96",     ls[5])
+    assert.equal("c=IN IP4 224.2.1.1",           ls[6])
+    assert.equal("b=AS:1000",                    ls[7])
+    assert.equal("a=rtpmap:96 H264/90000",       ls[8])
+    assert.equal("m=audio 49172 RTP/AVP 0",      ls[9])
+    assert.equal("a=rtpmap:0 PCMU/8000",         ls[10])
+  end)
+
+  it("serializes port count (/2) correctly", function()
+    local text = table.concat({
+      "v=0", "o=- 1 1 IN IP4 127.0.0.1", "s=Test", "t=0 0",
+      "m=video 49170/2 RTP/AVP 96",
+    }, "\r\n") .. "\r\n"
+    local out = sdp.parse(text):serialize()
+    assert.truthy(out:find("m=video 49170/2 RTP/AVP 96", 1, true))
+  end)
+
+  it("round-trip: two media blocks", function()
+    local doc1 = sdp.parse(media_text)
+    local doc2 = sdp.parse(doc1:serialize())
+    assert.same(doc1, doc2)
+  end)
+end)
