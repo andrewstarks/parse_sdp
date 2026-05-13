@@ -39,15 +39,15 @@ Each milestone: write tests → confirm they fail → implement → confirm they
 
 ---
 
-### M1 — Scaffolding
+### M1 — Scaffolding ✓
 
 **Done when:** `busted spec/` runs and one smoke test passes.
 
-- [ ] Directory layout: `lib/`, `spec/`, `spec/fixtures/`
-- [ ] `.busted` config
-- [ ] `Dockerfile` and `docker-compose.yml`
-- [ ] `parse_sdp.lua` stub: exports `parse` (returns `nil, {message="not implemented"}`) and `new`
-- [ ] `spec/sdp_spec.lua`: one test — `require("parse_sdp")` loads without error
+- [x] Directory layout: `lib/`, `spec/`, `spec/fixtures/`
+- [x] `.busted` config
+- [x] `Dockerfile` and `docker-compose.yml`
+- [x] `parse_sdp.lua` stub: exports `parse` (returns `nil, {message="not implemented"}`) and `new`
+- [x] `spec/sdp_spec.lua`: one test — `require("parse_sdp")` loads without error
 
 ---
 
