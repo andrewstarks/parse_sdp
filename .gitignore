@@ -1,0 +1,4 @@
+*.out
+luac.out
+.luarocks/
+luarocks.lock
