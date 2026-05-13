@@ -1,6 +1,6 @@
 local dkjson = require("dkjson")
 
--- Run `lua cli.lua <args_str>` as a subprocess.
+-- Run `lua parse_sdp.lua <args_str>` as a subprocess.
 -- stdin_text: optional string piped to the process's stdin.
 -- Returns stdout (string), stderr (string), exit_code (number).
 local function run(args_str, stdin_text)
@@ -13,9 +13,9 @@ local function run(args_str, stdin_text)
     local f = assert(io.open(tmp_in, "w"))
     f:write(stdin_text)
     f:close()
-    cmd = string.format("lua cli.lua %s < %s 2>%s", args_str, tmp_in, tmp_err)
+    cmd = string.format("lua parse_sdp.lua %s < %s 2>%s", args_str, tmp_in, tmp_err)
   else
-    cmd = string.format("lua cli.lua %s 2>%s", args_str, tmp_err)
+    cmd = string.format("lua parse_sdp.lua %s 2>%s", args_str, tmp_err)
   end
 
   local handle  = io.popen(cmd, "r")
@@ -93,6 +93,18 @@ describe("CLI: parse subcommand", function()
     assert.truthy(stderr:match("^error:"))
   end)
 
+  it("--help exits 0 and prints usage", function()
+    local stdout, _, code = run("--help")
+    assert.equal(0, code)
+    assert.truthy(stdout:find("parse_sdp", 1, true))
+  end)
+
+  it("parse --help exits 0 and mentions --mode", function()
+    local stdout, _, code = run("parse --help")
+    assert.equal(0, code)
+    assert.truthy(stdout:find("--mode", 1, true))
+  end)
+
 end)
 
 -- ── serialize subcommand ──────────────────────────────────────────────────────
@@ -101,7 +113,7 @@ describe("CLI: serialize subcommand", function()
 
   -- Parse a fixture to JSON, return the JSON string.
   local function fixture_json(sdp_file)
-    local h = io.popen("lua cli.lua parse " .. sdp_file, "r")
+    local h = io.popen("lua parse_sdp.lua parse " .. sdp_file, "r")
     local json = h:read("*a")
     h:close()
     return json

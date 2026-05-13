@@ -29,7 +29,10 @@ Prefer fewer, well-named things over many small helpers.
 ## Repository Layout
 
 ```
-parse_sdp.lua        library entry point (thin facade, attaches metatable)
+parse_sdp.lua        library entry point AND CLI executable (dual-purpose)
+                     `require("parse_sdp")` loads the library; running it
+                     directly (`lua parse_sdp.lua` or `./parse_sdp.lua`)
+                     activates the argparse CLI (parse / serialize subcommands)
 lib/
   grammar.lua        LPEG grammar for RFC 4566 line and field parsing
   parser.lua         full parse loop; R1 trailing-content strictness
@@ -39,7 +42,6 @@ lib/
   ipmx.lua           IPMX validation (operates on parsed doc table)
   serialize.lua      doc → valid SDP text
   errors.lua         error table construction and formatting
-cli.lua              CLI entry point (subcommands: parse, serialize)
 spec/
   sdp_spec.lua       RFC 4566 parser tests
   st2110_spec.lua    ST 2110 validation tests

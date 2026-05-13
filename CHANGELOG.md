@@ -9,6 +9,10 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 
+### Changed (R8)
+
+- R8: `cli.lua` deleted; CLI merged into `parse_sdp.lua` behind a detect-if-main guard (`arg[0]:match("parse_sdp")`); argparse replaces hand-rolled flag parsing; `parse_sdp.lua` is now both the library entry point and a `chmod +x` executable; `--help` / `parse --help` / `serialize --help` all work; Docker image updated with `luarocks install argparse`
+
 ### Changed (R1–R7 refactor)
 
 - R1: `lib/parser.lua` — trailing-content guard: any field or content after the last recognized SDP block is rejected (`WRONG_ORDER` or `MALFORMED_LINE`)

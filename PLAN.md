@@ -858,7 +858,7 @@ end)
 
 ---
 
-### R8 — CLI: merge into `parse_sdp.lua`, add argparse, shebang
+### R8 — CLI: merge into `parse_sdp.lua`, add argparse, shebang ✓
 
 **Goal.** Users interact with one file, not two. `parse_sdp.lua` is both the library and the
 executable. `cli.lua` is deleted.

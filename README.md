@@ -81,7 +81,7 @@ Exit code `0` on success, `1` on error (detail on stderr as JSON).
 
 ```text
 parse_sdp/
-├── parse_sdp.lua        # library entry point
+├── parse_sdp.lua        # library entry point AND CLI executable
 ├── lib/
 │   ├── grammar.lua      # LPEG grammar (RFC 4566)
 │   ├── validate.lua     # RFC 4566 doc validator
@@ -89,7 +89,6 @@ parse_sdp/
 │   ├── ipmx.lua         # IPMX validation layer
 │   ├── serialize.lua    # doc → SDP text
 │   └── errors.lua       # error construction and formatting
-├── cli.lua              # CLI entry point
 ├── spec/                # busted test suite
 │   ├── sdp_spec.lua
 │   ├── st2110_spec.lua

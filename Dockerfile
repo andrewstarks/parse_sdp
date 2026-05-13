@@ -22,7 +22,8 @@ RUN curl -fsSL "https://github.com/luarocks/luarocks/archive/${LUAROCKS_COMMIT}.
 
 RUN luarocks install lpeg \
     && luarocks install dkjson \
-    && luarocks install busted
+    && luarocks install busted \
+    && luarocks install argparse
 
 WORKDIR /app
 COPY . .

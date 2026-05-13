@@ -98,7 +98,7 @@ luarocks install dkjson
 luarocks install parse_sdp
 ```
 
-Requires Lua 5.5 and LPEG.
+Requires Lua 5.3–5.5 and LPEG. For CLI use, also install argparse: `luarocks install argparse`.
 
 ### Manual
 
@@ -111,7 +111,7 @@ dkjson separately.
 docker build -t parse_sdp .
 ```
 
-The image includes Lua 5.5, LuaRocks, LPEG, dkjson, and busted.
+The image includes Lua 5.5, LuaRocks, LPEG, dkjson, busted, and argparse.
 
 ---
 
