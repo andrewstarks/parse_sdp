@@ -3,7 +3,7 @@
 ## Guiding Principles
 
 - **Test first.** Every milestone begins with failing tests. No implementation starts without a spec.
-- **Strict by spec.** RFC 4566 compliance is pedantic and non-negotiable. Reject anything the spec rejects. Do not invent lenient behaviour.
+- **Strict by spec.** RFC 4566 compliance is pedantic and non-negotiable. Reject anything the spec rejects. Do not invent lenient behavior.
 - **Layered.** Each validation tier (RFC 4566 → ST 2110 → IPMX) extends the previous; it never replaces it.
 - **Tight.** If a file is growing, stop and refactor before continuing. Prefer fewer, well-named things.
 - **Fail loudly.** Parse failures report exactly where and why.
