@@ -12,7 +12,7 @@
 ## Tech Stack
 
 | Concern | Choice |
-|---|---|
+| --- | --- |
 | Language | Lua 5.5 |
 | Parsing | LPEG |
 | JSON | dkjson (pure Lua, single file, LuaRocks) |
@@ -51,14 +51,14 @@ Each milestone: write tests → confirm they fail → implement → confirm they
 
 ---
 
-### M2 — Line tokenizer
+### M2 — Line tokenizer ✓
 
 **Done when:** LPEG can tokenize any SDP line and record its position.
 
-- [ ] `lib/grammar.lua`: pattern matching `<alpha>=<value><CRLF|LF>`
-- [ ] Captures: type character, value string, byte offset of value start
-- [ ] Rejects lines that don't match (returns nil + position of failure)
-- [ ] Tests: valid lines, LF-only lines, malformed lines, empty input
+- [x] `lib/grammar.lua`: pattern matching `<alpha>=<value><CRLF|LF>`
+- [x] Captures: type character, value string, byte offset of value start
+- [x] Rejects lines that don't match (returns nil + position of failure)
+- [x] Tests: valid lines, LF-only lines, malformed lines, empty input
 
 ---
 

@@ -19,7 +19,7 @@ Prefer fewer, well-named things over many small helpers.
 ## Tech Stack
 
 | Concern | Choice |
-|---|---|
+| --- | --- |
 | Language | Lua 5.5 |
 | Parsing | LPEG |
 | JSON | dkjson (pure Lua, LuaRocks) |
