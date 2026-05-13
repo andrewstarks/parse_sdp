@@ -1,0 +1,17 @@
+{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "if": "Bash(git commit*)",
+            "command": ".claude/hooks/commit-gate.sh",
+            "statusMessage": "Checking commit gates..."
+          }
+        ]
+      }
+    ]
+  }
+}
