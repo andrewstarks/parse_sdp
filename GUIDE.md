@@ -434,6 +434,16 @@ Error at line 4, col 1: missing required field 't='
 
 - At least one `m=` block must be present.
 
+#### ST 2022-7 redundancy grouping — `a=group:DUP` (ST 2110-10 §8.5)
+
+When `a=group:DUP <mid1> <mid2> …` is present at session level, the library validates:
+
+- Every named `mid` must correspond to a media block carrying a matching `a=mid` attribute.
+- All legs in the DUP group must have the same media type (`video`, `audio`, etc.).
+- Absence of `a=group:DUP` is not an error.
+- More than two legs are allowed (RFC 7104 permits any number ≥ 2).
+- Legs may use different destination addresses or ports (ST 2022-7 permits this).
+
 ### Per media block
 
 | Attribute | Requirement |
@@ -561,6 +571,25 @@ When the `FECPROFILE` key appears in a media block's `a=fmtp`, the library valid
 | `FECPROFILE` | Must be `profile-a` |
 | `FEC_ADD_LATENCY_VIDEO` | Non-negative integer (microseconds), if present |
 | `FEC_ADD_LATENCY_AUDIO` | Non-negative integer (microseconds), if present |
+
+#### ST 2022-7 DUP group — privacy consistency (TR-10-13 §13)
+
+When `a=group:DUP` is present and any leg carries `a=privacy`, the library checks that
+all legs in the group carry **identical** `a=privacy` values. A leg missing `a=privacy`
+while another has it is also a violation.
+
+#### RTCP port convention (TR-10-1 §8.7)
+
+IPMX mandates that RTCP Sender Reports are sent to media port + 1. The library checks:
+
+| Check | Result |
+| --- | --- |
+| `a=rtcp-mux` present on a media block | Rejected — RTCP must be on a separate port |
+| `a=rtcp:<port>` present but `port ≠ media-port + 1` | Rejected |
+| No `a=rtcp` present | Accepted (implicit port+1 convention) |
+
+These checks apply at the **IPMX tier only**. ST 2110 mode accepts `a=rtcp-mux` and any
+`a=rtcp` value.
 
 ---
 

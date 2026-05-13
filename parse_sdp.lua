@@ -641,6 +641,47 @@ function st2110.st2110(doc)
     end
   end
 
+  -- Validate a=group:DUP grouping per ST 2110-10 §8.5 + RFC 7104.
+  -- Build a mid → media-block index for cross-leg checks.
+  local mid_index = {}
+  for i, m in ipairs(doc.media) do
+    local mid_attr = find_attr(m.attributes or {}, "mid")
+    if mid_attr and mid_attr.value then
+      mid_index[mid_attr.value] = { idx = i, block = m }
+    end
+  end
+
+  for _, attr in ipairs(sess_attrs) do
+    if attr.name == "group" then
+      local val = attr.value or ""
+      local semantics, rest = val:match("^(%S+)%s+(.+)$")
+      if semantics == "DUP" and rest then
+        local dup_entries = {}
+        for mid in rest:gmatch("%S+") do
+          local entry = mid_index[mid]
+          if not entry then
+            return nil, errors.new(
+              "a=group:DUP references undefined mid '" .. mid .. "'",
+              { field_path = "session.attributes[group]",
+                spec_ref = "ST 2110-10 §8.5", code = "INVALID_VALUE" })
+          end
+          dup_entries[#dup_entries + 1] = entry
+        end
+        if #dup_entries >= 2 then
+          local base_type = dup_entries[1].block.media
+          for j = 2, #dup_entries do
+            if dup_entries[j].block.media ~= base_type then
+              return nil, errors.new(
+                "a=group:DUP legs must have the same media type",
+                { field_path = "session.attributes[group]",
+                  spec_ref = "ST 2110-10 §8.5", code = "INVALID_VALUE" })
+            end
+          end
+        end
+      end
+    end
+  end
+
   return true
 end
 
@@ -854,6 +895,71 @@ function ipmx.ipmx(doc)
     local pok2, perr2 = check_privacy(
       m.attributes, string.format("media[%d]", i), usb_set[i] == true)
     if not pok2 then return nil, perr2 end
+  end
+
+  -- M16: DUP group privacy consistency (TR-10-13 §13 lines 329/335).
+  -- Build mid → block index for IPMX-level cross-leg checks.
+  local mid_idx = {}
+  for _, m in ipairs(doc.media) do
+    local ma = find_attr(m.attributes or {}, "mid")
+    if ma and ma.value then mid_idx[ma.value] = m end
+  end
+
+  for _, attr in ipairs(doc.session.attributes or {}) do
+    if attr.name == "group" then
+      local val = attr.value or ""
+      local semantics, rest = val:match("^(%S+)%s+(.+)$")
+      if semantics == "DUP" and rest then
+        local priv_vals = {}
+        for mid in rest:gmatch("%S+") do
+          local blk = mid_idx[mid]
+          if blk then
+            local pattr = find_attr(blk.attributes or {}, "privacy")
+            -- use false as "absent" sentinel so nil doesn't create table holes
+            priv_vals[#priv_vals + 1] = pattr and pattr.value or false
+          end
+        end
+        if #priv_vals >= 2 then
+          local first = priv_vals[1]
+          for j = 2, #priv_vals do
+            if priv_vals[j] ~= first then
+              return nil, errors.new(
+                "a=privacy values must be identical on all DUP group legs",
+                { field_path = "session.attributes[group]",
+                  spec_ref = "TR-10-13 §13", code = "INVALID_VALUE" })
+            end
+          end
+        end
+      end
+    end
+  end
+
+  -- M17: RTCP port convention (TR-10-1 §8.7) — IPMX only.
+  for i, m in ipairs(doc.media) do
+    if not usb_set[i] then
+      local mpath  = string.format("media[%d]", i)
+      local mattrs = m.attributes or {}
+
+      if find_attr(mattrs, "rtcp-mux") then
+        return nil, errors.new(
+          "a=rtcp-mux is not permitted (IPMX requires RTCP on media port+1)",
+          { field_path = mpath .. ".attributes[rtcp-mux]",
+            spec_ref = "TR-10-1 §8.7", code = "INVALID_VALUE" })
+      end
+
+      local rtcp_attr = find_attr(mattrs, "rtcp")
+      if rtcp_attr then
+        local port_s = (rtcp_attr.value or ""):match("^(%d+)")
+        local port   = port_s and tonumber(port_s)
+        if not port or port ~= (m.port + 1) then
+          return nil, errors.new(
+            string.format("a=rtcp port must be media port+1 (expected %d, got %s)",
+              m.port + 1, tostring(port)),
+            { field_path = mpath .. ".attributes[rtcp]",
+              spec_ref = "TR-10-1 §8.7", code = "INVALID_VALUE" })
+        end
+      end
+    end
   end
 
   return true

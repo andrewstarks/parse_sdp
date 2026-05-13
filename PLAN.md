@@ -329,7 +329,7 @@ of these extensions is not an error.
 
 ---
 
-### M16 — ST 2022-7 redundancy grouping
+### M16 — ST 2022-7 redundancy grouping ✓
 
 **Done when:** When `a=group:DUP` is present in an IPMX or ST 2110 SDP, the grouping
 semantics are validated; each referenced `mid` resolves to an existing media block;
@@ -363,11 +363,20 @@ a=group:DUP <mid1> <mid2>
 a=mid:<id>           (per media block)
 ```
 
-**Open questions — resolve before writing tests:**
+**Open questions — resolved:**
 
-1. Does ST 2110-10 explicitly normalize `a=group:DUP` grouping or rely entirely on RFC 7104?
-2. Must the primary and secondary legs use the same port range, or can they differ?
-3. Can more than two legs appear in a DUP group (RFC 7104 allows it)?
+1. ST 2110-10 §8.5 explicitly mandates `a=group:DUP` + RFC 7104 semantics; format from RFC 7104.
+2. Different ports are explicitly allowed — ST 2022-7 defines copies as potentially having "a different IP destination or port"; ST 2110-10 §8.5 only requires separate source or destination address, not equal ports.
+3. More than two legs allowed by RFC 7104 and not restricted by ST 2022-7 ("at least two streams") or ST 2110-10; no enforcement added.
+
+**Implemented:**
+
+- [x] `a=group:DUP` at session level: all named mids resolve to media blocks with `a=mid`
+- [x] All DUP legs must share the same media type
+- [x] IPMX: `a=privacy` values must be identical (or identically absent) across all DUP legs
+- [x] `a=extmap` on either DUP leg satisfies IPMX requirement (existing loop already handles this)
+- [x] 5 new tests in `spec/st2110_spec.lua`, 6 new tests in `spec/ipmx_spec.lua`
+- [x] 4 example fixtures (2 ST 2110, 2 IPMX)
 
 **Spec references:**
 
@@ -378,10 +387,10 @@ a=mid:<id>           (per media block)
 
 ---
 
-### M17 — RTCP port convention
+### M17 — RTCP port convention ✓
 
-**Done when:** When `a=rtcp` or `a=rtcp-mux` appears in an ST 2110 or IPMX SDP, it is
-validated against the port convention mandated by TR-10-1 §8.7 and ST 2110-10.
+**Done when:** When `a=rtcp` or `a=rtcp-mux` appears in an IPMX SDP, it is
+validated against the port convention mandated by TR-10-1 §8.7.
 
 **Background:** IPMX mandates RTCP Sender Reports on the destination port equal to the
 media port + 1 (TR-10-1 §8.7: "shall be sent to the UDP destination port that
@@ -391,15 +400,19 @@ any `a=rtcp:<port>` that specifies a different offset also a violation.
 In practice most ST 2110/IPMX SDPs omit `a=rtcp` entirely (using the implicit
 RFC 3550 default), so these are error-on-presence checks.
 
-**New checks in `st2110.st2110` (and inherited by `ipmx.ipmx`):**
+**Open questions — resolved:**
 
-- `a=rtcp-mux` on any media block → reject with `INVALID_VALUE` error.
-  (Combining RTCP and RTP on one port violates the +1 offset requirement.)
-- `a=rtcp:<port> [IN <addrtype> <addr>]` on a media block → if present, the port
-  number must equal the media block's declared RTP port + 1. Any other value is
-  rejected.
-- `a=rtcp` value parsing: extract leading integer token (port); the optional
-  `IN <addrtype> <addr>` suffix is accepted but not further validated here.
+1. ST 2110-10 §6.2 is silent on `a=rtcp-mux` — RTCP is optional ("may be used"). No prohibition at ST 2110 tier. Checks belong in `ipmx.ipmx` only.
+2. `a=rtcp-rsize` not mentioned in any ST 2110/IPMX spec — treated as opaque, no check.
+3. `a=rtcp-fb` not mentioned either — treated as opaque, no check.
+
+**Implemented:**
+
+- [x] `a=rtcp-mux` on any RTP media block → rejected in `ipmx.ipmx` (TR-10-1 §8.7)
+- [x] `a=rtcp:<port>` on a media block → port must equal media port + 1
+- [x] `IN <addrtype> <addr>` suffix accepted but not validated
+- [x] ST 2110 mode: no restriction (tested)
+- [x] 6 new tests in `spec/ipmx_spec.lua`; 1 example fixture `examples/ipmx/invalid/rtcp_mux.sdp`
 
 **SDP attribute formats (RFC 3605):**
 
@@ -410,20 +423,10 @@ a=rtcp:<port> IN IP6 <unicast-address>
 a=rtcp-mux
 ```
 
-**Open questions — resolve before writing tests:**
-
-1. Does ST 2110-10 §7 also explicitly forbid `a=rtcp-mux`, or is that only from
-   TR-10-1 §8.7 (IPMX only)? Determine whether the `a=rtcp-mux` rejection belongs
-   in `st2110.st2110` or only in `ipmx.ipmx`.
-2. Is `a=rtcp-rsize` (RFC 5506, reduced-size RTCP) used in any ST 2110/IPMX context?
-   If not mentioned in any TR, treat as an opaque attribute (no check needed).
-3. Is `a=rtcp-fb` used in any ST 2110/IPMX context? Same treatment if not.
-
 **Spec references:**
 
 - VSF TR-10-1 (2024-02-23) §8.7 — RTCP Sender Report General Provision (lines 278–284)
-- SMPTE ST 2110-10 §7 — System timing and synchronization
-- RFC 3550 §6 — RTCP transmission interval rules
+- SMPTE ST 2110-10 §6.2 — RTP (confirms RTCP is optional; no rtcp-mux restriction)
 - RFC 3605 — Real-Time Transport Control Protocol (RTCP) attribute in SDP
 - RFC 5761 — Multiplexing RTP Data and Control Packets (`a=rtcp-mux`)
 

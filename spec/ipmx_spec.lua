@@ -590,4 +590,170 @@ describe("IPMX validation", function()
       assert.equal(true, ok)
     end)
   end)
+
+  -- ── M16: a=group:DUP grouping — IPMX-specific checks (TR-10-13 §13) ──────────
+
+  describe("a=group:DUP grouping — IPMX (TR-10-13 §13)", function()
+    local MAC  = "a=ts-refclk:localmac=AA-BB-CC-DD-EE-FF"
+    local VFMTP_IPMX = "a=fmtp:96 sampling=YCbCr-4:2:2; width=1920; height=1080; exactframerate=25; depth=10; colorimetry=BT709; PM=2110GPM; TP=2110TPN; IPMX"
+    local PRIV = "a=privacy: protocol=RTP; mode=AES-128-CTR; iv=0102030405060708090a0b0c0d0e0f10; key_generator=aabb; key_version=01; key_id=dead"
+
+    local function dup_ipmx_sdp(opts)
+      opts = opts or {}
+      local privacy1 = opts.privacy1
+      local privacy2 = opts.privacy2
+      local extmap1  = opts.extmap1 ~= false and "a=extmap:1 urn:ietf:params:rtp-hdrext:smpte-tc" or nil
+      local extmap2  = opts.extmap2 == true   and "a=extmap:1 urn:ietf:params:rtp-hdrext:smpte-tc" or nil
+      local lines = {
+        "v=0",
+        "o=- 1234567890 1 IN IP4 192.168.1.1",
+        "s=IPMX DUP Test",
+        "t=0 0",
+        "a=group:DUP leg1 leg2",
+        MAC,
+        -- leg 1
+        "m=video 5000 RTP/AVP 96",
+        "c=IN IP4 239.100.0.1/64",
+        "a=mid:leg1",
+        "a=rtpmap:96 raw/90000",
+        VFMTP_IPMX,
+        "a=mediaclk:direct=0",
+        MAC,
+      }
+      if extmap1 then lines[#lines+1] = extmap1 end
+      if privacy1 then lines[#lines+1] = privacy1 end
+      -- leg 2
+      lines[#lines+1] = "m=video 5010 RTP/AVP 96"
+      lines[#lines+1] = "c=IN IP4 239.100.0.2/64"
+      lines[#lines+1] = "a=mid:leg2"
+      lines[#lines+1] = "a=rtpmap:96 raw/90000"
+      lines[#lines+1] = VFMTP_IPMX
+      lines[#lines+1] = "a=mediaclk:direct=0"
+      lines[#lines+1] = MAC
+      if extmap2 then lines[#lines+1] = extmap2 end
+      if privacy2 then lines[#lines+1] = privacy2 end
+      return table.concat(lines, "\r\n")
+    end
+
+    it("accepts DUP grouping with no privacy on either leg", function()
+      local doc, err = sdp.parse(dup_ipmx_sdp(), "ipmx")
+      assert.is_nil(err)
+      assert.is_table(doc)
+    end)
+
+    it("accepts DUP grouping with identical privacy on both legs", function()
+      local text = dup_ipmx_sdp({ privacy1 = PRIV, privacy2 = PRIV })
+      local doc, err = sdp.parse(text, "ipmx")
+      assert.is_nil(err)
+      assert.is_table(doc)
+    end)
+
+    it("rejects DUP grouping where one leg has privacy and the other does not", function()
+      local text = dup_ipmx_sdp({ privacy1 = PRIV })
+      local doc = sdp.parse(text)
+      assert.is_table(doc)
+      local ok, err = doc:validate("ipmx")
+      assert.is_nil(ok)
+      assert.is_table(err)
+      assert.matches("privacy", err.message)
+    end)
+
+    it("rejects DUP grouping where both legs have different privacy values", function()
+      local priv2 = "a=privacy: protocol=RTP; mode=AES-256-CTR; iv=0102030405060708090a0b0c0d0e0f10; key_generator=aabb; key_version=01; key_id=dead"
+      local text = dup_ipmx_sdp({ privacy1 = PRIV, privacy2 = priv2 })
+      local doc = sdp.parse(text)
+      assert.is_table(doc)
+      local ok, err = doc:validate("ipmx")
+      assert.is_nil(ok)
+      assert.is_table(err)
+      assert.matches("privacy", err.message)
+    end)
+
+    it("satisfies extmap requirement when only one leg carries a=extmap", function()
+      -- extmap on leg 1 only; leg 2 has none — should still pass
+      local text = dup_ipmx_sdp({ extmap1 = true, extmap2 = false })
+      local doc, err = sdp.parse(text, "ipmx")
+      assert.is_nil(err)
+      assert.is_table(doc)
+    end)
+
+    it("spec_ref for DUP privacy mismatch is TR-10-13 §13", function()
+      local text = dup_ipmx_sdp({ privacy1 = PRIV })
+      local doc = sdp.parse(text)
+      assert.is_table(doc)
+      local ok, err = doc:validate("ipmx")
+      assert.is_nil(ok)
+      assert.is_table(err)
+      assert.equal("TR-10-13 §13", err.spec_ref)
+    end)
+  end)
+
+  -- ── M17: RTCP port convention (TR-10-1 §8.7) — IPMX only ────────────────────
+
+  describe("RTCP port convention (TR-10-1 §8.7)", function()
+    it("accepts SDP with no a=rtcp attributes (implicit port+1 is not required to be stated)", function()
+      local doc, err = sdp.parse(IPMX_VIDEO_SDP, "ipmx")
+      assert.is_nil(err)
+      assert.is_table(doc)
+    end)
+
+    it("accepts a=rtcp:<port> when port equals media port+1", function()
+      local text = base_ipmx_sdp({}, { "a=rtcp:5001" })
+      local doc, err = sdp.parse(text, "ipmx")
+      assert.is_nil(err)
+      assert.is_table(doc)
+    end)
+
+    it("rejects a=rtcp:<port> when port does not equal media port+1", function()
+      local text = base_ipmx_sdp({}, { "a=rtcp:9999" })
+      local doc = sdp.parse(text)
+      assert.is_table(doc)
+      local ok, err = doc:validate("ipmx")
+      assert.is_nil(ok)
+      assert.is_table(err)
+      assert.matches("rtcp", err.message)
+      assert.matches("port", err.message)
+    end)
+
+    it("rejects a=rtcp-mux on a media block", function()
+      local text = base_ipmx_sdp({}, { "a=rtcp-mux" })
+      local doc = sdp.parse(text)
+      assert.is_table(doc)
+      local ok, err = doc:validate("ipmx")
+      assert.is_nil(ok)
+      assert.is_table(err)
+      assert.matches("rtcp%-mux", err.message)
+    end)
+
+    it("spec_ref for rtcp-mux rejection is TR-10-1 §8.7", function()
+      local text = base_ipmx_sdp({}, { "a=rtcp-mux" })
+      local doc = sdp.parse(text)
+      assert.is_table(doc)
+      local ok, err = doc:validate("ipmx")
+      assert.is_nil(ok)
+      assert.is_table(err)
+      assert.equal("TR-10-1 §8.7", err.spec_ref)
+    end)
+
+    it("ST 2110 mode accepts a=rtcp-mux (no restriction at ST 2110 level)", function()
+      -- Build a valid ST 2110 SDP with rtcp-mux — should pass at st2110 tier
+      local lines = {
+        "v=0",
+        "o=- 1234567890 1 IN IP4 192.168.1.1",
+        "s=ST2110 Video",
+        "t=0 0",
+        "a=ts-refclk:ptp=IEEE1588-2008:00-11-22-FF-FE-33-44-55:0",
+        "m=video 5000 RTP/AVP 96",
+        "c=IN IP4 239.100.0.1/64",
+        "a=rtpmap:96 raw/90000",
+        "a=fmtp:96 sampling=YCbCr-4:2:2; width=1920; height=1080; exactframerate=25; depth=10; colorimetry=BT709; PM=2110GPM; TP=2110TPN",
+        "a=mediaclk:direct=0",
+        "a=ts-refclk:ptp=IEEE1588-2008:00-11-22-FF-FE-33-44-55:0",
+        "a=rtcp-mux",
+      }
+      local doc, err = sdp.parse(table.concat(lines, "\r\n"), "st2110")
+      assert.is_nil(err)
+      assert.is_table(doc)
+    end)
+  end)
 end)

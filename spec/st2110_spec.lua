@@ -580,4 +580,89 @@ describe("ST 2110 validation", function()
       assert.equal(true, ok)
     end)
   end)
+
+  -- ── M16: a=group:DUP grouping (ST 2022-7 / RFC 7104) ─────────────────────────
+
+  describe("a=group:DUP grouping (ST 2110-10 §8.5)", function()
+    local PTP = "a=ts-refclk:ptp=IEEE1588-2008:00-11-22-FF-FE-33-44-55:0"
+    local VFMTP = "a=fmtp:96 sampling=YCbCr-4:2:2; width=1920; height=1080; exactframerate=25; depth=10; colorimetry=BT709; PM=2110GPM; TP=2110TPN"
+
+    local function dup_sdp(opts)
+      opts = opts or {}
+      local mid1     = opts.mid1     or "leg1"
+      local mid2     = opts.mid2     or "leg2"
+      local type1    = opts.type1    or "video"
+      local type2    = opts.type2    or "video"
+      local fmtp2    = opts.fmtp2    or VFMTP
+      local rtpmap2  = opts.rtpmap2  or "a=rtpmap:96 raw/90000"
+      local omit_mid2 = opts.omit_mid2 or false
+      local lines = {
+        "v=0",
+        "o=- 1234567890 1 IN IP4 192.168.1.1",
+        "s=DUP Test",
+        "t=0 0",
+        string.format("a=group:DUP %s %s", mid1, mid2),
+        PTP,
+        string.format("m=%s 5000 RTP/AVP 96", type1),
+        "c=IN IP4 239.100.0.1/64",
+        string.format("a=mid:%s", mid1),
+        "a=rtpmap:96 raw/90000",
+        VFMTP,
+        "a=mediaclk:direct=0",
+        string.format("m=%s 5010 RTP/AVP 96", type2),
+        "c=IN IP4 239.100.0.2/64",
+      }
+      if not omit_mid2 then lines[#lines+1] = string.format("a=mid:%s", mid2) end
+      lines[#lines+1] = rtpmap2
+      lines[#lines+1] = fmtp2
+      lines[#lines+1] = "a=mediaclk:direct=0"
+      return table.concat(lines, "\r\n")
+    end
+
+    it("accepts valid DUP grouping with two video legs on different ports", function()
+      local doc, err = sdp.parse(dup_sdp(), "st2110")
+      assert.is_nil(err)
+      assert.is_table(doc)
+    end)
+
+    it("accepts SDP without a=group:DUP (absence is not an error)", function()
+      local doc, err = sdp.parse(VIDEO_SDP, "st2110")
+      assert.is_nil(err)
+      assert.is_table(doc)
+    end)
+
+    it("rejects DUP referencing a mid that has no matching media block", function()
+      local text = dup_sdp({ omit_mid2 = true })
+      local doc = sdp.parse(text)
+      assert.is_table(doc)
+      local ok, err = doc:validate("st2110")
+      assert.is_nil(ok)
+      assert.is_table(err)
+      assert.matches("leg2", err.message)
+    end)
+
+    it("rejects DUP where the two legs have different media types", function()
+      local text = dup_sdp({
+        type2   = "audio",
+        rtpmap2 = "a=rtpmap:97 L24/48000/8",
+        fmtp2   = "a=fmtp:97 channel-order=SMPTE2110.(ST)",
+      })
+      local doc = sdp.parse(text)
+      assert.is_table(doc)
+      local ok, err = doc:validate("st2110")
+      assert.is_nil(ok)
+      assert.is_table(err)
+      assert.matches("media type", err.message)
+    end)
+
+    it("spec_ref for DUP errors is ST 2110-10 §8.5", function()
+      local text = dup_sdp({ omit_mid2 = true })
+      local doc = sdp.parse(text)
+      assert.is_table(doc)
+      local ok, err = doc:validate("st2110")
+      assert.is_nil(ok)
+      assert.is_table(err)
+      assert.equal("ST 2110-10 §8.5", err.spec_ref)
+    end)
+  end)
 end)

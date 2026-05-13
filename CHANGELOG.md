@@ -9,6 +9,25 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 
+### Added (M16 — ST 2022-7 DUP grouping)
+
+- **`a=group:DUP` validation** (ST 2110-10 §8.5): when present at session level, all
+  named `mid` values are resolved against media blocks carrying `a=mid`; all legs must
+  share the same media type; absence of `a=group:DUP` is not an error
+- **DUP privacy consistency** (TR-10-13 §13): across DUP-grouped legs in IPMX mode,
+  `a=privacy` values must be identical on every leg; a leg missing `a=privacy` while
+  another carries it is rejected
+- 4 new example fixtures (2 ST 2110 valid/invalid, 2 IPMX valid/invalid)
+- 10 new tests across `spec/st2110_spec.lua` and `spec/ipmx_spec.lua`
+
+### Added (M17 — RTCP port convention)
+
+- **`a=rtcp-mux` rejection** (TR-10-1 §8.7, IPMX only): `a=rtcp-mux` on any RTP media
+  block is rejected at the IPMX tier; ST 2110 mode accepts it without restriction
+- **`a=rtcp:<port>` check** (TR-10-1 §8.7, IPMX only): when present, the specified port
+  must equal the media block's declared port + 1; any other value is rejected
+- 6 new tests in `spec/ipmx_spec.lua`; 1 new `a=rtcp-mux` fixture in `examples/ipmx/invalid/`
+
 ### Added (M15 — IPMX protocol extensions)
 
 - **IPMX fmtp marker** (TR-10-1 §10.1): every non-USB media block's `a=fmtp` must now
