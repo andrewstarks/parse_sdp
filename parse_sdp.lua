@@ -575,12 +575,17 @@ end
 -- ── ST 2110-20/30 fmtp value validators ───────────────────────────────────────
 
 -- LPEG patterns for structural validation of ST 2110-20 §7.2 fmtp values.
-local _digit_seq    = R("09")^1
-local _pos_int_pat  = _digit_seq * P(-1)
-local _efr_pat      = (_digit_seq * P("/") * _digit_seq + _digit_seq) * P(-1)
-local _chan_ord_pat  = P("SMPTE2110.(") * (P(1) - P(")"))^1 * P(")") * P(-1)
-local _ssn20_pat    = P("ST2110-20:")
-local _par_pat      = _digit_seq * P(":") * _digit_seq * P(-1)
+local _digit_seq   = R("09")^1
+local _pos_int_pat = _digit_seq * P(-1)
+local _efr_pat     = (_digit_seq * P("/") * _digit_seq + _digit_seq) * P(-1)
+local _par_pat     = _digit_seq * P(":") * _digit_seq * P(-1)
+
+-- SSN year suffix: exactly 4 decimal digits (e.g. "2017", "2022").
+-- Combined with a prefix to form exact SSN patterns per each standard edition.
+local _ssn_year  = R("09") * R("09") * R("09") * R("09")
+local _ssn20_pat = P("ST2110-20:") * _ssn_year * P(-1)  -- ST 2110-20 §7.2
+local _ssn22_pat = P("ST2110-22:") * _ssn_year * P(-1)  -- ST 2110-22 §7 (JPEG-XS)
+local _ssn41_pat = P("ST2110-41:") * _ssn_year * P(-1)  -- ST 2110-41 §7.2
 
 -- Allowed values for ST 2110-20 §7.2 enumerated fmtp fields.
 local VALID_SAMPLING = {
@@ -589,14 +594,18 @@ local VALID_SAMPLING = {
   ["ICtCp-4:4:4"]=true, ["ICtCp-4:2:2"]=true, ["ICtCp-4:2:0"]=true,
   ["RGB"]=true, ["XYZ"]=true, ["KEY"]=true,
 }
+-- ST 2110-20:2017 §7.6: 10 TCS values (UNSPECIFIED added; was missing).
 local VALID_TCS = {
   ["SDR"]=true, ["PQ"]=true, ["HLG"]=true, ["LINEAR"]=true,
   ["BT2100LINPQ"]=true, ["BT2100LINHLG"]=true,
   ["ST2065-1"]=true, ["ST428-1"]=true, ["DENSITY"]=true,
+  ["UNSPECIFIED"]=true,
 }
+-- ST 2110-20:2017 §7.5: XYZ added (was missing); ALPHA retained (present in 2022 ed).
 local VALID_COLORIMETRY = {
   ["BT601"]=true, ["BT709"]=true, ["BT2020"]=true, ["BT2100"]=true,
-  ["ST2065-1"]=true, ["ST2065-3"]=true, ["UNSPECIFIED"]=true, ["ALPHA"]=true,
+  ["ST2065-1"]=true, ["ST2065-3"]=true, ["UNSPECIFIED"]=true,
+  ["XYZ"]=true, ["ALPHA"]=true,
 }
 local VALID_PM    = { ["2110GPM"]=true, ["2110BPM"]=true }
 local VALID_RANGE = { ["NARROW"]=true, ["FULLPROTECT"]=true, ["FULL"]=true }
@@ -614,8 +623,13 @@ local function valid_connection_address(addr_type, addr)
   if not o1 then return nil, "invalid IPv4 address in c= line" end
   local is_mc = o1 >= 224 and o1 <= 239
   if is_mc then
-    if not rest:match("^/(%d+)") then
-      return nil, "IPv4 multicast address requires a TTL (e.g. 239.x.x.x/32)"
+    local ttl_str = rest:match("^/(%d+)$")
+    if not ttl_str then
+      return nil, "IPv4 multicast address requires a TTL suffix (e.g. 239.x.x.x/64)"
+    end
+    local ttl = tonumber(ttl_str)
+    if not ttl or ttl < 1 or ttl > 255 then
+      return nil, string.format("IPv4 multicast TTL must be 1-255 (got %s)", ttl_str)
     end
     local o2 = tonumber(ip:match("^%d+%.(%d+)%."))
     local o3 = tonumber(ip:match("^%d+%.%d+%.(%d+)%."))
@@ -636,8 +650,10 @@ local VALID_AUDIO_RATES = {
   [32000]=true, [44100]=true, [48000]=true,
   [88200]=true, [96000]=true, [176400]=true, [192000]=true,
 }
--- Valid TP (transport profile) values per ST 2110-21.
+-- Valid TP (transport profile) values per ST 2110-21 (uncompressed video, ST 2110-20).
 local VALID_TP = { ["2110TPN"]=true, ["2110TPNL"]=true, ["2110TPW"]=true }
+-- Valid TP values for compressed video per ST 2110-22 (JPEG-XS); 2110TPN excluded.
+local VALID_TP_22 = { ["2110TPNL"]=true, ["2110TPW"]=true }
 -- Valid rtpmap encoding names for ST 2110-30/31 audio.
 local VALID_AUDIO_ENC = { ["L16"]=true, ["L24"]=true, ["AM824"]=true }
 
@@ -688,10 +704,40 @@ local function valid_par(value)
   return true
 end
 
--- Returns true if value matches SMPTE2110.(<non-empty-group>) per ST 2110-30 §7.
+-- Returns true if value is a non-empty string with no whitespace (fmtp codec token).
+local function valid_nonempty(value)
+  if value and value ~= "" and not value:match("%s") then return true end
+  return nil, "value must be a non-empty string"
+end
+
+-- Named channel-order grouping symbols from ST 2110-30:2017 §6.2.2 Table 1.
+-- Unn (U01–U64) are handled separately by numeric range check below.
+local VALID_CHAN_GROUPS = {
+  ["M"]=true, ["DM"]=true, ["ST"]=true, ["LtRt"]=true,
+  ["51"]=true, ["71"]=true, ["222"]=true, ["SGRP"]=true,
+}
+
+-- Returns true if value matches SMPTE2110.(<group>[,<group>...]) per ST 2110-30:2017 §6.2.2.
+-- Each group must be a named symbol from Table 1 or Unn (U01–U64).
 local function valid_channel_order(value)
-  if _chan_ord_pat:match(value) then return true end
-  return nil, "invalid channel-order (expected SMPTE2110.(<group>))"
+  local groups_str = value:match("^SMPTE2110%.%((.+)%)$")
+  if not groups_str then
+    return nil, "invalid channel-order (expected SMPTE2110.(<group>[,<group>...]))"
+  end
+  for grp in groups_str:gmatch("[^,]+") do
+    local g = grp:match("^%s*(.-)%s*$")
+    if g == "" then
+      return nil, "empty channel-order group symbol"
+    end
+    if not VALID_CHAN_GROUPS[g] then
+      local nn = g:match("^U(%d%d)$")
+      local n  = nn and tonumber(nn)
+      if not n or n < 1 or n > 64 then
+        return nil, "invalid channel-order group symbol: " .. g
+      end
+    end
+  end
+  return true
 end
 
 -- Validate the value of a mediaclk attribute per ST 2110-10 §7.3.
@@ -748,6 +794,18 @@ function st2110.validate(doc)
 
   local sess_attrs = doc.session.attributes or {}
 
+  -- Validate session-level c= if present (ST 2110-10 §6.5).
+  local sess_conn = doc.session and doc.session.connection
+  if sess_conn then
+    local cok, msg = valid_connection_address(sess_conn.addr_type, sess_conn.address)
+    if not cok then
+      return nil, errors.new(msg, {
+        field_path = "session.connection",
+        spec_ref   = "ST 2110-10 §6.5", code = "INVALID_VALUE",
+      })
+    end
+  end
+
   for i, m in ipairs(doc.media) do
     local mpath  = string.format("media[%d]", i)
     local mattrs = m.attributes or {}
@@ -769,13 +827,30 @@ function st2110.validate(doc)
       end
     end
 
-    local tsrefclk = find_attr(sess_attrs, "ts-refclk") or find_attr(mattrs, "ts-refclk")
-    if not tsrefclk then
+    -- Require a connection address at session or media level (ST 2110-10 §6.3).
+    if not conn and not sess_conn then
+      return nil, errors.new(
+        "missing required connection address (c=) for media block",
+        { field_path = mpath .. ".connection", spec_ref = "ST 2110-10 §6.3" })
+    end
+
+    -- Validate all ts-refclk attrs from both session and media level (ST 2110-10 §8.2).
+    -- Multiple sources are allowed; each must individually be valid.
+    local all_tsrefclk = {}
+    for _, a in ipairs(sess_attrs) do
+      if a.name == "ts-refclk" then all_tsrefclk[#all_tsrefclk + 1] = a end
+    end
+    for _, a in ipairs(mattrs) do
+      if a.name == "ts-refclk" then all_tsrefclk[#all_tsrefclk + 1] = a end
+    end
+    if #all_tsrefclk == 0 then
       return attr_err("missing required attribute 'ts-refclk'", mpath, "ts-refclk", "ST 2110-10 §7.2")
     end
-    local trok, trmsg = valid_tsrefclk(tsrefclk.value or "")
-    if not trok then
-      return attr_err("invalid ts-refclk: " .. (trmsg or ""), mpath, "ts-refclk", "ST 2110-10 §7.2", "INVALID_VALUE")
+    for _, tsrefclk in ipairs(all_tsrefclk) do
+      local trok, trmsg = valid_tsrefclk(tsrefclk.value or "")
+      if not trok then
+        return attr_err("invalid ts-refclk: " .. (trmsg or ""), mpath, "ts-refclk", "ST 2110-10 §7.2", "INVALID_VALUE")
+      end
     end
 
     local mediaclk = find_attr(mattrs, "mediaclk")
@@ -855,8 +930,8 @@ function st2110.validate(doc)
       if not ssn then
         return attr_err("fmtp missing required 'SSN' parameter for ST 2110-41", mpath, "fmtp", "ST 2110-41 §7.2")
       end
-      if not ssn:match("^ST2110%-41:") then
-        return attr_err("invalid SSN format (must start with 'ST2110-41:')",
+      if not _ssn41_pat:match(ssn) then
+        return attr_err("invalid SSN value (expected ST2110-41:YYYY, e.g. ST2110-41:2024)",
           mpath, "fmtp", "ST 2110-41 §7.2", "INVALID_VALUE")
       end
       if not params["DIT"] then
@@ -866,6 +941,84 @@ function st2110.validate(doc)
       if not dit_val:match("^%d+$") then
         return attr_err("invalid DIT value (must be a non-negative integer)",
           mpath, "fmtp", "ST 2110-41 §7.2", "INVALID_VALUE")
+      end
+
+    elseif enc == "jxsv" then
+      -- ST 2110-22: constant bit-rate compressed video (JPEG-XS encoding).
+      -- Required fmtp: standard video params + JPEG-XS codec params.
+      -- Spec refs: SMPTE ST 2110-22:2019 §7, TR-10-11, IPMX JPEG-XS Profile §6.1.4.
+      if clock_rate ~= 90000 then
+        return attr_err(
+          string.format("rtpmap clock rate must be 90000 for jxsv (got %s)", tostring(clock_rate)),
+          mpath, "rtpmap", "ST 2110-22 §7", "INVALID_VALUE")
+      end
+      -- Standard video fmtp params (same set as ST 2110-20 except SSN uses _ssn22_pat).
+      local jxs_req = {
+        { "sampling",       function(v) return valid_enum(v, VALID_SAMPLING,    "sampling")    end },
+        { "width",          valid_pos_int },
+        { "height",         valid_pos_int },
+        { "exactframerate", valid_exactframerate },
+        { "depth",          valid_pos_int },
+        { "TCS",            function(v) return valid_enum(v, VALID_TCS,         "TCS")         end },
+        { "colorimetry",    function(v) return valid_enum(v, VALID_COLORIMETRY, "colorimetry") end },
+        { "PM",             function(v) return valid_enum(v, VALID_PM,          "PM")          end },
+        { "SSN",            function(v)
+            if _ssn22_pat:match(v) then return true end
+            return nil, "invalid SSN value (expected ST2110-22:YYYY, e.g. ST2110-22:2019)"
+          end },
+        -- JPEG-XS codec params required by TR-10-11 / IPMX JPEG-XS Profile §6.1.4.
+        { "profile",    valid_nonempty },
+        { "level",      valid_nonempty },
+        { "sublevel",   valid_nonempty },
+        { "transmode",  valid_nonneg_int },
+        { "packetmode", valid_nonneg_int },
+      }
+      for _, ck in ipairs(jxs_req) do
+        local key, fn = ck[1], ck[2]
+        local val = params[key]
+        if val == nil then
+          return attr_err("fmtp missing required '" .. key .. "' parameter for jxsv",
+            mpath, "fmtp", "ST 2110-22 §7")
+        end
+        local vok, vmsg = fn(tostring(val))
+        if not vok then
+          return attr_err(key .. ": " .. vmsg, mpath, "fmtp", "ST 2110-22 §7", "INVALID_VALUE")
+        end
+      end
+      -- Optional: RANGE (same enum as ST 2110-20).
+      local range_val = params["RANGE"]
+      if range_val ~= nil then
+        local vok, vmsg = valid_enum(tostring(range_val), VALID_RANGE, "RANGE")
+        if not vok then
+          return attr_err(vmsg, mpath, "fmtp", "ST 2110-22 §7", "INVALID_VALUE")
+        end
+      end
+      -- Optional: TP — ST 2110-22 allows only 2110TPNL and 2110TPW (not 2110TPN).
+      local tp_val = params["TP"]
+      if tp_val ~= nil and tp_val ~= true then
+        local vok, vmsg = valid_enum(tostring(tp_val), VALID_TP_22, "TP")
+        if not vok then
+          return attr_err("TP: " .. vmsg .. " (ST 2110-22 allows 2110TPNL or 2110TPW only)",
+            mpath, "fmtp", "ST 2110-22 §7", "INVALID_VALUE")
+        end
+      end
+      -- Optional: MAXUDP, CMAX (positive integers).
+      for _, k in ipairs({ "MAXUDP", "CMAX" }) do
+        local v = params[k]
+        if v ~= nil and v ~= true then
+          local vok, vmsg = valid_pos_int(tostring(v))
+          if not vok then
+            return attr_err(k .. ": " .. vmsg, mpath, "fmtp", "ST 2110-22 §7", "INVALID_VALUE")
+          end
+        end
+      end
+      -- Optional: fbblevel (positive integer, TR-10-11 §12).
+      local fbb = params["fbblevel"]
+      if fbb ~= nil and fbb ~= true then
+        local vok, vmsg = valid_pos_int(tostring(fbb))
+        if not vok then
+          return attr_err("fbblevel: " .. vmsg, mpath, "fmtp", "TR-10-11 §12", "INVALID_VALUE")
+        end
       end
 
     elseif m.media == "video" then
@@ -887,7 +1040,7 @@ function st2110.validate(doc)
         { "PM",             function(v) return valid_enum(v, VALID_PM,          "PM")          end },
         { "SSN",            function(v)
             if _ssn20_pat:match(v) then return true end
-            return nil, "SSN must start with 'ST2110-20:'"
+            return nil, "invalid SSN value (expected ST2110-20:YYYY, e.g. ST2110-20:2022)"
           end },
       }
       for _, ck in ipairs(video_checks) do
@@ -1015,6 +1168,9 @@ local function valid_extmap(value)
   local id = tonumber(value:match("^(%d+)"))
   if not id or id < 1 then
     return nil, "a=extmap entry count must be >= 1"
+  end
+  if id > 255 then
+    return nil, "a=extmap entry count must be 1-255 (RFC 5285)"
   end
   return true
 end
@@ -1152,6 +1308,19 @@ function ipmx.validate(doc)
     if not ok then return nil, e end
   end
 
+  -- Reject a=group:FID — TR-10-1 §10 ("shall not be used under this TR").
+  for _, attr in ipairs(doc.session.attributes or {}) do
+    if attr.name == "group" then
+      local sem = (attr.value or ""):match("^(%S+)")
+      if sem == "FID" then
+        return nil, errors.new(
+          "a=group:FID is not permitted in IPMX (TR-10-1 §10)",
+          { field_path = "session.attributes[group]",
+            spec_ref = "TR-10-1 §10", code = "INVALID_VALUE" })
+      end
+    end
+  end
+
   -- Check for a=extmap at session level or in at least one non-USB media block.
   local has_extmap = find_attr(doc.session.attributes, "extmap") ~= nil
   if not has_extmap then
@@ -1197,6 +1366,43 @@ function ipmx.validate(doc)
     end
   end
 
+  -- Enforce a=extmap ID uniqueness per RFC 5285 §3 ("unique per level").
+  -- Session scope and each media-block scope are checked independently.
+  local sess_extmap_ids = {}
+  for _, attr in ipairs(doc.session.attributes or {}) do
+    if attr.name == "extmap" then
+      local id = tonumber((attr.value or ""):match("^(%d+)"))
+      if id then
+        if sess_extmap_ids[id] then
+          return nil, errors.new(
+            string.format("duplicate a=extmap ID %d (must be unique per RFC 5285 §3)", id),
+            { field_path = "session.attributes[extmap]",
+              spec_ref = "RFC 5285 §3", code = "INVALID_VALUE" })
+        end
+        sess_extmap_ids[id] = true
+      end
+    end
+  end
+  for i, m in ipairs(doc.media) do
+    if not usb_set[i] then
+      local media_extmap_ids = {}
+      for _, attr in ipairs(m.attributes or {}) do
+        if attr.name == "extmap" then
+          local id = tonumber((attr.value or ""):match("^(%d+)"))
+          if id then
+            if media_extmap_ids[id] then
+              return nil, errors.new(
+                string.format("duplicate a=extmap ID %d (must be unique per RFC 5285 §3)", id),
+                { field_path = string.format("media[%d].attributes[extmap]", i),
+                  spec_ref = "RFC 5285 §3", code = "INVALID_VALUE" })
+            end
+            media_extmap_ids[id] = true
+          end
+        end
+      end
+    end
+  end
+
   -- Check IPMX fmtp marker and optional FEC params in each non-USB block (TR-10-1 §10.1).
   for i, m in ipairs(doc.media) do
     if not usb_set[i] then
@@ -1229,6 +1435,45 @@ function ipmx.validate(doc)
                 mpath, "fmtp", "TR-10-6 §7.6", "INVALID_VALUE")
             end
           end
+        end
+        -- Baseband params must be positive integers when present (TR-10-2 §11, TR-10-3 §10.3).
+        if m.media == "video" then
+          for _, bp in ipairs({ "measuredpixclk", "vtotal", "htotal" }) do
+            if params[bp] then
+              local n = tonumber(params[bp])
+              if not n or n <= 0 or n ~= math.floor(n) then
+                return attr_err(
+                  string.format("fmtp '%s' must be a positive integer", bp),
+                  mpath, "fmtp", "TR-10-2 §11", "INVALID_VALUE")
+              end
+            end
+          end
+        elseif m.media == "audio" then
+          if params["measuredsamplerate"] then
+            local n = tonumber(params["measuredsamplerate"])
+            if not n or n <= 0 or n ~= math.floor(n) then
+              return attr_err(
+                "fmtp 'measuredsamplerate' must be a positive integer",
+                mpath, "fmtp", "TR-10-3 §10.3", "INVALID_VALUE")
+            end
+          end
+        end
+      end
+      -- IPMX audio: ptime is required (TR-10-3 §8); AM824 encoding is not valid.
+      if m.media == "audio" then
+        local rtpmap_a = find_attr(m.attributes or {}, "rtpmap")
+        if rtpmap_a then
+          local enc_a = rtpmap_parse(rtpmap_a.value or "")
+          if enc_a == "AM824" then
+            return attr_err(
+              "AM824 encoding is not valid for IPMX audio (use L16 or L24)",
+              mpath, "rtpmap", "TR-10-3 §8", "INVALID_VALUE")
+          end
+        end
+        if not find_attr(m.attributes or {}, "ptime") then
+          return attr_err(
+            "a=ptime is required for IPMX audio",
+            mpath, "ptime", "TR-10-3 §8")
         end
       end
     end
@@ -1289,11 +1534,26 @@ function ipmx.validate(doc)
   end)
   if not dup_ok then return nil, dup_err end
 
-  -- RTCP port convention (TR-10-1 §8.7) — IPMX only.
+  -- RTCP port convention and port range (TR-10-1 §7, §8.7) — IPMX only.
   for i, m in ipairs(doc.media) do
     if not usb_set[i] then
       local mpath  = string.format("media[%d]", i)
       local mattrs = m.attributes or {}
+
+      -- Port must be even and > 1024 (TR-10-1 §7).
+      local port = m.port
+      if port then
+        if port <= 1024 then
+          return attr_err(
+            string.format("media port must be > 1024 (got %d)", port),
+            mpath, "port", "TR-10-1 §7", "INVALID_VALUE")
+        end
+        if port % 2 ~= 0 then
+          return attr_err(
+            string.format("media port must be even (got %d)", port),
+            mpath, "port", "TR-10-1 §7", "INVALID_VALUE")
+        end
+      end
 
       if find_attr(mattrs, "rtcp-mux") then
         return attr_err(
@@ -1303,12 +1563,12 @@ function ipmx.validate(doc)
 
       local rtcp_attr = find_attr(mattrs, "rtcp")
       if rtcp_attr then
-        local port_s = (rtcp_attr.value or ""):match("^(%d+)")
-        local port   = port_s and tonumber(port_s)
-        if not port or port ~= (m.port + 1) then
+        local rtcp_port_s = (rtcp_attr.value or ""):match("^(%d+)")
+        local rtcp_port   = rtcp_port_s and tonumber(rtcp_port_s)
+        if not rtcp_port or rtcp_port ~= (m.port + 1) then
           return attr_err(
             string.format("a=rtcp port must be media port+1 (expected %d, got %s)",
-              m.port + 1, tostring(port)),
+              m.port + 1, tostring(rtcp_port)),
             mpath, "rtcp", "TR-10-1 §8.7", "INVALID_VALUE")
         end
       end

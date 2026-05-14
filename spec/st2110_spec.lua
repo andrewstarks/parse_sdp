@@ -1861,4 +1861,600 @@ describe("ST 2110 validation", function()
       assert.matches("ST 2110%-10", err.spec_ref)
     end)
   end)
+
+  -- ── M22: TCS=UNSPECIFIED and colorimetry=XYZ (ST 2110-20:2017 §7.5/§7.6) ────
+
+  describe("TCS and colorimetry enum gaps (M22)", function()
+    local PTP = "a=ts-refclk:ptp=IEEE1588-2008:00-11-22-FF-FE-33-44-55:0"
+    local function video_with_fmtp(fmtp_tail)
+      return table.concat({
+        "v=0",
+        "o=- 1234567890 1 IN IP4 192.168.1.1",
+        "s=ST2110 Video",
+        "t=0 0",
+        PTP,
+        "m=video 5000 RTP/AVP 96",
+        "c=IN IP4 239.100.0.1/64",
+        "a=rtpmap:96 raw/90000",
+        "a=fmtp:96 " .. fmtp_tail,
+        "a=mediaclk:direct=0",
+        PTP,
+      }, "\r\n")
+    end
+
+    local BASE = "sampling=YCbCr-4:2:2; width=1920; height=1080; exactframerate=25; depth=10; PM=2110GPM; SSN=ST2110-20:2022; TP=2110TPN"
+
+    it("accepts TCS=UNSPECIFIED", function()
+      local doc, err = sdp.parse(video_with_fmtp(BASE .. "; TCS=UNSPECIFIED; colorimetry=BT709"), "st2110")
+      assert.is_nil(err)
+      assert.is_table(doc)
+    end)
+
+    it("accepts colorimetry=XYZ", function()
+      local doc, err = sdp.parse(video_with_fmtp(BASE .. "; TCS=SDR; colorimetry=XYZ"), "st2110")
+      assert.is_nil(err)
+      assert.is_table(doc)
+    end)
+
+    it("rejects unknown TCS value", function()
+      local doc = sdp.parse(video_with_fmtp(BASE .. "; TCS=BOGUS; colorimetry=BT709"))
+      assert.is_table(doc)
+      local ok, err = doc:validate("st2110")
+      assert.is_nil(ok)
+      assert.is_table(err)
+      assert.matches("TCS", err.message)
+    end)
+
+    it("rejects unknown colorimetry value", function()
+      local doc = sdp.parse(video_with_fmtp(BASE .. "; TCS=SDR; colorimetry=NOPE"))
+      assert.is_table(doc)
+      local ok, err = doc:validate("st2110")
+      assert.is_nil(ok)
+      assert.is_table(err)
+      assert.matches("colorimetry", err.message)
+    end)
+  end)
+
+  -- ── M22: SSN year validation (requires 4-digit year suffix) ──────────────────
+
+  describe("SSN 4-digit year validation (M22)", function()
+    local PTP = "a=ts-refclk:ptp=IEEE1588-2008:00-11-22-FF-FE-33-44-55:0"
+    local function video_with_ssn(ssn)
+      return table.concat({
+        "v=0",
+        "o=- 1234567890 1 IN IP4 192.168.1.1",
+        "s=ST2110 Video",
+        "t=0 0",
+        PTP,
+        "m=video 5000 RTP/AVP 96",
+        "c=IN IP4 239.100.0.1/64",
+        "a=rtpmap:96 raw/90000",
+        "a=fmtp:96 sampling=YCbCr-4:2:2; width=1920; height=1080; exactframerate=25; depth=10; TCS=SDR; colorimetry=BT709; PM=2110GPM; SSN=" .. ssn .. "; TP=2110TPN",
+        "a=mediaclk:direct=0",
+        PTP,
+      }, "\r\n")
+    end
+
+    it("accepts SSN=ST2110-20:2022", function()
+      local doc, err = sdp.parse(video_with_ssn("ST2110-20:2022"), "st2110")
+      assert.is_nil(err)
+      assert.is_table(doc)
+    end)
+
+    it("accepts SSN=ST2110-20:2017", function()
+      local doc, err = sdp.parse(video_with_ssn("ST2110-20:2017"), "st2110")
+      assert.is_nil(err)
+      assert.is_table(doc)
+    end)
+
+    it("rejects SSN=ST2110-20: (no year)", function()
+      local doc = sdp.parse(video_with_ssn("ST2110-20:"))
+      assert.is_table(doc)
+      local ok, err = doc:validate("st2110")
+      assert.is_nil(ok)
+      assert.is_table(err)
+      assert.matches("SSN", err.message)
+    end)
+
+    it("rejects SSN=ST2110-20:17 (two-digit year)", function()
+      local doc = sdp.parse(video_with_ssn("ST2110-20:17"))
+      assert.is_table(doc)
+      local ok, err = doc:validate("st2110")
+      assert.is_nil(ok)
+      assert.is_table(err)
+      assert.matches("SSN", err.message)
+    end)
+
+    it("rejects SSN=ST2110-20:badvalue", function()
+      local doc = sdp.parse(video_with_ssn("ST2110-20:badvalue"))
+      assert.is_table(doc)
+      local ok, err = doc:validate("st2110")
+      assert.is_nil(ok)
+      assert.is_table(err)
+      assert.matches("SSN", err.message)
+    end)
+  end)
+
+  -- ── M22: channel-order group symbol validation (ST 2110-30 §6.2.2) ───────────
+
+  describe("channel-order group symbol validation (M22)", function()
+    local PTP = "a=ts-refclk:ptp=IEEE1588-2008:00-11-22-FF-FE-33-44-55:0"
+    local function audio_with_co(co)
+      return table.concat({
+        "v=0",
+        "o=- 1234567890 1 IN IP4 192.168.1.1",
+        "s=ST2110 Audio",
+        "t=0 0",
+        PTP,
+        "m=audio 5010 RTP/AVP 97",
+        "c=IN IP4 239.100.0.2/64",
+        "a=rtpmap:97 L24/48000/8",
+        "a=fmtp:97 channel-order=SMPTE2110.(" .. co .. ")",
+        "a=mediaclk:direct=0",
+        PTP,
+      }, "\r\n")
+    end
+
+    it("accepts ST", function()
+      local doc, err = sdp.parse(audio_with_co("ST"), "st2110")
+      assert.is_nil(err)
+      assert.is_table(doc)
+    end)
+
+    it("accepts U08 (user-defined 1-64)", function()
+      local doc, err = sdp.parse(audio_with_co("U08"), "st2110")
+      assert.is_nil(err)
+      assert.is_table(doc)
+    end)
+
+    it("accepts 51,ST (multiple groups)", function()
+      local doc, err = sdp.parse(audio_with_co("51,ST"), "st2110")
+      assert.is_nil(err)
+      assert.is_table(doc)
+    end)
+
+    it("accepts all named group symbols", function()
+      for _, g in ipairs({ "M", "DM", "ST", "LtRt", "51", "71", "222", "SGRP" }) do
+        local doc, err = sdp.parse(audio_with_co(g), "st2110")
+        assert.is_nil(err, "expected no error for group " .. g)
+        assert.is_table(doc)
+      end
+    end)
+
+    it("accepts U01 (lower boundary)", function()
+      local doc, err = sdp.parse(audio_with_co("U01"), "st2110")
+      assert.is_nil(err)
+      assert.is_table(doc)
+    end)
+
+    it("accepts U64 (upper boundary)", function()
+      local doc, err = sdp.parse(audio_with_co("U64"), "st2110")
+      assert.is_nil(err)
+      assert.is_table(doc)
+    end)
+
+    it("rejects foo (unknown group symbol)", function()
+      local doc = sdp.parse(audio_with_co("foo"))
+      assert.is_table(doc)
+      local ok, err = doc:validate("st2110")
+      assert.is_nil(ok)
+      assert.is_table(err)
+      assert.matches("group symbol", err.message)
+    end)
+
+    it("rejects U00 (out of range)", function()
+      local doc = sdp.parse(audio_with_co("U00"))
+      assert.is_table(doc)
+      local ok, err = doc:validate("st2110")
+      assert.is_nil(ok)
+      assert.is_table(err)
+      assert.matches("group symbol", err.message)
+    end)
+
+    it("rejects U65 (out of range)", function()
+      local doc = sdp.parse(audio_with_co("U65"))
+      assert.is_table(doc)
+      local ok, err = doc:validate("st2110")
+      assert.is_nil(ok)
+      assert.is_table(err)
+      assert.matches("group symbol", err.message)
+    end)
+  end)
+
+  -- ── M22: TTL range validation (1-255) ────────────────────────────────────────
+
+  describe("multicast TTL range validation (M22)", function()
+    local PTP = "a=ts-refclk:ptp=IEEE1588-2008:00-11-22-FF-FE-33-44-55:0"
+    local VFMTP = "a=fmtp:96 sampling=YCbCr-4:2:2; width=1920; height=1080; exactframerate=25; depth=10; TCS=SDR; colorimetry=BT709; PM=2110GPM; SSN=ST2110-20:2022; TP=2110TPN"
+    local function with_ttl(ttl)
+      return table.concat({
+        "v=0",
+        "o=- 1234567890 1 IN IP4 192.168.1.1",
+        "s=ST2110 Video",
+        "t=0 0",
+        PTP,
+        "m=video 5000 RTP/AVP 96",
+        "c=IN IP4 239.100.0.1/" .. ttl,
+        "a=rtpmap:96 raw/90000",
+        VFMTP,
+        "a=mediaclk:direct=0",
+        PTP,
+      }, "\r\n")
+    end
+
+    it("accepts TTL=64", function()
+      local doc, err = sdp.parse(with_ttl(64), "st2110")
+      assert.is_nil(err)
+      assert.is_table(doc)
+    end)
+
+    it("accepts TTL=1 (lower boundary)", function()
+      local doc, err = sdp.parse(with_ttl(1), "st2110")
+      assert.is_nil(err)
+      assert.is_table(doc)
+    end)
+
+    it("accepts TTL=255 (upper boundary)", function()
+      local doc, err = sdp.parse(with_ttl(255), "st2110")
+      assert.is_nil(err)
+      assert.is_table(doc)
+    end)
+
+    it("rejects TTL=0", function()
+      local doc = sdp.parse(with_ttl(0))
+      assert.is_table(doc)
+      local ok, err = doc:validate("st2110")
+      assert.is_nil(ok)
+      assert.is_table(err)
+      assert.matches("TTL", err.message)
+    end)
+
+    it("rejects TTL=256", function()
+      local doc = sdp.parse(with_ttl(256))
+      assert.is_table(doc)
+      local ok, err = doc:validate("st2110")
+      assert.is_nil(ok)
+      assert.is_table(err)
+      assert.matches("TTL", err.message)
+    end)
+  end)
+
+  -- ── M22: JPEG-XS (jxsv) validation (ST 2110-22 / TR-10-11) ──────────────────
+
+  describe("JPEG-XS (jxsv) validation (M22)", function()
+    local PTP = "a=ts-refclk:ptp=IEEE1588-2008:00-11-22-FF-FE-33-44-55:0"
+    local VALID_JXSV_FMTP = "sampling=YCbCr-4:2:2; width=1920; height=1080; exactframerate=25; depth=10; TCS=SDR; colorimetry=BT709; PM=2110GPM; SSN=ST2110-22:2019; TP=2110TPNL; profile=High444.12; level=1k-1; sublevel=Sublev3bpp; transmode=1; packetmode=0"
+    local function jxsv_sdp(fmtp_tail)
+      return table.concat({
+        "v=0",
+        "o=- 1234567890 1 IN IP4 192.168.1.1",
+        "s=ST2110 JPEG-XS",
+        "t=0 0",
+        PTP,
+        "m=video 5000 RTP/AVP 96",
+        "c=IN IP4 239.100.0.1/64",
+        "a=rtpmap:96 jxsv/90000",
+        "a=fmtp:96 " .. fmtp_tail,
+        "a=mediaclk:direct=0",
+        PTP,
+      }, "\r\n")
+    end
+
+    it("accepts a valid JPEG-XS SDP", function()
+      local doc, err = sdp.parse(jxsv_sdp(VALID_JXSV_FMTP), "st2110")
+      assert.is_nil(err)
+      assert.is_table(doc)
+    end)
+
+    it("rejects wrong SSN prefix (ST2110-20 instead of ST2110-22)", function()
+      local fmtp = VALID_JXSV_FMTP:gsub("ST2110%-22:2019", "ST2110-20:2022")
+      local doc = sdp.parse(jxsv_sdp(fmtp))
+      assert.is_table(doc)
+      local ok, err = doc:validate("st2110")
+      assert.is_nil(ok)
+      assert.is_table(err)
+      assert.matches("SSN", err.message)
+    end)
+
+    it("rejects TP=2110TPN (not valid for compressed video)", function()
+      local fmtp = VALID_JXSV_FMTP:gsub("TP=2110TPNL", "TP=2110TPN")
+      local doc = sdp.parse(jxsv_sdp(fmtp))
+      assert.is_table(doc)
+      local ok, err = doc:validate("st2110")
+      assert.is_nil(ok)
+      assert.is_table(err)
+      assert.matches("TP", err.message)
+    end)
+
+    it("accepts TP=2110TPW", function()
+      local fmtp = VALID_JXSV_FMTP:gsub("TP=2110TPNL", "TP=2110TPW")
+      local doc, err = sdp.parse(jxsv_sdp(fmtp), "st2110")
+      assert.is_nil(err)
+      assert.is_table(doc)
+    end)
+
+    it("rejects missing profile", function()
+      local fmtp = VALID_JXSV_FMTP:gsub("; profile=High444.12", "")
+      local doc = sdp.parse(jxsv_sdp(fmtp))
+      assert.is_table(doc)
+      local ok, err = doc:validate("st2110")
+      assert.is_nil(ok)
+      assert.is_table(err)
+      assert.matches("profile", err.message)
+    end)
+
+    it("rejects missing level", function()
+      local fmtp = VALID_JXSV_FMTP:gsub("; level=1k%-1", "")
+      local doc = sdp.parse(jxsv_sdp(fmtp))
+      assert.is_table(doc)
+      local ok, err = doc:validate("st2110")
+      assert.is_nil(ok)
+      assert.is_table(err)
+      assert.matches("level", err.message)
+    end)
+
+    it("rejects missing sublevel", function()
+      local fmtp = VALID_JXSV_FMTP:gsub("; sublevel=Sublev3bpp", "")
+      local doc = sdp.parse(jxsv_sdp(fmtp))
+      assert.is_table(doc)
+      local ok, err = doc:validate("st2110")
+      assert.is_nil(ok)
+      assert.is_table(err)
+      assert.matches("sublevel", err.message)
+    end)
+
+    it("rejects missing transmode", function()
+      local fmtp = VALID_JXSV_FMTP:gsub("; transmode=1", "")
+      local doc = sdp.parse(jxsv_sdp(fmtp))
+      assert.is_table(doc)
+      local ok, err = doc:validate("st2110")
+      assert.is_nil(ok)
+      assert.is_table(err)
+      assert.matches("transmode", err.message)
+    end)
+
+    it("rejects missing packetmode", function()
+      local fmtp = VALID_JXSV_FMTP:gsub("; packetmode=0", "")
+      local doc = sdp.parse(jxsv_sdp(fmtp))
+      assert.is_table(doc)
+      local ok, err = doc:validate("st2110")
+      assert.is_nil(ok)
+      assert.is_table(err)
+      assert.matches("packetmode", err.message)
+    end)
+
+    it("accepts optional fbblevel as positive integer", function()
+      local fmtp = VALID_JXSV_FMTP .. "; fbblevel=3"
+      local doc, err = sdp.parse(jxsv_sdp(fmtp), "st2110")
+      assert.is_nil(err)
+      assert.is_table(doc)
+    end)
+
+    it("rejects fbblevel=0 (not positive)", function()
+      local fmtp = VALID_JXSV_FMTP .. "; fbblevel=0"
+      local doc = sdp.parse(jxsv_sdp(fmtp))
+      assert.is_table(doc)
+      local ok, err = doc:validate("st2110")
+      assert.is_nil(ok)
+      assert.is_table(err)
+      assert.matches("fbblevel", err.message)
+    end)
+  end)
+
+  -- ── M22: a=extmap ID upper bound = 255 (RFC 5285) ────────────────────────────
+
+  describe("a=extmap ID upper bound (M22)", function()
+    local function ipmx_with_extmap(id)
+      return table.concat({
+        "v=0",
+        "o=- 1234567890 1 IN IP4 192.168.1.1",
+        "s=IPMX Video",
+        "t=0 0",
+        "a=ts-refclk:localmac=AA-BB-CC-DD-EE-FF",
+        "a=extmap:" .. id .. " urn:ietf:params:rtp-hdrext:smpte-tc",
+        "m=video 5000 RTP/AVP 96",
+        "c=IN IP4 239.100.0.1/64",
+        "a=rtpmap:96 raw/90000",
+        "a=fmtp:96 sampling=YCbCr-4:2:2; width=1920; height=1080; exactframerate=25; depth=10; TCS=SDR; colorimetry=BT709; PM=2110GPM; SSN=ST2110-20:2022; TP=2110TPN; IPMX",
+        "a=mediaclk:direct=0",
+        "a=ts-refclk:localmac=AA-BB-CC-DD-EE-FF",
+      }, "\r\n")
+    end
+
+    it("accepts extmap ID=255 (upper boundary)", function()
+      local doc = sdp.parse(ipmx_with_extmap(255))
+      assert.is_table(doc)
+      local ok, err = doc:validate("ipmx")
+      assert.is_nil(err)
+      assert.equal(true, ok)
+    end)
+
+    it("rejects extmap ID=256 (exceeds RFC 5285 limit)", function()
+      local doc = sdp.parse(ipmx_with_extmap(256))
+      assert.is_table(doc)
+      local ok, err = doc:validate("ipmx")
+      assert.is_nil(ok)
+      assert.is_table(err)
+      assert.matches("255", err.message)
+    end)
+  end)
+
+  -- ── M23: Session-level c= validation (ST 2110-10 §6.5) ───────────────────────
+
+  describe("session-level c= validation (ST 2110-10 §6.5)", function()
+    -- Build a video SDP with a session-level c= (before t=) and no per-media c=.
+    local function sess_conn_sdp(conn_line)
+      local lines = {
+        "v=0",
+        "o=- 1234567890 1 IN IP4 192.168.1.1",
+        "s=ST2110 Video",
+        conn_line,
+        "t=0 0",
+        "a=ts-refclk:ptp=IEEE1588-2008:00-11-22-FF-FE-33-44-55:0",
+        "m=video 5000 RTP/AVP 96",
+        "a=rtpmap:96 raw/90000",
+        "a=fmtp:96 sampling=YCbCr-4:2:2; width=1920; height=1080; exactframerate=25; depth=10; TCS=SDR; colorimetry=BT709; PM=2110GPM; SSN=ST2110-20:2022",
+        "a=mediaclk:direct=0",
+        "a=ts-refclk:ptp=IEEE1588-2008:00-11-22-FF-FE-33-44-55:0",
+      }
+      return table.concat(lines, "\r\n")
+    end
+
+    it("accepts session-level c= with valid multicast address", function()
+      local doc = sdp.parse(sess_conn_sdp("c=IN IP4 239.100.0.1/64"))
+      assert.is_table(doc)
+      local ok, err = doc:validate("st2110")
+      assert.is_nil(err)
+      assert.equal(true, ok)
+    end)
+
+    it("rejects session-level c= in forbidden 224.0.0.0/24 range", function()
+      local doc = sdp.parse(sess_conn_sdp("c=IN IP4 224.0.0.1/64"))
+      assert.is_table(doc)
+      local ok, err = doc:validate("st2110")
+      assert.is_nil(ok)
+      assert.is_table(err)
+      assert.equal("session.connection", err.field_path)
+    end)
+
+    it("rejects session-level c= unicast with TTL suffix", function()
+      local doc = sdp.parse(sess_conn_sdp("c=IN IP4 192.168.1.10/64"))
+      assert.is_table(doc)
+      local ok, err = doc:validate("st2110")
+      assert.is_nil(ok)
+      assert.is_table(err)
+      assert.equal("session.connection", err.field_path)
+    end)
+  end)
+
+  -- ── M23: Missing c= detection (ST 2110-10 §6.3) ──────────────────────────────
+
+  describe("missing connection address c= detection (ST 2110-10 §6.3)", function()
+    local FMTP = "sampling=YCbCr-4:2:2; width=1920; height=1080; exactframerate=25; depth=10; TCS=SDR; colorimetry=BT709; PM=2110GPM; SSN=ST2110-20:2022"
+
+    it("rejects SDP with no session c= and no media c=", function()
+      local text = table.concat({
+        "v=0",
+        "o=- 1234567890 1 IN IP4 192.168.1.1",
+        "s=ST2110 Video",
+        "t=0 0",
+        "a=ts-refclk:ptp=IEEE1588-2008:00-11-22-FF-FE-33-44-55:0",
+        "m=video 5000 RTP/AVP 96",
+        "a=rtpmap:96 raw/90000",
+        "a=fmtp:96 " .. FMTP,
+        "a=mediaclk:direct=0",
+        "a=ts-refclk:ptp=IEEE1588-2008:00-11-22-FF-FE-33-44-55:0",
+      }, "\r\n")
+      local doc = sdp.parse(text)
+      assert.is_table(doc)
+      local ok, err = doc:validate("st2110")
+      assert.is_nil(ok)
+      assert.is_table(err)
+      assert.matches("connection", err.message)
+      assert.equal("ST 2110-10 §6.3", err.spec_ref)
+    end)
+
+    it("accepts SDP with session-level c= and no media c=", function()
+      local text = table.concat({
+        "v=0",
+        "o=- 1234567890 1 IN IP4 192.168.1.1",
+        "s=ST2110 Video",
+        "c=IN IP4 239.100.0.1/64",
+        "t=0 0",
+        "a=ts-refclk:ptp=IEEE1588-2008:00-11-22-FF-FE-33-44-55:0",
+        "m=video 5000 RTP/AVP 96",
+        "a=rtpmap:96 raw/90000",
+        "a=fmtp:96 " .. FMTP,
+        "a=mediaclk:direct=0",
+        "a=ts-refclk:ptp=IEEE1588-2008:00-11-22-FF-FE-33-44-55:0",
+      }, "\r\n")
+      local doc = sdp.parse(text)
+      assert.is_table(doc)
+      local ok, err = doc:validate("st2110")
+      assert.is_nil(err)
+      assert.equal(true, ok)
+    end)
+
+    it("accepts SDP with media-level c= and no session c= (existing behavior)", function()
+      -- VIDEO_SDP already has per-media c= and no session c=
+      local doc = sdp.parse(VIDEO_SDP)
+      assert.is_table(doc)
+      local ok, err = doc:validate("st2110")
+      assert.is_nil(err)
+      assert.equal(true, ok)
+    end)
+  end)
+
+  -- ── M23: All ts-refclk entries validated (ST 2110-10 §8.2) ───────────────────
+
+  describe("all ts-refclk entries validated (ST 2110-10 §8.2)", function()
+    local FMTP = "sampling=YCbCr-4:2:2; width=1920; height=1080; exactframerate=25; depth=10; TCS=SDR; colorimetry=BT709; PM=2110GPM; SSN=ST2110-20:2022"
+
+    local function video_with_tsrefclks(lines_before_media, lines_after_rtpmap)
+      local base = {
+        "v=0",
+        "o=- 1234567890 1 IN IP4 192.168.1.1",
+        "s=ST2110 Video",
+        "t=0 0",
+      }
+      for _, l in ipairs(lines_before_media or {}) do base[#base + 1] = l end
+      base[#base + 1] = "m=video 5000 RTP/AVP 96"
+      base[#base + 1] = "c=IN IP4 239.100.0.1/64"
+      base[#base + 1] = "a=rtpmap:96 raw/90000"
+      base[#base + 1] = "a=fmtp:96 " .. FMTP
+      base[#base + 1] = "a=mediaclk:direct=0"
+      for _, l in ipairs(lines_after_rtpmap or {}) do base[#base + 1] = l end
+      return table.concat(base, "\r\n")
+    end
+
+    it("accepts two valid ts-refclk at session level", function()
+      local text = video_with_tsrefclks({
+        "a=ts-refclk:ptp=IEEE1588-2008:00-11-22-FF-FE-33-44-55:0",
+        "a=ts-refclk:localmac=AA-BB-CC-DD-EE-FF",
+      })
+      local doc = sdp.parse(text)
+      assert.is_table(doc)
+      local ok, err = doc:validate("st2110")
+      assert.is_nil(err)
+      assert.equal(true, ok)
+    end)
+
+    it("rejects when second ts-refclk is invalid (first is valid)", function()
+      local text = video_with_tsrefclks({
+        "a=ts-refclk:ptp=IEEE1588-2008:00-11-22-FF-FE-33-44-55:0",
+        "a=ts-refclk:garbage",
+      })
+      local doc = sdp.parse(text)
+      assert.is_table(doc)
+      local ok, err = doc:validate("st2110")
+      assert.is_nil(ok)
+      assert.is_table(err)
+      assert.matches("ts%-refclk", err.message)
+    end)
+
+    it("accepts valid ts-refclk at media level only (session has none)", function()
+      local text = video_with_tsrefclks(
+        {},
+        { "a=ts-refclk:localmac=AA-BB-CC-DD-EE-FF" }
+      )
+      local doc = sdp.parse(text)
+      assert.is_table(doc)
+      local ok, err = doc:validate("st2110")
+      assert.is_nil(err)
+      assert.equal(true, ok)
+    end)
+
+    it("rejects invalid ts-refclk at media level when session also has valid one", function()
+      local text = video_with_tsrefclks(
+        { "a=ts-refclk:localmac=AA-BB-CC-DD-EE-FF" },
+        { "a=ts-refclk:garbage" }
+      )
+      local doc = sdp.parse(text)
+      assert.is_table(doc)
+      local ok, err = doc:validate("st2110")
+      assert.is_nil(ok)
+      assert.is_table(err)
+      assert.matches("ts%-refclk", err.message)
+    end)
+  end)
 end)

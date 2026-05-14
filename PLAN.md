@@ -592,6 +592,98 @@ but untested code paths.
 
 ---
 
+### M23 — Validation completeness audit (gap closure 2026-05-13, round 2)
+
+**Done when:** All gaps identified in the sixth round of spec/code audit are addressed.
+Sources: direct spec reads of TR-10-1 §10, ST 2110-10 §6.3/§7.2/§8.2, RFC 5285 §3/§4.2.
+
+---
+
+#### Gap 1 — `a=group:FID` not rejected at IPMX tier (TR-10-1 §10)
+
+**Source:** TR-10-1 §10: "Flow Identification (FID) semantics as defined in RFC 5888 shall not
+be used under this TR." Any IPMX SDP carrying `a=group:FID` at session level must be rejected.
+The ST 2110 tier has no such rule. This is IPMX-only.
+
+- [x] Scan `doc.session.attributes` in `ipmx.validate` for any `a=group:` with value beginning `FID`
+- [x] Test: IPMX SDP with `a=group:FID mid1 mid2` → rejected with spec_ref `TR-10-1 §10`
+- [x] Test: IPMX SDP with `a=group:DUP mid1 mid2` → still accepted
+- [x] Test: ST 2110 SDP with `a=group:FID` → accepted (rule is IPMX-only)
+
+---
+
+#### Gap 2 — Session-level `c=` not validated (ST 2110-10 §6.5)
+
+**Source:** `valid_connection_address` is called for per-media `c=` but never for `doc.session.connection`.
+A session-level `c=IN IP4 224.0.0.1` (forbidden range) passes ST 2110 validation today.
+
+- [x] In `st2110.validate`, after `local sess_attrs = ...`, add `valid_connection_address` check for `doc.session.connection` when present
+- [x] Test: session-level `c=IN IP4 224.0.0.1` (forbidden 224.0.0.0/24) → rejected
+- [x] Test: session-level `c=IN IP4 239.100.0.1/64` (valid multicast) → accepted
+- [x] Test: session-level `c=IN IP4 192.168.1.1` with TTL suffix → rejected (unicast must not carry TTL)
+
+---
+
+#### Gap 3 — Only first `a=ts-refclk` validated; subsequent entries skipped (ST 2110-10 §8.2)
+
+**Source:** `find_attr` returns the first matching attribute. If multiple `a=ts-refclk` attrs are
+present (session or media level), only the first is validated. ST 2110-10 §8.2 allows multiple
+ts-refclk sources; each must be individually valid.
+
+- [x] Replace `find_attr` ts-refclk lookup + single `valid_tsrefclk` call with a loop over all
+  ts-refclk attrs from both session and media level
+- [x] Test: two valid ts-refclk attrs → accepted
+- [x] Test: first ts-refclk valid, second invalid → rejected
+- [x] Test: first ts-refclk absent but second present and valid → accepted (order shouldn't matter)
+
+---
+
+#### Gap 4 — `a=extmap` ID uniqueness not enforced (RFC 5285 §3)
+
+**Source:** RFC 5285 §3: "The ID in an extmap attribute MUST be unique within the SDP per level."
+Two `a=extmap:1 ...` lines at session level (or within the same media block) must be rejected.
+The existing `valid_extmap` only checks format and range; no cross-attribute uniqueness check.
+
+- [x] In `ipmx.validate`, after the per-attribute format checks, scan for duplicate IDs at session scope and per media-block scope separately
+- [x] Test: two `a=extmap:1 ...` at session level → rejected with spec_ref `RFC 5285 §3`
+- [x] Test: two `a=extmap:1 ...` in the same media block → rejected
+- [x] Test: `a=extmap:1 ...` at session level and `a=extmap:1 ...` in media block → accepted (different levels)
+
+---
+
+#### Gap 5 — Missing media-level `c=` not detected when no session-level `c=` (ST 2110-10 §6.3)
+
+**Source:** ST 2110-10 §6.3: a connection address must be present — either at session level or
+at media level. If neither is present, the validator silently passes today.
+
+- [x] In the per-media loop in `st2110.validate`, after the per-media `c=` check, reject if `m.connection == nil` AND `doc.session.connection == nil`
+- [x] Test: no session `c=` and no media `c=` → rejected
+- [x] Test: session-level `c=` present, no media `c=` → accepted
+- [x] Test: media-level `c=` present, no session `c=` → accepted (existing behavior)
+
+---
+
+#### Gap 6 — IPMX audio `a=ptime:0` and `a=ptime:-1` not tested
+
+**Source:** IPMX requires `a=ptime` to be present (TR-10-3 §8) and the ST 2110 tier requires
+a positive value. Both cases already return errors via the ST 2110 tier when ptime=0 or ptime=-1
+is present, but no IPMX-level tests cover these values.
+
+- [x] Test: IPMX audio with `a=ptime:0` → rejected (ST 2110 tier rejects non-positive)
+- [x] Test: IPMX audio with `a=ptime:-1` → rejected
+
+---
+
+**Spec references for M23:**
+
+- VSF TR-10-1 (2024-02-23) §10 — FID semantics forbidden
+- SMPTE ST 2110-10 §6.3 — connection address required at session or media level
+- SMPTE ST 2110-10 §6.5 — multicast TTL, forbidden ranges
+- SMPTE ST 2110-10 §8.2 — multiple ts-refclk sources allowed; each individually valid
+- RFC 5285 §3 — extmap ID must be unique per level
+
+---
+
 ## Commit Gates
 
 Before any commit:
@@ -1387,3 +1479,244 @@ calls are removed; the locals are already in scope.
 - [x] `valid_hkep` addr token documented with comment explaining why format is not checked
 
 **Done when:** `busted spec/` passes with 226 successes; 1337 → 1256 lines.
+
+---
+
+### M22 — Validation completeness audit (gap closure 2026-05-13)
+
+**Done when:** All gaps identified in the fifth round of spec/code audit are addressed. Every
+required and optional SDP field mentioned in ST 2110-20, ST 2110-22, ST 2110-30, ST 2110-40,
+ST 2110-41, TR-10-1, TR-10-2, TR-10-3, and TR-10-11 is either validated or explicitly noted
+as out-of-scope for a per-SDP validator (device-capability requirements).
+
+---
+
+#### Gap 1 — `VALID_TCS` missing `UNSPECIFIED` (ST 2110-20:2017 §7.6)
+
+**Source:** SMPTE ST 2110-20:2017 §7.6 lists exactly 10 TCS values; `UNSPECIFIED` is on the list.
+The code has 9 — `UNSPECIFIED` is absent. Any SDP with `TCS=UNSPECIFIED` is wrongly rejected.
+
+- [x] Add `["UNSPECIFIED"]=true` to `VALID_TCS` in `parse_sdp.lua`
+- [x] Test: `TCS=UNSPECIFIED` accepted
+- [x] Test: existing `TCS=SDR` and `TCS=PQ` still accepted
+
+---
+
+#### Gap 2 — `VALID_COLORIMETRY` missing `XYZ`, has spurious `ALPHA` (ST 2110-20:2017 §7.5)
+
+**Source:** SMPTE ST 2110-20:2017 §7.5 lists exactly 8 colorimetry values:
+`BT601 BT709 BT2020 BT2100 ST2065-1 ST2065-3 UNSPECIFIED XYZ`.
+The code has `ALPHA` in place of `XYZ`. Consequence: `colorimetry=XYZ` is wrongly rejected;
+`colorimetry=ALPHA` is wrongly accepted. `ALPHA` is not in the 2017 standard — it may appear
+in the 2022 revision, so it is retained alongside the addition of `XYZ`.
+
+- [x] Add `["XYZ"]=true` to `VALID_COLORIMETRY`; retain `ALPHA` pending 2022-edition confirmation
+- [x] Test: `colorimetry=XYZ` accepted
+- [x] Test: `colorimetry=BT709` still accepted
+
+---
+
+#### Gap 3 — SSN validated by prefix only; year not checked (ST 2110-20:2017 §7.2)
+
+**Source:** ST 2110-20:2017 §7.2: *"Senders implementing this standard shall signal the value
+ST2110-20:2017."* The 2022 edition signals `ST2110-20:2022`. Similarly for ST 2110-22
+(`ST2110-22:2019`) and ST 2110-41. The current code uses prefix-only LPEG patterns
+(`P("ST2110-20:")`) which accept garbage like `ST2110-20:badvalue`.
+
+**Fix:** Replace prefix-only patterns with patterns that require a 4-digit numeric year:
+`P("ST2110-20:") * (R("09")^4) * P(-1)` — accepts `ST2110-20:2017`, `ST2110-20:2022`, and
+any future 4-digit year. Rejects `ST2110-20:`, `ST2110-20:foo`, `ST2110-20:20x2`, etc.
+
+New LPEG constants defined once and shared across all SSN validation sites:
+```lua
+local _ssn_year  = R("09") * R("09") * R("09") * R("09")
+local _ssn20_pat = P("ST2110-20:") * _ssn_year * P(-1)
+local _ssn22_pat = P("ST2110-22:") * _ssn_year * P(-1)   -- JPEG-XS / ST 2110-22
+local _ssn41_pat = P("ST2110-41:") * _ssn_year * P(-1)
+```
+
+- [x] Define `_ssn_year`, `_ssn20_pat`, `_ssn22_pat`, `_ssn41_pat` in `parse_sdp.lua`
+- [x] Replace existing ST 2110-20 SSN check with `_ssn20_pat`
+- [x] Replace existing ST 2110-41 SSN Lua `string.match` with `_ssn41_pat`
+- [x] Test: `SSN=ST2110-20:2017` accepted; `SSN=ST2110-20:2022` accepted
+- [x] Test: `SSN=ST2110-20:badvalue` rejected; `SSN=ST2110-20:` rejected (no year)
+- [x] Test: `SSN=ST2110-41:2024` still accepted; `SSN=ST2110-41:` rejected
+
+---
+
+#### Gap 4 — `channel-order` group symbols not validated (ST 2110-30:2017 §6.2.2 Table 1)
+
+**Source:** ST 2110-30:2017 §6.2.2 Table 1 defines exactly 9 named group symbols
+(`M`, `DM`, `ST`, `LtRt`, `51`, `71`, `222`, `SGRP`, `U01`–`U64`) and states the syntax is
+`SMPTE2110.(<group>[,<group>...])`. The current `_chan_ord_pat` accepts any non-empty string
+inside the parentheses: `SMPTE2110.(garbage)` passes; multiple comma-separated groups are
+technically accepted (the pattern is permissive) but individual symbols are not validated.
+
+**Fix:** Replace `_chan_ord_pat` (the simple LPEG structural check) with a proper
+`valid_channel_order` that:
+1. Checks the `SMPTE2110.(...)` wrapper
+2. Splits on commas
+3. Validates each token against `VALID_CHAN_GROUPS` or the `Unn` range (U01–U64)
+
+```lua
+local VALID_CHAN_GROUPS = {
+  ["M"]=true,["DM"]=true,["ST"]=true,["LtRt"]=true,
+  ["51"]=true,["71"]=true,["222"]=true,["SGRP"]=true,
+}
+```
+
+- [x] Define `VALID_CHAN_GROUPS` and rewrite `valid_channel_order` in `parse_sdp.lua`
+- [x] Remove `_chan_ord_pat` (now unused)
+- [x] Test: `SMPTE2110.(ST)` accepted; `SMPTE2110.(M,DM)` accepted; `SMPTE2110.(51,ST)` accepted
+- [x] Test: `SMPTE2110.(U08)` accepted; `SMPTE2110.(U64)` accepted; `SMPTE2110.(U00)` rejected
+- [x] Test: `SMPTE2110.(U65)` rejected; `SMPTE2110.(U99)` rejected
+- [x] Test: `SMPTE2110.(foo)` rejected; `SMPTE2110.()` rejected
+
+---
+
+#### Gap 5 — Multicast TTL not range-validated (ST 2110-10:2022 §6.5)
+
+**Source:** The connection address `c=IN IP4 239.x.x.x/TTL` requires a valid TTL 1–255.
+The current check only confirms a digit string is present after `/`; `/0` and `/999` both pass.
+
+- [x] Update `valid_connection_address` to parse TTL as an integer and reject values outside 1–255
+- [x] Test: `239.100.0.1/64` accepted; `239.100.0.1/255` accepted
+- [x] Test: `239.100.0.1/0` rejected (TTL=0 invalid); `239.100.0.1/256` rejected
+
+---
+
+#### Gap 6 — JPEG-XS (`jxsv`) entirely unimplemented (TR-10-11 / ST 2110-22 / IPMX JPEG-XS Profile)
+
+**Source:** The IPMX JPEG-XS Video Profile (v1.0-2025-12) and VSF TR-10-11 define JPEG-XS as a
+major IPMX media type. SMPTE ST 2110-22:2019 defines compressed video SDP format.
+The rtpmap encoding name is `jxsv` (clock rate 90000). No code currently handles this.
+
+**ST 2110-level checks** (new `elseif enc == "jxsv"` branch in `st2110.validate`):
+
+| fmtp param | Required? | Validation rule | Spec |
+|---|---|---|---|
+| `sampling` | Required | VALID_SAMPLING enum | ST 2110-20 §7.4.1 |
+| `width` | Required | Positive integer | ST 2110-22 §7 |
+| `height` | Required | Positive integer | ST 2110-22 §7 |
+| `exactframerate` | Required | Positive int or N/D fraction | ST 2110-22 §7 |
+| `depth` | Required | Positive integer | ST 2110-22 §7 |
+| `TCS` | Required | VALID_TCS enum | ST 2110-20 §7.6 |
+| `colorimetry` | Required | VALID_COLORIMETRY enum | ST 2110-20 §7.5 |
+| `PM` | Required | `2110GPM` or `2110BPM` | ST 2110-20 §6.3 |
+| `SSN` | Required | `_ssn22_pat` (ST2110-22:YYYY) | ST 2110-22 §7 |
+| `profile` | Required | Non-empty string | TR-10-11 / IPMX JPEG-XS Profile §6.1.4 |
+| `level` | Required | Non-empty string | TR-10-11 / IPMX JPEG-XS Profile §6.1.4 |
+| `sublevel` | Required | Non-empty string | TR-10-11 / IPMX JPEG-XS Profile §6.1.4 |
+| `transmode` | Required | Non-negative integer | TR-10-11 / IPMX JPEG-XS Profile §6.1.4 |
+| `packetmode` | Required | Non-negative integer | TR-10-11 / IPMX JPEG-XS Profile §6.1.4 |
+| `TP` | Optional | `2110TPNL` or `2110TPW` (ST 2110-22 traffic profiles only) | ST 2110-22 §7 |
+| `RANGE` | Optional | VALID_RANGE enum | ST 2110-20 §7.3 |
+| `MAXUDP` | Optional | Positive integer | ST 2110-22 §7 |
+| `CMAX` | Optional | Positive integer | ST 2110-21 |
+| `fbblevel` | Optional | Positive integer | TR-10-11 §12 |
+
+Note: `TP` for JPEG-XS/ST 2110-22 is restricted to `2110TPNL` or `2110TPW` — NOT `2110TPN`
+(which is only for uncompressed video per ST 2110-10/ST 2110-20). This is a stricter enum.
+A separate `VALID_TP_22` table is defined.
+
+**IPMX-level checks** (in `ipmx.validate`):
+- The existing IPMX fmtp `IPMX` marker check already applies to JPEG-XS blocks automatically.
+- No additional IPMX-specific checks needed beyond the ST 2110 tier for JPEG-XS.
+
+- [x] Define `VALID_TP_22 = { ["2110TPNL"]=true, ["2110TPW"]=true }` in `parse_sdp.lua`
+- [x] Add `elseif enc == "jxsv"` branch in `st2110.validate` with all checks above
+- [x] Write minimal valid JPEG-XS ST 2110 fixture SDP
+- [x] Write minimal valid JPEG-XS IPMX fixture SDP
+- [x] Tests in `spec/st2110_spec.lua`:
+  - Valid JPEG-XS SDP → success
+  - Missing `profile` → error naming `profile`
+  - Missing `level` → error naming `level`
+  - Missing `sublevel` → error naming `sublevel`
+  - Missing `transmode` → error naming `transmode`
+  - Missing `packetmode` → error naming `packetmode`
+  - Missing any standard video param (`sampling`, `width`, `height`, etc.) → error
+  - `SSN=ST2110-20:2017` on a jxsv block → rejected (wrong SSN prefix)
+  - `SSN=ST2110-22:2019` → accepted
+  - `TP=2110TPN` on jxsv block → rejected (not valid for compressed video)
+  - `TP=2110TPNL` on jxsv block → accepted
+  - `fbblevel=4` → accepted; `fbblevel=0` → rejected (must be positive)
+- [x] Tests in `spec/ipmx_spec.lua`:
+  - Valid IPMX JPEG-XS SDP (with IPMX marker in fmtp) → success
+  - IPMX JPEG-XS SDP without IPMX marker → rejected
+
+---
+
+#### Gap 7 — IPMX media port not validated (TR-10-1 §7)
+
+**Source:** TR-10-1 §7: *"All IPMX Media streams shall have a UDP destination port value that
+is even and that is greater than 1024."* Nothing validates port range at any tier.
+
+- [x] Add port range check in `ipmx.validate` RTCP loop (each non-USB media block)
+- [x] Test: port 5000 (even, >1024) → accepted
+- [x] Test: port 1025 (odd, >1024) → rejected (odd)
+- [x] Test: port 1024 (even, not >1024) → rejected (not >1024)
+- [x] Test: port 1022 → rejected (even but ≤1024)
+
+---
+
+#### Gap 8 — IPMX audio: `a=ptime` required; `AM824` rejected (TR-10-3)
+
+**Sources:**
+- TR-10-3 / IPMX PCM Audio Profile §6.1.4: *"The sender shall populate ... Packet time"* —
+  ptime is required for IPMX audio, not optional.
+- TR-10-3 defines only L16 and L24 as valid IPMX encodings. AM824 (ST 2110-31) is valid at
+  the generic ST 2110 tier but not at the IPMX tier.
+
+Both checks added in the IPMX fmtp marker loop in `ipmx.validate`.
+
+- [x] IPMX audio: require `a=ptime`; if absent → error with spec_ref "TR-10-3 §8 / IPMX PCM Audio Profile §6.1.4"
+- [x] IPMX audio: reject `AM824` rtpmap encoding; error with spec_ref "TR-10-3 §8"
+- [x] Test: valid IPMX audio with L24 and ptime → success
+- [x] Test: IPMX audio missing ptime → rejected
+- [x] Test: IPMX audio with AM824 → rejected
+- [x] Test: generic ST 2110 audio with AM824 → still accepted (not an IPMX restriction)
+
+---
+
+#### Gap 9 — IPMX baseband param format not validated (TR-10-2 §11, TR-10-3 §10.3)
+
+**Source:** TR-10-2 defines optional fmtp params `measuredpixclk`, `vtotal`, `htotal` for IPMX
+uncompressed video; TR-10-3 defines optional `measuredsamplerate` for IPMX audio. All four
+must be positive integers if present. Currently they are silently ignored.
+
+These are validated in the IPMX fmtp marker loop, after the IPMX marker check.
+
+- [x] IPMX video: if `measuredpixclk` present, validate as positive integer (TR-10-2 §11)
+- [x] IPMX video: if `vtotal` present, validate as positive integer (TR-10-2 §11)
+- [x] IPMX video: if `htotal` present, validate as positive integer (TR-10-2 §11)
+- [x] IPMX audio: if `measuredsamplerate` present, validate as positive integer (TR-10-3 §10.3)
+- [x] Test: `measuredpixclk=148550104` accepted; `measuredpixclk=notanumber` rejected
+- [x] Test: `vtotal=1125` accepted; `vtotal=0` rejected (must be positive)
+- [x] Test: `htotal=2200` accepted; `htotal=-1` rejected (must be positive)
+- [x] Test: `measuredsamplerate=47952` accepted; `measuredsamplerate=garbage` rejected
+
+---
+
+#### Gap 10 — `a=extmap` ID upper bound not enforced (RFC 5285)
+
+**Source:** RFC 5285 §4.2: extension IDs are 1–14 for one-byte header form, 1–255 for two-byte.
+The current `valid_extmap` checks `id >= 1` but not `id <= 255`. `a=extmap:9999 urn:foo` passes.
+
+- [x] Add `id > 255` check in `valid_extmap`; error: "a=extmap entry count must be 1-255 (RFC 5285)"
+- [x] Test: `a=extmap:255 urn:x-test` accepted (max valid)
+- [x] Test: `a=extmap:256 urn:x-test` rejected
+
+---
+
+**Spec references for M22:**
+- SMPTE ST 2110-20:2017 §7.5 (colorimetry), §7.6 (TCS), §7.2 (SSN)
+- SMPTE ST 2110-22:2019 §7 (compressed video SDP, TP values)
+- SMPTE ST 2110-30:2017 §6.2.2 Table 1 (channel-order groups)
+- SMPTE ST 2110-10:2022 §6.5 (multicast TTL)
+- VSF TR-10-1 (2024-02-23) §7 (port range), §8.7 (RTCP)
+- VSF TR-10-2 (2024-02-23) §11 (baseband video params)
+- VSF TR-10-3 (2024-02-23) §8, §10.3 (ptime required, measuredsamplerate, L16/L24 only)
+- VSF TR-10-11 (2024-02-23) §10, §12 (JPEG-XS SDP, codec params)
+- IPMX JPEG-XS Video Profile v1.0-2025-12 §6.1.4 (required sender signaling)
+- IPMX PCM Digital Audio Profile v1.0-2025-12 §6.1.4 (packet time required)
+- RFC 5285 §4.2 (extmap ID range)

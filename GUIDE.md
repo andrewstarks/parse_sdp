@@ -437,15 +437,18 @@ When `a=group:DUP <mid1> <mid2> …` is present at session level, the library va
 
 ### Connection address (`c=`)
 
-When a `c=` line is present on a media block, the address is validated (ST 2110-10 §6.5):
+A connection address is required at either session level or media-block level (ST 2110-10 §6.3). A media block with no per-media `c=` and no session-level `c=` is rejected.
+
+When a `c=` line is present (at either session or media level), the address is validated (ST 2110-10 §6.5):
 
 - IPv4 multicast addresses (224.0.0.0–239.255.255.255) must include a TTL suffix (e.g. `239.100.0.1/64`).
+- TTL must be an integer in the range 1–255.
 - The Local Network Control Block (`224.0.0.0/24`) and Internetwork Control Block (`224.0.1.0/24`) are forbidden per RFC 5771.
 - Unicast addresses must not carry a TTL suffix.
 
 ### Per media block
 
-`a=ts-refclk` may appear at session level (applying to all media blocks) or at each media-block level; the library accepts either location. All other attributes in this table must be per-media.
+`a=ts-refclk` may appear at session level (applying to all media blocks) or at each media-block level; the library accepts either location. **All** `a=ts-refclk` attributes are validated individually — if multiple are present (at any combination of session and media level), each must be a recognized, well-formed clock source (ST 2110-10 §8.2). All other attributes in this table must be per-media.
 
 | Attribute | Requirement |
 | --- | --- |
@@ -466,10 +469,10 @@ and value format.
 | `height` | `1080` | positive integer |
 | `exactframerate` | `30000/1001` | positive integer or `n/d` fraction (both parts positive) |
 | `depth` | `10` | positive integer |
-| `TCS` | `SDR` | `SDR`, `PQ`, `HLG`, `LINEAR`, `BT2100LINPQ`, `BT2100LINHLG`, `ST2065-1`, `ST428-1`, `DENSITY` |
-| `colorimetry` | `BT709` | `BT601`, `BT709`, `BT2020`, `BT2100`, `ST2065-1`, `ST2065-3`, `UNSPECIFIED`, `ALPHA` |
+| `TCS` | `SDR` | `SDR`, `PQ`, `HLG`, `LINEAR`, `BT2100LINPQ`, `BT2100LINHLG`, `ST2065-1`, `ST428-1`, `DENSITY`, `UNSPECIFIED` |
+| `colorimetry` | `BT709` | `BT601`, `BT709`, `BT2020`, `BT2100`, `ST2065-1`, `ST2065-3`, `UNSPECIFIED`, `ALPHA`, `XYZ` |
 | `PM` | `2110GPM` | `2110GPM`, `2110BPM` |
-| `SSN` | `ST2110-20:2022` | must start with `ST2110-20:` |
+| `SSN` | `ST2110-20:2022` | must be `ST2110-20:YYYY` where YYYY is a 4-digit year (e.g. `ST2110-20:2017`, `ST2110-20:2022`) |
 
 Optional parameters validated when present:
 
@@ -496,7 +499,7 @@ When `a=ptime` is present, its value must be a positive number (ST 2110-30 §7.2
 
 | Parameter | Example | Valid values |
 | --- | --- | --- |
-| `channel-order` | `SMPTE2110.(ST)` | must match `SMPTE2110.(<group>)` with a non-empty group |
+| `channel-order` | `SMPTE2110.(ST)` | must be `SMPTE2110.(<group>[,<group>...])` where each group is one of: `M`, `DM`, `ST`, `LtRt`, `51`, `71`, `222`, `SGRP`, or `U01`–`U64` (ST 2110-30:2017 §6.2.2 Table 1) |
 
 ### ST 2110-40 (smpte291 ancillary data) `fmtp` parameters
 
@@ -509,13 +512,46 @@ Ancillary data flows use rtpmap encoding name `smpte291` at clock rate 90000 (RF
 
 Multiple `DID_SDID` entries are allowed in the SDP; at least one must be present. All entries are validated — any entry with a malformed value is rejected.
 
+### ST 2110-22 (JPEG-XS compressed video) `fmtp` parameters
+
+Compressed video flows use rtpmap encoding name `jxsv` at clock rate 90000 (ST 2110-22 / TR-10-11). `TP` is restricted to `2110TPNL` or `2110TPW` — the uncompressed `2110TPN` packing is not valid for compressed video.
+
+Required parameters (all must be present):
+
+| Parameter | Example | Valid values |
+| --- | --- | --- |
+| `sampling` | `YCbCr-4:2:2` | same set as ST 2110-20 |
+| `width` | `1920` | positive integer |
+| `height` | `1080` | positive integer |
+| `exactframerate` | `25` | positive integer or `n/d` fraction |
+| `depth` | `10` | positive integer |
+| `TCS` | `SDR` | same set as ST 2110-20 |
+| `colorimetry` | `BT709` | same set as ST 2110-20 |
+| `PM` | `2110GPM` | `2110GPM`, `2110BPM` |
+| `SSN` | `ST2110-22:2019` | must be `ST2110-22:YYYY` (4-digit year) |
+| `profile` | `High444.12` | non-empty string (TR-10-11 §12) |
+| `level` | `1k-1` | non-empty string (TR-10-11 §12) |
+| `sublevel` | `Sublev3bpp` | non-empty string (TR-10-11 §12) |
+| `transmode` | `1` | non-negative integer |
+| `packetmode` | `0` | non-negative integer |
+
+Optional parameters validated when present:
+
+| Parameter | Valid values | Spec ref |
+| --- | --- | --- |
+| `RANGE` | `NARROW`, `FULLPROTECT`, `FULL` | ST 2110-22 §7 |
+| `TP` | `2110TPNL`, `2110TPW` | ST 2110-22 §7 (2110TPN is **not** valid) |
+| `MAXUDP` | positive integer | ST 2110-22 §7 |
+| `CMAX` | positive integer | ST 2110-22 §7 |
+| `fbblevel` | positive integer | TR-10-11 §12 |
+
 ### ST 2110-41 (fast metadata) `fmtp` parameters
 
 Fast metadata flows use rtpmap encoding name `ST2110-41` at clock rate 90000. The clock rate is validated and must be exactly 90000.
 
 | Parameter | Example | Validated |
 | --- | --- | --- |
-| `SSN` | `ST2110-41:2024` | yes — required; value must start with `ST2110-41:` |
+| `SSN` | `ST2110-41:2024` | yes — required; must be `ST2110-41:YYYY` (4-digit year) |
 | `DIT` | `100` | yes — required; must be a non-negative integer |
 
 ---
@@ -529,10 +565,25 @@ on all non-USB media blocks, then checks IPMX-specific requirements:
 
 | Check | Spec ref | Detail |
 | --- | --- | --- |
-| `a=extmap` present with valid URI | IPMX §6 / RFC 5285 | Must appear at session level or in at least one RTP media block; every `a=extmap` value must be in RFC 5285 format: `entry-count[/direction] URI` where direction is `sendonly`, `recvonly`, `sendrecv`, or `inactive` and URI has a scheme (e.g. `urn:`, `http:`) |
+| `a=group:FID` forbidden | TR-10-1 §10 | FID (Flow Identification) semantics shall not be used; any session-level `a=group:FID` is rejected |
+| Media port must be even and > 1024 | TR-10-1 §7 | Applies to all non-USB RTP media blocks |
+| `a=extmap` present with valid URI | IPMX §6 / RFC 5285 | Must appear at session level or in at least one RTP media block; every `a=extmap` value must be in RFC 5285 format: `entry-count[/direction] URI` where direction is `sendonly`, `recvonly`, `sendrecv`, or `inactive` and URI has a scheme (e.g. `urn:`, `http:`); ID must be 1–255; IDs must be unique within their scope (session scope and each media-block scope are checked separately) |
 | `IPMX` bare flag in every `a=fmtp` | TR-10-1 §10.1 | Required in all non-USB media blocks |
+| Audio encoding must be `L16` or `L24` | TR-10-3 §8 | `AM824` (AES3) is not valid at the IPMX tier |
+| `a=ptime` required for audio blocks | TR-10-3 §8 | Must be present on every IPMX audio media block |
 
 ### Optional extensions (validated when present)
+
+#### Baseband measurement `fmtp` parameters (TR-10-2 §11 / TR-10-3 §10.3)
+
+When present in an IPMX non-USB media block's `a=fmtp`, the following parameters are validated as positive integers:
+
+| Parameter | Media type | Spec ref |
+| --- | --- | --- |
+| `measuredpixclk` | video | TR-10-2 §11 |
+| `vtotal` | video | TR-10-2 §11 |
+| `htotal` | video | TR-10-2 §11 |
+| `measuredsamplerate` | audio | TR-10-3 §10.3 |
 
 #### HDCP Key Exchange — `a=hkep` (TR-10-5 §10)
 

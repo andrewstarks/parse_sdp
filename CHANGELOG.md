@@ -9,6 +9,38 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 
+### Added (M23 — validation gap closure 2026-05-13, round 2)
+
+- **`a=group:FID` rejected at IPMX tier** (TR-10-1 §10): any session-level `a=group:FID` attribute is now rejected in IPMX mode; it is still accepted at the ST 2110 tier
+- **Session-level `c=` validated** (ST 2110-10 §6.5): `valid_connection_address` is now called for `doc.session.connection` in addition to per-media connection addresses; forbidden ranges and unicast+TTL are rejected at session level
+- **Missing `c=` detected** (ST 2110-10 §6.3): a media block with no per-media `c=` and no session-level `c=` is now rejected
+- **All `a=ts-refclk` entries validated** (ST 2110-10 §8.2): previously only the first `a=ts-refclk` was validated via `find_attr`; all ts-refclk attributes at both session and media level are now iterated and individually validated
+- **`a=extmap` ID uniqueness enforced** (RFC 5285 §3): duplicate extmap IDs within the session scope or within a single media block are now rejected; IDs may repeat across different levels
+
+### Tests (M23)
+
+- `spec/st2110_spec.lua`: 10 new tests — session-level c= valid multicast accepted; forbidden range and unicast+TTL at session level rejected; no c= at either level rejected; session-level c= with no media c= accepted; two valid ts-refclk accepted; second invalid ts-refclk rejected; media-level-only ts-refclk accepted; invalid media-level ts-refclk rejected even when session ts-refclk is valid
+- `spec/ipmx_spec.lua`: 7 new tests — `a=group:FID` rejected with spec_ref TR-10-1 §10; `a=group:DUP` not affected; ST 2110 mode accepts FID; duplicate session-level extmap ID rejected; same ID at different levels accepted; IPMX audio ptime=0 rejected; IPMX audio ptime=-1 rejected
+
+### Added (M22 — validation gap closure: JPEG-XS, enum gaps, SSN year, channel-order, TTL, IPMX port/audio/baseband)
+
+- **JPEG-XS / ST 2110-22 (`jxsv`)**: new validation branch for `jxsv`-encoded video. Validates clock rate (90000), all nine standard video fmtp params plus five required codec params (`profile`, `level`, `sublevel`, `transmode`, `packetmode`), optional `RANGE`, `TP` (restricted to `2110TPNL`/`2110TPW` — `2110TPN` is rejected), `MAXUDP`, `CMAX`, `fbblevel`; SSN must use `ST2110-22:YYYY` prefix
+- **TCS=UNSPECIFIED**: added missing value from ST 2110-20:2017 §7.6 — was previously rejected
+- **colorimetry=XYZ**: added missing value from ST 2110-20:2017 §7.5 — was previously rejected
+- **SSN 4-digit year**: ST 2110-20, ST 2110-22, and ST 2110-41 SSN values now require a 4-digit year suffix (e.g. `ST2110-20:2022`); bare prefix (`ST2110-20:`) or non-numeric suffix is rejected
+- **channel-order group symbols**: group symbols in `SMPTE2110.(...)` are now validated against the ST 2110-30:2017 §6.2.2 Table 1 set (`M`, `DM`, `ST`, `LtRt`, `51`, `71`, `222`, `SGRP`, `U01`–`U64`); unknown symbols or out-of-range `Unn` values are rejected
+- **Multicast TTL range**: TTL in `c=IN IP4 addr/TTL` must be an integer in 1–255; TTL=0 and TTL=256 are now rejected
+- **IPMX port range**: non-USB media ports must be even and > 1024 (TR-10-1 §7); odd or ≤ 1024 ports are rejected
+- **IPMX audio — AM824 rejected**: `AM824` encoding is not valid at the IPMX tier (TR-10-3 §8); only `L16` and `L24` are accepted
+- **IPMX audio — ptime required**: `a=ptime` is now required on every IPMX audio media block (TR-10-3 §8)
+- **IPMX baseband fmtp params**: `measuredpixclk`, `vtotal`, `htotal` (video, TR-10-2 §11) and `measuredsamplerate` (audio, TR-10-3 §10.3) must be positive integers when present
+- **a=extmap ID upper bound**: extmap IDs greater than 255 are now rejected per RFC 5285
+
+### Tests (M22)
+
+- `spec/st2110_spec.lua`: 38 new tests — TCS=UNSPECIFIED and XYZ colorimetry accepted; unknown TCS/colorimetry rejected; SSN=ST2110-20:2022/2017 accepted; SSN without year, two-digit year, non-numeric suffix rejected; channel-order all named symbols and U01/U64 accepted; foo, U00, U65 rejected; TTL=1/64/255 accepted; TTL=0/256 rejected; valid JPEG-XS SDP accepted; wrong SSN prefix rejected; TP=2110TPN rejected; TP=2110TPW accepted; each required jxsv param missing rejected; fbblevel=3 accepted; fbblevel=0 rejected; extmap ID=255 accepted; ID=256 rejected
+- `spec/ipmx_spec.lua`: 22 new tests — port=5000 accepted; port=5001 (odd) and port=1024 rejected; spec_ref=TR-10-1 §7; USB block exempt; L24/L16 with ptime accepted; audio without ptime rejected; AM824 rejected; video measuredpixclk/vtotal/htotal validated; measuredsamplerate validated; spec_refs TR-10-2 §11 / TR-10-3 §10.3
+
 ### Added (M21 — validation gap closure: DUP legs, hkep media-level, c= address, extmap URI)
 
 - `a=group:DUP` minimum leg count (ST 2110-10 §8.5): a DUP group with fewer than 2 legs is now rejected; previously single-leg groups were silently accepted

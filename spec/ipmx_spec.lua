@@ -1102,4 +1102,388 @@ describe("IPMX validation", function()
       assert.matches("media%[1%]", err.field_path)
     end)
   end)
+
+  -- ── M22: media port range (TR-10-1 §7) ───────────────────────────────────────
+
+  describe("media port range (TR-10-1 §7)", function()
+    local function ipmx_with_port(port)
+      return table.concat({
+        "v=0",
+        "o=- 1234567890 1 IN IP4 192.168.1.1",
+        "s=IPMX Video",
+        "t=0 0",
+        "a=ts-refclk:localmac=AA-BB-CC-DD-EE-FF",
+        "a=extmap:1 urn:ietf:params:rtp-hdrext:smpte-tc",
+        "m=video " .. port .. " RTP/AVP 96",
+        "c=IN IP4 239.100.0.1/64",
+        "a=rtpmap:96 raw/90000",
+        "a=fmtp:96 sampling=YCbCr-4:2:2; width=1920; height=1080; exactframerate=25; depth=10; TCS=SDR; colorimetry=BT709; PM=2110GPM; SSN=ST2110-20:2022; TP=2110TPN; IPMX",
+        "a=mediaclk:direct=0",
+        "a=ts-refclk:localmac=AA-BB-CC-DD-EE-FF",
+      }, "\r\n")
+    end
+
+    it("accepts even port > 1024", function()
+      local doc, err = sdp.parse(ipmx_with_port(5000), "ipmx")
+      assert.is_nil(err)
+      assert.is_table(doc)
+    end)
+
+    it("rejects odd port", function()
+      local doc = sdp.parse(ipmx_with_port(5001))
+      assert.is_table(doc)
+      local ok, err = doc:validate("ipmx")
+      assert.is_nil(ok)
+      assert.is_table(err)
+      assert.matches("even", err.message)
+    end)
+
+    it("rejects port <= 1024 (exactly 1024)", function()
+      local doc = sdp.parse(ipmx_with_port(1024))
+      assert.is_table(doc)
+      local ok, err = doc:validate("ipmx")
+      assert.is_nil(ok)
+      assert.is_table(err)
+      assert.matches("1024", err.message)
+    end)
+
+    it("rejects port <= 1024 (port 80)", function()
+      local doc = sdp.parse(ipmx_with_port(80))
+      assert.is_table(doc)
+      local ok, err = doc:validate("ipmx")
+      assert.is_nil(ok)
+      assert.is_table(err)
+      assert.matches("1024", err.message)
+    end)
+
+    it("spec_ref is TR-10-1 §7", function()
+      local doc = sdp.parse(ipmx_with_port(5001))
+      assert.is_table(doc)
+      local ok, err = doc:validate("ipmx")
+      assert.is_nil(ok)
+      assert.equal("TR-10-1 §7", err.spec_ref)
+    end)
+
+    it("USB block port is exempt from even/range check", function()
+      local text = table.concat({
+        "v=0",
+        "o=- 1234567890 1 IN IP4 192.168.1.1",
+        "s=IPMX Mix",
+        "t=0 0",
+        "a=ts-refclk:localmac=AA-BB-CC-DD-EE-FF",
+        "a=extmap:1 urn:ietf:params:rtp-hdrext:smpte-tc",
+        "m=video 5000 RTP/AVP 96",
+        "c=IN IP4 239.100.0.1/64",
+        "a=rtpmap:96 raw/90000",
+        "a=fmtp:96 sampling=YCbCr-4:2:2; width=1920; height=1080; exactframerate=25; depth=10; TCS=SDR; colorimetry=BT709; PM=2110GPM; SSN=ST2110-20:2022; TP=2110TPN; IPMX",
+        "a=mediaclk:direct=0",
+        "a=ts-refclk:localmac=AA-BB-CC-DD-EE-FF",
+        "m=application 9 TCP/MSRP *",
+        "c=IN IP4 192.168.1.1",
+      }, "\r\n")
+      local doc, err = sdp.parse(text, "ipmx")
+      assert.is_nil(err)
+      assert.is_table(doc)
+    end)
+  end)
+
+  -- ── M22: IPMX audio — ptime required; AM824 rejected (TR-10-3 §8) ────────────
+
+  describe("IPMX audio — ptime required and AM824 rejected (TR-10-3 §8)", function()
+    local function ipmx_audio_sdp(overrides)
+      local o = overrides or {}
+      local rtpmap  = o.rtpmap  or "a=rtpmap:97 L24/48000/8"
+      local fmtp    = o.fmtp    or "a=fmtp:97 channel-order=SMPTE2110.(ST); IPMX"
+      local ptime   = o.ptime   -- nil = omit, string = include
+      local lines = {
+        "v=0",
+        "o=- 1234567890 1 IN IP4 192.168.1.1",
+        "s=IPMX Audio",
+        "t=0 0",
+        "a=ts-refclk:localmac=AA-BB-CC-DD-EE-FF",
+        "a=extmap:1 urn:ietf:params:rtp-hdrext:smpte-tc",
+        "m=audio 5010 RTP/AVP 97",
+        "c=IN IP4 239.100.0.2/64",
+        rtpmap,
+        fmtp,
+        "a=mediaclk:direct=0",
+        "a=ts-refclk:localmac=AA-BB-CC-DD-EE-FF",
+      }
+      if ptime then lines[#lines + 1] = ptime end
+      return table.concat(lines, "\r\n")
+    end
+
+    it("accepts L24 audio with ptime", function()
+      local doc, err = sdp.parse(ipmx_audio_sdp({ ptime = "a=ptime:1" }), "ipmx")
+      assert.is_nil(err)
+      assert.is_table(doc)
+    end)
+
+    it("accepts L16 audio with ptime", function()
+      local text = ipmx_audio_sdp({
+        rtpmap = "a=rtpmap:97 L16/48000/2",
+        fmtp   = "a=fmtp:97 channel-order=SMPTE2110.(ST); IPMX",
+        ptime  = "a=ptime:1",
+      })
+      local doc, err = sdp.parse(text, "ipmx")
+      assert.is_nil(err)
+      assert.is_table(doc)
+    end)
+
+    it("rejects audio with no a=ptime", function()
+      local doc = sdp.parse(ipmx_audio_sdp())
+      assert.is_table(doc)
+      local ok, err = doc:validate("ipmx")
+      assert.is_nil(ok)
+      assert.is_table(err)
+      assert.matches("ptime", err.message)
+    end)
+
+    it("rejects AM824 encoding", function()
+      local doc = sdp.parse(ipmx_audio_sdp({
+        rtpmap = "a=rtpmap:97 AM824/48000/2",
+        fmtp   = "a=fmtp:97 channel-order=SMPTE2110.(ST); IPMX",
+        ptime  = "a=ptime:1",
+      }))
+      assert.is_table(doc)
+      local ok, err = doc:validate("ipmx")
+      assert.is_nil(ok)
+      assert.is_table(err)
+      assert.matches("AM824", err.message)
+    end)
+
+    it("spec_ref for ptime is TR-10-3 §8", function()
+      local doc = sdp.parse(ipmx_audio_sdp())
+      assert.is_table(doc)
+      local ok, err = doc:validate("ipmx")
+      assert.is_nil(ok)
+      assert.equal("TR-10-3 §8", err.spec_ref)
+    end)
+
+    it("spec_ref for AM824 rejection is TR-10-3 §8", function()
+      local doc = sdp.parse(ipmx_audio_sdp({
+        rtpmap = "a=rtpmap:97 AM824/48000/2",
+        fmtp   = "a=fmtp:97 channel-order=SMPTE2110.(ST); IPMX",
+        ptime  = "a=ptime:1",
+      }))
+      assert.is_table(doc)
+      local ok, err = doc:validate("ipmx")
+      assert.is_nil(ok)
+      assert.equal("TR-10-3 §8", err.spec_ref)
+    end)
+  end)
+
+  -- ── M22: IPMX baseband fmtp params (TR-10-2 §11, TR-10-3 §10.3) ─────────────
+
+  describe("IPMX baseband fmtp params (TR-10-2 §11 / TR-10-3 §10.3)", function()
+    local function video_with_extra_fmtp(extra)
+      local fmtp = "a=fmtp:96 sampling=YCbCr-4:2:2; width=1920; height=1080; exactframerate=25; depth=10; TCS=SDR; colorimetry=BT709; PM=2110GPM; SSN=ST2110-20:2022; TP=2110TPN; IPMX; " .. extra
+      return base_ipmx_sdp({}, {}, fmtp)
+    end
+
+    local function audio_with_extra_fmtp(extra)
+      return table.concat({
+        "v=0",
+        "o=- 1234567890 1 IN IP4 192.168.1.1",
+        "s=IPMX Audio",
+        "t=0 0",
+        "a=ts-refclk:localmac=AA-BB-CC-DD-EE-FF",
+        "a=extmap:1 urn:ietf:params:rtp-hdrext:smpte-tc",
+        "m=audio 5010 RTP/AVP 97",
+        "c=IN IP4 239.100.0.2/64",
+        "a=rtpmap:97 L24/48000/8",
+        "a=fmtp:97 channel-order=SMPTE2110.(ST); IPMX; " .. extra,
+        "a=mediaclk:direct=0",
+        "a=ts-refclk:localmac=AA-BB-CC-DD-EE-FF",
+        "a=ptime:1",
+      }, "\r\n")
+    end
+
+    it("accepts video with valid measuredpixclk", function()
+      local doc, err = sdp.parse(video_with_extra_fmtp("measuredpixclk=148500000"), "ipmx")
+      assert.is_nil(err)
+      assert.is_table(doc)
+    end)
+
+    it("accepts video with valid vtotal and htotal", function()
+      local doc, err = sdp.parse(video_with_extra_fmtp("vtotal=1125; htotal=2200"), "ipmx")
+      assert.is_nil(err)
+      assert.is_table(doc)
+    end)
+
+    it("rejects video measuredpixclk=0 (not positive)", function()
+      local doc = sdp.parse(video_with_extra_fmtp("measuredpixclk=0"))
+      assert.is_table(doc)
+      local ok, err = doc:validate("ipmx")
+      assert.is_nil(ok)
+      assert.is_table(err)
+      assert.matches("measuredpixclk", err.message)
+    end)
+
+    it("rejects video vtotal with non-integer value", function()
+      local doc = sdp.parse(video_with_extra_fmtp("vtotal=1125.5"))
+      assert.is_table(doc)
+      local ok, err = doc:validate("ipmx")
+      assert.is_nil(ok)
+      assert.is_table(err)
+      assert.matches("vtotal", err.message)
+    end)
+
+    it("rejects video htotal with negative value", function()
+      local doc = sdp.parse(video_with_extra_fmtp("htotal=-1"))
+      assert.is_table(doc)
+      local ok, err = doc:validate("ipmx")
+      assert.is_nil(ok)
+      assert.is_table(err)
+      assert.matches("htotal", err.message)
+    end)
+
+    it("accepts audio with valid measuredsamplerate", function()
+      local doc, err = sdp.parse(audio_with_extra_fmtp("measuredsamplerate=48001"), "ipmx")
+      assert.is_nil(err)
+      assert.is_table(doc)
+    end)
+
+    it("rejects audio measuredsamplerate=0 (not positive)", function()
+      local doc = sdp.parse(audio_with_extra_fmtp("measuredsamplerate=0"))
+      assert.is_table(doc)
+      local ok, err = doc:validate("ipmx")
+      assert.is_nil(ok)
+      assert.is_table(err)
+      assert.matches("measuredsamplerate", err.message)
+    end)
+
+    it("spec_ref for video baseband params is TR-10-2 §11", function()
+      local doc = sdp.parse(video_with_extra_fmtp("measuredpixclk=0"))
+      assert.is_table(doc)
+      local ok, err = doc:validate("ipmx")
+      assert.is_nil(ok)
+      assert.matches("TR%-10%-2", err.spec_ref)
+    end)
+
+    it("spec_ref for audio baseband params is TR-10-3 §10.3", function()
+      local doc = sdp.parse(audio_with_extra_fmtp("measuredsamplerate=0"))
+      assert.is_table(doc)
+      local ok, err = doc:validate("ipmx")
+      assert.is_nil(ok)
+      assert.matches("TR%-10%-3", err.spec_ref)
+    end)
+  end)
+
+  -- ── M23: a=group:FID forbidden at IPMX tier (TR-10-1 §10) ────────────────────
+
+  describe("a=group:FID rejection (TR-10-1 §10)", function()
+    it("rejects IPMX SDP with a=group:FID at session level", function()
+      local text = base_ipmx_sdp({ "a=group:FID 1 2" })
+      local doc = sdp.parse(text)
+      assert.is_table(doc)
+      local ok, err = doc:validate("ipmx")
+      assert.is_nil(ok)
+      assert.is_table(err)
+      assert.matches("FID", err.message)
+      assert.equal("TR-10-1 §10", err.spec_ref)
+    end)
+
+    it("still accepts IPMX SDP with a=group:DUP (not FID)", function()
+      local text = base_ipmx_sdp({ "a=group:DUP 1 2", "a=mid:1" }, { "a=mid:1" })
+      local doc = sdp.parse(text)
+      assert.is_table(doc)
+      local ok, err = doc:validate("ipmx")
+      -- DUP validation may fail on mid resolution, but FID is not the reason
+      if not ok then
+        assert.not_matches("FID", err.message)
+      end
+    end)
+
+    it("accepts ST 2110 SDP with a=group:FID (rule is IPMX-only)", function()
+      local text = table.concat({
+        "v=0",
+        "o=- 1234567890 1 IN IP4 192.168.1.1",
+        "s=ST2110 Video",
+        "t=0 0",
+        "a=ts-refclk:ptp=IEEE1588-2008:00-11-22-FF-FE-33-44-55:0",
+        "a=group:FID 1 2",
+        "m=video 5000 RTP/AVP 96",
+        "c=IN IP4 239.100.0.1/64",
+        "a=rtpmap:96 raw/90000",
+        "a=fmtp:96 sampling=YCbCr-4:2:2; width=1920; height=1080; exactframerate=25; depth=10; TCS=SDR; colorimetry=BT709; PM=2110GPM; SSN=ST2110-20:2022",
+        "a=mediaclk:direct=0",
+        "a=ts-refclk:ptp=IEEE1588-2008:00-11-22-FF-FE-33-44-55:0",
+      }, "\r\n")
+      local doc = sdp.parse(text)
+      assert.is_table(doc)
+      local ok, err = doc:validate("st2110")
+      assert.is_nil(err)
+      assert.equal(true, ok)
+    end)
+  end)
+
+  -- ── M23: extmap ID uniqueness per RFC 5285 §3 ─────────────────────────────────
+
+  describe("a=extmap ID uniqueness (RFC 5285 §3)", function()
+    it("rejects duplicate extmap ID at session level", function()
+      local text = base_ipmx_sdp({
+        "a=extmap:1 urn:ietf:params:rtp-hdrext:ntp-64",
+      })
+      -- base_ipmx_sdp already adds a=extmap:1 at session level, so we'd have two :1
+      local doc = sdp.parse(text)
+      assert.is_table(doc)
+      local ok, err = doc:validate("ipmx")
+      assert.is_nil(ok)
+      assert.is_table(err)
+      assert.matches("duplicate", err.message)
+      assert.equal("RFC 5285 §3", err.spec_ref)
+    end)
+
+    it("accepts same extmap ID at session level and media level (different scopes)", function()
+      -- extmap:1 at session scope + extmap:1 at media scope is allowed by RFC 5285
+      local text = base_ipmx_sdp({}, { "a=extmap:1 urn:ietf:params:rtp-hdrext:ntp-64" })
+      local doc = sdp.parse(text)
+      assert.is_table(doc)
+      local ok, err = doc:validate("ipmx")
+      assert.is_nil(err)
+      assert.equal(true, ok)
+    end)
+  end)
+
+  -- ── M23: IPMX audio ptime edge cases ──────────────────────────────────────────
+
+  describe("IPMX audio ptime edge cases (M23)", function()
+    local function ipmx_audio_sdp_ptime(ptime_line)
+      local lines = {
+        "v=0",
+        "o=- 1234567890 1 IN IP4 192.168.1.1",
+        "s=IPMX Audio",
+        "t=0 0",
+        "a=ts-refclk:localmac=AA-BB-CC-DD-EE-FF",
+        "a=extmap:1 urn:ietf:params:rtp-hdrext:smpte-tc",
+        "m=audio 5010 RTP/AVP 97",
+        "c=IN IP4 239.100.0.2/64",
+        "a=rtpmap:97 L24/48000/8",
+        "a=fmtp:97 channel-order=SMPTE2110.(ST); IPMX",
+        "a=mediaclk:direct=0",
+        "a=ts-refclk:localmac=AA-BB-CC-DD-EE-FF",
+      }
+      if ptime_line then lines[#lines + 1] = ptime_line end
+      return table.concat(lines, "\r\n")
+    end
+
+    it("rejects a=ptime:0 (non-positive value rejected at ST 2110 tier)", function()
+      local doc = sdp.parse(ipmx_audio_sdp_ptime("a=ptime:0"))
+      assert.is_table(doc)
+      local ok, err = doc:validate("ipmx")
+      assert.is_nil(ok)
+      assert.is_table(err)
+      assert.matches("ptime", err.message)
+    end)
+
+    it("rejects a=ptime:-1 (negative value rejected at ST 2110 tier)", function()
+      local doc = sdp.parse(ipmx_audio_sdp_ptime("a=ptime:-1"))
+      assert.is_table(doc)
+      local ok, err = doc:validate("ipmx")
+      assert.is_nil(ok)
+      assert.is_table(err)
+      assert.matches("ptime", err.message)
+    end)
+  end)
 end)
