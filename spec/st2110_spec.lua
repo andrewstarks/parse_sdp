@@ -889,13 +889,13 @@ describe("ST 2110 validation", function()
       assert.matches("positive", err.message)
     end)
 
-    it("rejects depth=0", function()
+    it("rejects depth=0 (not in §7.4.2 enumeration)", function()
       local doc = sdp.parse(video20_sdp(VALID:gsub("depth=10", "depth=0")))
       assert.is_table(doc)
       local ok, err = doc:validate("st2110")
       assert.is_nil(ok)
       assert.is_table(err)
-      assert.matches("positive", err.message)
+      assert.matches("depth", err.message)
     end)
   end)
 
@@ -966,50 +966,18 @@ describe("ST 2110 validation", function()
       }, "\r\n")
     end
 
-    -- ST 2110-30:2017 §6.1: 48 kHz SHALL be supported; 44.1 kHz and 96 kHz
-    -- SHOULD be supported; "Other sampling rates are out of scope."
-    local in_scope_rates = { 44100, 48000, 96000 }
-    for _, rate in ipairs(in_scope_rates) do
-      it("accepts " .. rate .. " Hz (in scope of ST 2110-30 §6.1)", function()
+    -- ST 2110-30:2017 §6.1 mandates 48 kHz and permits 44.1/96 kHz, then says
+    -- "Other sampling rates are out of scope of this standard." Out-of-scope is
+    -- not the same as forbidden — the spec does not use "shall not" — so under
+    -- the M30 conformance principle we accept any well-formed positive rate.
+    local well_formed_rates = { 44100, 48000, 96000, 32000, 88200, 176400, 192000, 22050 }
+    for _, rate in ipairs(well_formed_rates) do
+      it("accepts " .. rate .. " Hz (well-formed; ST 2110-30 §6.1 doesn't forbid)", function()
         local doc, err = sdp.parse(audio_sdp(rate), "st2110")
         assert.is_nil(err)
         assert.is_table(doc)
       end)
     end
-
-    -- 32, 88.2, 176.4, 192 kHz are AES67-style extensions that ST 2110-30:2017
-    -- §6.1 explicitly puts out of scope. Strict ST 2110 mode rejects them;
-    -- IPMX mode accepts them (see ipmx_spec.lua).
-    local out_of_scope_rates = { 32000, 88200, 176400, 192000 }
-    for _, rate in ipairs(out_of_scope_rates) do
-      it("rejects " .. rate .. " Hz (out of scope of ST 2110-30 §6.1)", function()
-        local doc = sdp.parse(audio_sdp(rate))
-        assert.is_table(doc)
-        local ok, err = doc:validate("st2110")
-        assert.is_nil(ok)
-        assert.is_table(err)
-        assert.matches("clock rate", err.message)
-        assert.equal("ST 2110-30 §6.1", err.spec_ref)
-      end)
-    end
-
-    it("rejects an unknown rate (e.g. 22050)", function()
-      local doc = sdp.parse(audio_sdp(22050))
-      assert.is_table(doc)
-      local ok, err = doc:validate("st2110")
-      assert.is_nil(ok)
-      assert.is_table(err)
-      assert.matches("clock rate", err.message)
-    end)
-
-    it("rejects a nonsense rate (e.g. 1)", function()
-      local doc = sdp.parse(audio_sdp(1))
-      assert.is_table(doc)
-      local ok, err = doc:validate("st2110")
-      assert.is_nil(ok)
-      assert.is_table(err)
-      assert.matches("clock rate", err.message)
-    end)
   end)
 
   -- ── ST 2110-20 optional fmtp parameters ──────────────────────────────────────
@@ -1229,10 +1197,16 @@ describe("ST 2110 validation", function()
     describe("TROFF (timestamp offset)", function()
       -- TROFF and CMAX require TP per ST 2110-21 §8 (also see M24 cross-field check).
       local BASE_TP = BASE .. "; TP=2110TPN"
-      it("accepts TROFF=0", function()
-        local doc, err = sdp.parse(video20_sdp(BASE_TP .. "; TROFF=0"), "st2110")
-        assert.is_nil(err)
+
+      -- M30 G8: ST 2110-21 §8 defines TROFF as "a decimal positive integer";
+      -- previously the optional video fmtp validator allowed TROFF=0.
+      it("rejects TROFF=0 (ST 2110-21 §8 — positive integer)", function()
+        local doc = sdp.parse(video20_sdp(BASE_TP .. "; TROFF=0"))
         assert.is_table(doc)
+        local ok, err = doc:validate("st2110")
+        assert.is_nil(ok)
+        assert.is_table(err)
+        assert.matches("TROFF", err.message)
       end)
 
       it("accepts a positive TROFF", function()
@@ -1536,7 +1510,12 @@ describe("ST 2110 validation", function()
       }, "\r\n")
     end
 
-    for _, ch in ipairs({ 1, 8, 16 }) do
+    -- ST 2110-30 §6.2.2 / Table 2 documents Conformance Levels with channel
+    -- counts up to 64 (Level C at 125 µs). The spec does not contain a global
+    -- "shall not exceed N channels" prohibition. Under M30 we accept any
+    -- positive integer channel count; only zero/missing is rejected as
+    -- RFC 3551 / RFC 4566 well-formedness.
+    for _, ch in ipairs({ 1, 2, 8, 16, 32, 64, 128 }) do
       it("accepts channel count " .. ch, function()
         local doc, err = sdp.parse(audio_sdp_ch(ch), "st2110")
         assert.is_nil(err)
@@ -1544,33 +1523,22 @@ describe("ST 2110 validation", function()
       end)
     end
 
-    it("rejects channel count 0", function()
+    it("rejects channel count 0 (RFC 3551 / 4566 well-formedness)", function()
       local doc = sdp.parse(audio_sdp_ch(0))
       assert.is_table(doc)
       local ok, err = doc:validate("st2110")
       assert.is_nil(ok)
       assert.is_table(err)
       assert.matches("channel count", err.message)
-      assert.equal("ST 2110-30 §7.1", err.spec_ref)
     end)
 
-    it("rejects channel count 17", function()
-      local doc = sdp.parse(audio_sdp_ch(17))
-      assert.is_table(doc)
-      local ok, err = doc:validate("st2110")
-      assert.is_nil(ok)
-      assert.is_table(err)
-      assert.matches("channel count", err.message)
-    end)
-
-    it("rejects rtpmap with no channel count", function()
+    it("rejects rtpmap with no channel count (RFC 3551 / 4566 well-formedness)", function()
       local doc = sdp.parse(audio_sdp_ch(nil))
       assert.is_table(doc)
       local ok, err = doc:validate("st2110")
       assert.is_nil(ok)
       assert.is_table(err)
       assert.matches("channel count", err.message)
-      assert.equal("ST 2110-30 §7.1", err.spec_ref)
     end)
   end)
 
@@ -2697,7 +2665,7 @@ describe("ST 2110 validation", function()
     end)
 
     it("accepts TROFF and CMAX with TP present", function()
-      local doc, err = sdp.parse(video20_sdp("; TP=2110TPN; TROFF=0; CMAX=3"), "st2110")
+      local doc, err = sdp.parse(video20_sdp("; TP=2110TPN; TROFF=4500; CMAX=3"), "st2110")
       assert.is_nil(err)
       assert.is_table(doc)
     end)
@@ -3529,6 +3497,218 @@ describe("ST 2110 validation", function()
         "a=mediaclk:direct=0",
       }, "\r\n")
       local doc, err = sdp.parse(text, "st2110")
+      assert.is_nil(err)
+      assert.is_table(doc)
+    end)
+  end)
+
+  -- ── M30 G1: ST 2110-20 §7.4.2 depth enumeration ────────────────────────────
+  -- Spec lists depth ∈ {8, 10, 12, 16, 16f}. Previously the validator only
+  -- required a positive integer, so depth=14 / depth=24 passed despite being
+  -- explicitly outside the enumeration.
+  describe("M30 G1: ST 2110-20 depth enumeration (§7.4.2)", function()
+    local BASE = "sampling=YCbCr-4:2:2; width=1920; height=1080; exactframerate=25; TCS=SDR; colorimetry=BT709; PM=2110GPM; SSN=ST2110-20:2022"
+
+    local function video20_sdp(fmtp_str)
+      return table.concat({
+        "v=0",
+        "o=- 1234567890 1 IN IP4 192.168.1.1",
+        "s=ST2110 Video",
+        "t=0 0",
+        "a=ts-refclk:ptp=IEEE1588-2008:00-11-22-FF-FE-33-44-55:0",
+        "m=video 5000 RTP/AVP 96",
+        "c=IN IP4 239.100.0.1/64",
+        "a=rtpmap:96 raw/90000",
+        "a=fmtp:96 " .. fmtp_str,
+        "a=mediaclk:direct=0",
+      }, "\r\n")
+    end
+
+    for _, depth in ipairs({ "8", "10", "12", "16", "16f" }) do
+      it("accepts depth=" .. depth, function()
+        local doc, err = sdp.parse(video20_sdp(BASE .. "; depth=" .. depth), "st2110")
+        assert.is_nil(err)
+        assert.is_table(doc)
+      end)
+    end
+
+    for _, depth in ipairs({ "7", "9", "11", "14", "24", "32", "0", "16x", "abc" }) do
+      it("rejects depth=" .. depth, function()
+        local doc = sdp.parse(video20_sdp(BASE .. "; depth=" .. depth))
+        assert.is_table(doc)
+        local ok, err = doc:validate("st2110")
+        assert.is_nil(ok)
+        assert.is_table(err)
+        assert.matches("depth", err.message)
+        assert.equal("ST 2110-20 §7.4.2", err.spec_ref)
+      end)
+    end
+  end)
+
+  -- ── M30 G1b: ST 2110-20 §7.2 width/height range 1..32767 ───────────────────
+  -- "Permitted values are integers between 1 and 32767 inclusive."
+  describe("M30 G1b: ST 2110-20 width/height upper bound (§7.2)", function()
+    local BASE = "sampling=YCbCr-4:2:2; exactframerate=25; depth=10; TCS=SDR; colorimetry=BT709; PM=2110GPM; SSN=ST2110-20:2022"
+
+    local function video20_sdp(fmtp_str)
+      return table.concat({
+        "v=0",
+        "o=- 1234567890 1 IN IP4 192.168.1.1",
+        "s=ST2110 Video",
+        "t=0 0",
+        "a=ts-refclk:ptp=IEEE1588-2008:00-11-22-FF-FE-33-44-55:0",
+        "m=video 5000 RTP/AVP 96",
+        "c=IN IP4 239.100.0.1/64",
+        "a=rtpmap:96 raw/90000",
+        "a=fmtp:96 " .. fmtp_str,
+        "a=mediaclk:direct=0",
+      }, "\r\n")
+    end
+
+    it("accepts width=32767 height=32767 (upper bound)", function()
+      local doc, err = sdp.parse(video20_sdp(BASE .. "; width=32767; height=32767"), "st2110")
+      assert.is_nil(err)
+      assert.is_table(doc)
+    end)
+
+    it("rejects width=32768 (one above bound)", function()
+      local doc = sdp.parse(video20_sdp(BASE .. "; width=32768; height=1080"))
+      assert.is_table(doc)
+      local ok, err = doc:validate("st2110")
+      assert.is_nil(ok)
+      assert.matches("width", err.message)
+      assert.equal("ST 2110-20 §7.2", err.spec_ref)
+    end)
+
+    it("rejects height=32768 (one above bound)", function()
+      local doc = sdp.parse(video20_sdp(BASE .. "; width=1920; height=32768"))
+      assert.is_table(doc)
+      local ok, err = doc:validate("st2110")
+      assert.is_nil(ok)
+      assert.matches("height", err.message)
+      assert.equal("ST 2110-20 §7.2", err.spec_ref)
+    end)
+
+    it("rejects width=99999 (far above bound)", function()
+      local doc = sdp.parse(video20_sdp(BASE .. "; width=99999; height=1080"))
+      assert.is_table(doc)
+      local ok, err = doc:validate("st2110")
+      assert.is_nil(ok)
+      assert.matches("width", err.message)
+    end)
+  end)
+
+  -- ── M30 G4: ST 2110-20 §7.3 interlace / segmented are flag-only ────────────
+  -- §7.1 defines two fmtp parameter forms: <name>=<value> and standalone
+  -- <name>. §7.3 defines interlace/segmented purely by presence/absence of
+  -- the parameter name (no value form). interlace=anything is not covered by
+  -- the spec; treat as malformed under §7.3.
+  describe("M30 G4: interlace/segmented flag-only (§7.3)", function()
+    local BASE = "sampling=YCbCr-4:2:2; width=1920; height=1080; exactframerate=25; depth=10; TCS=SDR; colorimetry=BT709; PM=2110GPM; SSN=ST2110-20:2022"
+
+    local function video20_sdp(fmtp_str)
+      return table.concat({
+        "v=0",
+        "o=- 1234567890 1 IN IP4 192.168.1.1",
+        "s=ST2110 Video",
+        "t=0 0",
+        "a=ts-refclk:ptp=IEEE1588-2008:00-11-22-FF-FE-33-44-55:0",
+        "m=video 5000 RTP/AVP 96",
+        "c=IN IP4 239.100.0.1/64",
+        "a=rtpmap:96 raw/90000",
+        "a=fmtp:96 " .. fmtp_str,
+        "a=mediaclk:direct=0",
+      }, "\r\n")
+    end
+
+    it("rejects interlace=1 (must be a bare flag, not name=value)", function()
+      local doc = sdp.parse(video20_sdp(BASE .. "; interlace=1"))
+      assert.is_table(doc)
+      local ok, err = doc:validate("st2110")
+      assert.is_nil(ok)
+      assert.matches("interlace", err.message)
+      assert.equal("ST 2110-20 §7.3", err.spec_ref)
+    end)
+
+    it("rejects interlace=true", function()
+      local doc = sdp.parse(video20_sdp(BASE .. "; interlace=true"))
+      assert.is_table(doc)
+      local ok, err = doc:validate("st2110")
+      assert.is_nil(ok)
+      assert.matches("interlace", err.message)
+    end)
+
+    it("rejects segmented=anything (even when interlace is also a flag)", function()
+      local doc = sdp.parse(video20_sdp(BASE .. "; interlace; segmented=yes"))
+      assert.is_table(doc)
+      local ok, err = doc:validate("st2110")
+      assert.is_nil(ok)
+      assert.matches("segmented", err.message)
+      assert.equal("ST 2110-20 §7.3", err.spec_ref)
+    end)
+
+    it("accepts interlace bare flag (regression guard)", function()
+      local doc, err = sdp.parse(video20_sdp(BASE .. "; interlace"), "st2110")
+      assert.is_nil(err)
+      assert.is_table(doc)
+    end)
+
+    it("accepts interlace; segmented bare flags (regression guard)", function()
+      local doc, err = sdp.parse(video20_sdp(BASE .. "; interlace; segmented"), "st2110")
+      assert.is_nil(err)
+      assert.is_table(doc)
+    end)
+  end)
+
+  -- ── M30 G9: ST 2110-20 §6.3.3 MAXUDP forbidden with PM=2110BPM ─────────────
+  -- "The Extended UDP size limit defined in SMPTE ST 2110-10 shall not be used
+  -- in the Block Packing Mode." MAXUDP signals Extended limit operation; its
+  -- presence with PM=2110BPM violates the explicit "shall not" in §6.3.3.
+  describe("M30 G9: MAXUDP forbidden with PM=2110BPM (§6.3.3)", function()
+    local function video20_sdp(fmtp_str)
+      return table.concat({
+        "v=0",
+        "o=- 1234567890 1 IN IP4 192.168.1.1",
+        "s=ST2110 Video",
+        "t=0 0",
+        "a=ts-refclk:ptp=IEEE1588-2008:00-11-22-FF-FE-33-44-55:0",
+        "m=video 5000 RTP/AVP 96",
+        "c=IN IP4 239.100.0.1/64",
+        "a=rtpmap:96 raw/90000",
+        "a=fmtp:96 " .. fmtp_str,
+        "a=mediaclk:direct=0",
+      }, "\r\n")
+    end
+
+    local GPM_BASE = "sampling=YCbCr-4:2:2; width=1920; height=1080; exactframerate=25; depth=10; TCS=SDR; colorimetry=BT709; PM=2110GPM; SSN=ST2110-20:2022"
+    local BPM_BASE = "sampling=YCbCr-4:2:2; width=1920; height=1080; exactframerate=25; depth=10; TCS=SDR; colorimetry=BT709; PM=2110BPM; SSN=ST2110-20:2022"
+
+    it("rejects MAXUDP=8960 with PM=2110BPM", function()
+      local doc = sdp.parse(video20_sdp(BPM_BASE .. "; MAXUDP=8960"))
+      assert.is_table(doc)
+      local ok, err = doc:validate("st2110")
+      assert.is_nil(ok)
+      assert.matches("MAXUDP", err.message)
+      assert.matches("BPM", err.message)
+      assert.equal("ST 2110-20 §6.3.3", err.spec_ref)
+    end)
+
+    it("rejects MAXUDP=1500 with PM=2110BPM", function()
+      local doc = sdp.parse(video20_sdp(BPM_BASE .. "; MAXUDP=1500"))
+      assert.is_table(doc)
+      local ok, err = doc:validate("st2110")
+      assert.is_nil(ok)
+      assert.matches("MAXUDP", err.message)
+    end)
+
+    it("accepts PM=2110BPM without MAXUDP (Standard UDP Size Limit implicit)", function()
+      local doc, err = sdp.parse(video20_sdp(BPM_BASE), "st2110")
+      assert.is_nil(err)
+      assert.is_table(doc)
+    end)
+
+    it("accepts PM=2110GPM with MAXUDP=8960 (regression guard — GPM permits Extended)", function()
+      local doc, err = sdp.parse(video20_sdp(GPM_BASE .. "; MAXUDP=8960"), "st2110")
       assert.is_nil(err)
       assert.is_table(doc)
     end)

@@ -9,6 +9,49 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 
+### Added (M30 — audit 2026-05-14, round 9: conformance principle + strictness fixes)
+
+A user-directed conformance principle now governs the validator: every check must cite explicit prohibitive spec text ("shall not", "is forbidden") or RFC well-formedness. Silence in the spec is not a reason to reject — "out of scope of spec X" ≠ "forbidden by spec X." This round implements six strictness fixes grounded in normative SHALL/SHALL-NOT clauses, and loosens two existing checks that were opinion rather than conformance.
+
+**Strictness fixes (non-conformant SDPs that used to pass):**
+
+- **G1: ST 2110-20 §7.4.2 `depth` enumeration**. `depth` was validated only as a positive integer, so `depth=7`, `depth=14`, `depth=24` passed despite the spec enumeration `{8, 10, 12, 16, 16f}`. New `VALID_DEPTH` set + `valid_depth` validator with spec-specific error message and spec_ref `ST 2110-20 §7.4.2`.
+- **G1b: ST 2110-20 §7.2 `width`/`height` upper bound 32767**. Spec says "integers between 1 and 32767 inclusive"; previously the upper bound was unenforced. New `valid_pixel_dim` builder enforces the range on both dimensions.
+- **G4: ST 2110-20 §7.1/§7.3 `interlace` and `segmented` are flag-only**. §7.3 defines both purely by parameter-name presence; §7.1 lets fmtp entries take `name=value` or bare-name form. After fmtp parsing, `interlace=anything` and `segmented=anything` are now rejected because §7.3 defines no value form for those names.
+- **G8: ST 2110-21 §8 `TROFF` positive (not non-negative)**. Spec defines TROFF as "a decimal positive integer". `valid_nonneg_int` accepted `TROFF=0` and is removed; optional video fmtp validator now uses `valid_pos_int`.
+- **G9: ST 2110-20 §6.3.3 `MAXUDP` forbidden with `PM=2110BPM`**. Spec: "The Extended UDP size limit defined in SMPTE ST 2110-10 shall not be used in the Block Packing Mode." MAXUDP signals Extended-limit operation, so its presence with `PM=2110BPM` violates the §6.3.3 prohibition. New cross-field check after the required-params loop.
+
+**Strictness loosenings (existing checks not grounded in normative spec text):**
+
+- **G5a: ST 2110-30 audio sample rate scope removed**. §6.1 mandates 48 kHz and permits 44.1/96 kHz, then says "Other sampling frequencies and resolutions are out of scope of this standard." "Out of scope" is not "shall not". Deleted `ST2110_AUDIO_RATES`, `IPMX_AUDIO_RATES`, the `valid_audio_rates` branch in `st2110.validate`, and the `opts = { ipmx_layer = true }` argument that selected between them. Both modes now accept any well-formed positive rate; IPMX-side regression guards for extended rates still pass.
+- **G5b: ST 2110-30 audio 1..16 channel cap removed**. ST 2110-30 §6.2.2 / Table 2 documents Conformance Levels with channel counts up to 64; the spec has no global upper bound. Replaced the `1..16` cap with RFC 3551 / RFC 4566 well-formedness only (channels ≥ 1; rtpmap must include channel count).
+
+**Audit findings deferred to M31 (opinion-audit pass):**
+
+- IANA multicast reservation 224.0.0.0/24, 224.0.1.0/24 rejection — RFC 5771 configuration concern, not SDP conformance.
+- IPMX `m=` port-even-and-greater-than-1024 and `a=rtcp-mux` rejection citations — confirmed in TR-10-12 §7; M31 corrects the per-check citations.
+- Audio packet-fit math — keep, re-cite as RFC 3550 + MAXUDP well-formedness rather than ST 2110-30.
+
+**Audit findings not actionable / deferred indefinitely:**
+
+- **G2: ST 2110-40 `ancCount`** — RFC 8331 §2 defines it as a runtime RTP payload field, not an SDP fmtp parameter.
+- **G3: ST 2110-31 AES3 fmtp** — local PDF set doesn't include ST 2110-31; TR-10-12 §7 defers to it. AM824 audio currently rides the ST 2110-30 path (encoding + channel-order + packet-fit).
+- **G7: ST 2110-20 sampling × colorimetry × range cross-table** — combinatorial; user-deferred to avoid false-positive risk.
+- **exactframerate reduction to lowest terms** (§7.2 "numerically smallest numerator value possible") — user decision: do not enforce; documented in GUIDE.md instead.
+
+**Conformance principle:** captured as user-memory `feedback_conformance_principle.md` so future rounds apply the same test ("Standards say 'shall not' → add the check; spec is silent → don't").
+
+**Tests:** 636 → 665 (29 net new and inverted across `spec/st2110_spec.lua`).
+
+**Spec references for M30:**
+
+- SMPTE ST 2110-20:2017 §6.3.3, §7.1, §7.2, §7.3, §7.4.2
+- SMPTE ST 2110-21:2017 §8 — TROFF decimal positive integer
+- SMPTE ST 2110-30:2017 §6.1, §6.2.2 / Table 2
+- IETF RFC 3551 §6 — audio rtpmap channels parameter
+
+---
+
 ### Added (M29 — audit 2026-05-14, round 8: IP address syntax + IPMX source-filter)
 
 Six parallel research agents read the SDP-relevant sections of ST 2110-10:2022, TR-10-1, TR-10-2/3/4/7/9/10/11/12 (per-media-type IPMX TRs), TR-10-5/6/13/14/15/16 + the 2026-01 IPMX Released Profile docs, and TR-10-TP-1 (the IPMX conformance test plan). Two more agents mapped the validator's ~140 checks and ~600 tests. Cross-referencing surfaced four real false-negative gaps and one minor SHOULD/MUST-wording strictness gap; all were verified by running invalid SDPs through the validator (e.g. `c=IN IP4 999.0.0.0` and `c=IN IP6 not-an-ipv6` both used to be accepted).

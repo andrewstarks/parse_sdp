@@ -762,18 +762,6 @@ local function valid_connection_address(addr_type, addr)
   return true
 end
 
--- ST 2110-30:2017 §6.1: 48 kHz SHALL be supported; 44.1 kHz and 96 kHz SHOULD
--- be supported. "Other sampling rates are out of scope." Strict ST 2110-30
--- validation rejects rates outside this set.
-local ST2110_AUDIO_RATES = {
-  [44100]=true, [48000]=true, [96000]=true,
-}
--- IPMX inherits ST 2110 baseline but permits the full AES67/extended
--- professional-audio rate set on top of it.
-local IPMX_AUDIO_RATES = {
-  [32000]=true, [44100]=true, [48000]=true,
-  [88200]=true, [96000]=true, [176400]=true, [192000]=true,
-}
 -- Valid TP (transport profile) values per ST 2110-21 (uncompressed video, ST 2110-20).
 local VALID_TP = { ["2110TPN"]=true, ["2110TPNL"]=true, ["2110TPW"]=true }
 -- Valid TP values for compressed video per ST 2110-22 (JPEG-XS); 2110TPN excluded.
@@ -836,6 +824,32 @@ local function valid_pos_int(value)
   return true
 end
 
+-- ST 2110-20:2017 §7.4.2: depth shall be one of {8, 10, 12, 16, 16f}.
+local VALID_DEPTH = {
+  ["8"]=true, ["10"]=true, ["12"]=true, ["16"]=true, ["16f"]=true,
+}
+local function valid_depth(value)
+  if VALID_DEPTH[value] then return true end
+  return nil, "invalid depth value '" .. tostring(value) ..
+    "' (ST 2110-20 §7.4.2 permits 8, 10, 12, 16, 16f)"
+end
+
+-- ST 2110-20:2017 §7.2: width and height "Permitted values are integers between
+-- 1 and 32767 inclusive." (Builder for either dimension; spec ref is the same.)
+local function valid_pixel_dim(name)
+  return function(value)
+    if not _pos_int_pat:match(value) then return nil, "expected positive integer" end
+    local n = tonumber(value)
+    if n <= 0 then return nil, name .. " must be positive" end
+    if n > 32767 then
+      return nil, name .. " " .. value .. " exceeds 32767 (ST 2110-20 §7.2)"
+    end
+    return true
+  end
+end
+local valid_width  = valid_pixel_dim("width")
+local valid_height = valid_pixel_dim("height")
+
 -- ST 2110-10 §6.4: Extended UDP Size Limit is 8960 octets. MAXUDP signals
 -- that a sender exceeds the Standard UDP Size Limit (1460); the value SHALL
 -- not exceed the Extended limit.
@@ -861,12 +875,6 @@ local function valid_exactframerate(value)
     return true
   end
   if tonumber(value) == 0 then return nil, "exactframerate must be positive" end
-  return true
-end
-
--- Returns true for a string of one or more digits (including zero).
-local function valid_nonneg_int(value)
-  if not _pos_int_pat:match(value) then return nil, "expected non-negative integer" end
   return true
 end
 
@@ -971,14 +979,9 @@ end
 -- media-type-specific fmtp parameters (sampling for video,
 -- channel-order for audio).
 -- @param doc table  SDP document table.
--- @param opts table|nil  Internal: { ipmx_layer=true } relaxes ST 2110-30
---   sample-rate scope so the IPMX validator can permit AES67-extended rates
---   (32, 88.2, 176.4, 192 kHz) that ST 2110-30 §6.1 places out of scope.
 -- @return true  on success.
 -- @return nil, err  on failure; err includes field_path and spec_ref.
-function st2110.validate(doc, opts)
-  local ipmx_layer = opts and opts.ipmx_layer
-  local valid_audio_rates = ipmx_layer and IPMX_AUDIO_RATES or ST2110_AUDIO_RATES
+function st2110.validate(doc)
   local ok, e = validate.sdp(doc)
   if not ok then return nil, e end
 
@@ -1261,12 +1264,13 @@ function st2110.validate(doc, opts)
           mpath, "rtpmap", "ST 2110-20 §7.2", "INVALID_VALUE")
       end
       -- All nine required fmtp parameters (ST 2110-20 §7.2): presence then value.
+      -- Each entry: { key, validator, spec_ref (optional override of §7.2) }.
       local video_checks = {
         { "sampling",       function(v) return valid_enum(v, VALID_SAMPLING,    "sampling")    end },
-        { "width",          valid_pos_int },
-        { "height",         valid_pos_int },
+        { "width",          valid_width },   -- §7.2: integer 1..32767
+        { "height",         valid_height },  -- §7.2: integer 1..32767
         { "exactframerate", valid_exactframerate },
-        { "depth",          valid_pos_int },
+        { "depth",          valid_depth, "ST 2110-20 §7.4.2" },  -- M30 G1: enum {8,10,12,16,16f}
         { "TCS",            function(v) return valid_enum(v, VALID_TCS,         "TCS")         end },
         { "colorimetry",    function(v) return valid_enum(v, VALID_COLORIMETRY, "colorimetry") end },
         { "PM",             function(v) return valid_enum(v, VALID_PM,          "PM")          end },
@@ -1276,15 +1280,15 @@ function st2110.validate(doc, opts)
           end },
       }
       for _, ck in ipairs(video_checks) do
-        local key, fn = ck[1], ck[2]
+        local key, fn, ref = ck[1], ck[2], ck[3] or "ST 2110-20 §7.2"
         local val = params[key]
         if val == nil then
           return attr_err("fmtp missing required '" .. key .. "' parameter for video",
-            mpath, "fmtp", "ST 2110-20 §7.2")
+            mpath, "fmtp", ref)
         end
         local vok, vmsg = fn(tostring(val))
         if not vok then
-          return attr_err(vmsg, mpath, "fmtp", "ST 2110-20 §7.2", "INVALID_VALUE")
+          return attr_err(vmsg, mpath, "fmtp", ref, "INVALID_VALUE")
         end
       end
       local range_val = params["RANGE"]
@@ -1300,11 +1304,29 @@ function st2110.validate(doc, opts)
         return attr_err("TROFF/CMAX require TP to also be present (ST 2110-21 §8)",
           mpath, "fmtp", "ST 2110-21 §8")
       end
+      -- M30 G4: ST 2110-20 §7.3 defines interlace/segmented purely by parameter
+      -- name presence (no <value> form). Bare flag → fmtp_params stores `true`;
+      -- a `name=value` form stores a string. Reject the latter.
+      for _, flag in ipairs({ "interlace", "segmented" }) do
+        if params[flag] ~= nil and params[flag] ~= true then
+          return attr_err(flag .. " must be a bare flag, not name=value (ST 2110-20 §7.3)",
+            mpath, "fmtp", "ST 2110-20 §7.3", "INVALID_VALUE")
+        end
+      end
       -- ST 2110-20:2017 §7.3: "Signaling of [segmented] without the interlace
       -- parameter is forbidden." (PsF requires interlace to be set as well.)
       if params["segmented"] and not params["interlace"] then
         return attr_err("segmented requires interlace to also be present (ST 2110-20 §7.3)",
           mpath, "fmtp", "ST 2110-20 §7.3")
+      end
+      -- M30 G9: ST 2110-20 §6.3.3 — "The Extended UDP size limit defined in
+      -- SMPTE ST 2110-10 shall not be used in the Block Packing Mode."
+      -- MAXUDP signals operation beyond the Standard limit, so its presence
+      -- with PM=2110BPM violates the §6.3.3 prohibition.
+      if params["PM"] == "2110BPM" and params["MAXUDP"] ~= nil then
+        return attr_err(
+          "MAXUDP must not be signaled with PM=2110BPM (ST 2110-20 §6.3.3 forbids Extended UDP size in BPM)",
+          mpath, "fmtp", "ST 2110-20 §6.3.3", "INVALID_VALUE")
       end
       -- Optional ST 2110-20 fmtp params that have defined value formats.
       -- TSMODE / TSDELAY are from ST 2110-10 §8.7 (RTP timestamp generation).
@@ -1312,7 +1334,8 @@ function st2110.validate(doc, opts)
         { "TP",      function(v) return valid_enum(v, VALID_TP, "TP") end },
         { "MAXUDP",  valid_maxudp },
         { "PAR",     valid_par },
-        { "TROFF",   valid_nonneg_int },
+        -- M30 G8: ST 2110-21 §8 — TROFF is a "decimal positive integer".
+        { "TROFF",   valid_pos_int },
         { "CMAX",    valid_pos_int },
         { "TSMODE",  function(v) return valid_enum(v, VALID_TSMODE, "TSMODE") end },
         -- M29 G5: ST 2110-10 §8.7 — TSDELAY is a "decimal positive integer".
@@ -1330,32 +1353,31 @@ function st2110.validate(doc, opts)
       end
 
     elseif m.media == "audio" then
-      -- ST 2110-30: audio (PCM) and ST 2110-31 (AES3/AM824)
+      -- ST 2110-30 §6.1 mandates L16/L24; ST 2110-31 adds AM824. Other encodings
+      -- are not covered by the standard for the audio media type.
       if enc and not VALID_AUDIO_ENC[enc] then
         return attr_err(
           string.format("rtpmap encoding '%s' is not valid for ST 2110-30 audio (must be L16, L24, or AM824)",
             tostring(enc)),
           mpath, "rtpmap", "ST 2110-30 §7.1", "INVALID_VALUE")
       end
-      if not valid_audio_rates[clock_rate] then
-        return attr_err(
-          string.format(
-            "rtpmap clock rate %s Hz is out of scope (ST 2110-30 §6.1 permits 44100, 48000, 96000)",
-            tostring(clock_rate)),
-          mpath, "rtpmap", "ST 2110-30 §6.1", "INVALID_VALUE")
-      end
-      -- Channel count is required in ST 2110-30 rtpmap and must be 1-16 (§7.1).
+      -- Clock rate: ST 2110-30 §6.1 mandates 48 kHz and permits 44.1/96 kHz, then
+      -- says "Other sampling frequencies … are out of scope of this standard."
+      -- "Out of scope" is not "forbidden" (no "shall not"), so any well-formed
+      -- positive rate is accepted (M30 G5 — conformance principle).
+      -- Channel count is part of RFC 4566 rtpmap grammar (RFC 3551 §6); zero or
+      -- missing makes the stream undefined. Spec does not impose an upper bound.
       local ch_s = (rtpmap.value or ""):match("^%d+%s+%S+/%d+/(%d+)$")
       if not ch_s then
         return attr_err(
-          "rtpmap missing channel count for ST 2110-30 audio (expected encoding/rate/channels)",
-          mpath, "rtpmap", "ST 2110-30 §7.1")
+          "rtpmap missing channel count for audio (RFC 3551 §6: encoding/rate/channels)",
+          mpath, "rtpmap", "RFC 3551 §6")
       end
       local ch = tonumber(ch_s)
-      if not ch or ch < 1 or ch > 16 then
+      if not ch or ch < 1 then
         return attr_err(
-          string.format("rtpmap channel count %s is not valid for ST 2110-30 (must be 1-16)", ch_s),
-          mpath, "rtpmap", "ST 2110-30 §7.1", "INVALID_VALUE")
+          string.format("rtpmap channel count %s must be positive", ch_s),
+          mpath, "rtpmap", "RFC 3551 §6", "INVALID_VALUE")
       end
       -- Validate a=ptime if present (ST 2110-30 §7.2 recommends ptime=1 ms).
       local ptime_attr = find_attr(mattrs, "ptime")
@@ -1760,7 +1782,7 @@ function ipmx.validate(doc)
   if #rtp_media > 0 then
     local filtered = { version = doc.version, origin = doc.origin,
                        session = doc.session, media = rtp_media }
-    local ok, e = st2110.validate(filtered, { ipmx_layer = true })
+    local ok, e = st2110.validate(filtered)
     if not ok then return nil, e end
   else
     local ok, e = validate.sdp(doc)

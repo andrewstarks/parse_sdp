@@ -684,6 +684,66 @@ is present, but no IPMX-level tests cover these values.
 
 ---
 
+### M30 — Conformance principle + strictness fixes ✓ (audit 2026-05-14, round 9)
+
+**Done when:** A user-directed conformance principle is in place — every validator check must cite explicit prohibitive spec text ("shall not", "is forbidden", or RFC well-formedness); silence in the spec is not a reason to reject. Six real gaps from a round-9 audit are fixed under that principle; two existing checks that violated it are loosened.
+
+The audit also flagged opinion-based checks (e.g., 224.0.0.0/24 multicast reservation, ST 2110-30 audio rate/channel caps) for an M31 audit pass that will systematically tag every check by category {explicit prohibition / RFC well-formedness / opinion} and remove the opinion-tagged ones.
+
+#### Strictness fixes (non-conformant SDPs that used to pass)
+
+- [x] **G1: `depth` enumeration** (ST 2110-20:2017 §7.4.2). `depth` was previously validated as a positive integer, so `depth=7`, `depth=14`, `depth=24` passed. New `VALID_DEPTH` set + `valid_depth` validator enforces the §7.4.2 enumeration `{8, 10, 12, 16, 16f}`. ([parse_sdp.lua:839-848](parse_sdp.lua#L839-L848))
+- [x] **G1b: `width`/`height` upper bound 32767** (ST 2110-20:2017 §7.2 — "Permitted values are integers between 1 and 32767 inclusive"). New `valid_pixel_dim` builder enforces the upper bound on both dimensions. ([parse_sdp.lua:850-862](parse_sdp.lua#L850-L862))
+- [x] **G4: `interlace` / `segmented` are flag-only** (ST 2110-20:2017 §7.3 + §7.1). §7.3 defines both parameters by parameter-name presence/absence; §7.1 lets fmtp entries take `name=value` or bare-name form. After fmtp parsing, `interlace=anything` and `segmented=anything` are rejected because the §7.3 spec defines no value form. ([parse_sdp.lua:1316-1323](parse_sdp.lua#L1316-L1323))
+- [x] **G8: `TROFF` positive (not non-negative)** (ST 2110-21:2017 §8 — "decimal positive integer"). Optional video fmtp validator now uses `valid_pos_int` for `TROFF`; the previously-accepted `TROFF=0` case is inverted. `valid_nonneg_int` is removed (no longer used). ([parse_sdp.lua:1342](parse_sdp.lua#L1342))
+- [x] **G9: `MAXUDP` forbidden with `PM=2110BPM`** (ST 2110-20:2017 §6.3.3 — "The Extended UDP size limit defined in SMPTE ST 2110-10 shall not be used in the Block Packing Mode"). MAXUDP signals Extended-limit operation, so its presence with `PM=2110BPM` violates the §6.3.3 prohibition. New cross-field check after the required-params loop. ([parse_sdp.lua:1325-1331](parse_sdp.lua#L1325-L1331))
+
+#### Strictness loosenings (existing checks not grounded in normative spec text)
+
+- [x] **G5a: ST 2110-30 audio sample rate scope removed**. §6.1 mandates 48 kHz and permits 44.1/96 kHz, then says *"Other sampling frequencies and resolutions are out of scope of this standard."* "Out of scope" is not "shall not". The strict-ST-2110 rejection of 32/88.2/176.4/192/22050/1 kHz was opinion, not conformance. Deleted `ST2110_AUDIO_RATES`, `IPMX_AUDIO_RATES`, the `valid_audio_rates` branch in `st2110.validate`, and the `opts = { ipmx_layer = true }` argument that selected between them. The IPMX-side regression guards for extended rates still pass — both modes now accept any well-formed positive rate.
+- [x] **G5b: ST 2110-30 audio 1..16 channel cap removed**. ST 2110-30:2017 §6.2.2 / Table 2 documents Conformance Levels with channel counts up to 64; the spec has no global upper bound. Replaced `1..16` cap with RFC 3551 / RFC 4566 well-formedness (`channels >= 1`; rtpmap must include channel count). Test fixture expanded to {1, 2, 8, 16, 32, 64, 128}.
+
+#### Audit findings deferred to M31
+
+The audit also surfaced cited-but-not-grounded checks that should be re-cited or removed under the principle. Held for M31 to avoid mixing strict-add and strict-remove behavior in one diff:
+
+- IANA multicast reservation 224.0.0.0/24 and 224.0.1.0/24 rejection ([parse_sdp.lua:753-756](parse_sdp.lua#L753-L756)) — configuration-time concern (RFC 5771), not SDP conformance.
+- IPMX `m=` port-even-and-greater-than-1024 ([parse_sdp.lua:2169-2178](parse_sdp.lua#L2169-L2178)) — currently cited as TR-10-x; confirmed clause is **TR-10-12 §7** (and likely repeated across per-essence TR-10s). M31 fixes the citation.
+- IPMX `a=rtcp-mux` rejection ([parse_sdp.lua:2181-2185](parse_sdp.lua#L2181-L2185)) — same: cite TR-10-12 / TR-10-x §7 or remove.
+- Audio packet-fit math ([parse_sdp.lua:1374-1389](parse_sdp.lua#L1374-L1389)) — keep as RFC 3550 + MAXUDP well-formedness, re-cite.
+
+#### Audit findings deliberately not addressed (this round)
+
+- **G2: ST 2110-40 `ancCount`** — RFC 8331 §2 defines `ANC_Count` as a runtime field in the RTP payload header, not an SDP fmtp parameter. Not actionable from SDP validation.
+- **G3: ST 2110-31 (AES3 / AM824) fmtp validation** — local PDF set does not include ST 2110-31 (only TR-10-12, which defers to ST 2110-31 §5.1, 5.3, 5.4, 6, 7). Deferred until the spec source is available; the current AM824 path goes through the same encoding / channel-order / packet-fit checks as ST 2110-30.
+- **G7: ST 2110-20 sampling × colorimetry × range cross-table** — combinatorial; one wrong cell would create false positives against conformant streams. User-deferred indefinitely.
+- **exactframerate reduction to lowest terms** (§7.2 — "utilizing the numerically smallest numerator value possible"). User decision: do not enforce; documented in GUIDE.md instead.
+
+#### Tests added / inverted (29 net new)
+
+- M30 G1 (depth enum): 5 acceptance + 9 rejection tests (`spec/st2110_spec.lua` new section, plus existing `rejects depth=0` test updated to match the new error message).
+- M30 G1b (width/height ≤ 32767): 4 tests (boundary acceptance, two off-by-one rejections, one far-above rejection).
+- M30 G4 (interlace/segmented flag-only): 5 tests (3 rejections + 2 regression guards for bare-flag form).
+- M30 G5a (audio rate loosening): 8 tests (the previously-rejecting "out of scope" / nonsense-rate cases are now acceptance tests; the IPMX-side `extended_rates` regression guard in `spec/ipmx_spec.lua` continues to pass unchanged).
+- M30 G5b (channel count cap removed): channel test set widened from {1, 8, 16} to {1, 2, 8, 16, 32, 64, 128}; "rejects channel count 17" removed; "rejects channel count 0" re-cited as RFC 3551 well-formedness; "rejects rtpmap with no channel count" re-cited as RFC 3551 well-formedness.
+- M30 G8 (TROFF positive): "accepts TROFF=0" inverted to "rejects TROFF=0"; existing TROFF/CMAX cross-field test fixture updated to use `TROFF=4500`.
+- M30 G9 (MAXUDP + PM=2110BPM): 4 tests (2 rejections, 1 missing-MAXUDP acceptance, 1 GPM regression guard).
+
+**Tests:** 636 → 665.
+
+**Spec references for M30:**
+
+- SMPTE ST 2110-20:2017 §7.4.2 — depth enumeration {8, 10, 12, 16, 16f}
+- SMPTE ST 2110-20:2017 §7.2 — width/height range 1..32767 inclusive
+- SMPTE ST 2110-20:2017 §7.1 / §7.3 — interlace/segmented parameter-name-only form
+- SMPTE ST 2110-20:2017 §6.3.3 — Extended UDP size shall not be used in Block Packing Mode
+- SMPTE ST 2110-21:2017 §8 — TROFF decimal positive integer
+- SMPTE ST 2110-30:2017 §6.1 — audio sample rate scope language ("out of scope" ≠ "forbidden")
+- SMPTE ST 2110-30:2017 §6.2.2 / Table 2 — audio Conformance Levels (no global channel cap)
+- IETF RFC 3551 §6 — rtpmap channels parameter well-formedness
+
+---
+
 ### M29 — Validation gap closure ✓ (audit 2026-05-14, round 8: IP address syntax + IPMX source-filter)
 
 **Done when:** Gaps surfaced by a six-spec parallel audit (ST 2110-10:2022 PDF, TR-10-1, the per-media-type TR-10-2/3/4/7/9/10/11/12, the extension TR-10-5/6/13/14/15/16, the three 2026-01 IPMX Released Profile docs, and TR-10-TP-1 the IPMX test plan) are addressed. The audit cross-referenced the validator's ~140 checks and ~600 tests against ~250 normative SDP requirements. Five gaps surfaced; four were verified false-negatives by running invalid SDPs through the validator (e.g. `c=IN IP4 999.0.0.0` and `c=IN IP6 not-an-ipv6` both used to pass), one was a SHOULD→MUST-wording strictness gap.

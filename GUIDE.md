@@ -416,6 +416,84 @@ Error at line 4, col 1: missing required field 't='
 
 ---
 
+## What this library validates (and what it doesn't)
+
+Strictness here is grounded in spec text, not opinion. The rule:
+
+> A check belongs in this library only if the relevant standard explicitly
+> forbids the input (*shall not*, *is forbidden*, *MUST NOT*) — or if the input
+> would be malformed at the RFC 4566 / RFC 3550 / RFC 3551 level. Anything else
+> passes.
+
+This boundary is intentional. The library's job is **conformance** — not "is
+this a sensible product configuration." Many SDPs from real ST 2110 and IPMX
+senders contain unusual but legal choices; rejecting them would make the
+library a liability rather than a guard.
+
+### What we do reject
+
+- Anything malformed at the RFC 4566 / 3550 / 3551 grammar or internal-coherence
+  level — e.g. `a=fmtp`'s payload type must match the corresponding `a=rtpmap`'s
+  payload type; dynamic PTs in 96–127 must have an `a=rtpmap` to give them
+  meaning.
+- Anything an ST 2110 part explicitly forbids. Examples:
+  - `depth=14` (ST 2110-20 §7.4.2 enumerates `{8, 10, 12, 16, 16f}`).
+  - `width=40000` (ST 2110-20 §7.2 — "integers between 1 and 32767 inclusive").
+  - `segmented` without `interlace` (ST 2110-20 §7.3 — "is forbidden").
+  - `MAXUDP` with `PM=2110BPM` (ST 2110-20 §6.3.3 — "shall not be used in the
+    Block Packing Mode").
+  - `mediaclk:direct=10` (ST 2110-10 §7.3 — direct offset SHALL be zero).
+  - `TROFF=0` (ST 2110-21 §8 — "decimal positive integer").
+- Anything the applicable TR-10 / IPMX profile explicitly forbids — e.g.
+  IPMX `a=rtcp-mux` (RTCP must be on port+1), IPMX `m=` ports must be even and
+  greater than 1024 (TR-10-12 §7).
+- Cross-stream consistency that ST 2022-7 / RFC 7104 requires for `a=group:DUP`
+  legs — identical essence parameters, identical payload type number, distinct
+  addresses on at least one axis.
+
+### What we do not reject
+
+- Configurations the spec describes as **"out of scope"** or
+  **"permitted but not required."** For example, ST 2110-30 §6.1 mandates 48 kHz
+  audio and permits 44.1/96 kHz, then says *"Other sampling frequencies and
+  resolutions are out of scope of this standard."* That is not the same as
+  *"shall not."* The validator accepts any well-formed positive rate. The same
+  applies to audio channel count — ST 2110-30 documents Conformance Levels up
+  to 64 channels but contains no global upper bound, so neither does the
+  validator.
+- Combinations the spec doesn't address. The spec lists `sampling`,
+  `colorimetry`, `TCS`, and `RANGE` value sets independently. It does not list
+  forbidden combinations of those values, so the validator accepts any
+  combination of valid individual values. Some combinations (e.g.
+  `sampling=RGB` with `colorimetry=BT2020`) are unusual but the spec contains
+  no "shall not" against them.
+- **NMOS-level concerns.** The IPMX profile documents describe MUST-support
+  requirements at the device level — Senders MUST expose BCP-004-02 Sender
+  Capabilities; Receivers MUST support both required format combinations; IS-04
+  / IS-05 / IS-11 must be wired up. These are device-certification concerns and
+  require state beyond a single SDP file. They live in the NMOS APIs, not in
+  SDP, so this library cannot and does not validate them.
+- **RTCP and Info Blocks.** IPMX Media Info Blocks (uncompressed, JPEG-XS, PCM,
+  AES3), PEP Media Info Blocks, HKEP HDCP exchanges, and HDR metadata travel
+  in RTP / RTCP, not in SDP. They are out of scope here even though the
+  TR-10 documents discuss them.
+- **Sender/Receiver capability subsetting.** The fact that a sender implements
+  only Format A (RGB 4:4:4 8-bit) and not Format B (YUV 4:2:2 10-bit) is
+  signaled via NMOS Sender Capabilities, not via SDP. The library accepts any
+  conformant single SDP and does not infer device-wide capability claims from
+  it.
+
+### A practical test
+
+When considering whether to add a check, you should be able to point to a
+specific clause in a spec PDF or RFC and quote the prohibitive language. If
+the case for the check is *"but obviously a device that sends X is broken"*,
+that's an indicator the check is opinion, not conformance — and it doesn't
+belong here. If the case is *"the spec says SHALL NOT X"*, quote it in the
+code comment and as the `spec_ref` field on the error.
+
+---
+
 ## ST 2110 Validation
 
 `sdp.parse(text, "st2110")` or `doc:validate("st2110")` enforces:
@@ -463,7 +541,7 @@ When a `c=` line is present (at either session or media level), the address is v
 | `a=mediaclk` | Required, **media-level only**. Accepted: `direct=0` (offset SHALL be zero per ST 2110-10 §7.3) or `sender`. Session-level `a=mediaclk` is rejected (ST 2110-10 §8.3) |
 | `a=mid` | Optional. When present, value must be unique within the session (RFC 5888 §8.1) |
 | `a=source-filter` | At ST 2110 tier: optional. At IPMX tier: **required** on every RTP block, either media-level or session-level (TR-10-TP-1 §13.2). Format follows RFC 4570: `<incl\|excl> IN <IP4\|IP6> <dest> <src>+`. The dest and every src must be a literal address of the declared family — FQDNs and malformed addresses are rejected (ST 2110-10 §6.5 / RFC 4570). |
-| `a=rtpmap` | Required. RTP payload type must be in the dynamic range 96–127 (ST 2110-10 §6.2). Clock rate validated: must be 90000 for video, `smpte291`, and `ST2110-41`; audio clock rate validated against known rates. Audio encoding name validated: must be `L16`, `L24`, or `AM824`. Payload type must match the payload type in `a=fmtp` |
+| `a=rtpmap` | Required. RTP payload type must be in the dynamic range 96–127 (ST 2110-10 §6.2). Clock rate validated: must be 90000 for video, `smpte291`, and `ST2110-41`; audio clock rate accepted for any positive integer (ST 2110-30 §6.1 puts non-{44.1, 48, 96} kHz "out of scope" but does not forbid). Audio encoding name validated: must be `L16`, `L24`, or `AM824`. Payload type must match the payload type in `a=fmtp` |
 | `a=fmtp` | Required. Key=value pairs validated per sub-standard |
 
 ### ST 2110-20 (video) `fmtp` parameters
@@ -474,10 +552,10 @@ and value format.
 | Parameter | Example | Valid values |
 | --- | --- | --- |
 | `sampling` | `YCbCr-4:2:2` | `YCbCr-4:4:4`, `YCbCr-4:2:2`, `YCbCr-4:2:0`, `CLYCbCr-4:4:4`, `CLYCbCr-4:2:2`, `CLYCbCr-4:2:0`, `ICtCp-4:4:4`, `ICtCp-4:2:2`, `ICtCp-4:2:0`, `RGB`, `XYZ`, `KEY` |
-| `width` | `1920` | positive integer |
-| `height` | `1080` | positive integer |
-| `exactframerate` | `30000/1001` | positive integer or `n/d` fraction (both parts positive) |
-| `depth` | `10` | positive integer |
+| `width` | `1920` | integer between 1 and 32767 inclusive (ST 2110-20 §7.2) |
+| `height` | `1080` | integer between 1 and 32767 inclusive (ST 2110-20 §7.2) |
+| `exactframerate` | `30000/1001` | positive integer or `n/d` fraction (both parts positive). Reduction to lowest terms is **not** enforced — `60000/2002` is accepted (ST 2110-20 §7.2 requires "the numerically smallest numerator value possible" but the library does not currently check this) |
+| `depth` | `10` | one of `8`, `10`, `12`, `16`, `16f` (ST 2110-20 §7.4.2) |
 | `TCS` | `SDR` | `SDR`, `PQ`, `HLG`, `LINEAR`, `BT2100LINPQ`, `BT2100LINHLG`, `ST2065-1`, `ST428-1`, `DENSITY`, `UNSPECIFIED` |
 | `colorimetry` | `BT709` | `BT601`, `BT709`, `BT2020`, `BT2100`, `ST2065-1`, `ST2065-3`, `UNSPECIFIED`, `ALPHA`, `XYZ` |
 | `PM` | `2110GPM` | `2110GPM`, `2110BPM` |
@@ -489,29 +567,34 @@ Optional parameters validated when present:
 | --- | --- | --- |
 | `RANGE` | `NARROW`, `FULLPROTECT`, `FULL` | ST 2110-20 §7.2 |
 | `TP` | `2110TPN`, `2110TPNL`, `2110TPW` | ST 2110-21 |
-| `MAXUDP` | positive integer ≤ 8960 (Extended UDP Size Limit) | ST 2110-10 §6.4 |
+| `MAXUDP` | positive integer ≤ 8960 (Extended UDP Size Limit). Must **not** be signaled when `PM=2110BPM` — ST 2110-20 §6.3.3 forbids the Extended UDP size in Block Packing Mode. | ST 2110-10 §6.4, ST 2110-20 §6.3.3 |
 | `PAR` | `W:H` (both positive integers, **in lowest terms** per ST 2110-20 §7.3 — e.g. `1:1`, `12:11`, `64:45`; `2:2` is rejected) | ST 2110-20 §7.3 |
-| `TROFF` | non-negative integer (requires `TP` to also be present) | ST 2110-21 §8 |
+| `TROFF` | positive integer in microseconds (requires `TP` to also be present; `TROFF=0` rejected) | ST 2110-21 §8 |
 | `CMAX` | positive integer (requires `TP` to also be present) | ST 2110-21 §8 |
 | `TSMODE` | `SAMP`, `NEW`, `PRES` | ST 2110-10 §8.7 |
 | `TSDELAY` | positive integer (microseconds — ST 2110-10 §8.7 defines this as a decimal positive integer; `TSDELAY=0` is rejected) | ST 2110-10 §8.7 |
 
-Bare-flag parameters `interlace` and `segmented` are accepted. `segmented` SHALL only appear together with `interlace` (ST 2110-20 §7.3); signaling `segmented` alone is rejected. Any other unrecognized key=value pairs pass through silently.
+Bare-flag parameters `interlace` and `segmented` are accepted. `segmented` SHALL only appear together with `interlace` (ST 2110-20 §7.3); signaling `segmented` alone is rejected. Both are flag-only — `interlace=anything` and `segmented=anything` are rejected (ST 2110-20 §7.1/§7.3 define no value form for these names). Any other unrecognized key=value pairs pass through silently.
 
 ### ST 2110-30 (audio) `rtpmap` and `fmtp` parameters
 
-The `a=rtpmap` encoding name is validated: must be `L16`, `L24`, or `AM824`. The clock
-rate scope is mode-dependent:
+The `a=rtpmap` encoding name is validated: must be `L16`, `L24`, or `AM824`
+(ST 2110-30 §6.1 mandates L16/L24; ST 2110-31 adds AM824 for AES3 transparent
+transport).
 
-- **`st2110` mode** — restricted to {44100, 48000, 96000} Hz per ST 2110-30 §6.1
-  (*"Other sampling rates are out of scope"*).
-- **`ipmx` mode** — additionally permits {32000, 88200, 176400, 192000} Hz to
-  cover AES67-extended professional-audio configurations.
+The clock rate is **not enumerated** in either mode. ST 2110-30 §6.1 mandates
+48 kHz and permits 44.1/96 kHz, then says *"Other sampling frequencies and
+resolutions are out of scope of this standard."* Out-of-scope is not the same
+as forbidden (no "shall not"), so any well-formed positive rate is accepted.
+This matches IPMX practice, which already permits AES67-extended rates such as
+32 kHz, 88.2 kHz, 176.4 kHz, and 192 kHz.
 
 The channel count (third `/`-separated component in the rtpmap value,
-e.g. `L24/48000/8`) is required and must be an integer in the range 1–16
-(ST 2110-30 §7.1). `channel-order` is validated for presence and value format;
-mono (`SMPTE2110.(M)`) is permitted.
+e.g. `L24/48000/8`) is required and must be a positive integer (RFC 3551 §6).
+ST 2110-30 §6.2.2 / Table 2 documents Conformance Levels with channel counts
+up to 64; the spec contains no global upper bound, so the validator imposes
+none. `channel-order` is validated for presence and value format; mono
+(`SMPTE2110.(M)`) is permitted.
 
 When `a=ptime` is present, its value must be a positive number (ST 2110-30 §7.2).
 The validator also enforces that the resulting RTP payload size

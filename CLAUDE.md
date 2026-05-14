@@ -8,10 +8,11 @@ Context and conventions for Claude Code working in this repo.
 (Session Description Protocol) files. Three validation tiers:
 RFC 4566 (generic SDP) → SMPTE ST 2110 → IPMX.
 
-**Strictness is a primary feature.** The library rejects any SDP that does not
-conform exactly to RFC 4566 (and the relevant sub-standard when a mode is given).
-There is no lenient mode. Many SDP files in the wild are subtly invalid; this
-library must not produce or accept them.
+**Strictness is a primary feature**, but it is *spec-grounded*, not opinion.
+The library rejects any SDP that the relevant standard explicitly forbids and
+nothing else. There is no lenient mode, and no "obviously broken but the spec
+is silent" mode either. See **Validation Strictness Principle** below for the
+exact boundary.
 
 **Keep it tight.** If a module is growing, stop and refactor before adding more.
 Prefer fewer, well-named things over many small helpers.
@@ -76,6 +77,53 @@ doc.origin.unicast_address
 doc.session.name
 doc.media[1].port
 ```
+
+## Validation Strictness Principle
+
+Every validation check in `parse_sdp.lua` must be grounded in **explicit
+prohibitive spec text** (*"shall not"*, *"MUST NOT"*, *"is forbidden"*) or in
+**RFC 4566 / 3550 / 3551 well-formedness**. Silence in the spec is not a reason
+to reject. *"Out of scope of spec X"* is not the same as *"forbidden by spec X."*
+
+When adding or auditing a check:
+
+- Quote the SHALL / SHALL-NOT clause (or RFC well-formedness clause) in the
+  code comment and as the `spec_ref` field on the error.
+- If you can't find one, don't add the check.
+- *"Physically silly but not forbidden"* — a configuration that probably can't
+  work in practice — is **not** in scope. The validator tests for conformance,
+  not for whether a device is saying things that can't be true.
+
+**In scope for validation:**
+
+- RFC 4566 grammar, field order, and field semantics.
+- RFC 3550 / 3551 internal coherence (dynamic PT requires `a=rtpmap`; `a=fmtp`
+  PT must match `a=rtpmap` PT; audio rtpmap requires the channels field; etc.).
+- Every explicit "shall not" / "is forbidden" in ST 2110-10 / -20 / -21 / -22 /
+  -30 / -31 / -40 / -41.
+- Every explicit "shall not" / "is forbidden" in the applicable VSF TR-10 /
+  IPMX profile (with the per-clause TR-10 cite, not a blanket "IPMX").
+- Cross-stream consistency required by ST 2022-7 / RFC 7104 for `a=group:DUP`.
+
+**Out of scope (never validate from SDP):**
+
+- NMOS resources: IS-04, IS-05, BCP-004-01 (Receiver Capabilities), BCP-004-02
+  (Sender Capabilities), BCP-005-01 (EDID), IS-11 (Stream Compatibility),
+  IS-08. These describe device-wide capabilities and require state beyond the
+  SDP.
+- RTCP-layer signaling: IPMX Media Info Blocks (any type), PEP Media Info
+  Blocks, HKEP HDCP exchanges, HDR metadata. These live in RTP / RTCP, not in
+  SDP.
+- Sender/Receiver capability subsetting. A single SDP describes one stream's
+  parameters; whether a device supports additional formats it isn't currently
+  sending is an NMOS-Capabilities question.
+- Combinatorial cross-tables (e.g. sampling × colorimetry × range) unless the
+  spec explicitly forbids the combination.
+- Configurations the spec describes as "out of scope" or "permitted but not
+  required" — e.g. ST 2110-30 audio at unusual sample rates or channel counts.
+
+See [GUIDE.md "What this library validates (and what it doesn't)"](GUIDE.md#what-this-library-validates-and-what-it-doesnt)
+for the user-facing version with worked examples.
 
 ## Coding Conventions
 
