@@ -20,8 +20,9 @@
 
 `parse_sdp` is a Lua 5.5 library for parsing, validating, and serializing SDP
 (Session Description Protocol) files used in professional media over IP workflows.
-It is built with [LPEG](https://www.inf.puc-rio.br/~roberto/lpeg/) and has no
-runtime dependencies beyond LPEG and [dkjson](https://github.com/LuaDist/dkjson).
+It is built with [LPEG](https://www.inf.puc-rio.br/~roberto/lpeg/). Runtime
+dependencies: LPEG, [dkjson](https://github.com/LuaDist/dkjson), and argparse
+(CLI only — never loaded by `require("parse_sdp")`).
 
 **Strictness is a primary feature.** The library enforces RFC 4566 exactly: required
 fields must be present, optional fields must appear in the correct position, and
@@ -94,15 +95,16 @@ plug-and-play professional AV over IP.
 ### LuaRocks
 
 ```sh
-luarocks install dkjson
 luarocks install parse_sdp
 ```
 
-Requires Lua 5.3–5.5 and LPEG. For CLI use, also install argparse: `luarocks install argparse`.
+`lpeg`, `dkjson`, and `argparse` are installed automatically. `argparse` is only
+used by the CLI — `require("parse_sdp")` never loads it.
 
 ### Manual
 
-Copy `parse_sdp.lua` into your project. Install LPEG, dkjson, and argparse separately.
+Copy `parse_sdp.lua` into your project. Install `lpeg` and `dkjson` separately
+(and `argparse` if you want the CLI).
 
 ### Docker
 
