@@ -1,6 +1,6 @@
 v=0
 o=- 3000 1 IN IP4 192.168.1.1
-s=IPMX Invalid — Valid ST2110 But No extmap Anywhere
+s=IPMX Invalid — Valid ST2110 But No IPMX fmtp Marker
 t=0 0
 m=video 5000 RTP/AVP 96
 c=IN IP4 239.100.1.1/64

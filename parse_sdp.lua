@@ -1748,14 +1748,24 @@ end
 
 --- Validate an SDP document against IPMX requirements.
 -- Runs ST 2110 validation first on all non-USB media blocks, then checks:
--- a=extmap presence, IPMX fmtp marker (TR-10-1 §10.1), a=hkep format
--- (TR-10-5 §10), a=privacy format (TR-10-13 §13), FEC params (TR-10-6 §7.6).
--- USB blocks (m=application with TCP transport, TR-10-14) bypass ST 2110
--- media-block checks.
+-- IPMX fmtp marker (TR-10-1 §10.1), a=hkep format (TR-10-5 §10), a=privacy
+-- format (TR-10-13 §13), FEC params (TR-10-6 §7.6), and IPMX-specific
+-- transport rules. USB blocks (m=application with TCP transport, TR-10-14)
+-- bypass ST 2110 media-block checks.
 -- @param doc table  SDP document table.
 -- @return true  on success.
 -- @return nil, err  on failure; err includes field_path and spec_ref.
 function ipmx.validate(doc)
+  -- IPMX is a media transport profile built on ST 2110-10 §7 / §8.1, which
+  -- describes the use of SDP to signal media streams. An SDP with zero media
+  -- blocks isn't describing any IPMX stream. Mirrors the equivalent ST 2110
+  -- check so the IPMX RFC-4566 fallback path (USB-only) doesn't silently
+  -- accept empty SDPs.
+  if #doc.media < 1 then
+    return nil, errors.new("IPMX requires at least one media block",
+      { field_path = "media", spec_ref = "ST 2110-10 §7" })
+  end
+
   -- Two predicates over media blocks:
   --   non_rtp_set — any application block not on RTP/AVP; bypasses ST 2110
   --                 RTP-specific validation (a=rtpmap, a=fmtp IPMX marker, etc.).
@@ -1937,25 +1947,12 @@ function ipmx.validate(doc)
     end
   end
 
-  -- Check for a=extmap at session level or in at least one RTP media block.
-  local has_extmap = find_attr(doc.session.attributes, "extmap") ~= nil
-  if not has_extmap then
-    for i, m in ipairs(doc.media) do
-      if not non_rtp_set[i] and find_attr(m.attributes or {}, "extmap") then
-        has_extmap = true
-        break
-      end
-    end
-  end
-  if not has_extmap then
-    return nil, errors.new("missing required attribute 'extmap'", {
-      field_path = "session.attributes[extmap]",
-      spec_ref   = "IPMX §6",
-    })
-  end
-
-  -- Validate URI format of every a=extmap attribute (RFC 5285). For PEP
-  -- IV-Counter URIs, also enforce direction=sendonly (TR-10-13 §20.1).
+  -- a=extmap presence is NOT required by any IPMX-baseline spec — TR-10-13
+  -- §1.1.1 only mandates it WHEN declaring RTP Extension Headers for PEP
+  -- (privacy). The M31 audit removed an unconditional presence requirement
+  -- that cited a non-existent "IPMX §6". When `a=extmap` IS present, its
+  -- URI format is still validated (RFC 5285); for PEP IV-Counter URIs the
+  -- direction must be `sendonly` (TR-10-13 §20.1).
   for _, attr in ipairs(doc.session.attributes or {}) do
     if attr.name == "extmap" then
       local val = attr.value or ""
@@ -1963,7 +1960,7 @@ function ipmx.validate(doc)
       if not ok then
         return nil, errors.new("invalid a=extmap: " .. msg, {
           field_path = "session.attributes[extmap]",
-          spec_ref   = "IPMX §6 / RFC 5285", code = "INVALID_VALUE",
+          spec_ref   = "RFC 5285", code = "INVALID_VALUE",
         })
       end
       local pok, pmsg = pep_extmap_direction_ok(val)
@@ -1984,7 +1981,7 @@ function ipmx.validate(doc)
           if not ok then
             return nil, errors.new("invalid a=extmap: " .. emsg, {
               field_path = string.format("media[%d].attributes[extmap]", i),
-              spec_ref   = "IPMX §6 / RFC 5285", code = "INVALID_VALUE",
+              spec_ref   = "RFC 5285", code = "INVALID_VALUE",
             })
           end
           local pok, pmsg = pep_extmap_direction_ok(val)
@@ -2179,31 +2176,41 @@ function ipmx.validate(doc)
   end)
   if not dup_ok then return nil, dup_err end
 
-  -- RTCP port convention and port range (TR-10-1 §7, §8.7) — RTP blocks only.
+  -- RTCP port convention and port range — RTP blocks only.
+  -- Port-even-and->1024 is a "General Provisions" clause repeated identically
+  -- across every per-essence TR-10 (-2 §7, -3 §7, -4 §7, -11 §7, -12 §7):
+  -- "All IPMX Media streams shall have a UDP destination port value that is
+  -- even and that is greater than 1024." TR-10-1 itself does NOT contain
+  -- this clause (M31 cite correction). Cite TR-10-2 §7 as the canonical
+  -- per-essence reference (video is the dominant IPMX case; wording is
+  -- identical across essences).
   for i, m in ipairs(doc.media) do
     if not non_rtp_set[i] then
       local mpath  = string.format("media[%d]", i)
       local mattrs = m.attributes or {}
 
-      -- Port must be even and > 1024 (TR-10-1 §7).
       local port = m.port
       if port then
         if port <= 1024 then
           return attr_err(
             string.format("media port must be > 1024 (got %d)", port),
-            mpath, "port", "TR-10-1 §7", "INVALID_VALUE")
+            mpath, "port", "TR-10-2 §7", "INVALID_VALUE")
         end
         if port % 2 ~= 0 then
           return attr_err(
             string.format("media port must be even (got %d)", port),
-            mpath, "port", "TR-10-1 §7", "INVALID_VALUE")
+            mpath, "port", "TR-10-2 §7", "INVALID_VALUE")
         end
       end
 
+      -- a=rtcp-mux is forbidden by derivation: TR-10-1 §8.7 mandates RTCP
+      -- on media-port+1, while RFC 5761 defines a=rtcp-mux as RTP and RTCP
+      -- sharing the same port. Signaling rtcp-mux therefore violates the
+      -- TR-10-1 §8.7 "shall" on port+1.
       if find_attr(mattrs, "rtcp-mux") then
         return attr_err(
-          "a=rtcp-mux is not permitted (IPMX requires RTCP on media port+1)",
-          mpath, "rtcp-mux", "TR-10-1 §8.7", "INVALID_VALUE")
+          "a=rtcp-mux is not permitted (TR-10-1 §8.7 mandates RTCP on media port+1; RFC 5761 rtcp-mux signals same port)",
+          mpath, "rtcp-mux", "TR-10-1 §8.7 + RFC 5761", "INVALID_VALUE")
       end
 
       local rtcp_attr = find_attr(mattrs, "rtcp")

@@ -184,8 +184,8 @@ show_error(
   read("examples/st2110/invalid/04_bad_tsrefclk_gmid.sdp"), "st2110")
 
 show_error(
-  "ipmx/invalid/01_missing_extmap.sdp  (IPMX layer: extmap absent)",
-  read("examples/ipmx/invalid/01_missing_extmap.sdp"), "ipmx")
+  "ipmx/invalid/01_missing_ipmx_marker.sdp  (IPMX layer: IPMX fmtp marker absent)",
+  read("examples/ipmx/invalid/01_missing_ipmx_marker.sdp"), "ipmx")
 
 -- ─────────────────────────────────────────────────────────────────────────────
 section("6. Full sweep — all example files")
@@ -265,7 +265,7 @@ sweep({
 }, "ipmx", true)
 print("  invalid:")
 sweep({
-  "examples/ipmx/invalid/01_missing_extmap.sdp",
+  "examples/ipmx/invalid/01_missing_ipmx_marker.sdp",
   "examples/ipmx/invalid/02_fails_st2110.sdp",
 }, "ipmx", false)
 

@@ -673,9 +673,10 @@ on all non-USB media blocks, then checks IPMX-specific requirements:
 | Check | Spec ref | Detail |
 | --- | --- | --- |
 | `a=group:FID` forbidden | TR-10-1 §10 | FID (Flow Identification) semantics shall not be used; any session-level `a=group:FID` is rejected |
-| Media port must be even and > 1024 | TR-10-1 §7 | Applies to all non-USB RTP media blocks |
+| At least one media block required | ST 2110-10 §7 | IPMX is built on ST 2110-10 §7/§8.1 SDP signaling; an SDP with zero `m=` blocks isn't describing any IPMX stream |
+| Media port must be even and > 1024 | TR-10-2 §7 | "All IPMX Media streams shall have a UDP destination port value that is even and that is greater than 1024." Wording is repeated identically across every per-essence TR-10 (-2 §7, -3 §7, -4 §7, -11 §7, -12 §7); TR-10-2 cited as canonical. Applies to all non-USB RTP media blocks |
 | Media port must be ≤ 65535 | RFC 768 | Applies at the parser level to all `m=` blocks (rejected during parse, not validate) |
-| `a=extmap` present with valid URI | IPMX §6 / RFC 5285 | Must appear at session level or in at least one RTP media block; every `a=extmap` value must be in RFC 5285 format: `entry-count[/direction] URI` where direction is `sendonly`, `recvonly`, `sendrecv`, or `inactive` and URI has a scheme (e.g. `urn:`, `http:`); ID must be 1–255; IDs must be unique within their scope (session scope and each media-block scope are checked separately) |
+| `a=extmap` format when present | RFC 5285 | `a=extmap` is **not required** at the IPMX baseline (M31 removed an unconditional requirement that had no spec basis). When present, every `a=extmap` value must be in RFC 5285 format: `entry-count[/direction] URI` where direction is `sendonly`, `recvonly`, `sendrecv`, or `inactive` and URI has a scheme (e.g. `urn:`, `http:`); ID must be 1–255; IDs must be unique within their scope. TR-10-13 §1.1.1 mandates `a=extmap` only when declaring RTP Extension Headers for PEP (privacy) |
 | PEP IV-Counter `a=extmap` direction must be `/sendonly` | TR-10-13 §20.1 | Applies when URI is `urn:ietf:params:rtp-hdrext:PEP-Full-IV-Counter` or `…:PEP-Short-IV-Counter` |
 | `IPMX` bare flag in every `a=fmtp` | TR-10-1 §10.1 | Required in all non-USB media blocks |
 | Audio encoding | TR-10-3 §8 / TR-10-12 | `L16`, `L24` (TR-10-3 PCM) or `AM824` (TR-10-12 AES3 transparent transport) |
@@ -812,14 +813,15 @@ without a media-level `a=privacy` inherits the session-level value (TR-10-13
 
 #### RTCP port convention (TR-10-1 §8.7)
 
-IPMX mandates that RTCP Sender Reports are sent to media port + 1. The library checks:
+TR-10-1 §8.7 mandates that RTCP Sender Reports are sent to media port + 1. The library
+checks:
 
-| Check | Result |
-| --- | --- |
-| `a=rtcp-mux` present on a media block | Rejected — RTCP must be on a separate port |
-| `a=rtcp:<port>` with `port > 65535` | Rejected (above UDP range, RFC 768) |
-| `a=rtcp:<port>` present but `port ≠ media-port + 1` | Rejected |
-| No `a=rtcp` present | Accepted (implicit port+1 convention) |
+| Check | Spec ref | Result |
+| --- | --- | --- |
+| `a=rtcp-mux` present on a media block | TR-10-1 §8.7 + RFC 5761 | Rejected — TR-10-1 §8.7 mandates port+1; RFC 5761 defines `rtcp-mux` as RTP/RTCP on the same port, which contradicts the §8.7 "shall" |
+| `a=rtcp:<port>` with `port > 65535` | RFC 768 | Rejected (above UDP range) |
+| `a=rtcp:<port>` present but `port ≠ media-port + 1` | TR-10-1 §8.7 | Rejected |
+| No `a=rtcp` present | — | Accepted (implicit port+1 convention) |
 
 These checks apply at the **IPMX tier only**. ST 2110 mode accepts `a=rtcp-mux` and any
 `a=rtcp` value.

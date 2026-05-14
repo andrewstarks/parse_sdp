@@ -79,18 +79,21 @@ describe("IPMX validation", function()
       assert.is_table(doc)
     end)
 
-    it("returns nil+err for ST 2110 SDP missing extmap", function()
+    -- M31: removed the unconditional `a=extmap` requirement (cited a
+    -- non-existent "IPMX §6"). ST2110_ONLY_SDP now fails IPMX validation on
+    -- the missing IPMX fmtp marker (TR-10-1 §10.1) instead.
+    it("returns nil+err for ST 2110 SDP missing IPMX fmtp marker", function()
       local doc, err = sdp.parse(ST2110_ONLY_SDP, "ipmx")
       assert.is_nil(doc)
       assert.is_table(err)
-      assert.matches("extmap", err.message)
+      assert.matches("IPMX", err.message)
     end)
 
-    it("returns nil+err for generic SDP (fails ST 2110 tier first)", function()
+    it("returns nil+err for generic SDP (no media block)", function()
       local doc, err = sdp.parse(GENERIC_SDP, "ipmx")
       assert.is_nil(doc)
       assert.is_table(err)
-      assert.is_string(err.message)
+      assert.matches("media block", err.message)
     end)
   end)
 
@@ -103,16 +106,16 @@ describe("IPMX validation", function()
       assert.equal(true, ok)
     end)
 
-    it("returns nil+err for ST 2110 SDP missing extmap", function()
+    it("returns nil+err for ST 2110 SDP missing IPMX fmtp marker", function()
       local doc = sdp.parse(ST2110_ONLY_SDP)
       assert.is_table(doc)
       local ok, err = doc:validate("ipmx")
       assert.is_nil(ok)
       assert.is_table(err)
-      assert.matches("extmap", err.message)
+      assert.matches("IPMX", err.message)
     end)
 
-    it("error includes field_path and spec_ref for missing extmap", function()
+    it("error includes field_path and spec_ref", function()
       local doc = sdp.parse(ST2110_ONLY_SDP)
       assert.is_table(doc)
       local ok, err = doc:validate("ipmx")
@@ -122,25 +125,28 @@ describe("IPMX validation", function()
       assert.is_string(err.spec_ref)
     end)
 
-    it("returns nil+err for generic SDP (ST 2110 tier fails first)", function()
+    it("returns nil+err for generic SDP (no media block)", function()
       local doc = sdp.parse(GENERIC_SDP)
       assert.is_table(doc)
       local ok, err = doc:validate("ipmx")
       assert.is_nil(ok)
       assert.is_table(err)
-      assert.is_string(err.message)
+      assert.matches("media block", err.message)
     end)
   end)
 
-  describe("doc:validate('ipmx') — extmap location", function()
-    it("returns true when extmap is at session level only", function()
-      local text = table.concat({
+  -- M31: a=extmap is no longer required at the IPMX baseline — TR-10-13
+  -- §1.1.1 mandates it only when declaring RTP Extension Headers for PEP.
+  -- These tests guard against accidental re-introduction of the unconditional
+  -- requirement by asserting that valid IPMX SDPs *without* extmap pass.
+  describe("a=extmap is optional at IPMX baseline (M31)", function()
+    local function ipmx_video_no_extmap()
+      return table.concat({
         "v=0",
         "o=- 1234567890 1 IN IP4 192.168.1.1",
         "s=IPMX Video",
         "t=0 0",
         "a=ts-refclk:localmac=AA-BB-CC-DD-EE-FF",
-        "a=extmap:1 urn:ietf:params:rtp-hdrext:smpte-tc",
         "m=video 5000 RTP/AVP 96",
         "c=IN IP4 239.100.0.1/64",
         "a=source-filter: incl IN IP4 239.100.0.1 192.168.1.1",
@@ -149,11 +155,21 @@ describe("IPMX validation", function()
         "a=mediaclk:direct=0",
         "a=ts-refclk:localmac=AA-BB-CC-DD-EE-FF",
       }, "\r\n")
-      local doc = sdp.parse(text)
-      assert.is_table(doc)
-      local ok, err = doc:validate("ipmx")
+    end
+
+    it("accepts IPMX SDP without any a=extmap (session or media)", function()
+      local doc, err = sdp.parse(ipmx_video_no_extmap(), "ipmx")
       assert.is_nil(err)
-      assert.equal(true, ok)
+      assert.is_table(doc)
+    end)
+
+    it("accepts IPMX SDP with session-level a=extmap (regression guard)", function()
+      local text = ipmx_video_no_extmap():gsub(
+        "a=ts%-refclk:localmac=AA%-BB%-CC%-DD%-EE%-FF\r\nm=video",
+        "a=ts-refclk:localmac=AA-BB-CC-DD-EE-FF\r\na=extmap:1 urn:ietf:params:rtp-hdrext:smpte-tc\r\nm=video", 1)
+      local doc, err = sdp.parse(text, "ipmx")
+      assert.is_nil(err)
+      assert.is_table(doc)
     end)
   end)
 
@@ -164,13 +180,13 @@ describe("IPMX validation", function()
       assert.equal(true, doc:is_ipmx())
     end)
 
-    it("returns false for ST 2110 SDP without extmap", function()
+    it("returns false for ST 2110 SDP without IPMX fmtp marker", function()
       local doc = sdp.parse(ST2110_ONLY_SDP)
       assert.is_table(doc)
       assert.equal(false, doc:is_ipmx())
     end)
 
-    it("returns false for generic SDP", function()
+    it("returns false for generic SDP (no media block)", function()
       local doc = sdp.parse(GENERIC_SDP)
       assert.is_table(doc)
       assert.equal(false, doc:is_ipmx())
@@ -852,14 +868,17 @@ describe("IPMX validation", function()
       assert.matches("rtcp%-mux", err.message)
     end)
 
-    it("spec_ref for rtcp-mux rejection is TR-10-1 §8.7", function()
+    -- M31: rtcp-mux rejection is derived — TR-10-1 §8.7 mandates RTCP on
+    -- media-port+1, while RFC 5761 defines a=rtcp-mux as RTP/RTCP sharing
+    -- the same port. Cite reflects the derivation.
+    it("spec_ref for rtcp-mux rejection is TR-10-1 §8.7 + RFC 5761", function()
       local text = base_ipmx_sdp({}, { "a=rtcp-mux" })
       local doc = sdp.parse(text)
       assert.is_table(doc)
       local ok, err = doc:validate("ipmx")
       assert.is_nil(ok)
       assert.is_table(err)
-      assert.equal("TR-10-1 §8.7", err.spec_ref)
+      assert.equal("TR-10-1 §8.7 + RFC 5761", err.spec_ref)
     end)
 
     -- RFC 3605 §2.1 grammar:
@@ -1279,12 +1298,16 @@ describe("IPMX validation", function()
       assert.matches("1024", err.message)
     end)
 
-    it("spec_ref is TR-10-1 §7", function()
+    -- M31: cite was previously TR-10-1 §7 but the port-even/>1024 clause is
+    -- not in TR-10-1; it is repeated identically across every per-essence
+    -- TR-10 (-2 §7, -3 §7, -4 §7, -11 §7, -12 §7). Citing TR-10-2 §7 as the
+    -- canonical reference (video is the dominant case; wording is identical).
+    it("spec_ref is TR-10-2 §7", function()
       local doc = sdp.parse(ipmx_with_port(5001))
       assert.is_table(doc)
       local ok, err = doc:validate("ipmx")
       assert.is_nil(ok)
-      assert.equal("TR-10-1 §7", err.spec_ref)
+      assert.equal("TR-10-2 §7", err.spec_ref)
     end)
 
     it("USB block port is exempt from even/range check", function()

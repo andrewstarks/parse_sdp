@@ -9,6 +9,53 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 
+### Added (M31 — audit 2026-05-14, round 10: opinion audit + citation cleanup)
+
+A systematic audit of every validation check under the M30 conformance principle. ~140 checks classified as GROUNDED, WELL-FORMEDNESS, GROUNDED-MISCITED, OPINION, or UNCLEAR. One opinion-tagged check deleted; one structural gap exposed by the deletion was closed with proper citation; three grounded-but-miscited checks were re-cited.
+
+**Opinion deletion:**
+
+- **Unconditional `a=extmap` presence requirement** — previously cited "IPMX §6" which doesn't exist in any IPMX profile or TR-10 document. `a=extmap` is mentioned normatively only in TR-10-13 §1.1.1, and only when declaring RTP Extension Headers for PEP (privacy). No spec mandates extmap presence at the IPMX baseline. Deleted; URI format and PEP-direction checks (RFC 5285 and TR-10-13 §20.1 respectively) are kept.
+
+**Structural gap closed (consequence of the deletion):**
+
+- **IPMX requires at least one media block** — added at the top of `ipmx.validate`. The IPMX validator already had a fallback path through `validate.sdp` for SDPs with no RTP media (used for USB-only TR-10-14 sessions); with the old extmap check gone, an SDP with zero media blocks total now silently passed via that fallback. IPMX is built on ST 2110-10 §7/§8.1 SDP-for-media-streams; an empty SDP isn't describing any IPMX stream. Cite: ST 2110-10 §7.
+
+**Citation cleanup (grounded-miscited):**
+
+- **IPMX port even and > 1024** — cite was "TR-10-1 §7" but the clause is not in TR-10-1. It appears verbatim across every per-essence TR-10 (-2 §7, -3 §7, -4 §7, -11 §7, -12 §7). Re-cited to "TR-10-2 §7" as canonical; matching test renamed and updated.
+- **`a=rtcp-mux` rejection** — cite was "TR-10-1 §8.7" alone. The rejection is GROUNDED via derivation (TR-10-1 §8.7 mandates RTCP on port+1; RFC 5761 defines `a=rtcp-mux` as same-port, contradicting). Re-cited to "TR-10-1 §8.7 + RFC 5761" to make the derivation explicit; matching test updated; error message clarified.
+- **`a=extmap` format validation** — dropped the phantom "IPMX §6" from the cite; now just "RFC 5285".
+
+**Audit findings deliberately not changed:**
+
+- **`c=` multicast 224.0.0.0/24 and 224.0.1.0/24 rejection** — confirmed GROUNDED. ST 2110-10:2022 §6.5 has explicit "shall not": *"Senders shall not transmit media signals on IPv4 multicast addresses within the 'Local Network Control Block' nor the 'Internetwork Control Block' specified in IETF RFC 5771."* The M30 punch list pre-flagged this as a candidate; the audit confirmed it is properly grounded.
+- **Audio packet-fit math** cite — current "ST 2110-10 §6.4" is sufficient; adding RFC 3550 §2 offered marginal benefit at the cost of test churn. Skipped.
+- **`a=ptime` value validation** cite — "ST 2110-30 §7.2" is fine; that section is where ptime applies to audio.
+
+**Test and fixture updates:**
+
+- Three "missing extmap" tests in `spec/ipmx_spec.lua` renamed to test the actual failure mode (missing IPMX fmtp marker, TR-10-1 §10.1).
+- Deleted the `doc:validate('ipmx') — extmap location` describe block (regression guard for the removed requirement).
+- Added new describe block `a=extmap is optional at IPMX baseline (M31)` with two acceptance tests guarding against re-introduction.
+- Two "generic SDP" tests now expect the new "media block required" error.
+- `spec_ref` assertions for port-even and rtcp-mux updated to match new citations.
+- Renamed `examples/ipmx/invalid/01_missing_extmap.sdp` → `01_missing_ipmx_marker.sdp`; updated `examples/examples.lua` references.
+
+**Tests:** 665 → 666 (net +1; 3 stale extmap tests removed, 4 new IPMX-baseline guards added).
+
+**Spec references for M31:**
+
+- SMPTE ST 2110-10:2022 §6.5 — IPv4 multicast Local/Internetwork Control Block prohibition
+- SMPTE ST 2110-10:2022 §7 / §8.1 — SDP-based media-stream signaling
+- VSF TR-10-1 §8.7 — RTCP on media-port+1
+- VSF TR-10-2/3/4/11/12 §7 — IPMX media-stream UDP destination port even and > 1024
+- VSF TR-10-13 §1.1.1 — `a=extmap` mandated only for PEP RTP Extension Header declaration
+- IETF RFC 5285 — `a=extmap` grammar
+- IETF RFC 5761 — `a=rtcp-mux` definition
+
+---
+
 ### Added (M30 — audit 2026-05-14, round 9: conformance principle + strictness fixes)
 
 A user-directed conformance principle now governs the validator: every check must cite explicit prohibitive spec text ("shall not", "is forbidden") or RFC well-formedness. Silence in the spec is not a reason to reject — "out of scope of spec X" ≠ "forbidden by spec X." This round implements six strictness fixes grounded in normative SHALL/SHALL-NOT clauses, and loosens two existing checks that were opinion rather than conformance.
