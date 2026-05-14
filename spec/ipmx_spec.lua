@@ -501,6 +501,70 @@ describe("IPMX validation", function()
       assert.matches("mode", err.message)
     end)
 
+    -- TR-10-14 §14: "The SDP shall follow RFC 4145 with the following
+    -- restrictions" — only m=, c=, a=privacy, a=setup are defined for USB
+    -- blocks. RTP-specific attributes (rtpmap, fmtp, mediaclk, ts-refclk)
+    -- have no meaning on a TCP transport and are rejected in strict mode.
+    local function usb_sdp_with(extra_usb_attr)
+      local lines = {
+        "v=0",
+        "o=- 1234567890 1 IN IP4 192.168.1.1",
+        "s=IPMX USB Session",
+        "t=0 0",
+        "a=ts-refclk:localmac=AA-BB-CC-DD-EE-FF",
+        "a=extmap:1 urn:ietf:params:rtp-hdrext:smpte-tc",
+        "m=video 5000 RTP/AVP 96",
+        "c=IN IP4 239.100.0.1/64",
+        "a=rtpmap:96 raw/90000",
+        "a=fmtp:96 sampling=YCbCr-4:2:2; width=1920; height=1080; exactframerate=25; depth=10; TCS=SDR; colorimetry=BT709; PM=2110GPM; SSN=ST2110-20:2022; TP=2110TPN; measuredpixclk=148500000; vtotal=1125; htotal=2200; IPMX",
+        "a=mediaclk:direct=0",
+        "a=ts-refclk:localmac=AA-BB-CC-DD-EE-FF",
+        "m=application 5100 TCP usb",
+        "c=IN IP4 192.168.1.200",
+        "a=setup:passive",
+      }
+      lines[#lines + 1] = extra_usb_attr
+      return table.concat(lines, "\r\n")
+    end
+
+    it("rejects a=rtpmap on a USB block", function()
+      local doc = sdp.parse(usb_sdp_with("a=rtpmap:97 raw/90000"))
+      local ok, err = doc:validate("ipmx")
+      assert.is_nil(ok)
+      assert.is_table(err)
+      assert.matches("rtpmap", err.message)
+      assert.matches("USB", err.message)
+      assert.matches("TR%-10%-14", err.spec_ref)
+    end)
+
+    it("rejects a=fmtp on a USB block", function()
+      local doc = sdp.parse(usb_sdp_with("a=fmtp:97 anything"))
+      local ok, err = doc:validate("ipmx")
+      assert.is_nil(ok)
+      assert.is_table(err)
+      assert.matches("fmtp", err.message)
+      assert.matches("USB", err.message)
+    end)
+
+    it("rejects a=mediaclk on a USB block", function()
+      local doc = sdp.parse(usb_sdp_with("a=mediaclk:direct=0"))
+      local ok, err = doc:validate("ipmx")
+      assert.is_nil(ok)
+      assert.is_table(err)
+      assert.matches("mediaclk", err.message)
+      assert.matches("USB", err.message)
+    end)
+
+    it("rejects media-level a=ts-refclk on a USB block", function()
+      local doc = sdp.parse(usb_sdp_with(
+        "a=ts-refclk:ptp=IEEE1588-2008:00-11-22-FF-FE-33-44-55:0"))
+      local ok, err = doc:validate("ipmx")
+      assert.is_nil(ok)
+      assert.is_table(err)
+      assert.matches("ts%-refclk", err.message)
+      assert.matches("USB", err.message)
+    end)
+
     it("error for USB privacy references TR-10-14 spec_ref", function()
       local lines = {
         "v=0",
@@ -1239,6 +1303,37 @@ describe("IPMX validation", function()
       local ok, err = doc:validate("ipmx")
       assert.is_nil(ok)
       assert.equal("TR-10-3 §8", err.spec_ref)
+    end)
+
+    -- IPMX permits the full AES67/extended professional-audio rate set. ST 2110-30
+    -- §6.1 puts 32/88.2/176.4/192 kHz "out of scope" for that standard alone, but
+    -- IPMX (which inherits ST 2110 baseline) does not restrict them. These tests
+    -- guard against accidental tightening that would break legitimate IPMX SDPs.
+    local extended_rates = { 32000, 88200, 176400, 192000 }
+    for _, rate in ipairs(extended_rates) do
+      it("accepts " .. rate .. " Hz (extended pro-audio rate)", function()
+        local rtpmap = "a=rtpmap:97 L24/" .. rate .. "/2"
+        local fmtp   = "a=fmtp:97 channel-order=SMPTE2110.(ST); measuredsamplerate="
+                       .. rate .. "; IPMX"
+        local doc, err = sdp.parse(ipmx_audio_sdp({
+          rtpmap = rtpmap, fmtp = fmtp, ptime = "a=ptime:1",
+        }), "ipmx")
+        assert.is_nil(err)
+        assert.is_table(doc)
+      end)
+    end
+
+    -- IPMX permits mono (channel-order group "M") for PCM audio. ST 2110-30
+    -- §6.2.2 Table 1 includes M as a valid named group; IPMX inherits this.
+    -- Regression guard against accidental mono exclusion.
+    it("accepts mono PCM audio (channel-order=SMPTE2110.(M))", function()
+      local doc, err = sdp.parse(ipmx_audio_sdp({
+        rtpmap = "a=rtpmap:97 L24/48000/1",
+        fmtp   = "a=fmtp:97 channel-order=SMPTE2110.(M); measuredsamplerate=48000; IPMX",
+        ptime  = "a=ptime:1",
+      }), "ipmx")
+      assert.is_nil(err)
+      assert.is_table(doc)
     end)
   end)
 

@@ -684,6 +684,53 @@ is present, but no IPMX-level tests cover these values.
 
 ---
 
+### M27 — Validation gap closure ✓ (audit 2026-05-14, round 6)
+
+**Done when:** Six gaps surfaced by the round-6 cross-spec audit (ST 2110-10/-20/-21/-22/-30 PDFs + IPMX Released Profile docs + TR-10 series) are addressed. Two parallel research agents audited the ~80KB validator and ~210KB of tests against the spec corpus; six findings were flagged by the user as "fix"; four findings ("TP IPMX restriction," "HKEP fmtp conditional," "Group BUNDLE/ALT/LS rejection," "Infoframe backing m=ST2110-41") were verified against source spec text and skipped because the specs do not require them.
+
+#### HIGH-severity (SHALL violations passing today)
+
+- [x] **H1: ST 2110-20 §7.3 — `segmented` requires `interlace`** ("Signaling of [segmented] without the interlace parameter is forbidden"). The video fmtp validator at [parse_sdp.lua:1213-1217](parse_sdp.lua#L1213-L1217) now rejects this combination. The previously-passing "accepts segmented bare flag" test was removed (the spec forbids it).
+- [x] **H2: ST 2110-20 §7.3 — PAR must be in lowest terms** ("The smallest integer values possible for width and height shall be used"). `valid_par` ([parse_sdp.lua:807-822](parse_sdp.lua#L807-L822)) now rejects e.g. `PAR=2:2`, `PAR=4:6`, `PAR=100:100`. A small `gcd` helper was added.
+- [x] **H3: ST 2110-30 §6.1 — sample rate scope tightened in ST 2110 mode only** ("Other sampling rates are out of scope"). Strict ST 2110 mode permits only {44.1, 48, 96} kHz; IPMX mode keeps the AES67-extended set {32, 44.1, 48, 88.2, 96, 176.4, 192} kHz. Implemented by threading `opts.ipmx_layer` through `st2110.validate(doc, opts)`; the IPMX validator passes `{ ipmx_layer = true }` when calling down.
+- [x] **H4: ST 2110-10 §6.4 — audio packet payload fit** (Standard UDP Size Limit 1460 unless MAXUDP signals Extended Limit ≤ 8960). When `a=ptime` is present, the validator computes `channels × samples-per-packet × bytes-per-sample` (L16=2, L24=3, AM824=4) and rejects when it exceeds `MAXUDP − 12` (RTP header overhead). Catches e.g. `L24/48000/16ch @ ptime=1ms` (2304 B > 1448 B) which can't physically be transmitted.
+- [x] **H5: ST 2022-7 §6 — DUP cross-leg PT and fmtp identity** ("Senders shall transmit on both flows the same RTP payload data and shall use the same payload type number"). The existing DUP validator already enforced media-type and rtpmap-encoding/rate equality; now also enforces identical RTP payload type numbers and identical fmtp value strings across legs.
+- [x] **H6: TR-10-14 §14 — USB block RTP-attribute rejection** ("The SDP shall follow RFC 4145 with the following restrictions"; RFC 4145 is TCP-only, no RTP attrs defined). IPMX USB blocks (`m=application TCP usb`) now reject `a=rtpmap`, `a=fmtp`, `a=mediaclk`, and `a=ts-refclk` — these have no meaning on TCP transport.
+
+#### Regression guards
+
+- [x] **R1: IPMX PCM mono accepted** (`channel-order=SMPTE2110.(M)`). The "M" group is in ST 2110-30:2017 §6.2.2 Table 1 and IPMX inherits it; user explicitly confirmed mono is permitted. Test guards against accidental tightening.
+- [x] **R2: IPMX permissive audio rates retained**. Adds tests asserting 32 / 88.2 / 176.4 / 192 kHz are accepted in IPMX mode after the ST 2110 tightening.
+
+#### Verified against spec and intentionally not fixed
+
+- **TP value enumeration for IPMX video** — VSF TR-10-1 §8.1 says IPMX senders MAY use any of ST 2110-21's {2110TPN, 2110TPNL, 2110TPW} without restriction; existing presence-only check at [parse_sdp.lua:1872-1876](parse_sdp.lua#L1872-L1876) is correct.
+- **HKEP conditional presence** — VSF TR-10-5 §10 conditions a=hkep on the stream being HDCP Content (not derivable from SDP alone); no fmtp-side trigger exists. Cannot be enforced strictly from SDP.
+- **Group BUNDLE/ALT/LS rejection** — TR-10-1 §10 explicitly forbids only `a=group:FID`; other group semantics are not prohibited (over-strict to reject).
+- **Infoframe backing `m=ST2110-41` block** — TR-10-10 §8 says only that the infoframe port equals the associated media stream's port + 3; it does not require the associated media block to be a fast-metadata stream.
+
+#### Tests added
+
+- PAR: rejects `PAR=2:2`, `PAR=4:6`, `PAR=100:100`; accepts `PAR=12:11`, `PAR=64:45`.
+- Cross-field: rejects `segmented` without `interlace` (previously passed; the now-incorrect "accepts segmented bare flag" test was removed).
+- DUP: rejects different PT across legs; rejects same rtpmap but different fmtp essence params; accepts identical-attribute baseline.
+- ST 2110-30 audio rates: accepts {44.1, 48, 96} kHz; rejects {32, 88.2, 176.4, 192} kHz with `spec_ref = "ST 2110-30 §6.1"`.
+- IPMX audio rates: accepts {32, 88.2, 176.4, 192} kHz (regression guard).
+- IPMX PCM: accepts `channel-order=SMPTE2110.(M)` (mono regression guard).
+- Audio payload fit: accepts L24/48000/8ch @ ptime=1; rejects L24/48000/16ch @ ptime=1 with spec_ref `ST 2110-10 §6.4`; accepts the same with MAXUDP=8960; accepts at ptime=0.125; rejects L16/96000/8ch @ ptime=1.
+- USB block: rejects each of `a=rtpmap`, `a=fmtp`, `a=mediaclk`, `a=ts-refclk` with spec_ref `TR-10-14 §14`.
+
+**Spec references for M27:**
+
+- SMPTE ST 2110-20:2017 §7.3 — interlace/segmented requirements; PAR lowest-terms requirement
+- SMPTE ST 2110-10 §6.4 — Standard / Extended UDP Size Limits
+- SMPTE ST 2110-30:2017 §6.1 — audio sample-rate scope
+- ST 2022-7 §6 (referenced by ST 2110-10 §8.5 / RFC 7104) — DUP identical payload + PT
+- VSF TR-10-14 (2026-04-07) §14 — USB-SDP definition
+- VSF TR-10-1 §8.1, TR-10-5 §10, TR-10-10 §8 — verified-and-skipped findings
+
+---
+
 ### M26 — Validation gap closure ✓ (audit 2026-05-14, round 5)
 
 **Done when:** Four gaps surfaced by the round-5 cross-spec audit are addressed.

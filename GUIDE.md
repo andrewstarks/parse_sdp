@@ -431,6 +431,8 @@ When `a=group:DUP <mid1> <mid2> …` is present at session level, the library va
 - Every named `mid` must correspond to a media block carrying a matching `a=mid` attribute.
 - All legs in the DUP group must have the same media type (`video`, `audio`, etc.).
 - All legs must share the same rtpmap encoding name and clock rate.
+- All legs must use the same RTP payload type number (ST 2022-7 §6 — *"Senders shall transmit on both flows the same RTP payload data and shall use the same payload type number"*).
+- All legs must carry identical `a=fmtp` value strings (ST 2022-7 §6 — identical payload implies identical essence parameters).
 - No two legs may use **both** the same destination address (`c=`) and the same source address (`a=source-filter` src). Distinct on at least one axis is required (ST 2110-10 §8.5).
 - A DUP group with fewer than 2 legs is rejected.
 - Absence of `a=group:DUP` is not an error.
@@ -487,23 +489,34 @@ Optional parameters validated when present:
 | `RANGE` | `NARROW`, `FULLPROTECT`, `FULL` | ST 2110-20 §7.2 |
 | `TP` | `2110TPN`, `2110TPNL`, `2110TPW` | ST 2110-21 |
 | `MAXUDP` | positive integer ≤ 8960 (Extended UDP Size Limit) | ST 2110-10 §6.4 |
-| `PAR` | `W:H` (both positive integers) | ST 2110-20 §7.2 |
+| `PAR` | `W:H` (both positive integers, **in lowest terms** per ST 2110-20 §7.3 — e.g. `1:1`, `12:11`, `64:45`; `2:2` is rejected) | ST 2110-20 §7.3 |
 | `TROFF` | non-negative integer (requires `TP` to also be present) | ST 2110-21 §8 |
 | `CMAX` | positive integer (requires `TP` to also be present) | ST 2110-21 §8 |
 | `TSMODE` | `SAMP`, `NEW`, `PRES` | ST 2110-10 §8.7 |
 | `TSDELAY` | non-negative integer (microseconds) | ST 2110-10 §8.7 |
 
-Bare-flag parameters with no value (`interlace`, `segmented`) are accepted without restriction. Any other unrecognized key=value pairs pass through silently.
+Bare-flag parameters `interlace` and `segmented` are accepted. `segmented` SHALL only appear together with `interlace` (ST 2110-20 §7.3); signaling `segmented` alone is rejected. Any other unrecognized key=value pairs pass through silently.
 
 ### ST 2110-30 (audio) `rtpmap` and `fmtp` parameters
 
 The `a=rtpmap` encoding name is validated: must be `L16`, `L24`, or `AM824`. The clock
-rate is validated against known audio sample rates: 32000, 44100, 48000, 88200, 96000,
-176400, 192000 Hz. The channel count (third `/`-separated component in the rtpmap value,
+rate scope is mode-dependent:
+
+- **`st2110` mode** — restricted to {44100, 48000, 96000} Hz per ST 2110-30 §6.1
+  (*"Other sampling rates are out of scope"*).
+- **`ipmx` mode** — additionally permits {32000, 88200, 176400, 192000} Hz to
+  cover AES67-extended professional-audio configurations.
+
+The channel count (third `/`-separated component in the rtpmap value,
 e.g. `L24/48000/8`) is required and must be an integer in the range 1–16
-(ST 2110-30 §7.1). `channel-order` is validated for presence and value format.
+(ST 2110-30 §7.1). `channel-order` is validated for presence and value format;
+mono (`SMPTE2110.(M)`) is permitted.
 
 When `a=ptime` is present, its value must be a positive number (ST 2110-30 §7.2).
+The validator also enforces that the resulting RTP payload size
+(`channels × samples-per-packet × bytes-per-sample`, where L16=2 B, L24=3 B,
+AM824=4 B) fits within `MAXUDP − 12 B` of UDP payload (RTP header is 12 B).
+Default MAXUDP is the Standard UDP Size Limit of 1460 octets per ST 2110-10 §6.4.
 
 | Parameter | Example | Valid values |
 | --- | --- | --- |
@@ -670,6 +683,7 @@ require:
 | --- | --- |
 | `a=setup:passive` is present (no other value accepted) | TR-10-14 §14 (RFC 4145) |
 | `a=privacy` (when present) uses `protocol=USB_KV` and an AAD mode | TR-10-14 §14 |
+| RTP-specific attributes (`a=rtpmap`, `a=fmtp`, `a=mediaclk`, `a=ts-refclk`) are rejected — RFC 4145 transport has no RTP layer | TR-10-14 §14 (RFC 4145) |
 
 Other non-RTP application blocks (e.g. `m=application <port> TCP/MSRP *`) bypass
 ST 2110 RTP-specific checks but are not subject to the TR-10-14 USB rules.

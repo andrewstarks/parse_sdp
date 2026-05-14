@@ -9,6 +9,44 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 
+### Added (M27 — validation gap closure 2026-05-14, round 6)
+
+A round-6 cross-spec audit (two parallel research agents reading the ST 2110-10/-20/-21/-22/-30 PDFs plus the IPMX Released Profile docs and the full TR-10 series) surfaced 22 candidate gaps. After user triage and direct spec verification, six were fixed; four were confirmed as out-of-scope per the actual spec text and left as-is with notes in PLAN.md so future audits don't re-raise them.
+
+**HIGH-severity fixes:**
+
+- **ST 2110-20 §7.3 — `segmented` requires `interlace`** (the spec explicitly says signaling `segmented` without `interlace` is *forbidden*). The video fmtp validator now rejects the combination. The previously-passing "accepts segmented bare flag" test was removed — it was wrong against the spec.
+- **ST 2110-20 §7.3 — PAR must be in lowest terms** (*"The smallest integer values possible for width and height shall be used"*). `valid_par` now requires `gcd(W, H) == 1`; e.g. `PAR=2:2`, `PAR=4:6`, `PAR=100:100` are rejected. Valid ratios like `12:11` and `64:45` continue to pass.
+- **ST 2110-30 §6.1 — sample-rate scope tightened in ST 2110 mode only** (*"Other sampling rates are out of scope"*). Strict ST 2110 mode permits only {44.1, 48, 96} kHz. IPMX mode keeps the AES67-extended set {32, 44.1, 48, 88.2, 96, 176.4, 192} kHz — user-confirmed as the desired IPMX behavior. Implemented by adding an internal `opts` argument to `st2110.validate(doc, opts)` and threading `{ ipmx_layer = true }` from the IPMX caller.
+- **ST 2110-10 §6.4 — audio packet payload-fit check**. When `a=ptime` is present, the validator now computes `channels × samples-per-packet × bytes-per-sample` (L16=2, L24=3, AM824=4) and rejects when it exceeds `MAXUDP − 12 B` (RTP fixed header). Default MAXUDP is the Standard Limit of 1460. Catches cases like `L24/48000/16ch @ ptime=1ms` (2304 B > 1448 B) that cannot physically be transmitted.
+- **ST 2022-7 §6 — DUP cross-leg PT and fmtp identity** (*"Senders shall transmit on both flows the same RTP payload data and shall use the same payload type number"*). The DUP validator already enforced media-type + rtpmap-encoding/rate equality; now it also enforces identical RTP payload-type numbers and identical fmtp value strings across legs.
+- **TR-10-14 §14 — USB block RTP-attribute rejection**. The IPMX TCP USB block spec says *"The SDP shall follow RFC 4145 with the following restrictions"*; RFC 4145 (TCP-based media transport) defines no RTP attributes. USB blocks now reject `a=rtpmap`, `a=fmtp`, `a=mediaclk`, and `a=ts-refclk` since these have no meaning on a TCP transport.
+
+**Regression guards:**
+
+- IPMX mono PCM (`channel-order=SMPTE2110.(M)`) is accepted — user-confirmed as a valid IPMX configuration, locked in by test.
+- IPMX permissive audio rates ({32, 88.2, 176.4, 192} kHz) retained after the ST 2110 tightening — tests prevent accidental tightening of IPMX.
+
+**Verified-and-skipped (not bugs):**
+
+- TP enumeration for IPMX video — VSF TR-10-1 §8.1 puts no restriction on TP values for IPMX senders beyond what ST 2110-21 allows.
+- HKEP session-level conditional — TR-10-5 §10 conditions `a=hkep` on the stream being HDCP Content, which is not derivable from SDP alone.
+- Group BUNDLE/ALT/LS rejection — TR-10-1 §10 only forbids `a=group:FID`; other group semantics are not prohibited.
+- Infoframe backing `m=ST2110-41` requirement — TR-10-10 §8 requires only port = associated-media-port + 3; the backing block does not have to be a fast-metadata stream.
+
+**Tests:** 22 new tests across `spec/st2110_spec.lua` and `spec/ipmx_spec.lua`; one outdated test removed. Final count: 603 passing / 0 failing.
+
+**Spec references for M27:**
+
+- SMPTE ST 2110-20:2017 §7.3 — interlace/segmented, PAR lowest-terms
+- SMPTE ST 2110-10 §6.4 — Standard / Extended UDP Size Limits
+- SMPTE ST 2110-30:2017 §6.1 — audio sample-rate scope
+- SMPTE ST 2022-7 §6 (per RFC 7104 / ST 2110-10 §8.5) — DUP identical payload and PT
+- VSF TR-10-14 (2026-04-07) §14 — USB-SDP definition (RFC 4145)
+- VSF TR-10-1 §8.1, TR-10-5 §10, TR-10-10 §8 — verified-and-skipped citations
+
+---
+
 ### Added (M26 — validation gap closure 2026-05-14, round 5)
 
 A round-5 cross-spec audit (ST 2110-10:2022, all TR-10 docs, TR-10-TP-1, IPMX Released Profiles) surfaced one correctness bug, two missing range checks, and one near-miss that turned out to already be enforced. All four are now documented and locked in by tests.

@@ -966,12 +966,30 @@ describe("ST 2110 validation", function()
       }, "\r\n")
     end
 
-    local known_rates = { 32000, 44100, 48000, 88200, 96000, 176400, 192000 }
-    for _, rate in ipairs(known_rates) do
-      it("accepts " .. rate .. " Hz", function()
+    -- ST 2110-30:2017 §6.1: 48 kHz SHALL be supported; 44.1 kHz and 96 kHz
+    -- SHOULD be supported; "Other sampling rates are out of scope."
+    local in_scope_rates = { 44100, 48000, 96000 }
+    for _, rate in ipairs(in_scope_rates) do
+      it("accepts " .. rate .. " Hz (in scope of ST 2110-30 §6.1)", function()
         local doc, err = sdp.parse(audio_sdp(rate), "st2110")
         assert.is_nil(err)
         assert.is_table(doc)
+      end)
+    end
+
+    -- 32, 88.2, 176.4, 192 kHz are AES67-style extensions that ST 2110-30:2017
+    -- §6.1 explicitly puts out of scope. Strict ST 2110 mode rejects them;
+    -- IPMX mode accepts them (see ipmx_spec.lua).
+    local out_of_scope_rates = { 32000, 88200, 176400, 192000 }
+    for _, rate in ipairs(out_of_scope_rates) do
+      it("rejects " .. rate .. " Hz (out of scope of ST 2110-30 §6.1)", function()
+        local doc = sdp.parse(audio_sdp(rate))
+        assert.is_table(doc)
+        local ok, err = doc:validate("st2110")
+        assert.is_nil(ok)
+        assert.is_table(err)
+        assert.matches("clock rate", err.message)
+        assert.equal("ST 2110-30 §6.1", err.spec_ref)
       end)
     end
 
@@ -982,7 +1000,6 @@ describe("ST 2110 validation", function()
       assert.is_nil(ok)
       assert.is_table(err)
       assert.matches("clock rate", err.message)
-      assert.equal("ST 2110-30 §7.1", err.spec_ref)
     end)
 
     it("rejects a nonsense rate (e.g. 1)", function()
@@ -1164,6 +1181,49 @@ describe("ST 2110 validation", function()
         assert.is_nil(err)
         assert.is_table(doc)
       end)
+
+      -- ST 2110-20:2017 §7.3: "The smallest integer values possible for width
+      -- and height shall be used." PAR=2:2 must be 1:1; PAR=4:6 must be 2:3.
+      it("rejects PAR=2:2 (not in lowest terms; should be 1:1)", function()
+        local doc = sdp.parse(video20_sdp(BASE .. "; PAR=2:2"))
+        assert.is_table(doc)
+        local ok, err = doc:validate("st2110")
+        assert.is_nil(ok)
+        assert.is_table(err)
+        assert.matches("PAR", err.message)
+        assert.matches("lowest", err.message)
+      end)
+
+      it("rejects PAR=4:6 (not in lowest terms; should be 2:3)", function()
+        local doc = sdp.parse(video20_sdp(BASE .. "; PAR=4:6"))
+        assert.is_table(doc)
+        local ok, err = doc:validate("st2110")
+        assert.is_nil(ok)
+        assert.is_table(err)
+        assert.matches("PAR", err.message)
+        assert.matches("lowest", err.message)
+      end)
+
+      it("rejects PAR=100:100 (not in lowest terms; should be 1:1)", function()
+        local doc = sdp.parse(video20_sdp(BASE .. "; PAR=100:100"))
+        assert.is_table(doc)
+        local ok, err = doc:validate("st2110")
+        assert.is_nil(ok)
+        assert.is_table(err)
+        assert.matches("PAR", err.message)
+      end)
+
+      it("accepts PAR=12:11 (NTSC, in lowest terms)", function()
+        local doc, err = sdp.parse(video20_sdp(BASE .. "; PAR=12:11"), "st2110")
+        assert.is_nil(err)
+        assert.is_table(doc)
+      end)
+
+      it("accepts PAR=64:45 (anamorphic, in lowest terms)", function()
+        local doc, err = sdp.parse(video20_sdp(BASE .. "; PAR=64:45"), "st2110")
+        assert.is_nil(err)
+        assert.is_table(doc)
+      end)
     end)
 
     describe("TROFF (timestamp offset)", function()
@@ -1228,16 +1288,22 @@ describe("ST 2110 validation", function()
         assert.is_table(doc)
       end)
 
-      it("accepts segmented bare flag", function()
-        local doc, err = sdp.parse(video20_sdp(BASE .. "; segmented"), "st2110")
-        assert.is_nil(err)
-        assert.is_table(doc)
-      end)
-
       it("accepts interlace and segmented together", function()
         local doc, err = sdp.parse(video20_sdp(BASE .. "; interlace; segmented"), "st2110")
         assert.is_nil(err)
         assert.is_table(doc)
+      end)
+
+      -- ST 2110-20:2017 §7.3: "Signaling of [segmented] without the interlace
+      -- parameter is forbidden." (PsF requires interlace to be set as well.)
+      it("rejects segmented without interlace", function()
+        local doc = sdp.parse(video20_sdp(BASE .. "; segmented"))
+        assert.is_table(doc)
+        local ok, err = doc:validate("st2110")
+        assert.is_nil(ok)
+        assert.is_table(err)
+        assert.matches("segmented", err.message)
+        assert.matches("interlace", err.message)
       end)
     end)
   end)
@@ -1540,8 +1606,9 @@ describe("ST 2110 validation", function()
       assert.is_table(doc)
     end)
 
-    it("accepts a non-1 positive ptime", function()
-      local doc, err = sdp.parse(audio_with_ptime(20), "st2110")
+    it("accepts a non-1 positive ptime (sub-ms)", function()
+      -- 8 ch × (48000 × 0.125/1000 = 6 samples) × 3 B = 144 B, well under limit.
+      local doc, err = sdp.parse(audio_with_ptime(0.125), "st2110")
       assert.is_nil(err)
       assert.is_table(doc)
     end)
@@ -1563,6 +1630,80 @@ describe("ST 2110 validation", function()
       assert.is_nil(ok)
       assert.is_table(err)
       assert.matches("ptime", err.message)
+    end)
+  end)
+
+  -- ── ST 2110-30 audio packet payload fit (§6.1, §6.4) ──────────────────────────
+  -- ST 2110-10 §6.4: Standard UDP Size Limit is 1460 octets unless MAXUDP signals
+  -- the Extended Limit (up to 8960). ST 2110-30 §6.2.2: audio packet RTP payload =
+  -- channels × samples-per-packet × bytes-per-sample, where samples = rate × ptime.
+  -- An SDP declaring more than fits cannot be transmitted as described.
+  describe("ST 2110-30 audio packet payload fit (§6.4)", function()
+    local function audio_pkt(rtpmap, fmtp, ptime)
+      return table.concat({
+        "v=0",
+        "o=- 1234567890 1 IN IP4 192.168.1.1",
+        "s=ST2110 Audio",
+        "t=0 0",
+        "a=ts-refclk:ptp=IEEE1588-2008:00-11-22-FF-FE-33-44-55:0",
+        "m=audio 5010 RTP/AVP 97",
+        "c=IN IP4 239.100.0.2/64",
+        rtpmap,
+        fmtp,
+        "a=mediaclk:direct=0",
+        "a=ptime:" .. ptime,
+      }, "\r\n")
+    end
+
+    it("accepts L24/48000/8 ch at ptime=1 (1152 B fits in 1448)", function()
+      local doc, err = sdp.parse(audio_pkt(
+        "a=rtpmap:97 L24/48000/8",
+        "a=fmtp:97 channel-order=SMPTE2110.(ST)",
+        "1"), "st2110")
+      assert.is_nil(err)
+      assert.is_table(doc)
+    end)
+
+    it("rejects L24/48000/16 ch at ptime=1 (2304 B exceeds 1448)", function()
+      local doc = sdp.parse(audio_pkt(
+        "a=rtpmap:97 L24/48000/16",
+        "a=fmtp:97 channel-order=SMPTE2110.(U01,U02,U03,U04,U05,U06,U07,U08,U09,U10,U11,U12,U13,U14,U15,U16)",
+        "1"))
+      assert.is_table(doc)
+      local ok, err = doc:validate("st2110")
+      assert.is_nil(ok)
+      assert.matches("payload", err.message)
+      assert.equal("ST 2110-10 §6.4", err.spec_ref)
+    end)
+
+    it("accepts L24/48000/16 ch at ptime=0.125 (288 B fits)", function()
+      local doc, err = sdp.parse(audio_pkt(
+        "a=rtpmap:97 L24/48000/16",
+        "a=fmtp:97 channel-order=SMPTE2110.(U01,U02,U03,U04,U05,U06,U07,U08,U09,U10,U11,U12,U13,U14,U15,U16)",
+        "0.125"), "st2110")
+      assert.is_nil(err)
+      assert.is_table(doc)
+    end)
+
+    it("accepts L24/48000/16 ch at ptime=1 when MAXUDP raised", function()
+      -- MAXUDP signals Extended UDP Size Limit; 2304 < 8960 - 12 RTP overhead.
+      local doc, err = sdp.parse(audio_pkt(
+        "a=rtpmap:97 L24/48000/16",
+        "a=fmtp:97 channel-order=SMPTE2110.(U01,U02,U03,U04,U05,U06,U07,U08,U09,U10,U11,U12,U13,U14,U15,U16); MAXUDP=8960",
+        "1"), "st2110")
+      assert.is_nil(err)
+      assert.is_table(doc)
+    end)
+
+    it("rejects L16/96000/8 ch at ptime=1 (1536 B exceeds 1448)", function()
+      local doc = sdp.parse(audio_pkt(
+        "a=rtpmap:97 L16/96000/8",
+        "a=fmtp:97 channel-order=SMPTE2110.(ST,U01,U02,U03,U04,U05,U06)",
+        "1"))
+      assert.is_table(doc)
+      local ok, err = doc:validate("st2110")
+      assert.is_nil(ok)
+      assert.matches("payload", err.message)
     end)
   end)
 
@@ -2879,6 +3020,41 @@ describe("ST 2110 validation", function()
       }))
       local ok, err = doc:validate("st2110")
       assert.is_nil(ok)
+    end)
+
+    -- ST 2022-7 §6 (referenced by ST 2110-10 §8.5): "Senders shall transmit
+    -- on both flows the same RTP payload data and shall use the same payload
+    -- type number." Different PTs across legs are a violation.
+    it("rejects DUP legs with different payload type numbers", function()
+      local doc = sdp.parse(dup_sdp({
+        rtpmap1 = "a=rtpmap:96 raw/90000",
+        rtpmap2 = "a=rtpmap:97 raw/90000",
+        fmtp1   = "a=fmtp:96 sampling=YCbCr-4:2:2; width=1920; height=1080; exactframerate=25; depth=10; TCS=SDR; colorimetry=BT709; PM=2110GPM; SSN=ST2110-20:2022; TP=2110TPN",
+        fmtp2   = "a=fmtp:97 sampling=YCbCr-4:2:2; width=1920; height=1080; exactframerate=25; depth=10; TCS=SDR; colorimetry=BT709; PM=2110GPM; SSN=ST2110-20:2022; TP=2110TPN",
+      }))
+      local ok, err = doc:validate("st2110")
+      assert.is_nil(ok)
+      assert.matches("DUP", err.message)
+      assert.matches("payload type", err.message)
+    end)
+
+    it("rejects DUP video legs with different fmtp essence parameters", function()
+      -- Same rtpmap (PT, enc, rate) but different resolutions — the payload
+      -- can't be identical bit-for-bit if the resolution differs.
+      local doc = sdp.parse(dup_sdp({
+        fmtp1 = "a=fmtp:96 sampling=YCbCr-4:2:2; width=1920; height=1080; exactframerate=25; depth=10; TCS=SDR; colorimetry=BT709; PM=2110GPM; SSN=ST2110-20:2022; TP=2110TPN",
+        fmtp2 = "a=fmtp:96 sampling=YCbCr-4:2:2; width=1280; height=720;  exactframerate=25; depth=10; TCS=SDR; colorimetry=BT709; PM=2110GPM; SSN=ST2110-20:2022; TP=2110TPN",
+      }))
+      local ok, err = doc:validate("st2110")
+      assert.is_nil(ok)
+      assert.matches("DUP", err.message)
+      assert.matches("fmtp", err.message)
+    end)
+
+    it("accepts DUP legs with identical rtpmap and fmtp values", function()
+      local doc, err = sdp.parse(dup_sdp(), "st2110")
+      assert.is_nil(err)
+      assert.is_table(doc)
     end)
   end)
 

@@ -695,8 +695,15 @@ local function valid_connection_address(addr_type, addr)
   return true
 end
 
--- Known professional audio sample rates (Hz).
-local VALID_AUDIO_RATES = {
+-- ST 2110-30:2017 §6.1: 48 kHz SHALL be supported; 44.1 kHz and 96 kHz SHOULD
+-- be supported. "Other sampling rates are out of scope." Strict ST 2110-30
+-- validation rejects rates outside this set.
+local ST2110_AUDIO_RATES = {
+  [44100]=true, [48000]=true, [96000]=true,
+}
+-- IPMX inherits ST 2110 baseline but permits the full AES67/extended
+-- professional-audio rate set on top of it.
+local IPMX_AUDIO_RATES = {
   [32000]=true, [44100]=true, [48000]=true,
   [88200]=true, [96000]=true, [176400]=true, [192000]=true,
 }
@@ -796,14 +803,27 @@ local function valid_nonneg_int(value)
   return true
 end
 
--- Returns true for a PAR value in <W>:<H> format with both dimensions positive.
+-- Returns the greatest common divisor of two positive integers.
+local function gcd(a, b)
+  while b ~= 0 do a, b = b, a % b end
+  return a
+end
+
+-- Returns true for a PAR value in <W>:<H> format with both dimensions positive
+-- and in lowest terms (ST 2110-20:2017 §7.3: "The smallest integer values
+-- possible for width and height shall be used.").
 local function valid_par(value)
   if not _par_pat:match(value) then
     return nil, "invalid PAR format (expected W:H with positive integers)"
   end
   local w, h = value:match("^(%d+):(%d+)$")
-  if tonumber(w) == 0 or tonumber(h) == 0 then
+  local wn, hn = tonumber(w), tonumber(h)
+  if wn == 0 or hn == 0 then
     return nil, "PAR dimensions must be positive"
+  end
+  if gcd(wn, hn) ~= 1 then
+    return nil, string.format(
+      "PAR %s is not in lowest terms (ST 2110-20 §7.3 requires smallest integer values)", value)
   end
   return true
 end
@@ -884,9 +904,14 @@ end
 -- media-type-specific fmtp parameters (sampling for video,
 -- channel-order for audio).
 -- @param doc table  SDP document table.
+-- @param opts table|nil  Internal: { ipmx_layer=true } relaxes ST 2110-30
+--   sample-rate scope so the IPMX validator can permit AES67-extended rates
+--   (32, 88.2, 176.4, 192 kHz) that ST 2110-30 §6.1 places out of scope.
 -- @return true  on success.
 -- @return nil, err  on failure; err includes field_path and spec_ref.
-function st2110.validate(doc)
+function st2110.validate(doc, opts)
+  local ipmx_layer = opts and opts.ipmx_layer
+  local valid_audio_rates = ipmx_layer and IPMX_AUDIO_RATES or ST2110_AUDIO_RATES
   local ok, e = validate.sdp(doc)
   if not ok then return nil, e end
 
@@ -1208,6 +1233,12 @@ function st2110.validate(doc)
         return attr_err("TROFF/CMAX require TP to also be present (ST 2110-21 §8)",
           mpath, "fmtp", "ST 2110-21 §8")
       end
+      -- ST 2110-20:2017 §7.3: "Signaling of [segmented] without the interlace
+      -- parameter is forbidden." (PsF requires interlace to be set as well.)
+      if params["segmented"] and not params["interlace"] then
+        return attr_err("segmented requires interlace to also be present (ST 2110-20 §7.3)",
+          mpath, "fmtp", "ST 2110-20 §7.3")
+      end
       -- Optional ST 2110-20 fmtp params that have defined value formats.
       -- TSMODE / TSDELAY are from ST 2110-10 §8.7 (RTP timestamp generation).
       local video_opt_checks = {
@@ -1238,10 +1269,12 @@ function st2110.validate(doc)
             tostring(enc)),
           mpath, "rtpmap", "ST 2110-30 §7.1", "INVALID_VALUE")
       end
-      if not VALID_AUDIO_RATES[clock_rate] then
+      if not valid_audio_rates[clock_rate] then
         return attr_err(
-          string.format("rtpmap clock rate %s is not a known audio sample rate", tostring(clock_rate)),
-          mpath, "rtpmap", "ST 2110-30 §7.1", "INVALID_VALUE")
+          string.format(
+            "rtpmap clock rate %s Hz is out of scope (ST 2110-30 §6.1 permits 44100, 48000, 96000)",
+            tostring(clock_rate)),
+          mpath, "rtpmap", "ST 2110-30 §6.1", "INVALID_VALUE")
       end
       -- Channel count is required in ST 2110-30 rtpmap and must be 1-16 (§7.1).
       local ch_s = (rtpmap.value or ""):match("^%d+%s+%S+/%d+/(%d+)$")
@@ -1258,11 +1291,32 @@ function st2110.validate(doc)
       end
       -- Validate a=ptime if present (ST 2110-30 §7.2 recommends ptime=1 ms).
       local ptime_attr = find_attr(mattrs, "ptime")
+      local ptime_ms
       if ptime_attr then
-        local n = tonumber(ptime_attr.value or "")
-        if not n or n <= 0 then
+        ptime_ms = tonumber(ptime_attr.value or "")
+        if not ptime_ms or ptime_ms <= 0 then
           return attr_err("invalid a=ptime value (expected positive number)",
             mpath, "ptime", "ST 2110-30 §7.2", "INVALID_VALUE")
+        end
+      end
+      -- Packet payload fit (ST 2110-10 §6.4 + ST 2110-30 §6.2.2). When ptime is
+      -- known, verify channels × samples-per-packet × bytes-per-sample fits in
+      -- the available UDP payload (MAXUDP if signaled, else the 1460 Standard
+      -- Limit). RTP fixed header (12 B) is subtracted from the UDP payload.
+      if ptime_ms then
+        local bps = (enc == "L16" and 2) or (enc == "L24" and 3) or (enc == "AM824" and 4)
+        if bps then
+          local samples_per_packet = clock_rate * ptime_ms / 1000
+          local maxudp = tonumber(tostring(params["MAXUDP"] or "")) or 1460
+          local rtp_payload_limit = maxudp - 12
+          local needed = ch * samples_per_packet * bps
+          if needed > rtp_payload_limit then
+            return attr_err(
+              string.format(
+                "audio packet RTP payload %d B (%d ch × %g samples × %d B) exceeds limit %d B (UDP %d − RTP 12); raise MAXUDP or reduce ptime/channels",
+                needed, ch, samples_per_packet, bps, rtp_payload_limit, maxudp),
+              mpath, "fmtp", "ST 2110-10 §6.4", "INVALID_VALUE")
+          end
         end
       end
       local co = params["channel-order"]
@@ -1317,9 +1371,11 @@ function st2110.validate(doc)
     return src, dst
   end
   local dup_ok, dup_err = each_dup_group(doc, "ST 2110-10 §8.5", function(legs)
-    local base_type = legs[1].block.media
+    local base_type   = legs[1].block.media
     local base_rtpmap = find_attr(legs[1].block.attributes or {}, "rtpmap")
+    local base_fmtp   = find_attr(legs[1].block.attributes or {}, "fmtp")
     local base_enc, base_rate = rtpmap_parse((base_rtpmap and base_rtpmap.value) or "")
+    local base_pt   = (base_rtpmap and base_rtpmap.value or ""):match("^(%d+)")
     local base_src, base_dst = leg_addrs(legs[1].block)
     for j = 2, #legs do
       if legs[j].block.media ~= base_type then
@@ -1333,6 +1389,26 @@ function st2110.validate(doc)
       if enc ~= base_enc or rate ~= base_rate then
         return nil, errors.new(
           "a=group:DUP legs must have the same rtpmap encoding and clock rate",
+          { field_path = "session.attributes[group]",
+            spec_ref = "ST 2110-10 §8.5", code = "INVALID_VALUE" })
+      end
+      -- ST 2022-7 §6: DUP legs SHALL use the same RTP payload type number.
+      local pt = (rm and rm.value or ""):match("^(%d+)")
+      if pt ~= base_pt then
+        return nil, errors.new(
+          "a=group:DUP legs must use the same RTP payload type number (ST 2022-7 §6)",
+          { field_path = "session.attributes[group]",
+            spec_ref = "ST 2110-10 §8.5", code = "INVALID_VALUE" })
+      end
+      -- Identical RTP payload data (ST 2022-7 §6) implies identical essence
+      -- parameters. Compare full fmtp value strings; differences in any
+      -- essence field (resolution, sampling, channel-order, etc.) fail.
+      local fm = find_attr(legs[j].block.attributes or {}, "fmtp")
+      local base_fmtp_v = base_fmtp and base_fmtp.value or ""
+      local leg_fmtp_v  = fm and fm.value or ""
+      if base_fmtp_v ~= leg_fmtp_v then
+        return nil, errors.new(
+          "a=group:DUP legs must have identical fmtp essence parameters (ST 2022-7 §6)",
           { field_path = "session.attributes[group]",
             spec_ref = "ST 2110-10 §8.5", code = "INVALID_VALUE" })
       end
@@ -1590,7 +1666,7 @@ function ipmx.validate(doc)
   if #rtp_media > 0 then
     local filtered = { version = doc.version, origin = doc.origin,
                        session = doc.session, media = rtp_media }
-    local ok, e = st2110.validate(filtered)
+    local ok, e = st2110.validate(filtered, { ipmx_layer = true })
     if not ok then return nil, e end
   else
     local ok, e = validate.sdp(doc)
@@ -1679,17 +1755,31 @@ function ipmx.validate(doc)
   end
 
   -- TR-10-14 §14: every USB block (m=application TCP usb) must declare a=setup:passive.
+  -- "The SDP shall follow RFC 4145 with the following restrictions" — RFC 4145
+  -- defines TCP-based media transport and does not use RTP-specific attributes
+  -- (rtpmap, fmtp, mediaclk, ts-refclk). Reject those on USB blocks.
+  local USB_FORBIDDEN_ATTRS = {
+    rtpmap = true, fmtp = true, mediaclk = true, ["ts-refclk"] = true,
+  }
   for i, m in ipairs(doc.media) do
     if usb_set[i] then
+      local mpath = string.format("media[%d]", i)
       local setup = find_attr(m.attributes or {}, "setup")
       if not setup then
         return attr_err("missing required attribute 'setup' for USB block",
-          string.format("media[%d]", i), "setup", "TR-10-14 §14")
+          mpath, "setup", "TR-10-14 §14")
       end
       if setup.value ~= "passive" then
         return attr_err(
           "a=setup must be 'passive' for USB blocks (got '" .. tostring(setup.value) .. "')",
-          string.format("media[%d]", i), "setup", "TR-10-14 §14", "INVALID_VALUE")
+          mpath, "setup", "TR-10-14 §14", "INVALID_VALUE")
+      end
+      for _, a in ipairs(m.attributes or {}) do
+        if USB_FORBIDDEN_ATTRS[a.name] then
+          return attr_err(
+            "a=" .. a.name .. " is not permitted on a USB block (TCP transport, RFC 4145)",
+            mpath, a.name, "TR-10-14 §14", "INVALID_VALUE")
+        end
       end
     end
   end
