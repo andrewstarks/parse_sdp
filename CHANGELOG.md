@@ -9,6 +9,19 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 
+### Added (M20 — validation audit and gap closure)
+
+- ST 2110-30 channel count (§7.1): the third component of `a=rtpmap` (e.g. `/8` in `L24/48000/8`) is now required and validated as an integer in the range 1–16; missing or out-of-range values are rejected
+- ST 2110-30 `a=ptime` format validation (§7.2): when present, the value must be a positive number; zero and non-numeric values are rejected
+- ST 2110: `a=rtpmap` and `a=fmtp` payload type consistency (ST 2110-10 §7): the numeric payload type at the start of each attribute's value must match; a mismatch is now rejected
+- ts-refclk `ntp=` address format validation (LPEG): the address after `ntp=` is now validated against IPv4 dotted-decimal, IPv6, and hostname formats; invalid strings are rejected
+- IPMX FEC: `FEC_ADD_LATENCY_VIDEO` and `FEC_ADD_LATENCY_AUDIO` now require `FECPROFILE` to also be present in the same `a=fmtp`; specifying a latency parameter without `FECPROFILE` is rejected
+
+### Tests (M20)
+
+- `spec/st2110_spec.lua`: 12 new tests — rtpmap/fmtp PT mismatch (match accepted, mismatch rejected); ST 2110-30 channel count (1/8/16 accepted; 0, 17, missing rejected); ST 2110-30 ptime (absent OK, 1/20 accepted; 0 and non-numeric rejected); CMAX=0 rejected; ts-refclk PTP GMID wrong octet count (6 and 9 octets rejected); ts-refclk ntp= LPEG (valid IPv4, hostname, single-label, IPv6 accepted; `not@valid!` and hyphen-prefix label rejected)
+- `spec/ipmx_spec.lua`: 8 new tests — `protocol=RTP_KV` accepted; non-hex `key_generator`, `key_version`, `key_id` each rejected; `FEC_ADD_LATENCY_AUDIO=notanumber` rejected; `FEC_ADD_LATENCY_VIDEO` without FECPROFILE rejected; `FEC_ADD_LATENCY_AUDIO` without FECPROFILE rejected; `FEC_ADD_LATENCY_VIDEO` with FECPROFILE accepted
+
 ### Added
 
 - M18: ST 2110-20 fmtp value validation — all nine required `fmtp` parameters (`sampling`, `width`, `height`, `exactframerate`, `depth`, `TCS`, `colorimetry`, `PM`, `SSN`) are now validated for both presence and value format per ST 2110-20 §7.2

@@ -756,4 +756,119 @@ describe("IPMX validation", function()
       assert.is_table(doc)
     end)
   end)
+
+  -- ── a=privacy protocol=RTP_KV (TR-10-13 §13) ─────────────────────────────────
+
+  describe("a=privacy protocol=RTP_KV", function()
+    it("accepts protocol=RTP_KV", function()
+      local text = base_ipmx_sdp({
+        "a=privacy: protocol=RTP_KV; mode=AES-128-CTR; iv=0102030405060708090a0b0c0d0e0f10; key_generator=aabb; key_version=01; key_id=dead",
+      })
+      local doc = sdp.parse(text)
+      assert.is_table(doc)
+      local ok, err = doc:validate("ipmx")
+      assert.is_nil(err)
+      assert.equal(true, ok)
+    end)
+  end)
+
+  -- ── a=privacy non-hex fields (TR-10-13 §13) ───────────────────────────────────
+
+  describe("a=privacy non-hex field rejection (TR-10-13 §13)", function()
+    local function privacy_with(overrides)
+      local fields = {
+        protocol      = overrides.protocol      or "RTP",
+        mode          = overrides.mode          or "AES-128-CTR",
+        iv            = overrides.iv            or "0102030405060708090a0b0c0d0e0f10",
+        key_generator = overrides.key_generator or "aabb",
+        key_version   = overrides.key_version   or "01",
+        key_id        = overrides.key_id        or "dead",
+      }
+      local val = string.format(
+        "a=privacy: protocol=%s; mode=%s; iv=%s; key_generator=%s; key_version=%s; key_id=%s",
+        fields.protocol, fields.mode, fields.iv,
+        fields.key_generator, fields.key_version, fields.key_id)
+      return base_ipmx_sdp({ val })
+    end
+
+    it("rejects non-hex key_generator", function()
+      local doc = sdp.parse(privacy_with({ key_generator = "not-hex!" }))
+      assert.is_table(doc)
+      local ok, err = doc:validate("ipmx")
+      assert.is_nil(ok)
+      assert.is_table(err)
+      assert.matches("key_generator", err.message)
+    end)
+
+    it("rejects non-hex key_version", function()
+      local doc = sdp.parse(privacy_with({ key_version = "zz" }))
+      assert.is_table(doc)
+      local ok, err = doc:validate("ipmx")
+      assert.is_nil(ok)
+      assert.is_table(err)
+      assert.matches("key_version", err.message)
+    end)
+
+    it("rejects non-hex key_id", function()
+      local doc = sdp.parse(privacy_with({ key_id = "xyz!" }))
+      assert.is_table(doc)
+      local ok, err = doc:validate("ipmx")
+      assert.is_nil(ok)
+      assert.is_table(err)
+      assert.matches("key_id", err.message)
+    end)
+  end)
+
+  -- ── FEC_ADD_LATENCY_AUDIO invalid value ───────────────────────────────────────
+
+  describe("FEC_ADD_LATENCY_AUDIO invalid value (TR-10-6 §7.6)", function()
+    it("rejects non-integer FEC_ADD_LATENCY_AUDIO", function()
+      local text = base_ipmx_sdp({}, {},
+        "a=fmtp:96 sampling=YCbCr-4:2:2; width=1920; height=1080; exactframerate=25; depth=10; TCS=SDR; colorimetry=BT709; PM=2110GPM; SSN=ST2110-20:2022; TP=2110TPN; FECPROFILE=profile-a; FEC_ADD_LATENCY_AUDIO=notanumber; IPMX")
+      local doc = sdp.parse(text)
+      assert.is_table(doc)
+      local ok, err = doc:validate("ipmx")
+      assert.is_nil(ok)
+      assert.is_table(err)
+      assert.matches("FEC_ADD_LATENCY_AUDIO", err.message)
+      assert.matches("TR%-10%-6", err.spec_ref)
+    end)
+  end)
+
+  -- ── FEC_ADD_LATENCY_* without FECPROFILE ──────────────────────────────────────
+
+  describe("FEC_ADD_LATENCY requires FECPROFILE (TR-10-6 §7.6)", function()
+    it("rejects FEC_ADD_LATENCY_VIDEO without FECPROFILE", function()
+      local text = base_ipmx_sdp({}, {},
+        "a=fmtp:96 sampling=YCbCr-4:2:2; width=1920; height=1080; exactframerate=25; depth=10; TCS=SDR; colorimetry=BT709; PM=2110GPM; SSN=ST2110-20:2022; TP=2110TPN; FEC_ADD_LATENCY_VIDEO=1000; IPMX")
+      local doc = sdp.parse(text)
+      assert.is_table(doc)
+      local ok, err = doc:validate("ipmx")
+      assert.is_nil(ok)
+      assert.is_table(err)
+      assert.matches("FEC_ADD_LATENCY_VIDEO", err.message)
+      assert.matches("FECPROFILE", err.message)
+      assert.matches("TR%-10%-6", err.spec_ref)
+    end)
+
+    it("rejects FEC_ADD_LATENCY_AUDIO without FECPROFILE", function()
+      local text = base_ipmx_sdp({}, {},
+        "a=fmtp:96 sampling=YCbCr-4:2:2; width=1920; height=1080; exactframerate=25; depth=10; TCS=SDR; colorimetry=BT709; PM=2110GPM; SSN=ST2110-20:2022; TP=2110TPN; FEC_ADD_LATENCY_AUDIO=500; IPMX")
+      local doc = sdp.parse(text)
+      assert.is_table(doc)
+      local ok, err = doc:validate("ipmx")
+      assert.is_nil(ok)
+      assert.is_table(err)
+      assert.matches("FEC_ADD_LATENCY_AUDIO", err.message)
+      assert.matches("FECPROFILE", err.message)
+    end)
+
+    it("accepts FEC_ADD_LATENCY_VIDEO alongside FECPROFILE=profile-a", function()
+      local text = base_ipmx_sdp({}, {},
+        "a=fmtp:96 sampling=YCbCr-4:2:2; width=1920; height=1080; exactframerate=25; depth=10; TCS=SDR; colorimetry=BT709; PM=2110GPM; SSN=ST2110-20:2022; TP=2110TPN; FECPROFILE=profile-a; FEC_ADD_LATENCY_VIDEO=1000; IPMX")
+      local doc, err = sdp.parse(text, "ipmx")
+      assert.is_nil(err)
+      assert.is_table(doc)
+    end)
+  end)
 end)

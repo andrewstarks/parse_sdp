@@ -1286,4 +1286,288 @@ describe("ST 2110 validation", function()
       assert.matches("DIT", err.message)
     end)
   end)
+
+  -- ── rtpmap / fmtp payload type consistency ────────────────────────────────────
+
+  describe("rtpmap and fmtp payload type consistency (ST 2110-10 §7)", function()
+    local VALID_FMTP = "sampling=YCbCr-4:2:2; width=1920; height=1080; exactframerate=25; depth=10; TCS=SDR; colorimetry=BT709; PM=2110GPM; SSN=ST2110-20:2022"
+
+    local function video_with_pts(rtpmap_pt, fmtp_pt)
+      return table.concat({
+        "v=0",
+        "o=- 1234567890 1 IN IP4 192.168.1.1",
+        "s=ST2110 Video",
+        "t=0 0",
+        "a=ts-refclk:ptp=IEEE1588-2008:00-11-22-FF-FE-33-44-55:0",
+        "m=video 5000 RTP/AVP " .. rtpmap_pt,
+        "c=IN IP4 239.100.0.1/64",
+        "a=rtpmap:" .. rtpmap_pt .. " raw/90000",
+        "a=fmtp:" .. fmtp_pt .. " " .. VALID_FMTP,
+        "a=mediaclk:direct=0",
+      }, "\r\n")
+    end
+
+    it("accepts matching payload types", function()
+      local doc, err = sdp.parse(video_with_pts(96, 96), "st2110")
+      assert.is_nil(err)
+      assert.is_table(doc)
+    end)
+
+    it("rejects when fmtp PT does not match rtpmap PT", function()
+      local doc = sdp.parse(video_with_pts(96, 97))
+      assert.is_table(doc)
+      local ok, err = doc:validate("st2110")
+      assert.is_nil(ok)
+      assert.is_table(err)
+      assert.matches("payload type", err.message)
+      assert.equal("ST 2110-10 §7", err.spec_ref)
+    end)
+  end)
+
+  -- ── ST 2110-30 channel count ──────────────────────────────────────────────────
+
+  describe("ST 2110-30 channel count (§7.1)", function()
+    local function audio_sdp_ch(ch)
+      local rtpmap = ch ~= nil and ("a=rtpmap:97 L24/48000/" .. ch) or "a=rtpmap:97 L24/48000"
+      return table.concat({
+        "v=0",
+        "o=- 1234567890 1 IN IP4 192.168.1.1",
+        "s=ST2110 Audio",
+        "t=0 0",
+        "a=ts-refclk:ptp=IEEE1588-2008:00-11-22-FF-FE-33-44-55:0",
+        "m=audio 5010 RTP/AVP 97",
+        "c=IN IP4 239.100.0.2/64",
+        rtpmap,
+        "a=fmtp:97 channel-order=SMPTE2110.(ST)",
+        "a=mediaclk:direct=0",
+      }, "\r\n")
+    end
+
+    for _, ch in ipairs({ 1, 8, 16 }) do
+      it("accepts channel count " .. ch, function()
+        local doc, err = sdp.parse(audio_sdp_ch(ch), "st2110")
+        assert.is_nil(err)
+        assert.is_table(doc)
+      end)
+    end
+
+    it("rejects channel count 0", function()
+      local doc = sdp.parse(audio_sdp_ch(0))
+      assert.is_table(doc)
+      local ok, err = doc:validate("st2110")
+      assert.is_nil(ok)
+      assert.is_table(err)
+      assert.matches("channel count", err.message)
+      assert.equal("ST 2110-30 §7.1", err.spec_ref)
+    end)
+
+    it("rejects channel count 17", function()
+      local doc = sdp.parse(audio_sdp_ch(17))
+      assert.is_table(doc)
+      local ok, err = doc:validate("st2110")
+      assert.is_nil(ok)
+      assert.is_table(err)
+      assert.matches("channel count", err.message)
+    end)
+
+    it("rejects rtpmap with no channel count", function()
+      local doc = sdp.parse(audio_sdp_ch(nil))
+      assert.is_table(doc)
+      local ok, err = doc:validate("st2110")
+      assert.is_nil(ok)
+      assert.is_table(err)
+      assert.matches("channel count", err.message)
+      assert.equal("ST 2110-30 §7.1", err.spec_ref)
+    end)
+  end)
+
+  -- ── ST 2110-30 a=ptime ────────────────────────────────────────────────────────
+
+  describe("ST 2110-30 a=ptime (§7.2)", function()
+    local function audio_with_ptime(ptime_val)
+      local lines = {
+        "v=0",
+        "o=- 1234567890 1 IN IP4 192.168.1.1",
+        "s=ST2110 Audio",
+        "t=0 0",
+        "a=ts-refclk:ptp=IEEE1588-2008:00-11-22-FF-FE-33-44-55:0",
+        "m=audio 5010 RTP/AVP 97",
+        "c=IN IP4 239.100.0.2/64",
+        "a=rtpmap:97 L24/48000/8",
+        "a=fmtp:97 channel-order=SMPTE2110.(ST)",
+        "a=mediaclk:direct=0",
+      }
+      if ptime_val ~= nil then lines[#lines + 1] = "a=ptime:" .. ptime_val end
+      return table.concat(lines, "\r\n")
+    end
+
+    it("accepts absence of a=ptime (optional)", function()
+      local doc, err = sdp.parse(audio_with_ptime(nil), "st2110")
+      assert.is_nil(err)
+      assert.is_table(doc)
+    end)
+
+    it("accepts a=ptime:1", function()
+      local doc, err = sdp.parse(audio_with_ptime(1), "st2110")
+      assert.is_nil(err)
+      assert.is_table(doc)
+    end)
+
+    it("accepts a non-1 positive ptime", function()
+      local doc, err = sdp.parse(audio_with_ptime(20), "st2110")
+      assert.is_nil(err)
+      assert.is_table(doc)
+    end)
+
+    it("rejects a=ptime:0", function()
+      local doc = sdp.parse(audio_with_ptime(0))
+      assert.is_table(doc)
+      local ok, err = doc:validate("st2110")
+      assert.is_nil(ok)
+      assert.is_table(err)
+      assert.matches("ptime", err.message)
+      assert.equal("ST 2110-30 §7.2", err.spec_ref)
+    end)
+
+    it("rejects a non-numeric ptime", function()
+      local doc = sdp.parse(audio_with_ptime("notanumber"))
+      assert.is_table(doc)
+      local ok, err = doc:validate("st2110")
+      assert.is_nil(ok)
+      assert.is_table(err)
+      assert.matches("ptime", err.message)
+    end)
+  end)
+
+  -- ── ST 2110-20 CMAX=0 rejection ───────────────────────────────────────────────
+
+  describe("ST 2110-20 CMAX=0 rejection", function()
+    local BASE = "sampling=YCbCr-4:2:2; width=1920; height=1080; exactframerate=25; depth=10; TCS=SDR; colorimetry=BT709; PM=2110GPM; SSN=ST2110-20:2022"
+
+    it("rejects CMAX=0 (positive integer required)", function()
+      local text = table.concat({
+        "v=0",
+        "o=- 1234567890 1 IN IP4 192.168.1.1",
+        "s=ST2110 Video",
+        "t=0 0",
+        "a=ts-refclk:ptp=IEEE1588-2008:00-11-22-FF-FE-33-44-55:0",
+        "m=video 5000 RTP/AVP 96",
+        "c=IN IP4 239.100.0.1/64",
+        "a=rtpmap:96 raw/90000",
+        "a=fmtp:96 " .. BASE .. "; CMAX=0",
+        "a=mediaclk:direct=0",
+      }, "\r\n")
+      local doc = sdp.parse(text)
+      assert.is_table(doc)
+      local ok, err = doc:validate("st2110")
+      assert.is_nil(ok)
+      assert.is_table(err)
+      assert.matches("CMAX", err.message)
+      assert.equal("ST 2110-20 §7.2", err.spec_ref)
+    end)
+  end)
+
+  -- ── ts-refclk ptp= GMID octet count ──────────────────────────────────────────
+
+  describe("ts-refclk ptp= GMID octet count", function()
+    local function with_ptp(gmid)
+      return table.concat({
+        "v=0",
+        "o=- 1234567890 1 IN IP4 192.168.1.1",
+        "s=ST2110 Video",
+        "t=0 0",
+        "m=video 5000 RTP/AVP 96",
+        "c=IN IP4 239.100.0.1/64",
+        "a=rtpmap:96 raw/90000",
+        "a=fmtp:96 sampling=YCbCr-4:2:2; width=1920; height=1080; exactframerate=25; depth=10; TCS=SDR; colorimetry=BT709; PM=2110GPM; SSN=ST2110-20:2022",
+        "a=mediaclk:direct=0",
+        "a=ts-refclk:ptp=IEEE1588-2008:" .. gmid,
+      }, "\r\n")
+    end
+
+    it("rejects ptp= GMID with 6 octets instead of 8", function()
+      local doc = sdp.parse(with_ptp("00-11-22-33-44-55"))
+      assert.is_table(doc)
+      local ok, err = doc:validate("st2110")
+      assert.is_nil(ok)
+      assert.is_table(err)
+      assert.matches("ts%-refclk", err.message)
+    end)
+
+    it("rejects ptp= GMID with 9 octets instead of 8", function()
+      local doc = sdp.parse(with_ptp("00-11-22-33-44-55-66-77-88"))
+      assert.is_table(doc)
+      local ok, err = doc:validate("st2110")
+      assert.is_nil(ok)
+      assert.is_table(err)
+      assert.matches("ts%-refclk", err.message)
+    end)
+  end)
+
+  -- ── ts-refclk ntp= address format (LPEG) ─────────────────────────────────────
+
+  describe("ts-refclk ntp= address format (LPEG)", function()
+    local function with_ntp(addr)
+      return table.concat({
+        "v=0",
+        "o=- 1234567890 1 IN IP4 192.168.1.1",
+        "s=ST2110 Video",
+        "t=0 0",
+        "m=video 5000 RTP/AVP 96",
+        "c=IN IP4 239.100.0.1/64",
+        "a=rtpmap:96 raw/90000",
+        "a=fmtp:96 sampling=YCbCr-4:2:2; width=1920; height=1080; exactframerate=25; depth=10; TCS=SDR; colorimetry=BT709; PM=2110GPM; SSN=ST2110-20:2022",
+        "a=mediaclk:direct=0",
+        "a=ts-refclk:ntp=" .. addr,
+      }, "\r\n")
+    end
+
+    it("accepts a valid IPv4 address", function()
+      local doc, err = sdp.parse(with_ntp("10.0.0.1"), "st2110")
+      assert.is_nil(err)
+      assert.is_table(doc)
+    end)
+
+    it("accepts IPv4 with max octet values (255.255.255.255)", function()
+      local doc, err = sdp.parse(with_ntp("255.255.255.255"), "st2110")
+      assert.is_nil(err)
+      assert.is_table(doc)
+    end)
+
+    it("accepts a fully-qualified hostname", function()
+      local doc, err = sdp.parse(with_ntp("time.google.com"), "st2110")
+      assert.is_nil(err)
+      assert.is_table(doc)
+    end)
+
+    it("accepts a single-label hostname", function()
+      local doc, err = sdp.parse(with_ntp("ntpserver"), "st2110")
+      assert.is_nil(err)
+      assert.is_table(doc)
+    end)
+
+    it("accepts an IPv6 address", function()
+      local doc, err = sdp.parse(with_ntp("2001:db8::1"), "st2110")
+      assert.is_nil(err)
+      assert.is_table(doc)
+    end)
+
+    it("rejects a token with special characters", function()
+      local doc = sdp.parse(with_ntp("not@valid!"))
+      assert.is_table(doc)
+      local ok, err = doc:validate("st2110")
+      assert.is_nil(ok)
+      assert.is_table(err)
+      assert.matches("ts%-refclk", err.message)
+    end)
+
+    it("rejects a hostname label starting with a hyphen", function()
+      local doc = sdp.parse(with_ntp("-badhost.com"))
+      assert.is_table(doc)
+      local ok, err = doc:validate("st2110")
+      assert.is_nil(ok)
+      assert.is_table(err)
+      assert.matches("ts%-refclk", err.message)
+    end)
+  end)
 end)

@@ -429,13 +429,36 @@ local function rtpmap_parse(value)
   return enc, tonumber(rate_s)
 end
 
+-- LPEG patterns for ts-refclk ntp= address format validation.
+local _ntp_octet =
+  (P("25") * R("05")) +
+  (P("2") * R("04") * R("09")) +
+  (P("1") * R("09") * R("09")) +
+  (R("19") * R("09")) +
+  R("09")
+local _ntp_ipv4 =
+  _ntp_octet * P(".") * _ntp_octet * P(".") * _ntp_octet * P(".") * _ntp_octet * P(-1)
+local _ntp_alnum    = R("az", "AZ", "09")
+-- Label: alnum followed by zero-or-more (optional-hyphens then alnum).
+-- Possessive-safe: P("-")^0 only eats hyphens; the trailing alnum terminates each group
+-- cleanly so the outer ^0 never over-consumes.
+local _ntp_label    = _ntp_alnum * (P("-")^0 * _ntp_alnum)^0
+local _ntp_hostname = _ntp_label * (P(".") * _ntp_label)^0 * P(-1)
+-- IPv6: optional leading hex digits, then a required colon, then the rest.
+-- The required P(":") after ^0 prevents _ntp_hex^0 from eating the colon possessively.
+local _ntp_hex      = R("09", "af", "AF")
+local _ntp_ipv6     = (_ntp_hex^0 * P(":")) * (_ntp_hex + P(":") + P("."))^0 * P(-1)
+local _ntp_addr_pat = _ntp_ipv4 + _ntp_ipv6 + _ntp_hostname
+
 -- Validate the value of a ts-refclk attribute per ST 2110-10 §7.2.
 -- Returns true on success, or nil + error message string on failure.
 local function valid_tsrefclk(value)
   if value == "gps" or value == "gal" or value == "glonass" then return true end
   local addr = value:match("^ntp=(.+)$")
   if addr then
-    if addr:match("%s") then return nil, "invalid ts-refclk ntp address" end
+    if not _ntp_addr_pat:match(addr) then
+      return nil, "invalid ts-refclk ntp address"
+    end
     return true
   end
   local mac = value:match("^localmac=(.+)$")
@@ -647,6 +670,15 @@ function st2110.validate(doc)
       return attr_err("missing required attribute 'fmtp'", mpath, "fmtp", "ST 2110-10 §7")
     end
 
+    local rtp_pt  = (rtpmap.value or ""):match("^(%d+)")
+    local fmtp_pt = (fmtp.value  or ""):match("^(%d+)")
+    if rtp_pt ~= fmtp_pt then
+      return attr_err(
+        string.format("fmtp payload type %s does not match rtpmap payload type %s",
+          tostring(fmtp_pt), tostring(rtp_pt)),
+        mpath, "fmtp", "ST 2110-10 §7", "INVALID_VALUE")
+    end
+
     local enc, clock_rate = rtpmap_parse(rtpmap.value or "")
 
     local params, fmtp_err = fmtp_params(fmtp.value or "")
@@ -781,6 +813,28 @@ function st2110.validate(doc)
         return attr_err(
           string.format("rtpmap clock rate %s is not a known audio sample rate", tostring(clock_rate)),
           mpath, "rtpmap", "ST 2110-30 §7.1", "INVALID_VALUE")
+      end
+      -- Channel count is required in ST 2110-30 rtpmap and must be 1-16 (§7.1).
+      local ch_s = (rtpmap.value or ""):match("^%d+%s+%S+/%d+/(%d+)$")
+      if not ch_s then
+        return attr_err(
+          "rtpmap missing channel count for ST 2110-30 audio (expected encoding/rate/channels)",
+          mpath, "rtpmap", "ST 2110-30 §7.1")
+      end
+      local ch = tonumber(ch_s)
+      if not ch or ch < 1 or ch > 16 then
+        return attr_err(
+          string.format("rtpmap channel count %s is not valid for ST 2110-30 (must be 1-16)", ch_s),
+          mpath, "rtpmap", "ST 2110-30 §7.1", "INVALID_VALUE")
+      end
+      -- Validate a=ptime if present (ST 2110-30 §7.2 recommends ptime=1 ms).
+      local ptime_attr = find_attr(mattrs, "ptime")
+      if ptime_attr then
+        local n = tonumber(ptime_attr.value or "")
+        if not n or n <= 0 then
+          return attr_err("invalid a=ptime value (expected positive number)",
+            mpath, "ptime", "ST 2110-30 §7.2", "INVALID_VALUE")
+        end
       end
       local co = params["channel-order"]
       if not co then
@@ -987,6 +1041,11 @@ function ipmx.validate(doc)
         end
         for _, lat in ipairs({ "FEC_ADD_LATENCY_VIDEO", "FEC_ADD_LATENCY_AUDIO" }) do
           if params[lat] then
+            if not params["FECPROFILE"] then
+              return attr_err(
+                lat .. " requires FECPROFILE to also be present",
+                mpath, "fmtp", "TR-10-6 §7.6")
+            end
             local n = tonumber(params[lat])
             if not n or n < 0 or n ~= math.floor(n) then
               return attr_err(

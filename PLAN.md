@@ -517,6 +517,58 @@ validated when present. ST 2110-30 rtpmap encoding name is validated. ST 2110-40
 
 ---
 
+### M20 — Validation gaps closed (audit 2026-05-13)
+
+**Done when:** All gaps identified in the M19 post-commit audit are addressed: new validation
+added for ST 2110-30 channel count, `a=ptime` format, rtpmap/fmtp PT consistency, and
+`FEC_ADD_LATENCY_*`/`FECPROFILE` dependency; missing tests added for previously validated
+but untested code paths.
+
+**New validation in `st2110.validate`:**
+
+- [x] `a=rtpmap` PT must match `a=fmtp` PT (applies to all media types; ST 2110-10 §7)
+- [x] ST 2110-30 audio: channel count field required in rtpmap (`encoding/rate/channels`);
+  must be an integer 1–16 per ST 2110-30 §7.1
+- [x] ST 2110-30 audio: `a=ptime` — if present, value must be a positive number per
+  RFC 4566 / ST 2110-30 §7.2 (absence is fine; recommendation of 1 ms is not enforced)
+
+**New validation in `ipmx.validate`:**
+
+- [x] `FEC_ADD_LATENCY_VIDEO` and `FEC_ADD_LATENCY_AUDIO` require `FECPROFILE` to also be
+  present (TR-10-6 §7.6); latency params are meaningless without a FEC profile
+
+**Additional validation in `valid_tsrefclk`:**
+
+- [x] `ntp=` address: LPEG pattern validates that the address is a well-formed IPv4 address
+  (`N.N.N.N`, each octet 0–255), an IPv6 address (hex digits, colons, and dots), or an
+  RFC 1123 hostname (dot-separated labels of alphanumeric/hyphen characters); plainly
+  malformed values (empty, non-address tokens) are rejected
+
+**New tests in `spec/st2110_spec.lua`:**
+
+- rtpmap PT ≠ fmtp PT → error
+- ST 2110-30 channel count: valid (1, 8, 16); missing → error; out-of-range (0, 17) → error
+- `a=ptime`: valid integer → accepted; invalid (non-numeric, zero) → error; absent → accepted
+- `CMAX=0` → error (positive int required)
+- PTP GMID with wrong octet count (e.g. 6 instead of 8) → error
+- `ntp=` with valid IPv4 → accepted
+- `ntp=` with valid hostname → accepted
+- `ntp=` with valid IPv6 address → accepted
+- `ntp=` with empty value → error
+- `ntp=` with malformed token (no dots, not hex+colon) → error
+
+**New tests in `spec/ipmx_spec.lua`:**
+
+- `a=privacy` with `protocol=RTP_KV` → accepted
+- `a=privacy` non-hex `key_generator` → error
+- `a=privacy` non-hex `key_version` → error
+- `a=privacy` non-hex `key_id` → error
+- `FEC_ADD_LATENCY_AUDIO=notanumber` → error
+- `FEC_ADD_LATENCY_VIDEO` without `FECPROFILE` → error
+- `FEC_ADD_LATENCY_AUDIO` without `FECPROFILE` → error
+
+---
+
 ## Commit Gates
 
 Before any commit:

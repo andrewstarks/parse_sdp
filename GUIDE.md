@@ -440,9 +440,9 @@ When `a=group:DUP <mid1> <mid2> …` is present at session level, the library va
 
 | Attribute | Requirement |
 | --- | --- |
-| `a=ts-refclk` | Required. Accepted: `ptp=<version>:<gmid>[:<domain>]`; `localmac=<mac>`; `ntp=<addr>`; `gps`; `gal`; `glonass` |
+| `a=ts-refclk` | Required. Accepted: `ptp=<version>:<gmid>[:<domain>]`; `localmac=<mac>`; `ntp=<addr>` (addr must be a valid IPv4, IPv6, or hostname); `gps`; `gal`; `glonass` |
 | `a=mediaclk` | Required. Accepted: `direct=<integer>` (sample offset, may be negative); `sender` |
-| `a=rtpmap` | Required. Clock rate validated: must be 90000 for video, `smpte291`, and `ST2110-41`; audio clock rate validated against known rates. Audio encoding name validated: must be `L16`, `L24`, or `AM824` |
+| `a=rtpmap` | Required. Clock rate validated: must be 90000 for video, `smpte291`, and `ST2110-41`; audio clock rate validated against known rates. Audio encoding name validated: must be `L16`, `L24`, or `AM824`. Payload type must match the payload type in `a=fmtp` |
 | `a=fmtp` | Required. Key=value pairs validated per sub-standard |
 
 ### ST 2110-20 (video) `fmtp` parameters
@@ -479,7 +479,11 @@ Bare-flag parameters with no value (`interlace`, `segmented`) are accepted witho
 
 The `a=rtpmap` encoding name is validated: must be `L16`, `L24`, or `AM824`. The clock
 rate is validated against known audio sample rates: 32000, 44100, 48000, 88200, 96000,
-176400, 192000 Hz. `channel-order` is validated for presence and value format.
+176400, 192000 Hz. The channel count (third `/`-separated component in the rtpmap value,
+e.g. `L24/48000/8`) is required and must be an integer in the range 1–16
+(ST 2110-30 §7.1). `channel-order` is validated for presence and value format.
+
+When `a=ptime` is present, its value must be a positive number (ST 2110-30 §7.2).
 
 | Parameter | Example | Valid values |
 | --- | --- | --- |
@@ -577,8 +581,8 @@ When the `FECPROFILE` key appears in a media block's `a=fmtp`, the library valid
 | Parameter | Validation |
 | --- | --- |
 | `FECPROFILE` | Must be `profile-a` |
-| `FEC_ADD_LATENCY_VIDEO` | Non-negative integer (microseconds), if present |
-| `FEC_ADD_LATENCY_AUDIO` | Non-negative integer (microseconds), if present |
+| `FEC_ADD_LATENCY_VIDEO` | Non-negative integer (microseconds); `FECPROFILE` must also be present |
+| `FEC_ADD_LATENCY_AUDIO` | Non-negative integer (microseconds); `FECPROFILE` must also be present |
 
 #### ST 2022-7 DUP group — privacy consistency (TR-10-13 §13)
 
