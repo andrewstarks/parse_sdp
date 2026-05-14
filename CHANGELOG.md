@@ -9,6 +9,43 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 
+### Added (M24 — validation completeness audit 2026-05-13, round 3)
+
+Cross-reference against ST 2110-10:2022, TR-10-0 through TR-10-16, and the IPMX profile docs surfaced 11 SHALL-level rules not yet enforced. All are now validated.
+
+**HIGH-severity (SHALL violations that previously passed):**
+
+- **`a=mediaclk:direct` offset must be 0** (ST 2110-10 §7.3, TR-10-1 §10.5): any non-zero offset (positive or negative) is rejected. Previously any signed integer was accepted.
+- **USB `a=privacy` protocol must be `USB_KV`** (TR-10-14 §14): privacy on TR-10-14 USB blocks now requires `protocol=USB_KV`; `RTP` and `RTP_KV` are rejected. The RTP allow-list (`RTP`, `RTP_KV`) is unchanged for RTP blocks.
+- **USB blocks require `a=setup:passive`** (TR-10-14 §14): every `m=application <port> TCP usb` block must declare `a=setup:passive`. `active` and `actpass` are rejected.
+- **Privacy hex parameters validated for exact bit-length** (TR-10-13 §13): `iv`=16h (64-bit), `key_generator`=32h (128-bit), `key_version`=8h (32-bit), `key_id`=16h (64-bit). Previously any non-empty hex string passed.
+
+**MEDIUM-severity gaps:**
+
+- **`b=AS` value must be a positive integer** when present on an IPMX RTP block (TR-10-7 §11). Preparatory for VBR compressed video.
+- **`a=infoframe` format validated** when present at session level (TR-10-10 §8): `<port> SSN=ST2110-41:YYYY;DIT=100100`. Port must be numeric, SSN must be `ST2110-41:<4-digit year>`, DIT must be `100100` (HDMI).
+- **PTP domain range enforced** (IEEE 1588-2008 §7.1): `ts-refclk:ptp=IEEE1588-2008:<gmid>:<domain>` — domain must be an integer 0–127.
+- **`TROFF`/`CMAX` require `TP`** (ST 2110-21 §8): presence of either parameter without a transport profile is now rejected.
+- **`a=mid` uniqueness enforced** (RFC 5888 §8.1): duplicate `mid` values within a session are rejected.
+
+**LOW-severity additions:**
+
+- **`TSMODE` and `TSDELAY` validated when present** (ST 2110-10 §8.7): `TSMODE` must be `SAMP`, `NEW`, or `PRES`; `TSDELAY` must be a non-negative integer (microseconds).
+- **`a=source-filter` format validated** when present (RFC 4570 / ST 2110-10 §8.4): `<incl|excl> IN <IP4|IP6> <dest> <src>+`.
+
+**Refactor:**
+
+- USB block detection tightened. Now distinguishes:
+  - `non_rtp_set` — any non-RTP application block (broad bypass of ST 2110 RTP-specific checks)
+  - `usb_set` — strictly `m=application <port> TCP usb` (subject to TR-10-14 rules)
+  - Previously a single `usb_set` matched any application-with-TCP-in-proto, conflating TR-10-14 USB with TCP/MSRP and other non-RTP transports.
+
+### Tests (M24)
+
+- `spec/st2110_spec.lua`: ~25 new tests covering H1 (mediaclk offset), M3 (PTP domain), M4 (TROFF/CMAX + TP), M5 (mid uniqueness), L1 (TSMODE/TSDELAY), L2 (source-filter)
+- `spec/ipmx_spec.lua`: ~22 new tests covering H2 (USB_KV protocol), H3 (USB a=setup), H4 (hex digit counts), M1 (b=AS positive), M2 (a=infoframe)
+- Existing privacy fixtures updated to use spec-correct hex digit counts (16/32/8/16); existing USB privacy tests updated to use `protocol=USB_KV` and include `a=setup:passive`
+
 ### Added (M23 — validation gap closure 2026-05-13, round 2)
 
 - **`a=group:FID` rejected at IPMX tier** (TR-10-1 §10): any session-level `a=group:FID` attribute is now rejected in IPMX mode; it is still accepted at the ST 2110 tier

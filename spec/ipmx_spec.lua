@@ -337,7 +337,7 @@ describe("IPMX validation", function()
 
   describe("a=privacy validation (TR-10-13 §13)", function()
     local VALID_PRIVACY =
-      "a=privacy: protocol=RTP; mode=AES-128-CTR; iv=0102030405060708090a0b0c0d0e0f10; key_generator=aabbccdd; key_version=01; key_id=deadbeef"
+      "a=privacy: protocol=RTP; mode=AES-128-CTR; iv=0102030405060708; key_generator=aabbccddeeff00112233445566778899; key_version=01020304; key_id=deadbeefcafebabe"
 
     it("accepts valid a=privacy at session level", function()
       local text = base_ipmx_sdp({ VALID_PRIVACY })
@@ -368,7 +368,7 @@ describe("IPMX validation", function()
       }
       for _, mode in ipairs(modes) do
         local privacy = "a=privacy: protocol=RTP; mode=" .. mode ..
-          "; iv=0102030405060708090a0b0c0d0e0f10; key_generator=aabb; key_version=01; key_id=dead"
+          "; iv=0102030405060708; key_generator=aabbccddeeff00112233445566778899; key_version=01020304; key_id=deadbeefcafebabe"
         local text = base_ipmx_sdp({ privacy })
         local doc = sdp.parse(text)
         assert.is_table(doc)
@@ -380,7 +380,7 @@ describe("IPMX validation", function()
 
     it("rejects invalid protocol value", function()
       local text = base_ipmx_sdp({
-        "a=privacy: protocol=UDP; mode=AES-128-CTR; iv=0102030405060708090a0b0c0d0e0f10; key_generator=aabb; key_version=01; key_id=dead",
+        "a=privacy: protocol=UDP; mode=AES-128-CTR; iv=0102030405060708; key_generator=aabbccddeeff00112233445566778899; key_version=01020304; key_id=deadbeefcafebabe",
       })
       local doc = sdp.parse(text)
       assert.is_table(doc)
@@ -393,7 +393,7 @@ describe("IPMX validation", function()
 
     it("rejects invalid mode value", function()
       local text = base_ipmx_sdp({
-        "a=privacy: protocol=RTP; mode=DES-56-ECB; iv=0102030405060708090a0b0c0d0e0f10; key_generator=aabb; key_version=01; key_id=dead",
+        "a=privacy: protocol=RTP; mode=DES-56-ECB; iv=0102030405060708; key_generator=aabbccddeeff00112233445566778899; key_version=01020304; key_id=deadbeefcafebabe",
       })
       local doc = sdp.parse(text)
       assert.is_table(doc)
@@ -459,6 +459,7 @@ describe("IPMX validation", function()
         "a=ts-refclk:localmac=AA-BB-CC-DD-EE-FF",
         "m=application 5100 TCP usb",
         "c=IN IP4 192.168.1.200",
+        "a=setup:passive",
       }
       local doc = sdp.parse(table.concat(lines, "\r\n"))
       assert.is_table(doc)
@@ -483,7 +484,8 @@ describe("IPMX validation", function()
         "a=ts-refclk:localmac=AA-BB-CC-DD-EE-FF",
         "m=application 5100 TCP usb",
         "c=IN IP4 192.168.1.200",
-        "a=privacy: protocol=RTP; mode=AES-128-CTR_CMAC-64-AAD; iv=0102030405060708090a0b0c0d0e0f10; key_generator=aabb; key_version=01; key_id=dead",
+        "a=setup:passive",
+        "a=privacy: protocol=USB_KV; mode=AES-128-CTR_CMAC-64-AAD; iv=0102030405060708; key_generator=aabbccddeeff00112233445566778899; key_version=01020304; key_id=deadbeefcafebabe",
       }
       local doc = sdp.parse(table.concat(lines, "\r\n"))
       assert.is_table(doc)
@@ -508,8 +510,9 @@ describe("IPMX validation", function()
         "a=ts-refclk:localmac=AA-BB-CC-DD-EE-FF",
         "m=application 5100 TCP usb",
         "c=IN IP4 192.168.1.200",
-        -- AES-128-CTR is valid for RTP but NOT for USB (not AAD variant)
-        "a=privacy: protocol=RTP; mode=AES-128-CTR; iv=0102030405060708090a0b0c0d0e0f10; key_generator=aabb; key_version=01; key_id=dead",
+        "a=setup:passive",
+        -- AES-128-CTR is valid for RTP but NOT for USB (USB requires AAD variants)
+        "a=privacy: protocol=USB_KV; mode=AES-128-CTR; iv=0102030405060708; key_generator=aabbccddeeff00112233445566778899; key_version=01020304; key_id=deadbeefcafebabe",
       }
       local doc = sdp.parse(table.concat(lines, "\r\n"))
       assert.is_table(doc)
@@ -536,7 +539,8 @@ describe("IPMX validation", function()
         "a=ts-refclk:localmac=AA-BB-CC-DD-EE-FF",
         "m=application 5100 TCP usb",
         "c=IN IP4 192.168.1.200",
-        "a=privacy: protocol=RTP; mode=AES-256-CTR; iv=0102030405060708090a0b0c0d0e0f10; key_generator=aabb; key_version=01; key_id=dead",
+        "a=setup:passive",
+        "a=privacy: protocol=USB_KV; mode=AES-256-CTR; iv=0102030405060708; key_generator=aabbccddeeff00112233445566778899; key_version=01020304; key_id=deadbeefcafebabe",
       }
       local doc = sdp.parse(table.concat(lines, "\r\n"))
       local ok, err = doc:validate("ipmx")
@@ -624,7 +628,7 @@ describe("IPMX validation", function()
     it("accepts SDP with both a=hkep and a=privacy at session level", function()
       local text = base_ipmx_sdp({
         "a=hkep:10000 IN IP4 192.168.1.100 550e8400-e29b-41d4-a716-446655440000 01-02-03-04-05",
-        "a=privacy: protocol=RTP; mode=AES-128-CTR; iv=0102030405060708090a0b0c0d0e0f10; key_generator=aabb; key_version=01; key_id=dead",
+        "a=privacy: protocol=RTP; mode=AES-128-CTR; iv=0102030405060708; key_generator=aabbccddeeff00112233445566778899; key_version=01020304; key_id=deadbeefcafebabe",
       })
       local doc = sdp.parse(text)
       assert.is_table(doc)
@@ -639,7 +643,7 @@ describe("IPMX validation", function()
   describe("a=group:DUP grouping — IPMX (TR-10-13 §13)", function()
     local MAC  = "a=ts-refclk:localmac=AA-BB-CC-DD-EE-FF"
     local VFMTP_IPMX = "a=fmtp:96 sampling=YCbCr-4:2:2; width=1920; height=1080; exactframerate=25; depth=10; TCS=SDR; colorimetry=BT709; PM=2110GPM; SSN=ST2110-20:2022; TP=2110TPN; IPMX"
-    local PRIV = "a=privacy: protocol=RTP; mode=AES-128-CTR; iv=0102030405060708090a0b0c0d0e0f10; key_generator=aabb; key_version=01; key_id=dead"
+    local PRIV = "a=privacy: protocol=RTP; mode=AES-128-CTR; iv=0102030405060708; key_generator=aabbccddeeff00112233445566778899; key_version=01020304; key_id=deadbeefcafebabe"
 
     local function dup_ipmx_sdp(opts)
       opts = opts or {}
@@ -702,7 +706,7 @@ describe("IPMX validation", function()
     end)
 
     it("rejects DUP grouping where both legs have different privacy values", function()
-      local priv2 = "a=privacy: protocol=RTP; mode=AES-256-CTR; iv=0102030405060708090a0b0c0d0e0f10; key_generator=aabb; key_version=01; key_id=dead"
+      local priv2 = "a=privacy: protocol=RTP; mode=AES-256-CTR; iv=0102030405060708; key_generator=aabbccddeeff00112233445566778899; key_version=01020304; key_id=deadbeefcafebabe"
       local text = dup_ipmx_sdp({ privacy1 = PRIV, privacy2 = priv2 })
       local doc = sdp.parse(text)
       assert.is_table(doc)
@@ -830,7 +834,7 @@ describe("IPMX validation", function()
   describe("a=privacy protocol=RTP_KV", function()
     it("accepts protocol=RTP_KV", function()
       local text = base_ipmx_sdp({
-        "a=privacy: protocol=RTP_KV; mode=AES-128-CTR; iv=0102030405060708090a0b0c0d0e0f10; key_generator=aabb; key_version=01; key_id=dead",
+        "a=privacy: protocol=RTP_KV; mode=AES-128-CTR; iv=0102030405060708; key_generator=aabbccddeeff00112233445566778899; key_version=01020304; key_id=deadbeefcafebabe",
       })
       local doc = sdp.parse(text)
       assert.is_table(doc)
@@ -847,10 +851,12 @@ describe("IPMX validation", function()
       local fields = {
         protocol      = overrides.protocol      or "RTP",
         mode          = overrides.mode          or "AES-128-CTR",
-        iv            = overrides.iv            or "0102030405060708090a0b0c0d0e0f10",
-        key_generator = overrides.key_generator or "aabb",
-        key_version   = overrides.key_version   or "01",
-        key_id        = overrides.key_id        or "dead",
+        -- Default hex lengths match TR-10-13 §13: iv 16h, key_generator 32h,
+        -- key_version 8h, key_id 16h. Tests override one field at a time.
+        iv            = overrides.iv            or "0102030405060708",
+        key_generator = overrides.key_generator or "aabbccddeeff00112233445566778899",
+        key_version   = overrides.key_version   or "01020304",
+        key_id        = overrides.key_id        or "deadbeefcafebabe",
       }
       local val = string.format(
         "a=privacy: protocol=%s; mode=%s; iv=%s; key_generator=%s; key_version=%s; key_id=%s",
@@ -1484,6 +1490,267 @@ describe("IPMX validation", function()
       assert.is_nil(ok)
       assert.is_table(err)
       assert.matches("ptime", err.message)
+    end)
+  end)
+
+  -- ── M24: H2 — USB privacy protocol must be USB_KV (TR-10-14 §14) ─────────────
+
+  describe("USB privacy protocol", function()
+    -- Build an IPMX SDP with an RTP video block plus a USB application block;
+    -- caller supplies the privacy line and the a=setup line for the USB block.
+    local function with_usb(privacy_line, setup_line)
+      local lines = {
+        "v=0",
+        "o=- 1234567890 1 IN IP4 192.168.1.1",
+        "s=IPMX USB",
+        "t=0 0",
+        "a=ts-refclk:localmac=AA-BB-CC-DD-EE-FF",
+        "a=extmap:1 urn:ietf:params:rtp-hdrext:smpte-tc",
+        "m=video 5000 RTP/AVP 96",
+        "c=IN IP4 239.100.0.1/64",
+        "a=rtpmap:96 raw/90000",
+        "a=fmtp:96 sampling=YCbCr-4:2:2; width=1920; height=1080; exactframerate=25; depth=10; TCS=SDR; colorimetry=BT709; PM=2110GPM; SSN=ST2110-20:2022; TP=2110TPN; IPMX",
+        "a=mediaclk:direct=0",
+        "a=ts-refclk:localmac=AA-BB-CC-DD-EE-FF",
+        "m=application 5100 TCP usb",
+        "c=IN IP4 192.168.1.200",
+        setup_line or "a=setup:passive",
+      }
+      if privacy_line then lines[#lines + 1] = privacy_line end
+      return table.concat(lines, "\r\n")
+    end
+    local USB_AAD = "AES-128-CTR_CMAC-64-AAD"
+    local HEX = "iv=0102030405060708; key_generator=aabbccddeeff00112233445566778899; key_version=01020304; key_id=deadbeefcafebabe"
+
+    it("accepts USB block with protocol=USB_KV and AAD mode", function()
+      local text = with_usb("a=privacy: protocol=USB_KV; mode=" .. USB_AAD .. "; " .. HEX)
+      local doc = sdp.parse(text)
+      assert.is_table(doc)
+      local ok, err = doc:validate("ipmx")
+      assert.is_nil(err)
+      assert.equal(true, ok)
+    end)
+
+    it("rejects USB block with protocol=RTP", function()
+      local text = with_usb("a=privacy: protocol=RTP; mode=" .. USB_AAD .. "; " .. HEX)
+      local doc = sdp.parse(text)
+      local ok, err = doc:validate("ipmx")
+      assert.is_nil(ok)
+      assert.matches("protocol", err.message)
+    end)
+
+    it("rejects USB block with protocol=RTP_KV", function()
+      local text = with_usb("a=privacy: protocol=RTP_KV; mode=" .. USB_AAD .. "; " .. HEX)
+      local doc = sdp.parse(text)
+      local ok, err = doc:validate("ipmx")
+      assert.is_nil(ok)
+      assert.matches("protocol", err.message)
+    end)
+  end)
+
+  -- ── M24: H3 — USB blocks require a=setup:passive (TR-10-14 §14) ──────────────
+
+  describe("USB a=setup:passive requirement", function()
+    local function with_usb_setup(setup_line)
+      local lines = {
+        "v=0",
+        "o=- 1234567890 1 IN IP4 192.168.1.1",
+        "s=IPMX USB",
+        "t=0 0",
+        "a=ts-refclk:localmac=AA-BB-CC-DD-EE-FF",
+        "a=extmap:1 urn:ietf:params:rtp-hdrext:smpte-tc",
+        "m=video 5000 RTP/AVP 96",
+        "c=IN IP4 239.100.0.1/64",
+        "a=rtpmap:96 raw/90000",
+        "a=fmtp:96 sampling=YCbCr-4:2:2; width=1920; height=1080; exactframerate=25; depth=10; TCS=SDR; colorimetry=BT709; PM=2110GPM; SSN=ST2110-20:2022; TP=2110TPN; IPMX",
+        "a=mediaclk:direct=0",
+        "a=ts-refclk:localmac=AA-BB-CC-DD-EE-FF",
+        "m=application 5100 TCP usb",
+        "c=IN IP4 192.168.1.200",
+      }
+      if setup_line then lines[#lines + 1] = setup_line end
+      return table.concat(lines, "\r\n")
+    end
+
+    it("accepts USB block with a=setup:passive", function()
+      local doc, err = sdp.parse(with_usb_setup("a=setup:passive"), "ipmx")
+      assert.is_nil(err)
+      assert.is_table(doc)
+    end)
+
+    it("rejects USB block missing a=setup", function()
+      local doc = sdp.parse(with_usb_setup(nil))
+      local ok, err = doc:validate("ipmx")
+      assert.is_nil(ok)
+      assert.matches("setup", err.message)
+    end)
+
+    it("rejects a=setup:active on USB", function()
+      local doc = sdp.parse(with_usb_setup("a=setup:active"))
+      local ok, err = doc:validate("ipmx")
+      assert.is_nil(ok)
+      assert.matches("setup", err.message)
+    end)
+
+    it("rejects a=setup:actpass on USB", function()
+      local doc = sdp.parse(with_usb_setup("a=setup:actpass"))
+      local ok, err = doc:validate("ipmx")
+      assert.is_nil(ok)
+      assert.matches("setup", err.message)
+    end)
+  end)
+
+  -- ── M24: H4 — privacy hex digit counts (TR-10-13 §13) ────────────────────────
+
+  describe("a=privacy exact hex digit counts", function()
+    local function privacy_with(overrides)
+      local f = {
+        protocol      = overrides.protocol      or "RTP",
+        mode          = overrides.mode          or "AES-128-CTR",
+        iv            = overrides.iv            or "0102030405060708",                     -- 16h (64-bit)
+        key_generator = overrides.key_generator or "aabbccddeeff00112233445566778899",     -- 32h (128-bit)
+        key_version   = overrides.key_version   or "01020304",                             -- 8h  (32-bit)
+        key_id        = overrides.key_id        or "deadbeefcafebabe",                     -- 16h (64-bit)
+      }
+      local val = string.format(
+        "a=privacy: protocol=%s; mode=%s; iv=%s; key_generator=%s; key_version=%s; key_id=%s",
+        f.protocol, f.mode, f.iv, f.key_generator, f.key_version, f.key_id)
+      return base_ipmx_sdp({ val })
+    end
+
+    -- The "valid lengths accepted" case is already covered by every accept test
+    -- in earlier describe blocks (they all use these exact defaults).
+
+    -- iv (64-bit → 16 hex)
+    it("rejects iv with 15 hex digits", function()
+      local doc = sdp.parse(privacy_with({ iv = "010203040506070" }))
+      local ok, err = doc:validate("ipmx")
+      assert.is_nil(ok); assert.matches("iv", err.message)
+    end)
+    it("rejects iv with 17 hex digits", function()
+      local doc = sdp.parse(privacy_with({ iv = "01020304050607080" }))
+      local ok, err = doc:validate("ipmx")
+      assert.is_nil(ok); assert.matches("iv", err.message)
+    end)
+
+    -- key_generator (128-bit → 32 hex)
+    it("rejects key_generator with 31 hex digits", function()
+      local doc = sdp.parse(privacy_with({ key_generator = string.rep("a", 31) }))
+      local ok, err = doc:validate("ipmx")
+      assert.is_nil(ok); assert.matches("key_generator", err.message)
+    end)
+    it("rejects key_generator with 33 hex digits", function()
+      local doc = sdp.parse(privacy_with({ key_generator = string.rep("a", 33) }))
+      local ok, err = doc:validate("ipmx")
+      assert.is_nil(ok); assert.matches("key_generator", err.message)
+    end)
+
+    -- key_version (32-bit → 8 hex)
+    it("rejects key_version with 7 hex digits", function()
+      local doc = sdp.parse(privacy_with({ key_version = "0102030" }))
+      local ok, err = doc:validate("ipmx")
+      assert.is_nil(ok); assert.matches("key_version", err.message)
+    end)
+    it("rejects key_version with 9 hex digits", function()
+      local doc = sdp.parse(privacy_with({ key_version = "010203040" }))
+      local ok, err = doc:validate("ipmx")
+      assert.is_nil(ok); assert.matches("key_version", err.message)
+    end)
+
+    -- key_id (64-bit → 16 hex)
+    it("rejects key_id with 15 hex digits", function()
+      local doc = sdp.parse(privacy_with({ key_id = "deadbeefcafebab" }))
+      local ok, err = doc:validate("ipmx")
+      assert.is_nil(ok); assert.matches("key_id", err.message)
+    end)
+    it("rejects key_id with 17 hex digits", function()
+      local doc = sdp.parse(privacy_with({ key_id = "deadbeefcafebabe0" }))
+      local ok, err = doc:validate("ipmx")
+      assert.is_nil(ok); assert.matches("key_id", err.message)
+    end)
+  end)
+
+  -- ── M24: M1 — b=AS format check (TR-10-7 §11) ────────────────────────────────
+
+  describe("b=AS bandwidth format", function()
+    -- Inline SDP so b= lands in the correct RFC 4566 order (between c= and a=).
+    local function ipmx_video_with_bandwidth(b_line)
+      local lines = {
+        "v=0",
+        "o=- 1234567890 1 IN IP4 192.168.1.1",
+        "s=IPMX Video",
+        "t=0 0",
+        "a=ts-refclk:localmac=AA-BB-CC-DD-EE-FF",
+        "a=extmap:1 urn:ietf:params:rtp-hdrext:smpte-tc",
+        "m=video 5000 RTP/AVP 96",
+        "c=IN IP4 239.100.0.1/64",
+      }
+      if b_line then lines[#lines + 1] = b_line end
+      lines[#lines + 1] = "a=rtpmap:96 raw/90000"
+      lines[#lines + 1] = "a=fmtp:96 sampling=YCbCr-4:2:2; width=1920; height=1080; exactframerate=25; depth=10; TCS=SDR; colorimetry=BT709; PM=2110GPM; SSN=ST2110-20:2022; TP=2110TPN; IPMX"
+      lines[#lines + 1] = "a=mediaclk:direct=0"
+      lines[#lines + 1] = "a=ts-refclk:localmac=AA-BB-CC-DD-EE-FF"
+      return table.concat(lines, "\r\n")
+    end
+
+    it("accepts b=AS:<positive integer>", function()
+      local doc, err = sdp.parse(ipmx_video_with_bandwidth("b=AS:5000"), "ipmx")
+      assert.is_nil(err)
+      assert.is_table(doc)
+    end)
+
+    it("rejects b=AS:0 (must be positive)", function()
+      local doc = sdp.parse(ipmx_video_with_bandwidth("b=AS:0"))
+      assert.is_table(doc)
+      local ok, err = doc:validate("ipmx")
+      assert.is_nil(ok)
+      assert.matches("b=AS", err.message)
+    end)
+
+    it("absent b=AS is accepted (optional today)", function()
+      local doc, err = sdp.parse(ipmx_video_with_bandwidth(nil), "ipmx")
+      assert.is_nil(err)
+      assert.is_table(doc)
+    end)
+  end)
+
+  -- ── M24: M2 — a=infoframe attribute (TR-10-10 §8) ────────────────────────────
+
+  describe("a=infoframe format (TR-10-10 §8)", function()
+    it("accepts a=infoframe:<port> SSN=ST2110-41:2024;DIT=100100", function()
+      local doc, err = sdp.parse(
+        base_ipmx_sdp({ "a=infoframe:5003 SSN=ST2110-41:2024;DIT=100100" }), "ipmx")
+      assert.is_nil(err)
+      assert.is_table(doc)
+    end)
+
+    it("rejects a=infoframe with wrong SSN prefix", function()
+      local doc = sdp.parse(
+        base_ipmx_sdp({ "a=infoframe:5003 SSN=ST2110-20:2022;DIT=100100" }))
+      local ok, err = doc:validate("ipmx")
+      assert.is_nil(ok)
+      assert.matches("infoframe", err.message)
+    end)
+
+    it("rejects a=infoframe with non-HDMI DIT", function()
+      local doc = sdp.parse(
+        base_ipmx_sdp({ "a=infoframe:5003 SSN=ST2110-41:2024;DIT=999999" }))
+      local ok, err = doc:validate("ipmx")
+      assert.is_nil(ok)
+      assert.matches("DIT", err.message)
+    end)
+
+    it("rejects a=infoframe with non-numeric port", function()
+      local doc = sdp.parse(
+        base_ipmx_sdp({ "a=infoframe:notaport SSN=ST2110-41:2024;DIT=100100" }))
+      local ok, err = doc:validate("ipmx")
+      assert.is_nil(ok)
+    end)
+
+    it("absent a=infoframe is accepted (optional)", function()
+      local doc, err = sdp.parse(base_ipmx_sdp(), "ipmx")
+      assert.is_nil(err)
+      assert.is_table(doc)
     end)
   end)
 end)

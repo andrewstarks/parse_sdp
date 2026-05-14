@@ -452,8 +452,10 @@ When a `c=` line is present (at either session or media level), the address is v
 
 | Attribute | Requirement |
 | --- | --- |
-| `a=ts-refclk` | Required. Accepted: `ptp=<version>:<gmid>[:<domain>]`; `localmac=<mac>`; `ntp=<addr>` (addr must be a valid IPv4, IPv6, or hostname); `gps`; `gal`; `glonass` |
-| `a=mediaclk` | Required. Accepted: `direct=<integer>` (sample offset, may be negative); `sender` |
+| `a=ts-refclk` | Required. Accepted: `ptp=IEEE1588-2008:<gmid>[:<domain>]` (domain 0–127); `localmac=<mac>`; `ntp=<addr>` (addr must be a valid IPv4, IPv6, or hostname); `gps`; `gal`; `glonass` |
+| `a=mediaclk` | Required. Accepted: `direct=0` (offset SHALL be zero per ST 2110-10 §7.3) or `sender` |
+| `a=mid` | Optional. When present, value must be unique within the session (RFC 5888 §8.1) |
+| `a=source-filter` | Optional. When present, must follow RFC 4570: `<incl\|excl> IN <IP4\|IP6> <dest> <src>+` |
 | `a=rtpmap` | Required. Clock rate validated: must be 90000 for video, `smpte291`, and `ST2110-41`; audio clock rate validated against known rates. Audio encoding name validated: must be `L16`, `L24`, or `AM824`. Payload type must match the payload type in `a=fmtp` |
 | `a=fmtp` | Required. Key=value pairs validated per sub-standard |
 
@@ -482,8 +484,10 @@ Optional parameters validated when present:
 | `TP` | `2110TPN`, `2110TPNL`, `2110TPW` | ST 2110-21 |
 | `MAXUDP` | positive integer | ST 2110-20 §7.2 |
 | `PAR` | `W:H` (both positive integers) | ST 2110-20 §7.2 |
-| `TROFF` | non-negative integer | ST 2110-20 §7.2 |
-| `CMAX` | positive integer | ST 2110-20 §7.2 |
+| `TROFF` | non-negative integer (requires `TP` to also be present) | ST 2110-21 §8 |
+| `CMAX` | positive integer (requires `TP` to also be present) | ST 2110-21 §8 |
+| `TSMODE` | `SAMP`, `NEW`, `PRES` | ST 2110-10 §8.7 |
+| `TSDELAY` | non-negative integer (microseconds) | ST 2110-10 §8.7 |
 
 Bare-flag parameters with no value (`interlace`, `segmented`) are accepted without restriction. Any other unrecognized key=value pairs pass through silently.
 
@@ -614,25 +618,56 @@ a=privacy: protocol=<p>; mode=<m>; iv=<iv>; key_generator=<kg>; key_version=<kv>
 
 | Parameter | Valid values |
 | --- | --- |
-| `protocol` | `RTP` or `RTP_KV` |
-| `mode` | Any of the 12 AES modes below |
-| `iv`, `key_generator`, `key_version`, `key_id` | Hex strings (non-empty) |
+| `protocol` | RTP blocks: `RTP` or `RTP_KV`. USB blocks: `USB_KV` (only) |
+| `mode` | RTP blocks: any of the 12 AES modes below. USB blocks: AAD variants only |
+| `iv` | 16 hex digits (64-bit) |
+| `key_generator` | 32 hex digits (128-bit) |
+| `key_version` | 8 hex digits (32-bit) |
+| `key_id` | 16 hex digits (64-bit) |
 
-**Valid `mode` values:**
+**Valid `mode` values (RTP blocks):**
 `AES-128-CTR`, `AES-256-CTR`, `AES-128-CTR_CMAC-64`, `AES-256-CTR_CMAC-64`,
 `AES-128-CTR_CMAC-64-AAD`, `AES-256-CTR_CMAC-64-AAD`,
 `ECDH_AES-128-CTR`, `ECDH_AES-256-CTR`, `ECDH_AES-128-CTR_CMAC-64`,
 `ECDH_AES-256-CTR_CMAC-64`, `ECDH_AES-128-CTR_CMAC-64-AAD`, `ECDH_AES-256-CTR_CMAC-64-AAD`
 
-On **USB blocks** (`m=application` with TCP), only the four AAD variants are accepted
-(TR-10-14 §12): `AES-128-CTR_CMAC-64-AAD`, `AES-256-CTR_CMAC-64-AAD`,
+On **USB blocks** (`m=application <port> TCP usb`), only the four AAD variants are accepted
+(TR-10-14 §14): `AES-128-CTR_CMAC-64-AAD`, `AES-256-CTR_CMAC-64-AAD`,
 `ECDH_AES-128-CTR_CMAC-64-AAD`, `ECDH_AES-256-CTR_CMAC-64-AAD`.
 
 #### USB transport — TR-10-14
 
-Media blocks with `m=application … TCP …` are identified as USB blocks and bypass
-ST 2110 media-block validation (they are not RTP streams). Any `a=privacy` on a USB
-block is validated with the stricter AAD-only mode set.
+Strictly identified by `m=application <port> TCP usb` (per TR-10-14 §14). USB blocks
+bypass ST 2110 media-block validation (they are not RTP streams) and additionally
+require:
+
+| Check | Spec ref |
+| --- | --- |
+| `a=setup:passive` is present (no other value accepted) | TR-10-14 §14 (RFC 4145) |
+| `a=privacy` (when present) uses `protocol=USB_KV` and an AAD mode | TR-10-14 §14 |
+
+Other non-RTP application blocks (e.g. `m=application <port> TCP/MSRP *`) bypass
+ST 2110 RTP-specific checks but are not subject to the TR-10-14 USB rules.
+
+#### HDMI InfoFrame — `a=infoframe` (TR-10-10 §8)
+
+When present at session level, the `a=infoframe` attribute is validated:
+
+```text
+a=infoframe:<port> SSN=ST2110-41:YYYY;DIT=100100
+```
+
+| Field | Validation |
+| --- | --- |
+| `<port>` | Integer (associated media port + 3 per the spec; the +3 relationship is not enforced because there can be multiple associated streams) |
+| `SSN` | Must be `ST2110-41:YYYY` (4-digit year) |
+| `DIT` | Must be exactly `100100` (HDMI InfoFrame Data Item Type) |
+
+Absence is fine (the attribute is optional).
+
+#### Bit rate — `b=AS` (TR-10-7 §11)
+
+When present on an RTP media block, the `b=AS` value (kbps) must be a positive integer. This is the maximum target bit rate of the stream including IP/UDP/RTP headers. Required for VBR compressed video flows (TR-10-7).
 
 #### FEC — `FECPROFILE` and latency parameters (TR-10-6 §7.6)
 

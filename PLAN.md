@@ -684,6 +684,62 @@ is present, but no IPMX-level tests cover these values.
 
 ---
 
+### M24 — Validation completeness audit ✓ (2026-05-13, round 3)
+
+**Done when:** All gaps identified in the comprehensive spec audit are addressed.
+Sources: full reads of ST 2110-10:2022 (PDF), TR-10-0 through TR-10-16, TR-10-TP-1,
+and the three IPMX profile docs (Uncompressed Video, PCM Audio, JPEG-XS Video).
+
+---
+
+#### HIGH-severity (SHALL violations passing today)
+
+- [x] **H1: `a=mediaclk:direct` offset must be 0** (ST 2110-10 §7.3 / TR-10-1 §10.5).
+  `valid_mediaclk` now accepts only `direct=0` or `sender`; any non-zero offset is rejected.
+- [x] **H2: USB `a=privacy` protocol must be `USB_KV`** (TR-10-14 §14).
+  Split `PRIVACY_PROTOCOLS` into RTP/USB allow-lists; `valid_privacy` selects by transport.
+- [x] **H3: USB blocks require `a=setup:passive`** (TR-10-14 §14).
+  Every TR-10-14 USB block (`m=application TCP usb`) must declare `a=setup:passive`.
+- [x] **H4: Privacy hex parameter lengths enforced** (TR-10-13 §13).
+  Added `PRIVACY_HEX_LEN`; `iv`=16h, `key_generator`=32h, `key_version`=8h, `key_id`=16h.
+
+#### MEDIUM-severity
+
+- [x] **M1: `b=AS` positive integer** (TR-10-7 §11). Preparatory check for VBR compressed video.
+- [x] **M2: `a=infoframe` format** (TR-10-10 §8). Validated as `<port> SSN=ST2110-41:YYYY;DIT=100100`.
+- [x] **M3: PTP domain range 0–127** (IEEE 1588-2008 §7.1). `valid_tsrefclk` ptp branch now extracts and validates the optional domain.
+- [x] **M4: `TROFF`/`CMAX` require `TP`** (ST 2110-21 §8). Cross-field check in video fmtp validation.
+- [x] **M5: `a=mid` uniqueness per session** (RFC 5888 §8.1). Checked after the per-media loop in `st2110.validate`.
+
+#### LOW-severity additions
+
+- [x] **L1: `TSMODE` / `TSDELAY` format** (ST 2110-10 §8.7). `TSMODE` enum `{SAMP, NEW, PRES}`; `TSDELAY` non-negative integer.
+- [x] **L2: `a=source-filter` format** (RFC 4570 / ST 2110-10 §8.4). LPEG grammar for `<incl|excl> IN <IP4|IP6> <dest> <src>+`.
+
+#### Refactor
+
+- [x] USB block detection split: `non_rtp_set` (broad bypass of ST 2110 RTP checks) vs `usb_set` (strictly `m=application TCP usb`, subject to TR-10-14 rules). Previously a single loose `usb_set` matched any application+TCP-in-proto.
+
+**Tests:**
+
+- ~47 new tests added across `spec/st2110_spec.lua` and `spec/ipmx_spec.lua`
+- Existing privacy fixtures updated to use spec-correct hex digit counts; existing USB privacy tests updated to use `protocol=USB_KV` and include `a=setup:passive`
+
+**Spec references for M24:**
+
+- SMPTE ST 2110-10:2022 §7.3 — mediaclk direct offset SHALL be zero
+- SMPTE ST 2110-10:2022 §8.7 — TSMODE, TSDELAY
+- SMPTE ST 2110-10:2022 §8.4 — source-filter (RFC 4570)
+- SMPTE ST 2110-21 §8 — TROFF, CMAX require TP
+- IEEE 1588-2008 §7.1 — PTP domain range
+- RFC 5888 §8.1 — a=mid uniqueness
+- VSF TR-10-7 §11 — b=AS bandwidth
+- VSF TR-10-10 §8 — a=infoframe
+- VSF TR-10-13 §13 — privacy hex bit-lengths
+- VSF TR-10-14 §14 — USB `a=setup:passive`, USB_KV protocol
+
+---
+
 ## Commit Gates
 
 Before any commit:

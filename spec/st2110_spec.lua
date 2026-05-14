@@ -654,12 +654,23 @@ describe("ST 2110 validation", function()
       assert.matches("mediaclk", err.message)
     end)
 
-    it("accepts 'direct=' with a negative integer offset", function()
+    -- ST 2110-10 §7.3: "In this standard, the offset value shall be zero."
+    -- TR-10-1 §10.5 echoes this. Any non-zero offset is a SHALL violation.
+    it("rejects 'direct=' with non-zero offset (ST 2110-10 §7.3)", function()
+      local doc = sdp.parse(with_mediaclk("direct=10"))
+      assert.is_table(doc)
+      local ok, err = doc:validate("st2110")
+      assert.is_nil(ok)
+      assert.is_table(err)
+      assert.matches("mediaclk", err.message)
+    end)
+
+    it("rejects 'direct=' with negative offset", function()
       local doc = sdp.parse(with_mediaclk("direct=-1"))
       assert.is_table(doc)
       local ok, err = doc:validate("st2110")
-      assert.is_nil(err)
-      assert.equal(true, ok)
+      assert.is_nil(ok)
+      assert.is_table(err)
     end)
   end)
 
@@ -1156,14 +1167,16 @@ describe("ST 2110 validation", function()
     end)
 
     describe("TROFF (timestamp offset)", function()
+      -- TROFF and CMAX require TP per ST 2110-21 §8 (also see M24 cross-field check).
+      local BASE_TP = BASE .. "; TP=2110TPN"
       it("accepts TROFF=0", function()
-        local doc, err = sdp.parse(video20_sdp(BASE .. "; TROFF=0"), "st2110")
+        local doc, err = sdp.parse(video20_sdp(BASE_TP .. "; TROFF=0"), "st2110")
         assert.is_nil(err)
         assert.is_table(doc)
       end)
 
       it("accepts a positive TROFF", function()
-        local doc, err = sdp.parse(video20_sdp(BASE .. "; TROFF=4500"), "st2110")
+        local doc, err = sdp.parse(video20_sdp(BASE_TP .. "; TROFF=4500"), "st2110")
         assert.is_nil(err)
         assert.is_table(doc)
       end)
@@ -1185,14 +1198,15 @@ describe("ST 2110 validation", function()
     end)
 
     describe("CMAX (max consecutive packets)", function()
+      local BASE_TP = BASE .. "; TP=2110TPN"
       it("accepts a valid positive integer", function()
-        local doc, err = sdp.parse(video20_sdp(BASE .. "; CMAX=3"), "st2110")
+        local doc, err = sdp.parse(video20_sdp(BASE_TP .. "; CMAX=3"), "st2110")
         assert.is_nil(err)
         assert.is_table(doc)
       end)
 
       it("rejects non-integer CMAX", function()
-        local doc = sdp.parse(video20_sdp(BASE .. "; CMAX=notanumber"))
+        local doc = sdp.parse(video20_sdp(BASE_TP .. "; CMAX=notanumber"))
         assert.is_table(doc)
         local ok, err = doc:validate("st2110")
         assert.is_nil(ok)
@@ -1555,7 +1569,8 @@ describe("ST 2110 validation", function()
   -- ── ST 2110-20 CMAX=0 rejection ───────────────────────────────────────────────
 
   describe("ST 2110-20 CMAX=0 rejection", function()
-    local BASE = "sampling=YCbCr-4:2:2; width=1920; height=1080; exactframerate=25; depth=10; TCS=SDR; colorimetry=BT709; PM=2110GPM; SSN=ST2110-20:2022"
+    -- TP required since M24 (CMAX implies a transport profile per ST 2110-21).
+    local BASE = "sampling=YCbCr-4:2:2; width=1920; height=1080; exactframerate=25; depth=10; TCS=SDR; colorimetry=BT709; PM=2110GPM; SSN=ST2110-20:2022; TP=2110TPN"
 
     it("rejects CMAX=0 (positive integer required)", function()
       local text = table.concat({
@@ -2455,6 +2470,250 @@ describe("ST 2110 validation", function()
       assert.is_nil(ok)
       assert.is_table(err)
       assert.matches("ts%-refclk", err.message)
+    end)
+  end)
+
+  -- ── M24: ts-refclk PTP domain range (IEEE 1588-2008 §7.1) ────────────────────
+
+  describe("ts-refclk PTP domain range", function()
+    local function with_tsrefclk(value)
+      return table.concat({
+        "v=0",
+        "o=- 1234567890 1 IN IP4 192.168.1.1",
+        "s=ST2110 Video",
+        "t=0 0",
+        "a=ts-refclk:" .. value,
+        "m=video 5000 RTP/AVP 96",
+        "c=IN IP4 239.100.0.1/64",
+        "a=rtpmap:96 raw/90000",
+        "a=fmtp:96 sampling=YCbCr-4:2:2; width=1920; height=1080; exactframerate=25; depth=10; TCS=SDR; colorimetry=BT709; PM=2110GPM; SSN=ST2110-20:2022; TP=2110TPN",
+        "a=mediaclk:direct=0",
+      }, "\r\n")
+    end
+
+    it("accepts ptp= with domain=0 (lower boundary)", function()
+      local doc, err = sdp.parse(with_tsrefclk("ptp=IEEE1588-2008:00-11-22-FF-FE-33-44-55:0"), "st2110")
+      assert.is_nil(err)
+      assert.is_table(doc)
+    end)
+
+    it("accepts ptp= with domain=127 (upper boundary)", function()
+      local doc, err = sdp.parse(with_tsrefclk("ptp=IEEE1588-2008:00-11-22-FF-FE-33-44-55:127"), "st2110")
+      assert.is_nil(err)
+      assert.is_table(doc)
+    end)
+
+    it("rejects ptp= with domain=128 (out of range)", function()
+      local doc = sdp.parse(with_tsrefclk("ptp=IEEE1588-2008:00-11-22-FF-FE-33-44-55:128"))
+      assert.is_table(doc)
+      local ok, err = doc:validate("st2110")
+      assert.is_nil(ok)
+      assert.matches("ts%-refclk", err.message)
+    end)
+
+    it("rejects ptp= with non-integer domain", function()
+      local doc = sdp.parse(with_tsrefclk("ptp=IEEE1588-2008:00-11-22-FF-FE-33-44-55:abc"))
+      assert.is_table(doc)
+      local ok, err = doc:validate("st2110")
+      assert.is_nil(ok)
+    end)
+  end)
+
+  -- ── M24: TROFF/CMAX require TP (ST 2110-21 §8) ───────────────────────────────
+
+  describe("TROFF/CMAX cross-field require TP", function()
+    local FMTP_BASE = "sampling=YCbCr-4:2:2; width=1920; height=1080; exactframerate=25; depth=10; TCS=SDR; colorimetry=BT709; PM=2110GPM; SSN=ST2110-20:2022"
+    local function video20_sdp(fmtp_extra)
+      return table.concat({
+        "v=0",
+        "o=- 1234567890 1 IN IP4 192.168.1.1",
+        "s=Video",
+        "t=0 0",
+        "a=ts-refclk:ptp=IEEE1588-2008:00-11-22-FF-FE-33-44-55:0",
+        "m=video 5000 RTP/AVP 96",
+        "c=IN IP4 239.100.0.1/64",
+        "a=rtpmap:96 raw/90000",
+        "a=fmtp:96 " .. FMTP_BASE .. fmtp_extra,
+        "a=mediaclk:direct=0",
+      }, "\r\n")
+    end
+
+    it("rejects TROFF without TP", function()
+      local doc = sdp.parse(video20_sdp("; TROFF=0"))
+      assert.is_table(doc)
+      local ok, err = doc:validate("st2110")
+      assert.is_nil(ok)
+      assert.matches("TP", err.message)
+    end)
+
+    it("rejects CMAX without TP", function()
+      local doc = sdp.parse(video20_sdp("; CMAX=3"))
+      assert.is_table(doc)
+      local ok, err = doc:validate("st2110")
+      assert.is_nil(ok)
+      assert.matches("TP", err.message)
+    end)
+
+    it("accepts TROFF and CMAX with TP present", function()
+      local doc, err = sdp.parse(video20_sdp("; TP=2110TPN; TROFF=0; CMAX=3"), "st2110")
+      assert.is_nil(err)
+      assert.is_table(doc)
+    end)
+  end)
+
+  -- ── M24: a=mid uniqueness per session (RFC 5888 §8.1) ────────────────────────
+
+  describe("a=mid uniqueness per session", function()
+    local PTP = "a=ts-refclk:ptp=IEEE1588-2008:00-11-22-FF-FE-33-44-55:0"
+    local VFMTP = "a=fmtp:96 sampling=YCbCr-4:2:2; width=1920; height=1080; exactframerate=25; depth=10; TCS=SDR; colorimetry=BT709; PM=2110GPM; SSN=ST2110-20:2022; TP=2110TPN"
+    local function two_video_blocks(mid1, mid2)
+      return table.concat({
+        "v=0",
+        "o=- 1234567890 1 IN IP4 192.168.1.1",
+        "s=Two Video",
+        "t=0 0",
+        "a=group:DUP " .. mid1 .. " " .. mid2,
+        PTP,
+        "m=video 5000 RTP/AVP 96",
+        "c=IN IP4 239.100.0.1/64",
+        "a=mid:" .. mid1,
+        "a=rtpmap:96 raw/90000", VFMTP,
+        "a=mediaclk:direct=0",
+        "m=video 5010 RTP/AVP 96",
+        "c=IN IP4 239.100.0.2/64",
+        "a=mid:" .. mid2,
+        "a=rtpmap:96 raw/90000", VFMTP,
+        "a=mediaclk:direct=0",
+      }, "\r\n")
+    end
+
+    it("rejects duplicate a=mid values across media blocks", function()
+      local doc = sdp.parse(two_video_blocks("leg1", "leg1"))
+      assert.is_table(doc)
+      local ok, err = doc:validate("st2110")
+      assert.is_nil(ok)
+      assert.matches("mid", err.message)
+    end)
+
+    it("accepts distinct a=mid values", function()
+      local doc, err = sdp.parse(two_video_blocks("leg1", "leg2"), "st2110")
+      assert.is_nil(err)
+      assert.is_table(doc)
+    end)
+  end)
+
+  -- ── M24: TSMODE / TSDELAY value format (ST 2110-10 §8.7) ─────────────────────
+
+  describe("TSMODE / TSDELAY format", function()
+    local FMTP_BASE = "sampling=YCbCr-4:2:2; width=1920; height=1080; exactframerate=25; depth=10; TCS=SDR; colorimetry=BT709; PM=2110GPM; SSN=ST2110-20:2022; TP=2110TPN"
+    local function video_sdp(extra)
+      return table.concat({
+        "v=0",
+        "o=- 1234567890 1 IN IP4 192.168.1.1",
+        "s=Video",
+        "t=0 0",
+        "a=ts-refclk:ptp=IEEE1588-2008:00-11-22-FF-FE-33-44-55:0",
+        "m=video 5000 RTP/AVP 96",
+        "c=IN IP4 239.100.0.1/64",
+        "a=rtpmap:96 raw/90000",
+        "a=fmtp:96 " .. FMTP_BASE .. extra,
+        "a=mediaclk:direct=0",
+      }, "\r\n")
+    end
+
+    for _, m in ipairs({ "SAMP", "NEW", "PRES" }) do
+      it("accepts TSMODE=" .. m, function()
+        local doc, err = sdp.parse(video_sdp("; TSMODE=" .. m), "st2110")
+        assert.is_nil(err)
+        assert.is_table(doc)
+      end)
+    end
+
+    it("rejects unknown TSMODE value", function()
+      local doc = sdp.parse(video_sdp("; TSMODE=GARBAGE"))
+      assert.is_table(doc)
+      local ok, err = doc:validate("st2110")
+      assert.is_nil(ok)
+      assert.matches("TSMODE", err.message)
+    end)
+
+    it("accepts TSDELAY=0 and positive integer", function()
+      for _, v in ipairs({ "0", "1000" }) do
+        local doc, err = sdp.parse(video_sdp("; TSDELAY=" .. v), "st2110")
+        assert.is_nil(err, "TSDELAY=" .. v .. " should accept")
+        assert.is_table(doc)
+      end
+    end)
+
+    it("rejects negative TSDELAY", function()
+      local doc = sdp.parse(video_sdp("; TSDELAY=-1"))
+      assert.is_table(doc)
+      local ok, err = doc:validate("st2110")
+      assert.is_nil(ok)
+      assert.matches("TSDELAY", err.message)
+    end)
+
+    it("rejects non-integer TSDELAY", function()
+      local doc = sdp.parse(video_sdp("; TSDELAY=abc"))
+      assert.is_table(doc)
+      local ok, err = doc:validate("st2110")
+      assert.is_nil(ok)
+      assert.matches("TSDELAY", err.message)
+    end)
+  end)
+
+  -- ── M24: a=source-filter format (RFC 4570) ───────────────────────────────────
+
+  describe("a=source-filter format", function()
+    local function video_sdp(sf_value)
+      local lines = {
+        "v=0",
+        "o=- 1234567890 1 IN IP4 192.168.1.1",
+        "s=Video",
+        "t=0 0",
+        "a=ts-refclk:ptp=IEEE1588-2008:00-11-22-FF-FE-33-44-55:0",
+        "m=video 5000 RTP/AVP 96",
+        "c=IN IP4 239.100.0.1/64",
+        "a=source-filter:" .. sf_value,
+        "a=rtpmap:96 raw/90000",
+        "a=fmtp:96 sampling=YCbCr-4:2:2; width=1920; height=1080; exactframerate=25; depth=10; TCS=SDR; colorimetry=BT709; PM=2110GPM; SSN=ST2110-20:2022; TP=2110TPN",
+        "a=mediaclk:direct=0",
+      }
+      return table.concat(lines, "\r\n")
+    end
+
+    it("accepts 'incl IN IP4 <dest> <src>'", function()
+      local doc, err = sdp.parse(video_sdp(" incl IN IP4 239.100.0.1 192.168.1.1"), "st2110")
+      assert.is_nil(err)
+      assert.is_table(doc)
+    end)
+
+    it("accepts 'excl IN IP6 <dest> <src>'", function()
+      local doc, err = sdp.parse(video_sdp(" excl IN IP6 ff0e::1 fe80::1"), "st2110")
+      assert.is_nil(err)
+      assert.is_table(doc)
+    end)
+
+    it("rejects unknown filter mode", function()
+      local doc = sdp.parse(video_sdp(" maybe IN IP4 239.100.0.1 192.168.1.1"))
+      assert.is_table(doc)
+      local ok, err = doc:validate("st2110")
+      assert.is_nil(ok)
+      assert.matches("source%-filter", err.message)
+    end)
+
+    it("rejects bad addrtype", function()
+      local doc = sdp.parse(video_sdp(" incl IN IP9 239.100.0.1 192.168.1.1"))
+      assert.is_table(doc)
+      local ok, err = doc:validate("st2110")
+      assert.is_nil(ok)
+    end)
+
+    it("rejects missing source address", function()
+      local doc = sdp.parse(video_sdp(" incl IN IP4 239.100.0.1"))
+      assert.is_table(doc)
+      local ok, err = doc:validate("st2110")
+      assert.is_nil(ok)
     end)
   end)
 end)

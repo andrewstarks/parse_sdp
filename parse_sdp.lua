@@ -548,19 +548,28 @@ local function valid_tsrefclk(value)
   local ptp_rest = value:match("^ptp=(.+)$")
   if ptp_rest then
     -- version:gmid[:domain] — version must be IEEE1588-2008 (ST 2110-10:2022 §8.2);
-    -- GMID is either the literal "traceable" or 8 HH-separated hex octets (EUI-64).
+    -- GMID is either "traceable" or 8 HH-separated hex octets (EUI-64);
+    -- optional domain is an integer 0–127 (IEEE 1588-2008 §7.1).
     local version, gmid = ptp_rest:match("^([^:]+):([^:]+)")
     if not gmid then return nil, "invalid ts-refclk ptp value" end
     if version ~= "IEEE1588-2008" then
       return nil, "unrecognized ptp version '" .. version .. "' (expected IEEE1588-2008)"
     end
-    if gmid == "traceable" then return true end
-    local count = 0
-    for octet in gmid:gmatch("[^%-]+") do
-      if not octet:match("^%x%x$") then return nil, "invalid ts-refclk ptp value" end
-      count = count + 1
+    if gmid ~= "traceable" then
+      local count = 0
+      for octet in gmid:gmatch("[^%-]+") do
+        if not octet:match("^%x%x$") then return nil, "invalid ts-refclk ptp value" end
+        count = count + 1
+      end
+      if count ~= 8 then return nil, "invalid ts-refclk ptp value" end
     end
-    if count ~= 8 then return nil, "invalid ts-refclk ptp value" end
+    local domain = ptp_rest:match("^[^:]+:[^:]+:(.+)$")
+    if domain then
+      local d = tonumber(domain)
+      if not d or d ~= math.floor(d) or d < 0 or d > 127 then
+        return nil, "invalid ts-refclk ptp domain (must be 0-127)"
+      end
+    end
     return true
   end
   return nil, "unrecognized ts-refclk clock source"
@@ -612,6 +621,24 @@ local VALID_RANGE = { ["NARROW"]=true, ["FULLPROTECT"]=true, ["FULL"]=true }
 -- Valid m= transport protocols for ST 2110 RTP media blocks (ST 2110-10 §8.1).
 local VALID_ST2110_PROTO = { ["RTP/AVP"] = true }
 
+-- RFC 4570 a=source-filter: <filter> SP <nettype> SP <addrtype> SP <dest> SP <src>+
+-- Some senders include a leading space after the ":" — accept it.
+local _sf_filter   = P("incl") + P("excl")
+local _sf_token    = (P(1) - P(" "))^1
+local VALID_SOURCE_FILTER_PAT =
+  P(" ")^-1
+  * _sf_filter * P(" ")
+  * P("IN") * P(" ")
+  * (P("IP4") + P("IP6")) * P(" ")
+  * _sf_token                       -- destination address
+  * (P(" ") * _sf_token)^1          -- one or more source addresses
+  * P(-1)
+
+local function valid_source_filter(value)
+  if VALID_SOURCE_FILTER_PAT:match(value) then return true end
+  return nil, "invalid a=source-filter format (RFC 4570)"
+end
+
 -- Validate the address field of a c= line for ST 2110 media blocks (RFC 4566 +
 -- ST 2110-10 §6.5). IPv4 multicast requires a TTL and must not fall within the
 -- Local Network Control Block (224.0.0.0/24) or Internetwork Control Block
@@ -656,6 +683,8 @@ local VALID_TP = { ["2110TPN"]=true, ["2110TPNL"]=true, ["2110TPW"]=true }
 local VALID_TP_22 = { ["2110TPNL"]=true, ["2110TPW"]=true }
 -- Valid rtpmap encoding names for ST 2110-30/31 audio.
 local VALID_AUDIO_ENC = { ["L16"]=true, ["L24"]=true, ["AM824"]=true }
+-- Valid TSMODE values per ST 2110-10 §8.7 (RTP timestamp generation mode).
+local VALID_TSMODE = { ["SAMP"]=true, ["NEW"]=true, ["PRES"]=true }
 
 -- Returns true if value is a key in set, otherwise nil + "invalid <name> value: <value>".
 local function valid_enum(value, set, name)
@@ -740,14 +769,13 @@ local function valid_channel_order(value)
   return true
 end
 
--- Validate the value of a mediaclk attribute per ST 2110-10 §7.3.
+-- Validate the value of a mediaclk attribute per ST 2110-10 §7.3 and TR-10-1 §10.5.
+-- Permitted forms: "sender" (async) or "direct=0" (offset SHALL be zero).
 -- Returns true on success, or nil + error message string on failure.
 local function valid_mediaclk(value)
-  if value == "sender" then return true end
-  local offset = value:match("^direct=(.+)$")
-  if offset then
-    if offset:match("^%-?%d+$") then return true end
-    return nil, "invalid mediaclk direct= value"
+  if value == "sender" or value == "direct=0" then return true end
+  if value:match("^direct=%-?%d+$") then
+    return nil, "mediaclk direct offset must be 0 (ST 2110-10 §7.3)"
   end
   return nil, "unrecognized mediaclk value"
 end
@@ -824,6 +852,17 @@ function st2110.validate(doc)
           field_path = mpath .. ".connection",
           spec_ref   = "ST 2110-10 §6.5", code = "INVALID_VALUE",
         })
+      end
+    end
+
+    -- Validate every a=source-filter on this media block (RFC 4570 / ST 2110-10 §8.4).
+    for _, a in ipairs(mattrs) do
+      if a.name == "source-filter" then
+        local ok_sf, msg_sf = valid_source_filter(a.value or "")
+        if not ok_sf then
+          return attr_err(msg_sf, mpath, "source-filter",
+            "ST 2110-10 §8.4 / RFC 4570", "INVALID_VALUE")
+        end
       end
     end
 
@@ -1062,13 +1101,22 @@ function st2110.validate(doc)
           return attr_err(vmsg, mpath, "fmtp", "ST 2110-20 §7.2", "INVALID_VALUE")
         end
       end
+      -- TROFF and CMAX semantics are defined by ST 2110-21 only in the context
+      -- of a transport profile (TP). Presence without TP is meaningless.
+      if (params["TROFF"] or params["CMAX"]) and not params["TP"] then
+        return attr_err("TROFF/CMAX require TP to also be present (ST 2110-21 §8)",
+          mpath, "fmtp", "ST 2110-21 §8")
+      end
       -- Optional ST 2110-20 fmtp params that have defined value formats.
+      -- TSMODE / TSDELAY are from ST 2110-10 §8.7 (RTP timestamp generation).
       local video_opt_checks = {
-        { "TP",     function(v) return valid_enum(v, VALID_TP, "TP") end },
-        { "MAXUDP", valid_pos_int },
-        { "PAR",    valid_par },
-        { "TROFF",  valid_nonneg_int },
-        { "CMAX",   valid_pos_int },
+        { "TP",      function(v) return valid_enum(v, VALID_TP, "TP") end },
+        { "MAXUDP",  valid_pos_int },
+        { "PAR",     valid_par },
+        { "TROFF",   valid_nonneg_int },
+        { "CMAX",    valid_pos_int },
+        { "TSMODE",  function(v) return valid_enum(v, VALID_TSMODE, "TSMODE") end },
+        { "TSDELAY", valid_nonneg_int },
       }
       for _, ck in ipairs(video_opt_checks) do
         local key, fn = ck[1], ck[2]
@@ -1128,6 +1176,21 @@ function st2110.validate(doc)
     end
   end
 
+  -- a=mid must be unique within the session (RFC 5888 §8.1).
+  local seen_mid = {}
+  for i, m in ipairs(doc.media) do
+    local mid_attr = find_attr(m.attributes or {}, "mid")
+    if mid_attr and mid_attr.value then
+      if seen_mid[mid_attr.value] then
+        return nil, errors.new(
+          "duplicate a=mid value '" .. mid_attr.value .. "'",
+          { field_path = string.format("media[%d].attributes[mid]", i),
+            spec_ref = "RFC 5888 §8.1", code = "INVALID_VALUE" })
+      end
+      seen_mid[mid_attr.value] = true
+    end
+  end
+
   -- Validate a=group:DUP grouping per ST 2110-10 §8.5 + RFC 7104.
   local dup_ok, dup_err = each_dup_group(doc, "ST 2110-10 §8.5", function(legs)
     local base_type = legs[1].block.media
@@ -1148,6 +1211,29 @@ end
 
 -- ── IPMX ──────────────────────────────────────────────────────────────────────
 local ipmx = {}
+
+-- TR-10-10 §8 a=infoframe: <port> SSN=ST2110-41:YYYY;DIT=100100
+-- Port is the UDP destination for the InfoFrame stream (associated media port + 3).
+-- DIT 100100 is the SMPTE-allocated Data Item Type for HDMI InfoFrame.
+local _ifr_year = R("09") * R("09") * R("09") * R("09")
+local VALID_INFOFRAME_PAT =
+  R("09")^1 * P(" ")
+  * P("SSN=ST2110-41:") * _ifr_year * P(";")
+  * P("DIT=100100") * P(-1)
+
+local function valid_infoframe(value)
+  if VALID_INFOFRAME_PAT:match(value) then return true end
+  if not value:match("^%d+%s") then
+    return nil, "invalid a=infoframe (expected '<port> SSN=ST2110-41:YYYY;DIT=100100')"
+  end
+  if not value:match("SSN=ST2110%-41:%d%d%d%d") then
+    return nil, "invalid a=infoframe SSN (must be ST2110-41:YYYY)"
+  end
+  if not value:match("DIT=100100") then
+    return nil, "invalid a=infoframe DIT (must be 100100 for HDMI per TR-10-10 §8)"
+  end
+  return nil, "invalid a=infoframe format"
+end
 
 -- RFC 5285 a=extmap: entry-count ["/direction"] SP URI [SP ext-attr]
 local _extmap_id  = R("09")^1
@@ -1205,8 +1291,19 @@ local function valid_hkep(value)
   return true
 end
 
--- Valid protocol values for a=privacy (TR-10-13 §13).
-local PRIVACY_PROTOCOLS = { RTP = true, RTP_KV = true }
+-- Valid protocol values for a=privacy, partitioned by transport.
+-- RTP streams use RTP/RTP_KV (TR-10-13 §13); USB streams use USB_KV (TR-10-14 §14).
+local PRIVACY_PROTOCOLS_RTP = { RTP = true, RTP_KV = true }
+local PRIVACY_PROTOCOLS_USB = { USB_KV = true }
+
+-- Exact hex-digit counts per privacy parameter (TR-10-13 §13).
+-- iv 64-bit, key_generator 128-bit, key_version 32-bit, key_id 64-bit.
+local PRIVACY_HEX_LEN = {
+  iv            = 16,
+  key_generator = 32,
+  key_version   = 8,
+  key_id        = 16,
+}
 
 -- All valid mode values for a=privacy (TR-10-13 §13).
 local PRIVACY_MODES = {
@@ -1224,9 +1321,11 @@ local PRIVACY_USB_MODES = {
   ["ECDH_AES-128-CTR_CMAC-64-AAD"] = true, ["ECDH_AES-256-CTR_CMAC-64-AAD"] = true,
 }
 
--- Validate an a=privacy attribute value per VSF TR-10-13 §13.
--- Format: protocol=<p>; mode=<m>; iv=<iv>; key_generator=<kg>; key_version=<kv>; key_id=<kid>
--- Pass usb_only=true to restrict to the four AAD modes required by TR-10-14 §12.
+-- Validate an a=privacy attribute value per VSF TR-10-13 §13 (RTP) /
+-- TR-10-14 §14 (USB). Format:
+--   protocol=<p>; mode=<m>; iv=<iv>; key_generator=<kg>; key_version=<kv>; key_id=<kid>
+-- Pass usb_only=true to apply the USB transport rules (protocol must be USB_KV;
+-- mode must be one of the four AAD variants).
 local function valid_privacy(value, usb_only)
   local params = {}
   for kv in (value:match("^%s*(.-)%s*$")):gmatch("[^;]+") do
@@ -1240,16 +1339,26 @@ local function valid_privacy(value, usb_only)
   for _, f in ipairs({ "protocol", "mode", "iv", "key_generator", "key_version", "key_id" }) do
     if not params[f] then return nil, "missing required '" .. f .. "' parameter" end
   end
-  if not PRIVACY_PROTOCOLS[params.protocol] then
-    return nil, "invalid protocol '" .. params.protocol .. "' (must be RTP or RTP_KV)"
+  local protocols = usb_only and PRIVACY_PROTOCOLS_USB or PRIVACY_PROTOCOLS_RTP
+  if not protocols[params.protocol] then
+    return nil, usb_only
+      and "invalid protocol '" .. params.protocol .. "' (USB requires USB_KV)"
+      or  "invalid protocol '" .. params.protocol .. "' (must be RTP or RTP_KV)"
   end
   local modes = usb_only and PRIVACY_USB_MODES or PRIVACY_MODES
   if not modes[params.mode] then
     return nil, "invalid mode '" .. params.mode .. "'"
   end
+  -- Each hex parameter must be hexadecimal AND of the exact bit length defined
+  -- in TR-10-13 §13. Iterating a fixed-order list keeps error messages stable.
   for _, f in ipairs({ "iv", "key_generator", "key_version", "key_id" }) do
-    if not params[f]:match("^%x+$") then
+    local v = params[f]
+    if not v:match("^%x+$") then
       return nil, "invalid " .. f .. " value (must be hexadecimal)"
+    end
+    if #v ~= PRIVACY_HEX_LEN[f] then
+      return nil, string.format(
+        "invalid %s length (must be %d hex digits, got %d)", f, PRIVACY_HEX_LEN[f], #v)
     end
   end
   return true
@@ -1284,18 +1393,27 @@ end
 -- @return true  on success.
 -- @return nil, err  on failure; err includes field_path and spec_ref.
 function ipmx.validate(doc)
-  -- Identify USB media blocks: m=application with TCP transport (TR-10-14).
-  local usb_set = {}
+  -- Two predicates over media blocks:
+  --   non_rtp_set — any application block not on RTP/AVP; bypasses ST 2110
+  --                 RTP-specific validation (a=rtpmap, a=fmtp IPMX marker, etc.).
+  --   usb_set     — strictly `m=application <port> TCP usb` per TR-10-14 §14;
+  --                 subject to additional rules (a=setup:passive, USB_KV privacy).
+  -- usb_set ⊆ non_rtp_set.
+  local non_rtp_set, usb_set = {}, {}
   for i, m in ipairs(doc.media) do
-    if m.media == "application" and type(m.proto) == "string" and m.proto:match("TCP") then
-      usb_set[i] = true
+    if m.media == "application" and type(m.proto) == "string"
+       and m.proto ~= "RTP/AVP" then
+      non_rtp_set[i] = true
+      if m.proto == "TCP" and m.fmts and m.fmts[1] == "usb" then
+        usb_set[i] = true
+      end
     end
   end
 
-  -- Build a filtered media list (non-USB) for ST 2110 validation.
+  -- Build a filtered media list (RTP only) for ST 2110 validation.
   local rtp_media = {}
   for i, m in ipairs(doc.media) do
-    if not usb_set[i] then rtp_media[#rtp_media + 1] = m end
+    if not non_rtp_set[i] then rtp_media[#rtp_media + 1] = m end
   end
 
   if #rtp_media > 0 then
@@ -1309,6 +1427,7 @@ function ipmx.validate(doc)
   end
 
   -- Reject a=group:FID — TR-10-1 §10 ("shall not be used under this TR").
+  -- Validate a=infoframe values at the same loop (TR-10-10 §8) — optional attribute.
   for _, attr in ipairs(doc.session.attributes or {}) do
     if attr.name == "group" then
       local sem = (attr.value or ""):match("^(%S+)")
@@ -1318,14 +1437,53 @@ function ipmx.validate(doc)
           { field_path = "session.attributes[group]",
             spec_ref = "TR-10-1 §10", code = "INVALID_VALUE" })
       end
+    elseif attr.name == "infoframe" then
+      local ok, msg = valid_infoframe(attr.value or "")
+      if not ok then
+        return nil, errors.new("invalid a=infoframe: " .. msg, {
+          field_path = "session.attributes[infoframe]",
+          spec_ref   = "TR-10-10 §8", code = "INVALID_VALUE",
+        })
+      end
     end
   end
 
-  -- Check for a=extmap at session level or in at least one non-USB media block.
+  -- TR-10-14 §14: every USB block (m=application TCP usb) must declare a=setup:passive.
+  for i, m in ipairs(doc.media) do
+    if usb_set[i] then
+      local setup = find_attr(m.attributes or {}, "setup")
+      if not setup then
+        return attr_err("missing required attribute 'setup' for USB block",
+          string.format("media[%d]", i), "setup", "TR-10-14 §14")
+      end
+      if setup.value ~= "passive" then
+        return attr_err(
+          "a=setup must be 'passive' for USB blocks (got '" .. tostring(setup.value) .. "')",
+          string.format("media[%d]", i), "setup", "TR-10-14 §14", "INVALID_VALUE")
+      end
+    end
+  end
+
+  -- b=AS bandwidth (TR-10-7 §11): when present on RTP blocks, value must be a
+  -- positive integer (kilobits per second).
+  for i, m in ipairs(doc.media) do
+    if not non_rtp_set[i] then
+      for _, b in ipairs(m.bandwidths or {}) do
+        if b.type == "AS" and (not b.value or b.value <= 0) then
+          return nil, errors.new(
+            "b=AS value must be a positive integer (kbps)",
+            { field_path = string.format("media[%d].bandwidths", i),
+              spec_ref = "TR-10-7 §11", code = "INVALID_VALUE" })
+        end
+      end
+    end
+  end
+
+  -- Check for a=extmap at session level or in at least one RTP media block.
   local has_extmap = find_attr(doc.session.attributes, "extmap") ~= nil
   if not has_extmap then
     for i, m in ipairs(doc.media) do
-      if not usb_set[i] and find_attr(m.attributes or {}, "extmap") then
+      if not non_rtp_set[i] and find_attr(m.attributes or {}, "extmap") then
         has_extmap = true
         break
       end
@@ -1351,7 +1509,7 @@ function ipmx.validate(doc)
     end
   end
   for i, m in ipairs(doc.media) do
-    if not usb_set[i] then
+    if not non_rtp_set[i] then
       for _, attr in ipairs(m.attributes or {}) do
         if attr.name == "extmap" then
           local ok, emsg = valid_extmap(attr.value or "")
@@ -1384,7 +1542,7 @@ function ipmx.validate(doc)
     end
   end
   for i, m in ipairs(doc.media) do
-    if not usb_set[i] then
+    if not non_rtp_set[i] then
       local media_extmap_ids = {}
       for _, attr in ipairs(m.attributes or {}) do
         if attr.name == "extmap" then
@@ -1403,9 +1561,9 @@ function ipmx.validate(doc)
     end
   end
 
-  -- Check IPMX fmtp marker and optional FEC params in each non-USB block (TR-10-1 §10.1).
+  -- Check IPMX fmtp marker and optional FEC params in each RTP block (TR-10-1 §10.1).
   for i, m in ipairs(doc.media) do
-    if not usb_set[i] then
+    if not non_rtp_set[i] then
       local mpath = string.format("media[%d]", i)
       local fmtp  = find_attr(m.attributes or {}, "fmtp")
       if fmtp then
@@ -1534,9 +1692,9 @@ function ipmx.validate(doc)
   end)
   if not dup_ok then return nil, dup_err end
 
-  -- RTCP port convention and port range (TR-10-1 §7, §8.7) — IPMX only.
+  -- RTCP port convention and port range (TR-10-1 §7, §8.7) — RTP blocks only.
   for i, m in ipairs(doc.media) do
-    if not usb_set[i] then
+    if not non_rtp_set[i] then
       local mpath  = string.format("media[%d]", i)
       local mattrs = m.attributes or {}
 
