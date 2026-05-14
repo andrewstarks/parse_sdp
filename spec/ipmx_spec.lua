@@ -849,6 +849,43 @@ describe("IPMX validation", function()
       assert.equal("TR-10-1 §8.7", err.spec_ref)
     end)
 
+    -- RFC 3605 §2.1 grammar:
+    --   rtcp-attribute = "rtcp:" port [SP nettype SP addrtype SP connection-address]
+    -- The full optional triple, if present, must be well-formed.
+    it("accepts a=rtcp:<port> IN IP4 <addr> (full RFC 3605 form)", function()
+      local text = base_ipmx_sdp({}, { "a=rtcp:5001 IN IP4 239.100.0.1/64" })
+      local doc, err = sdp.parse(text, "ipmx")
+      assert.is_nil(err)
+      assert.is_table(doc)
+    end)
+
+    it("rejects a=rtcp with malformed trailing content (e.g. slash form)", function()
+      local text = base_ipmx_sdp({}, { "a=rtcp:5001/239.100.0.1" })
+      local doc = sdp.parse(text)
+      assert.is_table(doc)
+      local ok, err = doc:validate("ipmx")
+      assert.is_nil(ok)
+      assert.matches("rtcp", err.message)
+    end)
+
+    it("rejects a=rtcp:<port> IN IPX <addr> (bad addrtype)", function()
+      local text = base_ipmx_sdp({}, { "a=rtcp:5001 IN IPX 239.100.0.1" })
+      local doc = sdp.parse(text)
+      assert.is_table(doc)
+      local ok, err = doc:validate("ipmx")
+      assert.is_nil(ok)
+      assert.matches("rtcp", err.message)
+    end)
+
+    it("rejects a=rtcp:<port> IN IP4 (missing address)", function()
+      local text = base_ipmx_sdp({}, { "a=rtcp:5001 IN IP4" })
+      local doc = sdp.parse(text)
+      assert.is_table(doc)
+      local ok, err = doc:validate("ipmx")
+      assert.is_nil(ok)
+      assert.matches("rtcp", err.message)
+    end)
+
     it("ST 2110 mode accepts a=rtcp-mux (no restriction at ST 2110 level)", function()
       -- Build a valid ST 2110 SDP with rtcp-mux — should pass at st2110 tier
       local lines = {
@@ -1123,6 +1160,26 @@ describe("IPMX validation", function()
       assert.is_table(doc)
       local _, err = doc:validate("ipmx")
       assert.matches("extmap", err.field_path)
+    end)
+
+    -- RFC 5285 §7 ABNF: extensionattributes = byte-string. RFC 4566 §9 defines
+    -- byte-string = 1*(%x01-09/%x0B-0C/%x0E-FF) — NUL, CR, LF are forbidden.
+    it("rejects extmap ext-attr containing a NUL byte", function()
+      local doc = sdp.parse(
+        ipmx_with_session_extmap("1 urn:ietf:params:rtp-hdrext:smpte-tc bad\0attr"))
+      assert.is_table(doc)
+      local ok, err = doc:validate("ipmx")
+      assert.is_nil(ok)
+      assert.is_table(err)
+      assert.matches("extmap", err.message)
+    end)
+
+    it("accepts extmap with a printable ext-attr token (byte-string)", function()
+      local doc, err = sdp.parse(
+        ipmx_with_session_extmap("1 urn:ietf:params:rtp-hdrext:smpte-tc opt=val"),
+        "ipmx")
+      assert.is_nil(err)
+      assert.is_table(doc)
     end)
 
     it("rejects bad extmap at media block level", function()

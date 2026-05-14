@@ -427,6 +427,41 @@ local function each_dup_group(doc, spec_ref, callback)
   return true
 end
 
+-- RFC 4566 §9 token grammar (referenced by RFC 5888 §4/§5 for semantics and
+-- identification-tag): token-char = %x21 / %x23-27 / %x2A-2B / %x2D-2E /
+-- %x30-39 / %x41-5A / %x5E-7E. Excludes SP, DQUOTE, parens, comma, slash,
+-- colon-through-at, brackets-and-backslash, DEL.
+local _rfc4566_token_char =
+    P("!")          -- 0x21
+  + R("\35\39")     -- 0x23-0x27: # $ % & '
+  + R("\42\43")     -- 0x2A-0x2B: * +
+  + R("\45\46")     -- 0x2D-0x2E: - .
+  + R("\48\57")     -- 0x30-0x39: 0-9
+  + R("\65\90")     -- 0x41-0x5A: A-Z
+  + R("\94\126")    -- 0x5E-0x7E: ^ _ ` a-z { | } ~
+local _rfc4566_token_pat = _rfc4566_token_char^1 * P(-1)
+
+-- RFC 5888 §5 a=group value: semantics *(SP identification-tag); semantics is
+-- a token, each identification-tag is a token. Empty value is invalid.
+local _group_value_pat =
+    _rfc4566_token_char^1
+  * (P(" ") * _rfc4566_token_char^1)^0
+  * P(-1)
+
+local function valid_mid_value(v)
+  if not _rfc4566_token_pat:match(v or "") then
+    return nil, "a=mid value must be an RFC 4566 token (alphanumeric plus !#$%&'*+-.^_`|~)"
+  end
+  return true
+end
+
+local function valid_group_value(v)
+  if not _group_value_pat:match(v or "") then
+    return nil, "a=group value must be <semantics> *(SP <identification-tag>), each an RFC 4566 token"
+  end
+  return true
+end
+
 -- Parse an rtpmap value (e.g. "96 raw/90000") into encoding name and clock rate.
 -- Returns encoding (string), clock_rate (number), or nil if the format does not match.
 local function rtpmap_parse(value)
@@ -1331,11 +1366,34 @@ function st2110.validate(doc, opts)
     end
   end
 
-  -- a=mid must be unique within the session (RFC 5888 §8.1).
+  -- RFC 5888 §5: a=group value grammar (semantics + identification-tags),
+  -- both required to be RFC 4566 tokens. Validate every a=group attribute
+  -- regardless of semantics, before any DUP-specific checks.
+  for _, attr in ipairs(doc.session.attributes or {}) do
+    if attr.name == "group" then
+      local gok, gerr = valid_group_value(attr.value or "")
+      if not gok then
+        return nil, errors.new("invalid a=group: " .. gerr, {
+          field_path = "session.attributes[group]",
+          spec_ref   = "RFC 5888 §5", code = "INVALID_VALUE",
+        })
+      end
+    end
+  end
+
+  -- a=mid format (RFC 5888 §4: identification-tag = token) and uniqueness
+  -- (RFC 5888 §8.1).
   local seen_mid = {}
   for i, m in ipairs(doc.media) do
     local mid_attr = find_attr(m.attributes or {}, "mid")
     if mid_attr and mid_attr.value then
+      local mok, merr = valid_mid_value(mid_attr.value)
+      if not mok then
+        return nil, errors.new("invalid a=mid: " .. merr, {
+          field_path = string.format("media[%d].attributes[mid]", i),
+          spec_ref   = "RFC 5888 §4", code = "INVALID_VALUE",
+        })
+      end
       if seen_mid[mid_attr.value] then
         return nil, errors.new(
           "duplicate a=mid value '" .. mid_attr.value .. "'",
@@ -1453,16 +1511,19 @@ local function valid_infoframe(value)
   return nil, "invalid a=infoframe format"
 end
 
--- RFC 5285 a=extmap: entry-count ["/direction"] SP URI [SP ext-attr]
+-- RFC 5285 §7 a=extmap: mapentry SP extensionname [SP extensionattributes]
+-- extensionattributes = byte-string (RFC 4566 §9): 1*(%x01-09/%x0B-0C/%x0E-FF),
+-- i.e. any byte except NUL, LF, CR.
 local _extmap_id  = R("09")^1
 local _extmap_dir = P("sendonly") + P("recvonly") + P("sendrecv") + P("inactive")
 local _uri_scheme = R("az","AZ") * (R("az","AZ","09") + S("+-.")  )^0
 local _uri_body   = (P(1) - S(" \t"))^1
+local _byte_string = (P(1) - S("\0\r\n"))^1
 local VALID_EXTMAP_PAT = _extmap_id
                        * (P("/") * _extmap_dir)^-1
                        * P(" ")
                        * _uri_scheme * P(":") * _uri_body
-                       * (P(" ") * P(1)^0)^-1
+                       * (P(" ") * _byte_string)^-1
                        * P(-1)
 
 -- TR-10-13 §20.1: PEP IV-Counter extmap URIs SHALL declare direction=sendonly.
@@ -2092,12 +2153,22 @@ function ipmx.validate(doc)
 
       local rtcp_attr = find_attr(mattrs, "rtcp")
       if rtcp_attr then
-        local rtcp_port_s = (rtcp_attr.value or ""):match("^(%d+)")
-        local rtcp_port   = rtcp_port_s and tonumber(rtcp_port_s)
-        if not rtcp_port then
-          return attr_err("a=rtcp has no port number",
+        -- RFC 3605 §2.1: rtcp-attribute = "rtcp:" port [SP nettype SP addrtype
+        -- SP connection-address]. The triple is optional but, when present,
+        -- must follow exactly that form.
+        local rtcp_v = rtcp_attr.value or ""
+        local rtcp_port_s = rtcp_v:match("^(%d+)$")
+        local rtcp_addrtype, rtcp_addr
+        if not rtcp_port_s then
+          rtcp_port_s, rtcp_addrtype, rtcp_addr =
+            rtcp_v:match("^(%d+) IN (IP[46]) (%S+)$")
+        end
+        if not rtcp_port_s then
+          return attr_err(
+            "invalid a=rtcp format (RFC 3605 §2.1: '<port> [SP IN SP IP4|IP6 SP <address>]')",
             mpath, "rtcp", "RFC 3605 §2.1", "INVALID_VALUE")
         end
+        local rtcp_port = tonumber(rtcp_port_s)
         if rtcp_port > 65535 then
           return attr_err(
             string.format("a=rtcp port %d is above UDP range (must be 1-65535)", rtcp_port),
@@ -2108,6 +2179,13 @@ function ipmx.validate(doc)
             string.format("a=rtcp port must be media port+1 (expected %d, got %s)",
               m.port + 1, tostring(rtcp_port)),
             mpath, "rtcp", "TR-10-1 §8.7", "INVALID_VALUE")
+        end
+        if rtcp_addr then
+          local cok, cmsg = valid_connection_address(rtcp_addrtype, rtcp_addr)
+          if not cok then
+            return attr_err("invalid a=rtcp address: " .. cmsg,
+              mpath, "rtcp", "RFC 3605 §2.1", "INVALID_VALUE")
+          end
         end
       end
     end

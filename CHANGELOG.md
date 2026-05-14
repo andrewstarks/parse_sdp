@@ -9,6 +9,34 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 
+### Added (M28 — IETF RFC strictness audit 2026-05-14, round 7)
+
+After M27 closed the major SMPTE/VSF strictness gaps, a second-pass audit was run with a deliberately different angle: read the **IETF RFCs** the library depends on (independent of SMPTE/VSF prose) and compare ABNFs to the validator. Two parallel research agents covered RFCs 4145, 4570, 5285, 5761, 5888, 7104, 3605 (transport + grouping) and RFCs 7273, 8331, 9134, 5771 (clock + payload formats). Direct ABNF re-verification against the RFC source text was used before any code change because the audit prose was approximate in places (one agent claimed RFC 5285 ext-attrs are "VCHAR-only" — actually `byte-string` per RFC 4566, broader). Three real low-severity strictness gaps were fixed.
+
+**LOW-severity strictness fixes:**
+
+- **RFC 5285 §7 — `a=extmap` ext-attr byte-string strictness**. `extensionattributes = byte-string` (RFC 4566 §9 — excludes NUL, LF, CR). The LPEG pattern's trailing `P(1)^0` accepted any byte including NUL; tightened to `(P(1) - S("\0\r\n"))^1`.
+- **RFC 5888 §4/§5 — `a=group` and `a=mid` token grammar**. Both `semantics` and `identification-tag` must be RFC 4566 tokens (a specific character class — alphanumeric plus a few punctuation chars, but excluding space, double-quote, parens, comma, slash, colon, semicolon, brackets, etc.). Added precise LPEG `_rfc4566_token_char` pattern and `valid_mid_value` / `valid_group_value` helpers. Previously the code extracted the first non-whitespace run as semantics and silently allowed invalid chars; malformed groups would bypass DUP validation rather than be rejected.
+- **RFC 3605 §2.1 — `a=rtcp` full grammar**. `rtcp-attribute = "rtcp:" port [SP nettype SP addrtype SP connection-address]`. Previously only `^(%d+)` was extracted, ignoring any trailing content. Now the value must match either `<port>` alone or `<port> SP IN SP (IP4|IP6) SP <address>`; the address is validated via the existing `valid_connection_address` (same routine that validates `c=`).
+
+**Audit findings deliberately not fixed (after direct ABNF or context verification):**
+
+- "RFC 7273 rejects bare `ntp`/`local`/`private` in `sdp` mode" — false premise: `valid_tsrefclk` is only invoked from ST 2110 mode (which correctly narrows to PTPv2 per ST 2110-10 §6.1/§8.2); `sdp` mode doesn't validate ts-refclk.
+- "RFC 5771 reserves 232.x/233.x/239.x — reject those" — would break every real-world ST 2110 / IPMX SDP; 239.0.0.0/8 (admin-scoped) is the canonical range. Agent misread the RFC 5771 "RESERVED" annotations.
+- "RFC 8331 should reject unknown smpte291 fmtp params" — RFC 8331 doesn't forbid extensions.
+- "RFC 4145 setup-required for non-USB TCP" — RFC 4145's REQUIRED status applies to offer/answer (RFC 3264) exchanges; declarative SDP doesn't mandate `a=setup`. Current bypass of non-USB application blocks remains.
+
+**Tests:** 603 → 616 (13 net new tests across `spec/st2110_spec.lua` and `spec/ipmx_spec.lua`).
+
+**Spec references for M28:**
+
+- IETF RFC 4566 §9 — byte-string and token grammar
+- IETF RFC 5285 §7 — a=extmap ABNF
+- IETF RFC 5888 §4/§5 — a=mid identification-tag and a=group semantics
+- IETF RFC 3605 §2.1 — a=rtcp ABNF
+
+---
+
 ### Added (M27 — validation gap closure 2026-05-14, round 6)
 
 A round-6 cross-spec audit (two parallel research agents reading the ST 2110-10/-20/-21/-22/-30 PDFs plus the IPMX Released Profile docs and the full TR-10 series) surfaced 22 candidate gaps. After user triage and direct spec verification, six were fixed; four were confirmed as out-of-scope per the actual spec text and left as-is with notes in PLAN.md so future audits don't re-raise them.

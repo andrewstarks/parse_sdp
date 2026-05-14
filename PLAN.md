@@ -684,6 +684,52 @@ is present, but no IPMX-level tests cover these values.
 
 ---
 
+### M28 — IETF RFC strictness audit ✓ (audit 2026-05-14, round 7)
+
+**Done when:** Gaps surfaced by an IETF-RFC-focused audit (different angle from the SMPTE/VSF-focused M27 round) are addressed. Two parallel research agents read RFC 4145, 4570, 5285, 5761, 5888, 7104, 3605 (Agent 1) and RFC 7273, 8331, 9134, 5771 (Agent 2) and compared the prose ABNFs to the validator. Several agent claims were rejected after direct ABNF verification (see "Rejected claims" below); three real low-severity strictness gaps were fixed.
+
+**ABNF re-verified directly against the RFC source text before coding** (the audit prose was approximate in places):
+
+- RFC 5285 §7: `extensionattributes = byte-string`; RFC 4566 §9 `byte-string = 1*(%x01-09 / %x0B-0C / %x0E-FF)` (excludes NUL, LF, CR — not "VCHAR-only" as the audit said).
+- RFC 5888 §4/§5: `semantics` and `identification-tag` are both RFC 4566 tokens (`token-char = %x21 / %x23-27 / %x2A-2B / %x2D-2E / %x30-39 / %x41-5A / %x5E-7E`).
+- RFC 3605 §2.1: `rtcp-attribute = "rtcp:" port [SP nettype SP addrtype SP connection-address]`.
+
+#### LOW-severity strictness fixes
+
+- [x] **RFC 5285 §7 — extmap ext-attr byte-string strictness**. The trailing `(P(" ") * P(1)^0)^-1` accepted any byte (including NUL/CR/LF). Now `(P(" ") * (P(1) - S("\0\r\n"))^1)^-1`. Practical impact: NUL bytes in ext-attrs are now rejected. ([parse_sdp.lua:1466-1471](parse_sdp.lua#L1466-L1471))
+- [x] **RFC 5888 §4/§5 — a=group and a=mid token grammar**. Added `_rfc4566_token_char` LPEG pattern (precise RFC 4566 token character set) and helpers `valid_mid_value` / `valid_group_value`. Both are invoked from `st2110.validate` (which IPMX inherits). The previous code extracted the first non-whitespace run as semantics, silently allowing invalid characters and letting malformed groups bypass DUP validation. ([parse_sdp.lua:434-476](parse_sdp.lua#L434-L476), invocation [parse_sdp.lua:1378-1408](parse_sdp.lua#L1378-L1408))
+- [x] **RFC 3605 §2.1 — a=rtcp full grammar**. The previous code extracted only `^(%d+)`, silently ignoring any trailing garbage. Now the value must match either `<port>` alone or `<port> SP IN SP (IP4|IP6) SP <address>`; the optional address triple is delegated to `valid_connection_address` (which IPMX already uses for `c=` lines). ([parse_sdp.lua:2154-2189](parse_sdp.lua#L2154-L2189))
+
+#### Rejected claims (after direct ABNF verification)
+
+- **"RFC 7273 rejects bare `ntp`, `local`, `private` in `sdp` mode"** — wrong. `valid_tsrefclk` is only invoked from `st2110.validate`; `sdp` mode does no ts-refclk validation at all. ST 2110-10 mandates PTPv2, so rejecting bare `ntp`/`local`/`private` in ST 2110 mode is correct.
+- **"RFC 5771 reserves 232.x/233.x/239.x — reject those multicast ranges"** — wrong. 239.0.0.0/8 (administratively-scoped) is the canonical ST 2110 / IPMX multicast range; rejecting it would break the library against every real-world SDP.
+- **"RFC 8331 should reject unknown smpte291 fmtp params"** — the agent's own caveat: RFC 8331 doesn't forbid extensions.
+- **"RFC 4566 §6.1 ptime non-negative integer in `sdp` mode"** — ST 2110 mode already validates this; RFC 4566 itself permits `ptime` to be opaque.
+
+#### Borderline cases left as-is
+
+- **RFC 4145 setup-required for non-USB TCP blocks** — RFC 4145's REQUIRED status applies to offer/answer exchanges per RFC 3264; declarative SDP (which is what IPMX/ST 2110 use) does not mandate `a=setup`. Current behavior of bypassing non-USB application blocks remains.
+- **RFC 5888: unknown group semantics (BUNDLE/ALT/LS)** — TR-10-1 §10 forbids only FID; other semantics aren't prohibited by IPMX (also confirmed in M27).
+
+#### Tests added (4 new, all guarded)
+
+- a=extmap: rejects NUL byte in ext-attr; accepts printable `opt=val` ext-attr.
+- a=mid: rejects parenthesis, rejects forward slash, accepts hyphen+period token (`primary-feed.0`).
+- a=group: rejects parenthesis in semantics, rejects comma in identification-tag, rejects whitespace-only value, accepts `DUP leg1 leg2`.
+- a=rtcp: accepts `<port> IN IP4 <addr>`, rejects `<port>/<addr>` slash form, rejects `IN IPX <addr>` (bad addrtype), rejects `IN IP4` with no address.
+
+**Tests:** 603 → 616 (13 net new tests).
+
+**Spec references for M28:**
+
+- IETF RFC 4566 §9 — byte-string and token grammar
+- IETF RFC 5285 §7 — a=extmap ABNF
+- IETF RFC 5888 §4/§5 — a=mid identification-tag and a=group semantics
+- IETF RFC 3605 §2.1 — a=rtcp ABNF
+
+---
+
 ### M27 — Validation gap closure ✓ (audit 2026-05-14, round 6)
 
 **Done when:** Six gaps surfaced by the round-6 cross-spec audit (ST 2110-10/-20/-21/-22/-30 PDFs + IPMX Released Profile docs + TR-10 series) are addressed. Two parallel research agents audited the ~80KB validator and ~210KB of tests against the spec corpus; six findings were flagged by the user as "fix"; four findings ("TP IPMX restriction," "HKEP fmtp conditional," "Group BUNDLE/ALT/LS rejection," "Infoframe backing m=ST2110-41") were verified against source spec text and skipped because the specs do not require them.

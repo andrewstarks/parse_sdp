@@ -2741,6 +2741,108 @@ describe("ST 2110 validation", function()
       assert.is_nil(err)
       assert.is_table(doc)
     end)
+
+    -- RFC 5888 §4: mid-attribute = "a=mid:" identification-tag, where
+    -- identification-tag is a `token` per RFC 4566 (alphanumeric plus
+    -- !#$%&'*+-.^_`|~). Forward slash, parens, colon etc. are forbidden.
+    -- Validate in isolation (no a=group line, which would catch the same
+    -- malformation first via its own token check).
+    local function single_video_with_mid(mid_value)
+      return table.concat({
+        "v=0",
+        "o=- 1234567890 1 IN IP4 192.168.1.1",
+        "s=Mid test",
+        "t=0 0",
+        PTP,
+        "m=video 5000 RTP/AVP 96",
+        "c=IN IP4 239.100.0.1/64",
+        "a=mid:" .. mid_value,
+        "a=rtpmap:96 raw/90000", VFMTP,
+        "a=mediaclk:direct=0",
+      }, "\r\n")
+    end
+
+    it("rejects a=mid containing a non-token char (parenthesis)", function()
+      local doc = sdp.parse(single_video_with_mid("leg(1"))
+      assert.is_table(doc)
+      local ok, err = doc:validate("st2110")
+      assert.is_nil(ok)
+      assert.matches("mid", err.message)
+      assert.matches("token", err.message)
+    end)
+
+    it("rejects a=mid containing a forward slash", function()
+      local doc = sdp.parse(single_video_with_mid("leg/1"))
+      assert.is_table(doc)
+      local ok, err = doc:validate("st2110")
+      assert.is_nil(ok)
+      assert.matches("mid", err.message)
+    end)
+
+    it("accepts a=mid with hyphen and period (valid token chars)", function()
+      local doc, err = sdp.parse(single_video_with_mid("primary-feed.0"), "st2110")
+      assert.is_nil(err)
+      assert.is_table(doc)
+    end)
+  end)
+
+  -- ── RFC 5888 §5: a=group syntax (semantics + identification-tags) ────────────
+
+  describe("a=group attribute syntax (RFC 5888 §5)", function()
+    local PTP = "a=ts-refclk:ptp=IEEE1588-2008:00-11-22-FF-FE-33-44-55:0"
+    local VFMTP = "a=fmtp:96 sampling=YCbCr-4:2:2; width=1920; height=1080; exactframerate=25; depth=10; TCS=SDR; colorimetry=BT709; PM=2110GPM; SSN=ST2110-20:2022; TP=2110TPN"
+    local function with_group(group_value)
+      return table.concat({
+        "v=0",
+        "o=- 1234567890 1 IN IP4 192.168.1.1",
+        "s=Group test",
+        "t=0 0",
+        "a=group:" .. group_value,
+        PTP,
+        "m=video 5000 RTP/AVP 96",
+        "c=IN IP4 239.100.0.1/64",
+        "a=mid:leg1",
+        "a=rtpmap:96 raw/90000", VFMTP,
+        "a=mediaclk:direct=0",
+        "m=video 5010 RTP/AVP 96",
+        "c=IN IP4 239.100.0.2/64",
+        "a=mid:leg2",
+        "a=rtpmap:96 raw/90000", VFMTP,
+        "a=mediaclk:direct=0",
+      }, "\r\n")
+    end
+
+    it("rejects a=group with an invalid semantics token (contains parens)", function()
+      local doc = sdp.parse(with_group("DU(P leg1 leg2"))
+      assert.is_table(doc)
+      local ok, err = doc:validate("st2110")
+      assert.is_nil(ok)
+      assert.matches("group", err.message)
+      assert.matches("token", err.message)
+    end)
+
+    it("rejects a=group with an invalid identification-tag (contains comma)", function()
+      local doc = sdp.parse(with_group("DUP leg,1 leg2"))
+      assert.is_table(doc)
+      local ok, err = doc:validate("st2110")
+      assert.is_nil(ok)
+      assert.matches("group", err.message)
+      assert.matches("token", err.message)
+    end)
+
+    it("rejects a=group with whitespace-only value", function()
+      local doc = sdp.parse(with_group(" "))
+      assert.is_table(doc)
+      local ok, err = doc:validate("st2110")
+      assert.is_nil(ok)
+      assert.matches("group", err.message)
+    end)
+
+    it("accepts a=group:DUP leg1 leg2 (well-formed)", function()
+      local doc, err = sdp.parse(with_group("DUP leg1 leg2"), "st2110")
+      assert.is_nil(err)
+      assert.is_table(doc)
+    end)
   end)
 
   -- ── M24: TSMODE / TSDELAY value format (ST 2110-10 §8.7) ─────────────────────
