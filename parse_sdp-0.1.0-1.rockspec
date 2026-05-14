@@ -28,11 +28,13 @@ and writes SDP files from the command line.
   license  = "MIT",
 }
 
+-- argparse is only loaded when parse_sdp.lua is run as a CLI binary; it is not
+-- required for library use via require("parse_sdp").  Install it separately if
+-- you want the CLI: luarocks install argparse
 dependencies = {
   "lua >= 5.5",
   "lpeg",
   "dkjson",
-  "argparse",
 }
 
 build = {
