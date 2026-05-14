@@ -470,6 +470,68 @@ local function valid_did_sdid(value)
   return nil, "invalid DID_SDID value (expected {0xHH,0xHH})"
 end
 
+-- ── ST 2110-20/30 fmtp value validators ───────────────────────────────────────
+
+-- LPEG patterns for structural validation of ST 2110-20 §7.2 fmtp values.
+local _digit_seq    = R("09")^1
+local _pos_int_pat  = _digit_seq * P(-1)
+local _efr_pat      = (_digit_seq * P("/") * _digit_seq + _digit_seq) * P(-1)
+local _chan_ord_pat  = P("SMPTE2110.(") * (P(1) - P(")"))^1 * P(")") * P(-1)
+local _ssn20_pat    = P("ST2110-20:")
+
+-- Allowed values for ST 2110-20 §7.2 enumerated fmtp fields.
+local VALID_SAMPLING = {
+  ["YCbCr-4:4:4"]=true, ["YCbCr-4:2:2"]=true, ["YCbCr-4:2:0"]=true,
+  ["CLYCbCr-4:4:4"]=true, ["CLYCbCr-4:2:2"]=true, ["CLYCbCr-4:2:0"]=true,
+  ["ICtCp-4:4:4"]=true, ["ICtCp-4:2:2"]=true, ["ICtCp-4:2:0"]=true,
+  ["RGB"]=true, ["XYZ"]=true, ["KEY"]=true,
+}
+local VALID_TCS = {
+  ["SDR"]=true, ["PQ"]=true, ["HLG"]=true, ["LINEAR"]=true,
+  ["BT2100LINPQ"]=true, ["BT2100LINHLG"]=true,
+  ["ST2065-1"]=true, ["ST428-1"]=true, ["DENSITY"]=true,
+}
+local VALID_COLORIMETRY = {
+  ["BT601"]=true, ["BT709"]=true, ["BT2020"]=true, ["BT2100"]=true,
+  ["ST2065-1"]=true, ["ST2065-3"]=true, ["UNSPECIFIED"]=true, ["ALPHA"]=true,
+}
+local VALID_PM = { ["2110GPM"]=true, ["2110BPM"]=true }
+
+-- Returns true if value is a key in set, otherwise nil + "invalid <name> value: <value>".
+local function valid_enum(value, set, name)
+  if set[value] then return true end
+  return nil, "invalid " .. name .. " value: " .. tostring(value)
+end
+
+-- Returns true for a string of one or more digits that is > 0.
+local function valid_pos_int(value)
+  if not _pos_int_pat:match(value) then return nil, "expected positive integer" end
+  if tonumber(value) <= 0 then return nil, "value must be positive" end
+  return true
+end
+
+-- Returns true for a positive integer or a positive_n/positive_d fraction.
+local function valid_exactframerate(value)
+  if not _efr_pat:match(value) then
+    return nil, "invalid exactframerate: " .. value
+  end
+  local n, d = value:match("^(%d+)/(%d+)$")
+  if n then
+    if tonumber(n) == 0 or tonumber(d) == 0 then
+      return nil, "exactframerate fraction must have positive numerator and denominator"
+    end
+    return true
+  end
+  if tonumber(value) == 0 then return nil, "exactframerate must be positive" end
+  return true
+end
+
+-- Returns true if value matches SMPTE2110.(<non-empty-group>) per ST 2110-30 §7.
+local function valid_channel_order(value)
+  if _chan_ord_pat:match(value) then return true end
+  return nil, "invalid channel-order (expected SMPTE2110.(<group>))"
+end
+
 -- Validate the value of a mediaclk attribute per ST 2110-10 §7.3.
 -- Returns true on success, or nil + error message string on failure.
 local function valid_mediaclk(value)
@@ -612,14 +674,44 @@ function st2110.validate(doc)
           string.format("rtpmap clock rate must be 90000 for video (got %s)", tostring(clock_rate)),
           mpath, "rtpmap", "ST 2110-20 §7.2", "INVALID_VALUE")
       end
-      if not params.sampling then
-        return attr_err("fmtp missing required 'sampling' parameter for video", mpath, "fmtp", "ST 2110-20 §7.2")
+      -- All nine required fmtp parameters (ST 2110-20 §7.2): presence then value.
+      local video_checks = {
+        { "sampling",       function(v) return valid_enum(v, VALID_SAMPLING,    "sampling")    end },
+        { "width",          valid_pos_int },
+        { "height",         valid_pos_int },
+        { "exactframerate", valid_exactframerate },
+        { "depth",          valid_pos_int },
+        { "TCS",            function(v) return valid_enum(v, VALID_TCS,         "TCS")         end },
+        { "colorimetry",    function(v) return valid_enum(v, VALID_COLORIMETRY, "colorimetry") end },
+        { "PM",             function(v) return valid_enum(v, VALID_PM,          "PM")          end },
+        { "SSN",            function(v)
+            if _ssn20_pat:match(v) then return true end
+            return nil, "SSN must start with 'ST2110-20:'"
+          end },
+      }
+      for _, ck in ipairs(video_checks) do
+        local key, fn = ck[1], ck[2]
+        local val = params[key]
+        if val == nil then
+          return attr_err("fmtp missing required '" .. key .. "' parameter for video",
+            mpath, "fmtp", "ST 2110-20 §7.2")
+        end
+        local vok, vmsg = fn(tostring(val))
+        if not vok then
+          return attr_err(vmsg, mpath, "fmtp", "ST 2110-20 §7.2", "INVALID_VALUE")
+        end
       end
 
     elseif m.media == "audio" then
       -- ST 2110-30: audio (PCM)
-      if not params["channel-order"] then
-        return attr_err("fmtp missing required 'channel-order' parameter for audio", mpath, "fmtp", "ST 2110-30 §7.2")
+      local co = params["channel-order"]
+      if not co then
+        return attr_err("fmtp missing required 'channel-order' parameter for audio",
+          mpath, "fmtp", "ST 2110-30 §7.2")
+      end
+      local cok, cmsg = valid_channel_order(tostring(co))
+      if not cok then
+        return attr_err(cmsg, mpath, "fmtp", "ST 2110-30 §7.2", "INVALID_VALUE")
       end
     end
   end

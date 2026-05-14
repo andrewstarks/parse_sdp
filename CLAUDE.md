@@ -83,8 +83,12 @@ doc.media[1].port
   All public functions return `result, err`. `error()` is reserved for programming
   mistakes (wrong argument type).
 - **No global state.** Module state lives in the returned table only.
-- **LPEG patterns are named constants** defined in the `── Grammar ──` section of
-  `parse_sdp.lua`, never constructed inline at call sites.
+- **LPEG patterns are named constants** defined near the section that uses them
+  (grammar patterns in `── Grammar ──`, validation patterns near the validator that
+  owns them), never constructed inline at call sites.
+- **Use LPEG for pattern matching whenever possible.** Prefer LPEG patterns over
+  Lua string patterns (`string.match`/`gmatch`) for structural validation — LPEG
+  compiles once, is composable, and is the established tool in this codebase.
 - **`M._grammar` and `M._errors`** are exposed on the returned module for spec
   access only; they are not part of the public contract.
 - **Strict by default.** If RFC 4566 says a field is required, the parser rejects

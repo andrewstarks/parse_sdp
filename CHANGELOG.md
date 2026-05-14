@@ -11,8 +11,8 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ### Added
 
-- M18 added to PLAN.md: ST 2110-20 full fmtp validation (9 required fields + value formats) and ST 2110-30 `channel-order` format check — not yet implemented
-- GUIDE.md: `sampling` and `channel-order` explicitly documented as presence-only; remaining ST 2110-20 fmtp fields noted as known gaps
+- M18: ST 2110-20 fmtp value validation — all nine required `fmtp` parameters (`sampling`, `width`, `height`, `exactframerate`, `depth`, `TCS`, `colorimetry`, `PM`, `SSN`) are now validated for both presence and value format per ST 2110-20 §7.2
+- M18: ST 2110-30 `channel-order` format validation — value must match `SMPTE2110.(<group>)` with a non-empty group token per ST 2110-30 §7
 
 ### Fixed
 
@@ -103,7 +103,7 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
   `examples/st2110/invalid/08_missing_ssn.sdp`
 - `GUIDE.md`: ST 2110-40 and ST 2110-41 fmtp parameter tables added
 
-### Fixed
+### Fixed (M14)
 
 - `fmtp_params`: bare flag tokens (e.g. `interlace` per ST 2110-20 §7.2) are now accepted
   and stored as `params[key] = true`; only genuinely malformed tokens (containing spaces or

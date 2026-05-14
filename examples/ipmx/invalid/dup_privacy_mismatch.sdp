@@ -8,7 +8,7 @@ m=video 5000 RTP/AVP 96
 c=IN IP4 239.100.0.1/64
 a=mid:leg1
 a=rtpmap:96 raw/90000
-a=fmtp:96 sampling=YCbCr-4:2:2; width=1920; height=1080; exactframerate=25; depth=10; colorimetry=BT709; PM=2110GPM; TP=2110TPN; IPMX
+a=fmtp:96 sampling=YCbCr-4:2:2; width=1920; height=1080; exactframerate=25; depth=10; TCS=SDR; colorimetry=BT709; PM=2110GPM; SSN=ST2110-20:2022; TP=2110TPN; IPMX
 a=mediaclk:direct=0
 a=ts-refclk:localmac=AA-BB-CC-DD-EE-FF
 a=extmap:1 urn:ietf:params:rtp-hdrext:smpte-tc
@@ -17,7 +17,7 @@ m=video 5010 RTP/AVP 96
 c=IN IP4 239.100.0.2/64
 a=mid:leg2
 a=rtpmap:96 raw/90000
-a=fmtp:96 sampling=YCbCr-4:2:2; width=1920; height=1080; exactframerate=25; depth=10; colorimetry=BT709; PM=2110GPM; TP=2110TPN; IPMX
+a=fmtp:96 sampling=YCbCr-4:2:2; width=1920; height=1080; exactframerate=25; depth=10; TCS=SDR; colorimetry=BT709; PM=2110GPM; SSN=ST2110-20:2022; TP=2110TPN; IPMX
 a=mediaclk:direct=0
 a=ts-refclk:localmac=AA-BB-CC-DD-EE-FF
 a=privacy: protocol=RTP; mode=AES-256-CTR; iv=0102030405060708090a0b0c0d0e0f10; key_generator=aabb; key_version=01; key_id=dead

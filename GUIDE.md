@@ -447,29 +447,28 @@ When `a=group:DUP <mid1> <mid2> …` is present at session level, the library va
 
 ### ST 2110-20 (video) `fmtp` parameters
 
-ST 2110-20 §7.2 requires `sampling`, `width`, `height`, `exactframerate`, `depth`, `TCS`,
-`colorimetry`, `PM`, and `SSN`. The library currently validates only `sampling` for presence;
-value format and the remaining required fields are not yet checked (see M18 in PLAN.md).
+ST 2110-20 §7.2 requires nine `fmtp` parameters. All are validated for both presence and
+value format.
 
 | Parameter | Example | Validated |
 | --- | --- | --- |
-| `sampling` | `YCbCr-4:2:2` | yes — required (presence only; value format not yet checked) |
-| `width` | `1920` | no |
-| `height` | `1080` | no |
-| `exactframerate` | `30000/1001` | no |
-| `depth` | `10` | no |
-| `TCS` | `SDR` | no |
-| `colorimetry` | `BT709` | no |
-| `PM` | `2110GPM` | no |
-| `SSN` | `ST2110-20:2022` | no |
+| `sampling` | `YCbCr-4:2:2` | yes — required; must be one of the enumerated values from §7.2 |
+| `width` | `1920` | yes — required; must be a positive integer |
+| `height` | `1080` | yes — required; must be a positive integer |
+| `exactframerate` | `30000/1001` | yes — required; positive integer or positive `n/d` fraction |
+| `depth` | `10` | yes — required; must be a positive integer |
+| `TCS` | `SDR` | yes — required; must be one of the enumerated values from §7.2 |
+| `colorimetry` | `BT709` | yes — required; must be one of the enumerated values from §7.2 |
+| `PM` | `2110GPM` | yes — required; must be `2110GPM` or `2110BPM` |
+| `SSN` | `ST2110-20:2022` | yes — required; value must start with `ST2110-20:` |
 
 ### ST 2110-30 (audio) required `fmtp` parameters
 
-`channel-order` is validated for presence only; value format is not yet checked (see M18 in PLAN.md).
+`channel-order` is validated for presence and value format.
 
 | Parameter | Example | Validated |
 | --- | --- | --- |
-| `channel-order` | `SMPTE2110.(ST)` | yes — required (presence only) |
+| `channel-order` | `SMPTE2110.(ST)` | yes — required; must match `SMPTE2110.(<group>)` with a non-empty group |
 
 ### ST 2110-40 (smpte291 ancillary data) `fmtp` parameters
 

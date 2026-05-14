@@ -432,7 +432,7 @@ a=rtcp-mux
 
 ---
 
-### M18 — ST 2110-20/30 fmtp value validation
+### M18 — ST 2110-20/30 fmtp value validation ✓
 
 **Done when:** All ST 2110-20 §7.2 required `fmtp` parameters are validated for both
 presence and value format. ST 2110-30 `channel-order` is validated for value format.
@@ -446,23 +446,23 @@ format validation, meaning syntactically garbage values pass today.
 
 **ST 2110-20 validation tasks:**
 
-- [ ] `sampling` — reject if not one of the enumerated values from ST 2110-20 §7.2:
+- [x] `sampling` — reject if not one of the enumerated values from ST 2110-20 §7.2:
   `YCbCr-4:4:4`, `YCbCr-4:2:2`, `YCbCr-4:2:0`, `CLYCbCr-4:4:4`, `CLYCbCr-4:2:2`,
   `CLYCbCr-4:2:0`, `ICtCp-4:4:4`, `ICtCp-4:2:2`, `ICtCp-4:2:0`, `RGB`, `XYZ`, `KEY`
-- [ ] `width` — required; must be a positive integer
-- [ ] `height` — required; must be a positive integer
-- [ ] `exactframerate` — required; must be a positive integer or `<int>/<int>` fraction
-- [ ] `depth` — required; must be a positive integer
-- [ ] `TCS` — required; must be one of the enumerated values from ST 2110-20 §7.2:
+- [x] `width` — required; must be a positive integer
+- [x] `height` — required; must be a positive integer
+- [x] `exactframerate` — required; must be a positive integer or `<int>/<int>` fraction
+- [x] `depth` — required; must be a positive integer
+- [x] `TCS` — required; must be one of the enumerated values from ST 2110-20 §7.2:
   `SDR`, `PQ`, `HLG`, `LINEAR`, `BT2100LINPQ`, `BT2100LINHLG`, `ST2065-1`, `ST428-1`, `DENSITY`
-- [ ] `colorimetry` — required; must be one of the enumerated values from ST 2110-20 §7.2:
+- [x] `colorimetry` — required; must be one of the enumerated values from ST 2110-20 §7.2:
   `BT601`, `BT709`, `BT2020`, `BT2100`, `ST2065-1`, `ST2065-3`, `UNSPECIFIED`, `ALPHA`
-- [ ] `PM` — required; must be `2110GPM` or `2110BPM`
-- [ ] `SSN` — required; must match `ST2110-20:<year>` (starts with `ST2110-20:`)
+- [x] `PM` — required; must be `2110GPM` or `2110BPM`
+- [x] `SSN` — required; must match `ST2110-20:<year>` (starts with `ST2110-20:`)
 
 **ST 2110-30 validation tasks:**
 
-- [ ] `channel-order` — must match the SMPTE 2110-30 §7 format:
+- [x] `channel-order` — must match the SMPTE 2110-30 §7 format:
   `SMPTE2110.(<group>)` where `<group>` is a non-empty token
 
 **Tests to add (spec/st2110_spec.lua):**

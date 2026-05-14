@@ -13,7 +13,7 @@ describe("IPMX validation", function()
     "m=video 5000 RTP/AVP 96",
     "c=IN IP4 239.100.0.1/64",
     "a=rtpmap:96 raw/90000",
-    "a=fmtp:96 sampling=YCbCr-4:2:2; width=1920; height=1080; exactframerate=25; depth=10; colorimetry=BT709; PM=2110GPM; TP=2110TPN; IPMX",
+    "a=fmtp:96 sampling=YCbCr-4:2:2; width=1920; height=1080; exactframerate=25; depth=10; TCS=SDR; colorimetry=BT709; PM=2110GPM; SSN=ST2110-20:2022; TP=2110TPN; IPMX",
     "a=mediaclk:direct=0",
     "a=ts-refclk:localmac=AA-BB-CC-DD-EE-FF",
     "a=extmap:1 urn:ietf:params:rtp-hdrext:smpte-tc",
@@ -29,7 +29,7 @@ describe("IPMX validation", function()
     "m=video 5000 RTP/AVP 96",
     "c=IN IP4 239.100.0.1/64",
     "a=rtpmap:96 raw/90000",
-    "a=fmtp:96 sampling=YCbCr-4:2:2; width=1920; height=1080; exactframerate=25; depth=10; colorimetry=BT709; PM=2110GPM; TP=2110TPN",
+    "a=fmtp:96 sampling=YCbCr-4:2:2; width=1920; height=1080; exactframerate=25; depth=10; TCS=SDR; colorimetry=BT709; PM=2110GPM; SSN=ST2110-20:2022; TP=2110TPN",
     "a=mediaclk:direct=0",
     "a=ts-refclk:ptp=IEEE1588-2008:00-11-22-FF-FE-33-44-55:0",
   }, "\r\n")
@@ -45,7 +45,7 @@ describe("IPMX validation", function()
   -- Build a minimal valid IPMX video SDP with optional extra attributes and fmtp override.
   local function base_ipmx_sdp(extra_session_attrs, extra_media_attrs, video_fmtp_override)
     local fmtp = video_fmtp_override or
-      "a=fmtp:96 sampling=YCbCr-4:2:2; width=1920; height=1080; exactframerate=25; depth=10; colorimetry=BT709; PM=2110GPM; TP=2110TPN; IPMX"
+      "a=fmtp:96 sampling=YCbCr-4:2:2; width=1920; height=1080; exactframerate=25; depth=10; TCS=SDR; colorimetry=BT709; PM=2110GPM; SSN=ST2110-20:2022; TP=2110TPN; IPMX"
     local lines = {
       "v=0",
       "o=- 1234567890 1 IN IP4 192.168.1.1",
@@ -139,7 +139,7 @@ describe("IPMX validation", function()
         "m=video 5000 RTP/AVP 96",
         "c=IN IP4 239.100.0.1/64",
         "a=rtpmap:96 raw/90000",
-        "a=fmtp:96 sampling=YCbCr-4:2:2; width=1920; height=1080; exactframerate=25; depth=10; colorimetry=BT709; PM=2110GPM; TP=2110TPN; IPMX",
+        "a=fmtp:96 sampling=YCbCr-4:2:2; width=1920; height=1080; exactframerate=25; depth=10; TCS=SDR; colorimetry=BT709; PM=2110GPM; SSN=ST2110-20:2022; TP=2110TPN; IPMX",
         "a=mediaclk:direct=0",
         "a=ts-refclk:localmac=AA-BB-CC-DD-EE-FF",
       }, "\r\n")
@@ -176,7 +176,7 @@ describe("IPMX validation", function()
   describe("IPMX fmtp marker (TR-10-1 §10.1)", function()
     it("rejects video fmtp without IPMX marker", function()
       local text = base_ipmx_sdp({}, {},
-        "a=fmtp:96 sampling=YCbCr-4:2:2; width=1920; height=1080; exactframerate=25; depth=10; colorimetry=BT709; PM=2110GPM; TP=2110TPN")
+        "a=fmtp:96 sampling=YCbCr-4:2:2; width=1920; height=1080; exactframerate=25; depth=10; TCS=SDR; colorimetry=BT709; PM=2110GPM; SSN=ST2110-20:2022; TP=2110TPN")
       local doc = sdp.parse(text)
       assert.is_table(doc)
       local ok, err = doc:validate("ipmx")
@@ -195,7 +195,7 @@ describe("IPMX validation", function()
 
     it("error references TR-10-1 §10.1 and fmtp field_path", function()
       local text = base_ipmx_sdp({}, {},
-        "a=fmtp:96 sampling=YCbCr-4:2:2; width=1920; height=1080; exactframerate=25; depth=10; colorimetry=BT709; PM=2110GPM; TP=2110TPN")
+        "a=fmtp:96 sampling=YCbCr-4:2:2; width=1920; height=1080; exactframerate=25; depth=10; TCS=SDR; colorimetry=BT709; PM=2110GPM; SSN=ST2110-20:2022; TP=2110TPN")
       local doc = sdp.parse(text)
       local ok, err = doc:validate("ipmx")
       assert.is_nil(ok)
@@ -427,7 +427,7 @@ describe("IPMX validation", function()
         "m=video 5000 RTP/AVP 96",
         "c=IN IP4 239.100.0.1/64",
         "a=rtpmap:96 raw/90000",
-        "a=fmtp:96 sampling=YCbCr-4:2:2; width=1920; height=1080; exactframerate=25; depth=10; colorimetry=BT709; PM=2110GPM; TP=2110TPN; IPMX",
+        "a=fmtp:96 sampling=YCbCr-4:2:2; width=1920; height=1080; exactframerate=25; depth=10; TCS=SDR; colorimetry=BT709; PM=2110GPM; SSN=ST2110-20:2022; TP=2110TPN; IPMX",
         "a=mediaclk:direct=0",
         "a=ts-refclk:localmac=AA-BB-CC-DD-EE-FF",
         "m=application 5100 TCP usb",
@@ -451,7 +451,7 @@ describe("IPMX validation", function()
         "m=video 5000 RTP/AVP 96",
         "c=IN IP4 239.100.0.1/64",
         "a=rtpmap:96 raw/90000",
-        "a=fmtp:96 sampling=YCbCr-4:2:2; width=1920; height=1080; exactframerate=25; depth=10; colorimetry=BT709; PM=2110GPM; TP=2110TPN; IPMX",
+        "a=fmtp:96 sampling=YCbCr-4:2:2; width=1920; height=1080; exactframerate=25; depth=10; TCS=SDR; colorimetry=BT709; PM=2110GPM; SSN=ST2110-20:2022; TP=2110TPN; IPMX",
         "a=mediaclk:direct=0",
         "a=ts-refclk:localmac=AA-BB-CC-DD-EE-FF",
         "m=application 5100 TCP usb",
@@ -476,7 +476,7 @@ describe("IPMX validation", function()
         "m=video 5000 RTP/AVP 96",
         "c=IN IP4 239.100.0.1/64",
         "a=rtpmap:96 raw/90000",
-        "a=fmtp:96 sampling=YCbCr-4:2:2; width=1920; height=1080; exactframerate=25; depth=10; colorimetry=BT709; PM=2110GPM; TP=2110TPN; IPMX",
+        "a=fmtp:96 sampling=YCbCr-4:2:2; width=1920; height=1080; exactframerate=25; depth=10; TCS=SDR; colorimetry=BT709; PM=2110GPM; SSN=ST2110-20:2022; TP=2110TPN; IPMX",
         "a=mediaclk:direct=0",
         "a=ts-refclk:localmac=AA-BB-CC-DD-EE-FF",
         "m=application 5100 TCP usb",
@@ -504,7 +504,7 @@ describe("IPMX validation", function()
         "m=video 5000 RTP/AVP 96",
         "c=IN IP4 239.100.0.1/64",
         "a=rtpmap:96 raw/90000",
-        "a=fmtp:96 sampling=YCbCr-4:2:2; width=1920; height=1080; exactframerate=25; depth=10; colorimetry=BT709; PM=2110GPM; TP=2110TPN; IPMX",
+        "a=fmtp:96 sampling=YCbCr-4:2:2; width=1920; height=1080; exactframerate=25; depth=10; TCS=SDR; colorimetry=BT709; PM=2110GPM; SSN=ST2110-20:2022; TP=2110TPN; IPMX",
         "a=mediaclk:direct=0",
         "a=ts-refclk:localmac=AA-BB-CC-DD-EE-FF",
         "m=application 5100 TCP usb",
@@ -523,7 +523,7 @@ describe("IPMX validation", function()
   describe("FEC FECPROFILE (TR-10-6 §7.6)", function()
     it("accepts FECPROFILE=profile-a in fmtp", function()
       local text = base_ipmx_sdp({}, {},
-        "a=fmtp:96 sampling=YCbCr-4:2:2; width=1920; height=1080; exactframerate=25; depth=10; colorimetry=BT709; PM=2110GPM; TP=2110TPN; FECPROFILE=profile-a; IPMX")
+        "a=fmtp:96 sampling=YCbCr-4:2:2; width=1920; height=1080; exactframerate=25; depth=10; TCS=SDR; colorimetry=BT709; PM=2110GPM; SSN=ST2110-20:2022; TP=2110TPN; FECPROFILE=profile-a; IPMX")
       local doc = sdp.parse(text)
       assert.is_table(doc)
       local ok, err = doc:validate("ipmx")
@@ -533,7 +533,7 @@ describe("IPMX validation", function()
 
     it("rejects unknown FECPROFILE value", function()
       local text = base_ipmx_sdp({}, {},
-        "a=fmtp:96 sampling=YCbCr-4:2:2; width=1920; height=1080; exactframerate=25; depth=10; colorimetry=BT709; PM=2110GPM; TP=2110TPN; FECPROFILE=profile-z; IPMX")
+        "a=fmtp:96 sampling=YCbCr-4:2:2; width=1920; height=1080; exactframerate=25; depth=10; TCS=SDR; colorimetry=BT709; PM=2110GPM; SSN=ST2110-20:2022; TP=2110TPN; FECPROFILE=profile-z; IPMX")
       local doc = sdp.parse(text)
       assert.is_table(doc)
       local ok, err = doc:validate("ipmx")
@@ -545,7 +545,7 @@ describe("IPMX validation", function()
 
     it("accepts valid FEC_ADD_LATENCY_VIDEO with FECPROFILE", function()
       local text = base_ipmx_sdp({}, {},
-        "a=fmtp:96 sampling=YCbCr-4:2:2; width=1920; height=1080; exactframerate=25; depth=10; colorimetry=BT709; PM=2110GPM; TP=2110TPN; FECPROFILE=profile-a; FEC_ADD_LATENCY_VIDEO=1000; IPMX")
+        "a=fmtp:96 sampling=YCbCr-4:2:2; width=1920; height=1080; exactframerate=25; depth=10; TCS=SDR; colorimetry=BT709; PM=2110GPM; SSN=ST2110-20:2022; TP=2110TPN; FECPROFILE=profile-a; FEC_ADD_LATENCY_VIDEO=1000; IPMX")
       local doc = sdp.parse(text)
       assert.is_table(doc)
       local ok, err = doc:validate("ipmx")
@@ -555,7 +555,7 @@ describe("IPMX validation", function()
 
     it("rejects non-integer FEC_ADD_LATENCY_VIDEO", function()
       local text = base_ipmx_sdp({}, {},
-        "a=fmtp:96 sampling=YCbCr-4:2:2; width=1920; height=1080; exactframerate=25; depth=10; colorimetry=BT709; PM=2110GPM; TP=2110TPN; FECPROFILE=profile-a; FEC_ADD_LATENCY_VIDEO=notanumber; IPMX")
+        "a=fmtp:96 sampling=YCbCr-4:2:2; width=1920; height=1080; exactframerate=25; depth=10; TCS=SDR; colorimetry=BT709; PM=2110GPM; SSN=ST2110-20:2022; TP=2110TPN; FECPROFILE=profile-a; FEC_ADD_LATENCY_VIDEO=notanumber; IPMX")
       local doc = sdp.parse(text)
       assert.is_table(doc)
       local ok, err = doc:validate("ipmx")
@@ -566,7 +566,7 @@ describe("IPMX validation", function()
 
     it("accepts valid FEC_ADD_LATENCY_AUDIO with FECPROFILE", function()
       local text = base_ipmx_sdp({}, {},
-        "a=fmtp:96 sampling=YCbCr-4:2:2; width=1920; height=1080; exactframerate=25; depth=10; colorimetry=BT709; PM=2110GPM; TP=2110TPN; FECPROFILE=profile-a; FEC_ADD_LATENCY_AUDIO=500; IPMX")
+        "a=fmtp:96 sampling=YCbCr-4:2:2; width=1920; height=1080; exactframerate=25; depth=10; TCS=SDR; colorimetry=BT709; PM=2110GPM; SSN=ST2110-20:2022; TP=2110TPN; FECPROFILE=profile-a; FEC_ADD_LATENCY_AUDIO=500; IPMX")
       local doc = sdp.parse(text)
       assert.is_table(doc)
       local ok, err = doc:validate("ipmx")
@@ -595,7 +595,7 @@ describe("IPMX validation", function()
 
   describe("a=group:DUP grouping — IPMX (TR-10-13 §13)", function()
     local MAC  = "a=ts-refclk:localmac=AA-BB-CC-DD-EE-FF"
-    local VFMTP_IPMX = "a=fmtp:96 sampling=YCbCr-4:2:2; width=1920; height=1080; exactframerate=25; depth=10; colorimetry=BT709; PM=2110GPM; TP=2110TPN; IPMX"
+    local VFMTP_IPMX = "a=fmtp:96 sampling=YCbCr-4:2:2; width=1920; height=1080; exactframerate=25; depth=10; TCS=SDR; colorimetry=BT709; PM=2110GPM; SSN=ST2110-20:2022; TP=2110TPN; IPMX"
     local PRIV = "a=privacy: protocol=RTP; mode=AES-128-CTR; iv=0102030405060708090a0b0c0d0e0f10; key_generator=aabb; key_version=01; key_id=dead"
 
     local function dup_ipmx_sdp(opts)
@@ -746,7 +746,7 @@ describe("IPMX validation", function()
         "m=video 5000 RTP/AVP 96",
         "c=IN IP4 239.100.0.1/64",
         "a=rtpmap:96 raw/90000",
-        "a=fmtp:96 sampling=YCbCr-4:2:2; width=1920; height=1080; exactframerate=25; depth=10; colorimetry=BT709; PM=2110GPM; TP=2110TPN",
+        "a=fmtp:96 sampling=YCbCr-4:2:2; width=1920; height=1080; exactframerate=25; depth=10; TCS=SDR; colorimetry=BT709; PM=2110GPM; SSN=ST2110-20:2022; TP=2110TPN",
         "a=mediaclk:direct=0",
         "a=ts-refclk:ptp=IEEE1588-2008:00-11-22-FF-FE-33-44-55:0",
         "a=rtcp-mux",
