@@ -17,9 +17,11 @@ Built with [LPEG](https://www.inf.puc-rio.br/~roberto/lpeg/) for precise, compos
 **LuaRocks:**
 
 ```sh
-luarocks install dkjson      # JSON dependency
 luarocks install parse_sdp
 ```
+
+`lpeg`, `dkjson`, and `argparse` are installed automatically as dependencies.
+`argparse` is only used by the CLI binary — `require("parse_sdp")` never loads it.
 
 **Docker:**
 
