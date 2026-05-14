@@ -495,7 +495,13 @@ local VALID_COLORIMETRY = {
   ["BT601"]=true, ["BT709"]=true, ["BT2020"]=true, ["BT2100"]=true,
   ["ST2065-1"]=true, ["ST2065-3"]=true, ["UNSPECIFIED"]=true, ["ALPHA"]=true,
 }
-local VALID_PM = { ["2110GPM"]=true, ["2110BPM"]=true }
+local VALID_PM    = { ["2110GPM"]=true, ["2110BPM"]=true }
+local VALID_RANGE = { ["NARROW"]=true, ["FULLPROTECT"]=true, ["FULL"]=true }
+-- Known professional audio sample rates (Hz).
+local VALID_AUDIO_RATES = {
+  [32000]=true, [44100]=true, [48000]=true,
+  [88200]=true, [96000]=true, [176400]=true, [192000]=true,
+}
 
 -- Returns true if value is a key in set, otherwise nil + "invalid <name> value: <value>".
 local function valid_enum(value, set, name)
@@ -701,9 +707,21 @@ function st2110.validate(doc)
           return attr_err(vmsg, mpath, "fmtp", "ST 2110-20 §7.2", "INVALID_VALUE")
         end
       end
+      local range_val = params["RANGE"]
+      if range_val ~= nil then
+        local vok, vmsg = valid_enum(tostring(range_val), VALID_RANGE, "RANGE")
+        if not vok then
+          return attr_err(vmsg, mpath, "fmtp", "ST 2110-20 §7.2", "INVALID_VALUE")
+        end
+      end
 
     elseif m.media == "audio" then
       -- ST 2110-30: audio (PCM)
+      if not VALID_AUDIO_RATES[clock_rate] then
+        return attr_err(
+          string.format("rtpmap clock rate %s is not a known audio sample rate", tostring(clock_rate)),
+          mpath, "rtpmap", "ST 2110-30 §7.1", "INVALID_VALUE")
+      end
       local co = params["channel-order"]
       if not co then
         return attr_err("fmtp missing required 'channel-order' parameter for audio",

@@ -442,33 +442,44 @@ When `a=group:DUP <mid1> <mid2> …` is present at session level, the library va
 | --- | --- |
 | `a=ts-refclk` | Required. Accepted: `ptp=<version>:<gmid>[:<domain>]`; `localmac=<mac>`; `ntp=<addr>`; `gps`; `gal`; `glonass` |
 | `a=mediaclk` | Required. Accepted: `direct=<integer>` (sample offset, may be negative); `sender` |
-| `a=rtpmap` | Required. Clock rate must match media type |
+| `a=rtpmap` | Required. Clock rate validated: must be 90000 for video, `smpte291`, and `ST2110-41`; audio clock rate is not validated |
 | `a=fmtp` | Required. Key=value pairs validated per sub-standard |
 
 ### ST 2110-20 (video) `fmtp` parameters
 
-ST 2110-20 §7.2 requires nine `fmtp` parameters. All are validated for both presence and
+ST 2110-20 §7.2 requires nine `fmtp` parameters. All nine are validated for both presence
+and value format.
+
+| Parameter | Example | Valid values |
+| --- | --- | --- |
+| `sampling` | `YCbCr-4:2:2` | `YCbCr-4:4:4`, `YCbCr-4:2:2`, `YCbCr-4:2:0`, `CLYCbCr-4:4:4`, `CLYCbCr-4:2:2`, `CLYCbCr-4:2:0`, `ICtCp-4:4:4`, `ICtCp-4:2:2`, `ICtCp-4:2:0`, `RGB`, `XYZ`, `KEY` |
+| `width` | `1920` | positive integer |
+| `height` | `1080` | positive integer |
+| `exactframerate` | `30000/1001` | positive integer or `n/d` fraction (both parts positive) |
+| `depth` | `10` | positive integer |
+| `TCS` | `SDR` | `SDR`, `PQ`, `HLG`, `LINEAR`, `BT2100LINPQ`, `BT2100LINHLG`, `ST2065-1`, `ST428-1`, `DENSITY` |
+| `colorimetry` | `BT709` | `BT601`, `BT709`, `BT2020`, `BT2100`, `ST2065-1`, `ST2065-3`, `UNSPECIFIED`, `ALPHA` |
+| `PM` | `2110GPM` | `2110GPM`, `2110BPM` |
+| `SSN` | `ST2110-20:2022` | must start with `ST2110-20:` |
+
+Optional parameters validated when present:
+
+| Parameter | Valid values | Spec ref |
+| --- | --- | --- |
+| `RANGE` | `NARROW`, `FULLPROTECT`, `FULL` | ST 2110-20 §7.2 |
+
+Optional parameters accepted but not validated: `TP` (ST 2110-21 traffic shaping profile),
+`interlace`, `segmented`, `MAXUDP`, `PAR`, and any other unrecognized keys.
+
+### ST 2110-30 (audio) `rtpmap` and `fmtp` parameters
+
+The `a=rtpmap` clock rate is validated against known audio sample rates: 32000, 44100,
+48000, 88200, 96000, 176400, 192000 Hz. `channel-order` is validated for presence and
 value format.
 
-| Parameter | Example | Validated |
+| Parameter | Example | Valid values |
 | --- | --- | --- |
-| `sampling` | `YCbCr-4:2:2` | yes — required; must be one of the enumerated values from §7.2 |
-| `width` | `1920` | yes — required; must be a positive integer |
-| `height` | `1080` | yes — required; must be a positive integer |
-| `exactframerate` | `30000/1001` | yes — required; positive integer or positive `n/d` fraction |
-| `depth` | `10` | yes — required; must be a positive integer |
-| `TCS` | `SDR` | yes — required; must be one of the enumerated values from §7.2 |
-| `colorimetry` | `BT709` | yes — required; must be one of the enumerated values from §7.2 |
-| `PM` | `2110GPM` | yes — required; must be `2110GPM` or `2110BPM` |
-| `SSN` | `ST2110-20:2022` | yes — required; value must start with `ST2110-20:` |
-
-### ST 2110-30 (audio) required `fmtp` parameters
-
-`channel-order` is validated for presence and value format.
-
-| Parameter | Example | Validated |
-| --- | --- | --- |
-| `channel-order` | `SMPTE2110.(ST)` | yes — required; must match `SMPTE2110.(<group>)` with a non-empty group |
+| `channel-order` | `SMPTE2110.(ST)` | must match `SMPTE2110.(<group>)` with a non-empty group |
 
 ### ST 2110-40 (smpte291 ancillary data) `fmtp` parameters
 

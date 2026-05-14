@@ -13,6 +13,8 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 - M18: ST 2110-20 fmtp value validation — all nine required `fmtp` parameters (`sampling`, `width`, `height`, `exactframerate`, `depth`, `TCS`, `colorimetry`, `PM`, `SSN`) are now validated for both presence and value format per ST 2110-20 §7.2
 - M18: ST 2110-30 `channel-order` format validation — value must match `SMPTE2110.(<group>)` with a non-empty group token per ST 2110-30 §7
+- ST 2110-20 optional `RANGE` fmtp parameter validated when present (`NARROW`, `FULLPROTECT`, `FULL`) per §7.2
+- ST 2110-30 audio `rtpmap` clock rate validated against known professional sample rates: 32000, 44100, 48000, 88200, 96000, 176400, 192000 Hz
 
 ### Fixed
 

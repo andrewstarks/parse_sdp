@@ -841,4 +841,108 @@ describe("ST 2110 validation", function()
       assert.matches("channel%-order", err.message)
     end)
   end)
+
+  -- ── ST 2110-30: audio rtpmap clock rate ──────────────────────────────────────
+
+  describe("ST 2110-30 audio rtpmap clock rate (§7.1)", function()
+    local function audio_sdp(rate)
+      return table.concat({
+        "v=0",
+        "o=- 1234567890 1 IN IP4 192.168.1.1",
+        "s=ST2110 Audio",
+        "t=0 0",
+        "a=ts-refclk:ptp=IEEE1588-2008:00-11-22-FF-FE-33-44-55:0",
+        "m=audio 5010 RTP/AVP 97",
+        "c=IN IP4 239.100.0.2/64",
+        "a=rtpmap:97 L24/" .. rate .. "/8",
+        "a=fmtp:97 channel-order=SMPTE2110.(ST)",
+        "a=mediaclk:direct=0",
+      }, "\r\n")
+    end
+
+    local known_rates = { 32000, 44100, 48000, 88200, 96000, 176400, 192000 }
+    for _, rate in ipairs(known_rates) do
+      it("accepts " .. rate .. " Hz", function()
+        local doc, err = sdp.parse(audio_sdp(rate), "st2110")
+        assert.is_nil(err)
+        assert.is_table(doc)
+      end)
+    end
+
+    it("rejects an unknown rate (e.g. 22050)", function()
+      local doc = sdp.parse(audio_sdp(22050))
+      assert.is_table(doc)
+      local ok, err = doc:validate("st2110")
+      assert.is_nil(ok)
+      assert.is_table(err)
+      assert.matches("clock rate", err.message)
+      assert.equal("ST 2110-30 §7.1", err.spec_ref)
+    end)
+
+    it("rejects a nonsense rate (e.g. 1)", function()
+      local doc = sdp.parse(audio_sdp(1))
+      assert.is_table(doc)
+      local ok, err = doc:validate("st2110")
+      assert.is_nil(ok)
+      assert.is_table(err)
+      assert.matches("clock rate", err.message)
+    end)
+  end)
+
+  -- ── ST 2110-20 optional fmtp parameters ──────────────────────────────────────
+
+  describe("ST 2110-20 optional fmtp parameters", function()
+    local BASE = "sampling=YCbCr-4:2:2; width=1920; height=1080; exactframerate=25; depth=10; TCS=SDR; colorimetry=BT709; PM=2110GPM; SSN=ST2110-20:2022"
+
+    local function video20_sdp(fmtp_str)
+      return table.concat({
+        "v=0",
+        "o=- 1234567890 1 IN IP4 192.168.1.1",
+        "s=ST2110 Video",
+        "t=0 0",
+        "a=ts-refclk:ptp=IEEE1588-2008:00-11-22-FF-FE-33-44-55:0",
+        "m=video 5000 RTP/AVP 96",
+        "c=IN IP4 239.100.0.1/64",
+        "a=rtpmap:96 raw/90000",
+        "a=fmtp:96 " .. fmtp_str,
+        "a=mediaclk:direct=0",
+      }, "\r\n")
+    end
+
+    describe("RANGE", function()
+      it("accepts RANGE=NARROW", function()
+        local doc, err = sdp.parse(video20_sdp(BASE .. "; RANGE=NARROW"), "st2110")
+        assert.is_nil(err)
+        assert.is_table(doc)
+      end)
+
+      it("accepts RANGE=FULLPROTECT", function()
+        local doc, err = sdp.parse(video20_sdp(BASE .. "; RANGE=FULLPROTECT"), "st2110")
+        assert.is_nil(err)
+        assert.is_table(doc)
+      end)
+
+      it("accepts RANGE=FULL", function()
+        local doc, err = sdp.parse(video20_sdp(BASE .. "; RANGE=FULL"), "st2110")
+        assert.is_nil(err)
+        assert.is_table(doc)
+      end)
+
+      it("rejects invalid RANGE value", function()
+        local doc = sdp.parse(video20_sdp(BASE .. "; RANGE=PARTIAL"))
+        assert.is_table(doc)
+        local ok, err = doc:validate("st2110")
+        assert.is_nil(ok)
+        assert.is_table(err)
+        assert.matches("RANGE", err.message)
+        assert.equal("ST 2110-20 §7.2", err.spec_ref)
+      end)
+
+      it("absent RANGE is accepted (optional parameter)", function()
+        local doc, err = sdp.parse(video20_sdp(BASE), "st2110")
+        assert.is_nil(err)
+        assert.is_table(doc)
+      end)
+    end)
+  end)
 end)
