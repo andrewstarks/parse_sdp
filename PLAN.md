@@ -39,6 +39,16 @@ Each milestone: write tests → confirm they fail → implement → confirm they
 
 ---
 
+### M32 — Packaging ✓
+
+**Done when:** rockspec and LICENSE are in the repo.
+
+- [x] `parse_sdp-0.1.0-1.rockspec` — LuaRocks package spec (module + bin install)
+- [x] `LICENSE` — MIT, copyright 2026 Andrew Starks
+- [x] `CHANGELOG.md` updated
+
+---
+
 ### M1 — Scaffolding ✓
 
 **Done when:** `busted spec/` runs and one smoke test passes.

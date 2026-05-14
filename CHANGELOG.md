@@ -9,6 +9,13 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 
+### Added (M32 — packaging 2026-05-14: LuaRocks rockspec + MIT license)
+
+- **`parse_sdp-0.1.0-1.rockspec`** — LuaRocks package spec; declares `lpeg`, `dkjson`, and `argparse` as runtime dependencies; installs `parse_sdp.lua` as both a Lua module and a CLI binary.
+- **`LICENSE`** — MIT license (copyright 2026 Andrew Starks).
+
+---
+
 ### Added (M31 — audit 2026-05-14, round 10: opinion audit + citation cleanup)
 
 A systematic audit of every validation check under the M30 conformance principle. ~140 checks classified as GROUNDED, WELL-FORMEDNESS, GROUNDED-MISCITED, OPINION, or UNCLEAR. One opinion-tagged check deleted; one structural gap exposed by the deletion was closed with proper citation; three grounded-but-miscited checks were re-cited.
