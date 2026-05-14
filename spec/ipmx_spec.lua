@@ -14,7 +14,7 @@ describe("IPMX validation", function()
     "m=video 5000 RTP/AVP 96",
     "c=IN IP4 239.100.0.1/64",
     "a=rtpmap:96 raw/90000",
-    "a=fmtp:96 sampling=YCbCr-4:2:2; width=1920; height=1080; exactframerate=25; depth=10; TCS=SDR; colorimetry=BT709; PM=2110GPM; SSN=ST2110-20:2022; TP=2110TPN; IPMX",
+    "a=fmtp:96 sampling=YCbCr-4:2:2; width=1920; height=1080; exactframerate=25; depth=10; TCS=SDR; colorimetry=BT709; PM=2110GPM; SSN=ST2110-20:2022; TP=2110TPN; measuredpixclk=148500000; vtotal=1125; htotal=2200; IPMX",
     "a=mediaclk:direct=0",
     "a=ts-refclk:localmac=AA-BB-CC-DD-EE-FF",
     "a=extmap:1 urn:ietf:params:rtp-hdrext:smpte-tc",
@@ -30,7 +30,7 @@ describe("IPMX validation", function()
     "m=video 5000 RTP/AVP 96",
     "c=IN IP4 239.100.0.1/64",
     "a=rtpmap:96 raw/90000",
-    "a=fmtp:96 sampling=YCbCr-4:2:2; width=1920; height=1080; exactframerate=25; depth=10; TCS=SDR; colorimetry=BT709; PM=2110GPM; SSN=ST2110-20:2022; TP=2110TPN",
+    "a=fmtp:96 sampling=YCbCr-4:2:2; width=1920; height=1080; exactframerate=25; depth=10; TCS=SDR; colorimetry=BT709; PM=2110GPM; SSN=ST2110-20:2022; TP=2110TPN; measuredpixclk=148500000; vtotal=1125; htotal=2200",
     "a=mediaclk:direct=0",
     "a=ts-refclk:ptp=IEEE1588-2008:00-11-22-FF-FE-33-44-55:0",
   }, "\r\n")
@@ -46,7 +46,7 @@ describe("IPMX validation", function()
   -- Build a minimal valid IPMX video SDP with optional extra attributes and fmtp override.
   local function base_ipmx_sdp(extra_session_attrs, extra_media_attrs, video_fmtp_override)
     local fmtp = video_fmtp_override or
-      "a=fmtp:96 sampling=YCbCr-4:2:2; width=1920; height=1080; exactframerate=25; depth=10; TCS=SDR; colorimetry=BT709; PM=2110GPM; SSN=ST2110-20:2022; TP=2110TPN; IPMX"
+      "a=fmtp:96 sampling=YCbCr-4:2:2; width=1920; height=1080; exactframerate=25; depth=10; TCS=SDR; colorimetry=BT709; PM=2110GPM; SSN=ST2110-20:2022; TP=2110TPN; measuredpixclk=148500000; vtotal=1125; htotal=2200; IPMX"
     local lines = {
       "v=0",
       "o=- 1234567890 1 IN IP4 192.168.1.1",
@@ -140,7 +140,7 @@ describe("IPMX validation", function()
         "m=video 5000 RTP/AVP 96",
         "c=IN IP4 239.100.0.1/64",
         "a=rtpmap:96 raw/90000",
-        "a=fmtp:96 sampling=YCbCr-4:2:2; width=1920; height=1080; exactframerate=25; depth=10; TCS=SDR; colorimetry=BT709; PM=2110GPM; SSN=ST2110-20:2022; TP=2110TPN; IPMX",
+        "a=fmtp:96 sampling=YCbCr-4:2:2; width=1920; height=1080; exactframerate=25; depth=10; TCS=SDR; colorimetry=BT709; PM=2110GPM; SSN=ST2110-20:2022; TP=2110TPN; measuredpixclk=148500000; vtotal=1125; htotal=2200; IPMX",
         "a=mediaclk:direct=0",
         "a=ts-refclk:localmac=AA-BB-CC-DD-EE-FF",
       }, "\r\n")
@@ -177,7 +177,7 @@ describe("IPMX validation", function()
   describe("IPMX fmtp marker (TR-10-1 §10.1)", function()
     it("rejects video fmtp without IPMX marker", function()
       local text = base_ipmx_sdp({}, {},
-        "a=fmtp:96 sampling=YCbCr-4:2:2; width=1920; height=1080; exactframerate=25; depth=10; TCS=SDR; colorimetry=BT709; PM=2110GPM; SSN=ST2110-20:2022; TP=2110TPN")
+        "a=fmtp:96 sampling=YCbCr-4:2:2; width=1920; height=1080; exactframerate=25; depth=10; TCS=SDR; colorimetry=BT709; PM=2110GPM; SSN=ST2110-20:2022; TP=2110TPN; measuredpixclk=148500000; vtotal=1125; htotal=2200")
       local doc = sdp.parse(text)
       assert.is_table(doc)
       local ok, err = doc:validate("ipmx")
@@ -196,7 +196,7 @@ describe("IPMX validation", function()
 
     it("error references TR-10-1 §10.1 and fmtp field_path", function()
       local text = base_ipmx_sdp({}, {},
-        "a=fmtp:96 sampling=YCbCr-4:2:2; width=1920; height=1080; exactframerate=25; depth=10; TCS=SDR; colorimetry=BT709; PM=2110GPM; SSN=ST2110-20:2022; TP=2110TPN")
+        "a=fmtp:96 sampling=YCbCr-4:2:2; width=1920; height=1080; exactframerate=25; depth=10; TCS=SDR; colorimetry=BT709; PM=2110GPM; SSN=ST2110-20:2022; TP=2110TPN; measuredpixclk=148500000; vtotal=1125; htotal=2200")
       local doc = sdp.parse(text)
       local ok, err = doc:validate("ipmx")
       assert.is_nil(ok)
@@ -306,31 +306,9 @@ describe("IPMX validation", function()
       assert.matches("TR%-10%-5", err.spec_ref)
     end)
 
-    it("accepts valid a=hkep at media block level", function()
-      local text = base_ipmx_sdp(
-        {},
-        { "a=hkep:10000 IN IP4 192.168.1.100 550e8400-e29b-41d4-a716-446655440000 01-02-03-04-05" }
-      )
-      local doc = sdp.parse(text)
-      assert.is_table(doc)
-      local ok, err = doc:validate("ipmx")
-      assert.is_nil(err)
-      assert.equal(true, ok)
-    end)
-
-    it("rejects invalid a=hkep at media block level", function()
-      local text = base_ipmx_sdp(
-        {},
-        { "a=hkep:10000 IN IP4 192.168.1.100 not-a-valid-uuid 01-02-03-04-05" }
-      )
-      local doc = sdp.parse(text)
-      assert.is_table(doc)
-      local ok, err = doc:validate("ipmx")
-      assert.is_nil(ok)
-      assert.is_table(err)
-      assert.matches("hkep", err.message)
-      assert.matches("media%[1%]", err.field_path)
-    end)
+    -- M25 M11: TR-10-5 §10 specifies a=hkep as a session attribute only.
+    -- Media-level a=hkep is rejected; see "M25 M11" describe block below for
+    -- the new placement tests.
   end)
 
   -- ── a=privacy validation (TR-10-13 §13) ──────────────────────────────────────
@@ -454,7 +432,7 @@ describe("IPMX validation", function()
         "m=video 5000 RTP/AVP 96",
         "c=IN IP4 239.100.0.1/64",
         "a=rtpmap:96 raw/90000",
-        "a=fmtp:96 sampling=YCbCr-4:2:2; width=1920; height=1080; exactframerate=25; depth=10; TCS=SDR; colorimetry=BT709; PM=2110GPM; SSN=ST2110-20:2022; TP=2110TPN; IPMX",
+        "a=fmtp:96 sampling=YCbCr-4:2:2; width=1920; height=1080; exactframerate=25; depth=10; TCS=SDR; colorimetry=BT709; PM=2110GPM; SSN=ST2110-20:2022; TP=2110TPN; measuredpixclk=148500000; vtotal=1125; htotal=2200; IPMX",
         "a=mediaclk:direct=0",
         "a=ts-refclk:localmac=AA-BB-CC-DD-EE-FF",
         "m=application 5100 TCP usb",
@@ -479,7 +457,7 @@ describe("IPMX validation", function()
         "m=video 5000 RTP/AVP 96",
         "c=IN IP4 239.100.0.1/64",
         "a=rtpmap:96 raw/90000",
-        "a=fmtp:96 sampling=YCbCr-4:2:2; width=1920; height=1080; exactframerate=25; depth=10; TCS=SDR; colorimetry=BT709; PM=2110GPM; SSN=ST2110-20:2022; TP=2110TPN; IPMX",
+        "a=fmtp:96 sampling=YCbCr-4:2:2; width=1920; height=1080; exactframerate=25; depth=10; TCS=SDR; colorimetry=BT709; PM=2110GPM; SSN=ST2110-20:2022; TP=2110TPN; measuredpixclk=148500000; vtotal=1125; htotal=2200; IPMX",
         "a=mediaclk:direct=0",
         "a=ts-refclk:localmac=AA-BB-CC-DD-EE-FF",
         "m=application 5100 TCP usb",
@@ -505,7 +483,7 @@ describe("IPMX validation", function()
         "m=video 5000 RTP/AVP 96",
         "c=IN IP4 239.100.0.1/64",
         "a=rtpmap:96 raw/90000",
-        "a=fmtp:96 sampling=YCbCr-4:2:2; width=1920; height=1080; exactframerate=25; depth=10; TCS=SDR; colorimetry=BT709; PM=2110GPM; SSN=ST2110-20:2022; TP=2110TPN; IPMX",
+        "a=fmtp:96 sampling=YCbCr-4:2:2; width=1920; height=1080; exactframerate=25; depth=10; TCS=SDR; colorimetry=BT709; PM=2110GPM; SSN=ST2110-20:2022; TP=2110TPN; measuredpixclk=148500000; vtotal=1125; htotal=2200; IPMX",
         "a=mediaclk:direct=0",
         "a=ts-refclk:localmac=AA-BB-CC-DD-EE-FF",
         "m=application 5100 TCP usb",
@@ -534,7 +512,7 @@ describe("IPMX validation", function()
         "m=video 5000 RTP/AVP 96",
         "c=IN IP4 239.100.0.1/64",
         "a=rtpmap:96 raw/90000",
-        "a=fmtp:96 sampling=YCbCr-4:2:2; width=1920; height=1080; exactframerate=25; depth=10; TCS=SDR; colorimetry=BT709; PM=2110GPM; SSN=ST2110-20:2022; TP=2110TPN; IPMX",
+        "a=fmtp:96 sampling=YCbCr-4:2:2; width=1920; height=1080; exactframerate=25; depth=10; TCS=SDR; colorimetry=BT709; PM=2110GPM; SSN=ST2110-20:2022; TP=2110TPN; measuredpixclk=148500000; vtotal=1125; htotal=2200; IPMX",
         "a=mediaclk:direct=0",
         "a=ts-refclk:localmac=AA-BB-CC-DD-EE-FF",
         "m=application 5100 TCP usb",
@@ -554,7 +532,7 @@ describe("IPMX validation", function()
   describe("FEC FECPROFILE (TR-10-6 §7.6)", function()
     it("accepts FECPROFILE=profile-a in fmtp", function()
       local text = base_ipmx_sdp({}, {},
-        "a=fmtp:96 sampling=YCbCr-4:2:2; width=1920; height=1080; exactframerate=25; depth=10; TCS=SDR; colorimetry=BT709; PM=2110GPM; SSN=ST2110-20:2022; TP=2110TPN; FECPROFILE=profile-a; IPMX")
+        "a=fmtp:96 sampling=YCbCr-4:2:2; width=1920; height=1080; exactframerate=25; depth=10; TCS=SDR; colorimetry=BT709; PM=2110GPM; SSN=ST2110-20:2022; TP=2110TPN; measuredpixclk=148500000; vtotal=1125; htotal=2200; FECPROFILE=profile-a; IPMX")
       local doc = sdp.parse(text)
       assert.is_table(doc)
       local ok, err = doc:validate("ipmx")
@@ -564,7 +542,7 @@ describe("IPMX validation", function()
 
     it("rejects unknown FECPROFILE value", function()
       local text = base_ipmx_sdp({}, {},
-        "a=fmtp:96 sampling=YCbCr-4:2:2; width=1920; height=1080; exactframerate=25; depth=10; TCS=SDR; colorimetry=BT709; PM=2110GPM; SSN=ST2110-20:2022; TP=2110TPN; FECPROFILE=profile-z; IPMX")
+        "a=fmtp:96 sampling=YCbCr-4:2:2; width=1920; height=1080; exactframerate=25; depth=10; TCS=SDR; colorimetry=BT709; PM=2110GPM; SSN=ST2110-20:2022; TP=2110TPN; measuredpixclk=148500000; vtotal=1125; htotal=2200; FECPROFILE=profile-z; IPMX")
       local doc = sdp.parse(text)
       assert.is_table(doc)
       local ok, err = doc:validate("ipmx")
@@ -576,7 +554,7 @@ describe("IPMX validation", function()
 
     it("accepts valid FEC_ADD_LATENCY_VIDEO with FECPROFILE", function()
       local text = base_ipmx_sdp({}, {},
-        "a=fmtp:96 sampling=YCbCr-4:2:2; width=1920; height=1080; exactframerate=25; depth=10; TCS=SDR; colorimetry=BT709; PM=2110GPM; SSN=ST2110-20:2022; TP=2110TPN; FECPROFILE=profile-a; FEC_ADD_LATENCY_VIDEO=1000; IPMX")
+        "a=fmtp:96 sampling=YCbCr-4:2:2; width=1920; height=1080; exactframerate=25; depth=10; TCS=SDR; colorimetry=BT709; PM=2110GPM; SSN=ST2110-20:2022; TP=2110TPN; measuredpixclk=148500000; vtotal=1125; htotal=2200; FECPROFILE=profile-a; FEC_ADD_LATENCY_VIDEO=1000; IPMX")
       local doc = sdp.parse(text)
       assert.is_table(doc)
       local ok, err = doc:validate("ipmx")
@@ -586,7 +564,7 @@ describe("IPMX validation", function()
 
     it("rejects non-integer FEC_ADD_LATENCY_VIDEO", function()
       local text = base_ipmx_sdp({}, {},
-        "a=fmtp:96 sampling=YCbCr-4:2:2; width=1920; height=1080; exactframerate=25; depth=10; TCS=SDR; colorimetry=BT709; PM=2110GPM; SSN=ST2110-20:2022; TP=2110TPN; FECPROFILE=profile-a; FEC_ADD_LATENCY_VIDEO=notanumber; IPMX")
+        "a=fmtp:96 sampling=YCbCr-4:2:2; width=1920; height=1080; exactframerate=25; depth=10; TCS=SDR; colorimetry=BT709; PM=2110GPM; SSN=ST2110-20:2022; TP=2110TPN; measuredpixclk=148500000; vtotal=1125; htotal=2200; FECPROFILE=profile-a; FEC_ADD_LATENCY_VIDEO=notanumber; IPMX")
       local doc = sdp.parse(text)
       assert.is_table(doc)
       local ok, err = doc:validate("ipmx")
@@ -597,7 +575,7 @@ describe("IPMX validation", function()
 
     it("accepts valid FEC_ADD_LATENCY_AUDIO with FECPROFILE", function()
       local text = base_ipmx_sdp({}, {},
-        "a=fmtp:96 sampling=YCbCr-4:2:2; width=1920; height=1080; exactframerate=25; depth=10; TCS=SDR; colorimetry=BT709; PM=2110GPM; SSN=ST2110-20:2022; TP=2110TPN; FECPROFILE=profile-a; FEC_ADD_LATENCY_AUDIO=500; IPMX")
+        "a=fmtp:96 sampling=YCbCr-4:2:2; width=1920; height=1080; exactframerate=25; depth=10; TCS=SDR; colorimetry=BT709; PM=2110GPM; SSN=ST2110-20:2022; TP=2110TPN; measuredpixclk=148500000; vtotal=1125; htotal=2200; FECPROFILE=profile-a; FEC_ADD_LATENCY_AUDIO=500; IPMX")
       local doc = sdp.parse(text)
       assert.is_table(doc)
       local ok, err = doc:validate("ipmx")
@@ -607,7 +585,7 @@ describe("IPMX validation", function()
 
     it("accepts FEC_ADD_LATENCY_VIDEO=0 (zero is valid: non-negative integer)", function()
       local text = base_ipmx_sdp({}, {},
-        "a=fmtp:96 sampling=YCbCr-4:2:2; width=1920; height=1080; exactframerate=25; depth=10; TCS=SDR; colorimetry=BT709; PM=2110GPM; SSN=ST2110-20:2022; TP=2110TPN; FECPROFILE=profile-a; FEC_ADD_LATENCY_VIDEO=0; IPMX")
+        "a=fmtp:96 sampling=YCbCr-4:2:2; width=1920; height=1080; exactframerate=25; depth=10; TCS=SDR; colorimetry=BT709; PM=2110GPM; SSN=ST2110-20:2022; TP=2110TPN; measuredpixclk=148500000; vtotal=1125; htotal=2200; FECPROFILE=profile-a; FEC_ADD_LATENCY_VIDEO=0; IPMX")
       local doc, err = sdp.parse(text, "ipmx")
       assert.is_nil(err)
       assert.is_table(doc)
@@ -615,7 +593,7 @@ describe("IPMX validation", function()
 
     it("accepts FEC_ADD_LATENCY_AUDIO=0 (zero is valid: non-negative integer)", function()
       local text = base_ipmx_sdp({}, {},
-        "a=fmtp:96 sampling=YCbCr-4:2:2; width=1920; height=1080; exactframerate=25; depth=10; TCS=SDR; colorimetry=BT709; PM=2110GPM; SSN=ST2110-20:2022; TP=2110TPN; FECPROFILE=profile-a; FEC_ADD_LATENCY_AUDIO=0; IPMX")
+        "a=fmtp:96 sampling=YCbCr-4:2:2; width=1920; height=1080; exactframerate=25; depth=10; TCS=SDR; colorimetry=BT709; PM=2110GPM; SSN=ST2110-20:2022; TP=2110TPN; measuredpixclk=148500000; vtotal=1125; htotal=2200; FECPROFILE=profile-a; FEC_ADD_LATENCY_AUDIO=0; IPMX")
       local doc, err = sdp.parse(text, "ipmx")
       assert.is_nil(err)
       assert.is_table(doc)
@@ -642,7 +620,7 @@ describe("IPMX validation", function()
 
   describe("a=group:DUP grouping — IPMX (TR-10-13 §13)", function()
     local MAC  = "a=ts-refclk:localmac=AA-BB-CC-DD-EE-FF"
-    local VFMTP_IPMX = "a=fmtp:96 sampling=YCbCr-4:2:2; width=1920; height=1080; exactframerate=25; depth=10; TCS=SDR; colorimetry=BT709; PM=2110GPM; SSN=ST2110-20:2022; TP=2110TPN; IPMX"
+    local VFMTP_IPMX = "a=fmtp:96 sampling=YCbCr-4:2:2; width=1920; height=1080; exactframerate=25; depth=10; TCS=SDR; colorimetry=BT709; PM=2110GPM; SSN=ST2110-20:2022; TP=2110TPN; measuredpixclk=148500000; vtotal=1125; htotal=2200; IPMX"
     local PRIV = "a=privacy: protocol=RTP; mode=AES-128-CTR; iv=0102030405060708; key_generator=aabbccddeeff00112233445566778899; key_version=01020304; key_id=deadbeefcafebabe"
 
     local function dup_ipmx_sdp(opts)
@@ -818,7 +796,7 @@ describe("IPMX validation", function()
         "m=video 5000 RTP/AVP 96",
         "c=IN IP4 239.100.0.1/64",
         "a=rtpmap:96 raw/90000",
-        "a=fmtp:96 sampling=YCbCr-4:2:2; width=1920; height=1080; exactframerate=25; depth=10; TCS=SDR; colorimetry=BT709; PM=2110GPM; SSN=ST2110-20:2022; TP=2110TPN",
+        "a=fmtp:96 sampling=YCbCr-4:2:2; width=1920; height=1080; exactframerate=25; depth=10; TCS=SDR; colorimetry=BT709; PM=2110GPM; SSN=ST2110-20:2022; TP=2110TPN; measuredpixclk=148500000; vtotal=1125; htotal=2200",
         "a=mediaclk:direct=0",
         "a=ts-refclk:ptp=IEEE1588-2008:00-11-22-FF-FE-33-44-55:0",
         "a=rtcp-mux",
@@ -907,7 +885,7 @@ describe("IPMX validation", function()
   describe("FEC_ADD_LATENCY_AUDIO invalid value (TR-10-6 §7.6)", function()
     it("rejects non-integer FEC_ADD_LATENCY_AUDIO", function()
       local text = base_ipmx_sdp({}, {},
-        "a=fmtp:96 sampling=YCbCr-4:2:2; width=1920; height=1080; exactframerate=25; depth=10; TCS=SDR; colorimetry=BT709; PM=2110GPM; SSN=ST2110-20:2022; TP=2110TPN; FECPROFILE=profile-a; FEC_ADD_LATENCY_AUDIO=notanumber; IPMX")
+        "a=fmtp:96 sampling=YCbCr-4:2:2; width=1920; height=1080; exactframerate=25; depth=10; TCS=SDR; colorimetry=BT709; PM=2110GPM; SSN=ST2110-20:2022; TP=2110TPN; measuredpixclk=148500000; vtotal=1125; htotal=2200; FECPROFILE=profile-a; FEC_ADD_LATENCY_AUDIO=notanumber; IPMX")
       local doc = sdp.parse(text)
       assert.is_table(doc)
       local ok, err = doc:validate("ipmx")
@@ -923,7 +901,7 @@ describe("IPMX validation", function()
   describe("FEC_ADD_LATENCY requires FECPROFILE (TR-10-6 §7.6)", function()
     it("rejects FEC_ADD_LATENCY_VIDEO without FECPROFILE", function()
       local text = base_ipmx_sdp({}, {},
-        "a=fmtp:96 sampling=YCbCr-4:2:2; width=1920; height=1080; exactframerate=25; depth=10; TCS=SDR; colorimetry=BT709; PM=2110GPM; SSN=ST2110-20:2022; TP=2110TPN; FEC_ADD_LATENCY_VIDEO=1000; IPMX")
+        "a=fmtp:96 sampling=YCbCr-4:2:2; width=1920; height=1080; exactframerate=25; depth=10; TCS=SDR; colorimetry=BT709; PM=2110GPM; SSN=ST2110-20:2022; TP=2110TPN; measuredpixclk=148500000; vtotal=1125; htotal=2200; FEC_ADD_LATENCY_VIDEO=1000; IPMX")
       local doc = sdp.parse(text)
       assert.is_table(doc)
       local ok, err = doc:validate("ipmx")
@@ -936,7 +914,7 @@ describe("IPMX validation", function()
 
     it("rejects FEC_ADD_LATENCY_AUDIO without FECPROFILE", function()
       local text = base_ipmx_sdp({}, {},
-        "a=fmtp:96 sampling=YCbCr-4:2:2; width=1920; height=1080; exactframerate=25; depth=10; TCS=SDR; colorimetry=BT709; PM=2110GPM; SSN=ST2110-20:2022; TP=2110TPN; FEC_ADD_LATENCY_AUDIO=500; IPMX")
+        "a=fmtp:96 sampling=YCbCr-4:2:2; width=1920; height=1080; exactframerate=25; depth=10; TCS=SDR; colorimetry=BT709; PM=2110GPM; SSN=ST2110-20:2022; TP=2110TPN; measuredpixclk=148500000; vtotal=1125; htotal=2200; FEC_ADD_LATENCY_AUDIO=500; IPMX")
       local doc = sdp.parse(text)
       assert.is_table(doc)
       local ok, err = doc:validate("ipmx")
@@ -948,7 +926,7 @@ describe("IPMX validation", function()
 
     it("accepts FEC_ADD_LATENCY_VIDEO alongside FECPROFILE=profile-a", function()
       local text = base_ipmx_sdp({}, {},
-        "a=fmtp:96 sampling=YCbCr-4:2:2; width=1920; height=1080; exactframerate=25; depth=10; TCS=SDR; colorimetry=BT709; PM=2110GPM; SSN=ST2110-20:2022; TP=2110TPN; FECPROFILE=profile-a; FEC_ADD_LATENCY_VIDEO=1000; IPMX")
+        "a=fmtp:96 sampling=YCbCr-4:2:2; width=1920; height=1080; exactframerate=25; depth=10; TCS=SDR; colorimetry=BT709; PM=2110GPM; SSN=ST2110-20:2022; TP=2110TPN; measuredpixclk=148500000; vtotal=1125; htotal=2200; FECPROFILE=profile-a; FEC_ADD_LATENCY_VIDEO=1000; IPMX")
       local doc, err = sdp.parse(text, "ipmx")
       assert.is_nil(err)
       assert.is_table(doc)
@@ -969,7 +947,7 @@ describe("IPMX validation", function()
         "m=video 5000 " .. proto .. " 96",
         "c=IN IP4 239.100.0.1/64",
         "a=rtpmap:96 raw/90000",
-        "a=fmtp:96 sampling=YCbCr-4:2:2; width=1920; height=1080; exactframerate=25; depth=10; TCS=SDR; colorimetry=BT709; PM=2110GPM; SSN=ST2110-20:2022; TP=2110TPN; IPMX",
+        "a=fmtp:96 sampling=YCbCr-4:2:2; width=1920; height=1080; exactframerate=25; depth=10; TCS=SDR; colorimetry=BT709; PM=2110GPM; SSN=ST2110-20:2022; TP=2110TPN; measuredpixclk=148500000; vtotal=1125; htotal=2200; IPMX",
         "a=mediaclk:direct=0",
         "a=ts-refclk:localmac=AA-BB-CC-DD-EE-FF",
       }, "\r\n")
@@ -995,7 +973,7 @@ describe("IPMX validation", function()
         "m=video 5000 RTP/AVP 96",
         "c=IN IP4 239.100.0.1/64",
         "a=rtpmap:96 raw/90000",
-        "a=fmtp:96 sampling=YCbCr-4:2:2; width=1920; height=1080; exactframerate=25; depth=10; TCS=SDR; colorimetry=BT709; PM=2110GPM; SSN=ST2110-20:2022; TP=2110TPN; IPMX",
+        "a=fmtp:96 sampling=YCbCr-4:2:2; width=1920; height=1080; exactframerate=25; depth=10; TCS=SDR; colorimetry=BT709; PM=2110GPM; SSN=ST2110-20:2022; TP=2110TPN; measuredpixclk=148500000; vtotal=1125; htotal=2200; IPMX",
         "a=mediaclk:direct=0",
         "a=ts-refclk:localmac=AA-BB-CC-DD-EE-FF",
         "m=application 9 TCP/MSRP *",
@@ -1021,7 +999,7 @@ describe("IPMX validation", function()
         "m=video 5000 RTP/AVP 96",
         "c=IN IP4 239.100.0.1/64",
         "a=rtpmap:96 raw/90000",
-        "a=fmtp:96 sampling=YCbCr-4:2:2; width=1920; height=1080; exactframerate=25; depth=10; TCS=SDR; colorimetry=BT709; PM=2110GPM; SSN=ST2110-20:2022; TP=2110TPN; IPMX",
+        "a=fmtp:96 sampling=YCbCr-4:2:2; width=1920; height=1080; exactframerate=25; depth=10; TCS=SDR; colorimetry=BT709; PM=2110GPM; SSN=ST2110-20:2022; TP=2110TPN; measuredpixclk=148500000; vtotal=1125; htotal=2200; IPMX",
         "a=mediaclk:direct=0",
         "a=ts-refclk:localmac=AA-BB-CC-DD-EE-FF",
       }, "\r\n")
@@ -1094,7 +1072,7 @@ describe("IPMX validation", function()
         "m=video 5000 RTP/AVP 96",
         "c=IN IP4 239.100.0.1/64",
         "a=rtpmap:96 raw/90000",
-        "a=fmtp:96 sampling=YCbCr-4:2:2; width=1920; height=1080; exactframerate=25; depth=10; TCS=SDR; colorimetry=BT709; PM=2110GPM; SSN=ST2110-20:2022; TP=2110TPN; IPMX",
+        "a=fmtp:96 sampling=YCbCr-4:2:2; width=1920; height=1080; exactframerate=25; depth=10; TCS=SDR; colorimetry=BT709; PM=2110GPM; SSN=ST2110-20:2022; TP=2110TPN; measuredpixclk=148500000; vtotal=1125; htotal=2200; IPMX",
         "a=mediaclk:direct=0",
         "a=ts-refclk:localmac=AA-BB-CC-DD-EE-FF",
         "a=extmap:2 bad-value-no-scheme",
@@ -1123,7 +1101,7 @@ describe("IPMX validation", function()
         "m=video " .. port .. " RTP/AVP 96",
         "c=IN IP4 239.100.0.1/64",
         "a=rtpmap:96 raw/90000",
-        "a=fmtp:96 sampling=YCbCr-4:2:2; width=1920; height=1080; exactframerate=25; depth=10; TCS=SDR; colorimetry=BT709; PM=2110GPM; SSN=ST2110-20:2022; TP=2110TPN; IPMX",
+        "a=fmtp:96 sampling=YCbCr-4:2:2; width=1920; height=1080; exactframerate=25; depth=10; TCS=SDR; colorimetry=BT709; PM=2110GPM; SSN=ST2110-20:2022; TP=2110TPN; measuredpixclk=148500000; vtotal=1125; htotal=2200; IPMX",
         "a=mediaclk:direct=0",
         "a=ts-refclk:localmac=AA-BB-CC-DD-EE-FF",
       }, "\r\n")
@@ -1181,7 +1159,7 @@ describe("IPMX validation", function()
         "m=video 5000 RTP/AVP 96",
         "c=IN IP4 239.100.0.1/64",
         "a=rtpmap:96 raw/90000",
-        "a=fmtp:96 sampling=YCbCr-4:2:2; width=1920; height=1080; exactframerate=25; depth=10; TCS=SDR; colorimetry=BT709; PM=2110GPM; SSN=ST2110-20:2022; TP=2110TPN; IPMX",
+        "a=fmtp:96 sampling=YCbCr-4:2:2; width=1920; height=1080; exactframerate=25; depth=10; TCS=SDR; colorimetry=BT709; PM=2110GPM; SSN=ST2110-20:2022; TP=2110TPN; measuredpixclk=148500000; vtotal=1125; htotal=2200; IPMX",
         "a=mediaclk:direct=0",
         "a=ts-refclk:localmac=AA-BB-CC-DD-EE-FF",
         "m=application 9 TCP/MSRP *",
@@ -1193,13 +1171,13 @@ describe("IPMX validation", function()
     end)
   end)
 
-  -- ── M22: IPMX audio — ptime required; AM824 rejected (TR-10-3 §8) ────────────
+  -- ── M22 / M25: IPMX audio — ptime required; AM824 accepted (TR-10-12) ────────
 
-  describe("IPMX audio — ptime required and AM824 rejected (TR-10-3 §8)", function()
+  describe("IPMX audio — ptime required and AM824 accepted (TR-10-3 §8 / TR-10-12)", function()
     local function ipmx_audio_sdp(overrides)
       local o = overrides or {}
       local rtpmap  = o.rtpmap  or "a=rtpmap:97 L24/48000/8"
-      local fmtp    = o.fmtp    or "a=fmtp:97 channel-order=SMPTE2110.(ST); IPMX"
+      local fmtp    = o.fmtp    or "a=fmtp:97 channel-order=SMPTE2110.(ST); measuredsamplerate=48000; IPMX"
       local ptime   = o.ptime   -- nil = omit, string = include
       local lines = {
         "v=0",
@@ -1228,7 +1206,7 @@ describe("IPMX validation", function()
     it("accepts L16 audio with ptime", function()
       local text = ipmx_audio_sdp({
         rtpmap = "a=rtpmap:97 L16/48000/2",
-        fmtp   = "a=fmtp:97 channel-order=SMPTE2110.(ST); IPMX",
+        fmtp   = "a=fmtp:97 channel-order=SMPTE2110.(ST); measuredsamplerate=48000; IPMX",
         ptime  = "a=ptime:1",
       })
       local doc, err = sdp.parse(text, "ipmx")
@@ -1245,33 +1223,18 @@ describe("IPMX validation", function()
       assert.matches("ptime", err.message)
     end)
 
-    it("rejects AM824 encoding", function()
-      local doc = sdp.parse(ipmx_audio_sdp({
+    it("accepts AM824 encoding (TR-10-12 AES3 transparent transport)", function()
+      local doc, err = sdp.parse(ipmx_audio_sdp({
         rtpmap = "a=rtpmap:97 AM824/48000/2",
-        fmtp   = "a=fmtp:97 channel-order=SMPTE2110.(ST); IPMX",
+        fmtp   = "a=fmtp:97 channel-order=SMPTE2110.(ST); measuredsamplerate=48000; IPMX",
         ptime  = "a=ptime:1",
-      }))
+      }), "ipmx")
+      assert.is_nil(err)
       assert.is_table(doc)
-      local ok, err = doc:validate("ipmx")
-      assert.is_nil(ok)
-      assert.is_table(err)
-      assert.matches("AM824", err.message)
     end)
 
     it("spec_ref for ptime is TR-10-3 §8", function()
       local doc = sdp.parse(ipmx_audio_sdp())
-      assert.is_table(doc)
-      local ok, err = doc:validate("ipmx")
-      assert.is_nil(ok)
-      assert.equal("TR-10-3 §8", err.spec_ref)
-    end)
-
-    it("spec_ref for AM824 rejection is TR-10-3 §8", function()
-      local doc = sdp.parse(ipmx_audio_sdp({
-        rtpmap = "a=rtpmap:97 AM824/48000/2",
-        fmtp   = "a=fmtp:97 channel-order=SMPTE2110.(ST); IPMX",
-        ptime  = "a=ptime:1",
-      }))
       assert.is_table(doc)
       local ok, err = doc:validate("ipmx")
       assert.is_nil(ok)
@@ -1283,7 +1246,7 @@ describe("IPMX validation", function()
 
   describe("IPMX baseband fmtp params (TR-10-2 §11 / TR-10-3 §10.3)", function()
     local function video_with_extra_fmtp(extra)
-      local fmtp = "a=fmtp:96 sampling=YCbCr-4:2:2; width=1920; height=1080; exactframerate=25; depth=10; TCS=SDR; colorimetry=BT709; PM=2110GPM; SSN=ST2110-20:2022; TP=2110TPN; IPMX; " .. extra
+      local fmtp = "a=fmtp:96 sampling=YCbCr-4:2:2; width=1920; height=1080; exactframerate=25; depth=10; TCS=SDR; colorimetry=BT709; PM=2110GPM; SSN=ST2110-20:2022; TP=2110TPN; measuredpixclk=148500000; vtotal=1125; htotal=2200; IPMX; " .. extra
       return base_ipmx_sdp({}, {}, fmtp)
     end
 
@@ -1298,7 +1261,7 @@ describe("IPMX validation", function()
         "m=audio 5010 RTP/AVP 97",
         "c=IN IP4 239.100.0.2/64",
         "a=rtpmap:97 L24/48000/8",
-        "a=fmtp:97 channel-order=SMPTE2110.(ST); IPMX; " .. extra,
+        "a=fmtp:97 channel-order=SMPTE2110.(ST); measuredsamplerate=48000; IPMX; " .. extra,
         "a=mediaclk:direct=0",
         "a=ts-refclk:localmac=AA-BB-CC-DD-EE-FF",
         "a=ptime:1",
@@ -1359,20 +1322,20 @@ describe("IPMX validation", function()
       assert.matches("measuredsamplerate", err.message)
     end)
 
-    it("spec_ref for video baseband params is TR-10-2 §11", function()
+    it("spec_ref for video baseband params is TR-10-1 §10.2 (M25)", function()
       local doc = sdp.parse(video_with_extra_fmtp("measuredpixclk=0"))
       assert.is_table(doc)
       local ok, err = doc:validate("ipmx")
       assert.is_nil(ok)
-      assert.matches("TR%-10%-2", err.spec_ref)
+      assert.matches("TR%-10%-1", err.spec_ref)
     end)
 
-    it("spec_ref for audio baseband params is TR-10-3 §10.3", function()
+    it("spec_ref for audio baseband params is TR-10-1 §10.3 (M25)", function()
       local doc = sdp.parse(audio_with_extra_fmtp("measuredsamplerate=0"))
       assert.is_table(doc)
       local ok, err = doc:validate("ipmx")
       assert.is_nil(ok)
-      assert.matches("TR%-10%-3", err.spec_ref)
+      assert.matches("TR%-10%-1", err.spec_ref)
     end)
   end)
 
@@ -1466,7 +1429,7 @@ describe("IPMX validation", function()
         "m=audio 5010 RTP/AVP 97",
         "c=IN IP4 239.100.0.2/64",
         "a=rtpmap:97 L24/48000/8",
-        "a=fmtp:97 channel-order=SMPTE2110.(ST); IPMX",
+        "a=fmtp:97 channel-order=SMPTE2110.(ST); measuredsamplerate=48000; IPMX",
         "a=mediaclk:direct=0",
         "a=ts-refclk:localmac=AA-BB-CC-DD-EE-FF",
       }
@@ -1509,7 +1472,7 @@ describe("IPMX validation", function()
         "m=video 5000 RTP/AVP 96",
         "c=IN IP4 239.100.0.1/64",
         "a=rtpmap:96 raw/90000",
-        "a=fmtp:96 sampling=YCbCr-4:2:2; width=1920; height=1080; exactframerate=25; depth=10; TCS=SDR; colorimetry=BT709; PM=2110GPM; SSN=ST2110-20:2022; TP=2110TPN; IPMX",
+        "a=fmtp:96 sampling=YCbCr-4:2:2; width=1920; height=1080; exactframerate=25; depth=10; TCS=SDR; colorimetry=BT709; PM=2110GPM; SSN=ST2110-20:2022; TP=2110TPN; measuredpixclk=148500000; vtotal=1125; htotal=2200; IPMX",
         "a=mediaclk:direct=0",
         "a=ts-refclk:localmac=AA-BB-CC-DD-EE-FF",
         "m=application 5100 TCP usb",
@@ -1562,7 +1525,7 @@ describe("IPMX validation", function()
         "m=video 5000 RTP/AVP 96",
         "c=IN IP4 239.100.0.1/64",
         "a=rtpmap:96 raw/90000",
-        "a=fmtp:96 sampling=YCbCr-4:2:2; width=1920; height=1080; exactframerate=25; depth=10; TCS=SDR; colorimetry=BT709; PM=2110GPM; SSN=ST2110-20:2022; TP=2110TPN; IPMX",
+        "a=fmtp:96 sampling=YCbCr-4:2:2; width=1920; height=1080; exactframerate=25; depth=10; TCS=SDR; colorimetry=BT709; PM=2110GPM; SSN=ST2110-20:2022; TP=2110TPN; measuredpixclk=148500000; vtotal=1125; htotal=2200; IPMX",
         "a=mediaclk:direct=0",
         "a=ts-refclk:localmac=AA-BB-CC-DD-EE-FF",
         "m=application 5100 TCP usb",
@@ -1687,7 +1650,7 @@ describe("IPMX validation", function()
       }
       if b_line then lines[#lines + 1] = b_line end
       lines[#lines + 1] = "a=rtpmap:96 raw/90000"
-      lines[#lines + 1] = "a=fmtp:96 sampling=YCbCr-4:2:2; width=1920; height=1080; exactframerate=25; depth=10; TCS=SDR; colorimetry=BT709; PM=2110GPM; SSN=ST2110-20:2022; TP=2110TPN; IPMX"
+      lines[#lines + 1] = "a=fmtp:96 sampling=YCbCr-4:2:2; width=1920; height=1080; exactframerate=25; depth=10; TCS=SDR; colorimetry=BT709; PM=2110GPM; SSN=ST2110-20:2022; TP=2110TPN; measuredpixclk=148500000; vtotal=1125; htotal=2200; IPMX"
       lines[#lines + 1] = "a=mediaclk:direct=0"
       lines[#lines + 1] = "a=ts-refclk:localmac=AA-BB-CC-DD-EE-FF"
       return table.concat(lines, "\r\n")
@@ -1749,6 +1712,588 @@ describe("IPMX validation", function()
 
     it("absent a=infoframe is accepted (optional)", function()
       local doc, err = sdp.parse(base_ipmx_sdp(), "ipmx")
+      assert.is_nil(err)
+      assert.is_table(doc)
+    end)
+  end)
+
+  -- ── M25 ───────────────────────────────────────────────────────────────────────
+  -- Validation gap closure round 4. See PLAN.md M25 for the full list and spec
+  -- references. Each describe block names the gap ID(s) it addresses.
+
+  describe("M25 C2: a=privacy trailing semicolon rejected (TR-10-13 §13)", function()
+    local HEX = "iv=0102030405060708; key_generator=aabbccddeeff00112233445566778899; key_version=01020304; key_id=deadbeefcafebabe"
+    local VALID = "a=privacy: protocol=RTP; mode=AES-128-CTR; " .. HEX
+
+    it("accepts a=privacy without trailing semicolon", function()
+      local doc, err = sdp.parse(base_ipmx_sdp({ VALID }), "ipmx")
+      assert.is_nil(err)
+      assert.is_table(doc)
+    end)
+
+    it("rejects a=privacy with trailing semicolon", function()
+      local doc = sdp.parse(base_ipmx_sdp({ VALID .. ";" }))
+      assert.is_table(doc)
+      local ok, err = doc:validate("ipmx")
+      assert.is_nil(ok)
+      assert.is_table(err)
+      assert.matches("semicolon", err.message)
+      assert.equal("TR-10-13 §13", err.spec_ref)
+    end)
+
+    it("rejects a=privacy with trailing semicolon-and-space", function()
+      local doc = sdp.parse(base_ipmx_sdp({ VALID .. "; " }))
+      local ok, err = doc:validate("ipmx")
+      assert.is_nil(ok)
+      assert.matches("semicolon", err.message)
+    end)
+  end)
+
+  describe("M25 H7: RFC 4145 a=setup / a=connection enums", function()
+    local function with_usb_attrs(usb_setup, usb_connection)
+      local lines = {
+        "v=0",
+        "o=- 1234567890 1 IN IP4 192.168.1.1",
+        "s=IPMX USB",
+        "t=0 0",
+        "a=ts-refclk:localmac=AA-BB-CC-DD-EE-FF",
+        "a=extmap:1 urn:ietf:params:rtp-hdrext:smpte-tc",
+        "m=video 5000 RTP/AVP 96",
+        "c=IN IP4 239.100.0.1/64",
+        "a=rtpmap:96 raw/90000",
+        "a=fmtp:96 sampling=YCbCr-4:2:2; width=1920; height=1080; exactframerate=25; depth=10; TCS=SDR; colorimetry=BT709; PM=2110GPM; SSN=ST2110-20:2022; TP=2110TPN; measuredpixclk=148500000; vtotal=1125; htotal=2200; IPMX",
+        "a=mediaclk:direct=0",
+        "a=ts-refclk:localmac=AA-BB-CC-DD-EE-FF",
+        "m=application 5100 TCP usb",
+        "c=IN IP4 192.168.1.200",
+        "a=setup:" .. usb_setup,
+      }
+      if usb_connection then lines[#lines+1] = "a=connection:" .. usb_connection end
+      return table.concat(lines, "\r\n")
+    end
+
+    it("accepts a=setup:passive on USB block (already required)", function()
+      local doc, err = sdp.parse(with_usb_attrs("passive"), "ipmx")
+      assert.is_nil(err)
+      assert.is_table(doc)
+    end)
+
+    it("rejects a=setup:garbage on USB block (RFC 4145 enum)", function()
+      local doc = sdp.parse(with_usb_attrs("garbage"))
+      local ok, err = doc:validate("ipmx")
+      assert.is_nil(ok)
+      assert.matches("setup", err.message)
+    end)
+
+    it("rejects a=setup:active on USB block (TR-10-14 still requires passive)", function()
+      -- This already fails today via the TR-10-14 passive check. We just want
+      -- to make sure the new enum check doesn't accidentally over-tolerate.
+      local doc = sdp.parse(with_usb_attrs("active"))
+      local ok, err = doc:validate("ipmx")
+      assert.is_nil(ok)
+    end)
+
+    it("accepts a=connection:new on USB block", function()
+      local doc, err = sdp.parse(with_usb_attrs("passive", "new"), "ipmx")
+      assert.is_nil(err)
+      assert.is_table(doc)
+    end)
+
+    it("accepts a=connection:existing on USB block", function()
+      local doc, err = sdp.parse(with_usb_attrs("passive", "existing"), "ipmx")
+      assert.is_nil(err)
+      assert.is_table(doc)
+    end)
+
+    it("rejects a=connection:bogus (RFC 4145 enum)", function()
+      local doc = sdp.parse(with_usb_attrs("passive", "bogus"))
+      local ok, err = doc:validate("ipmx")
+      assert.is_nil(ok)
+      assert.matches("connection", err.message)
+    end)
+  end)
+
+  describe("M25 H5: IPMX baseband fmtp params required (TR-10-1 §10.2/§10.3)", function()
+    -- Build an IPMX video SDP whose fmtp omits one of {measuredpixclk, vtotal, htotal}.
+    local function video_missing(missing_key)
+      local parts = {
+        "sampling=YCbCr-4:2:2", "width=1920", "height=1080",
+        "exactframerate=25", "depth=10", "TCS=SDR", "colorimetry=BT709",
+        "PM=2110GPM", "SSN=ST2110-20:2022", "TP=2110TPN",
+        "measuredpixclk=148500000", "vtotal=1125", "htotal=2200", "IPMX",
+      }
+      local kept = {}
+      for _, p in ipairs(parts) do
+        local k = p:match("^([^=]+)")
+        if k ~= missing_key then kept[#kept+1] = p end
+      end
+      return base_ipmx_sdp({}, {}, "a=fmtp:96 " .. table.concat(kept, "; "))
+    end
+
+    it("rejects IPMX video fmtp missing measuredpixclk", function()
+      local doc = sdp.parse(video_missing("measuredpixclk"))
+      local ok, err = doc:validate("ipmx")
+      assert.is_nil(ok)
+      assert.matches("measuredpixclk", err.message)
+      assert.equal("TR-10-1 §10.2", err.spec_ref)
+    end)
+
+    it("rejects IPMX video fmtp missing vtotal", function()
+      local doc = sdp.parse(video_missing("vtotal"))
+      local ok, err = doc:validate("ipmx")
+      assert.is_nil(ok)
+      assert.matches("vtotal", err.message)
+    end)
+
+    it("rejects IPMX video fmtp missing htotal", function()
+      local doc = sdp.parse(video_missing("htotal"))
+      local ok, err = doc:validate("ipmx")
+      assert.is_nil(ok)
+      assert.matches("htotal", err.message)
+    end)
+
+    it("rejects IPMX audio fmtp missing measuredsamplerate", function()
+      local text = table.concat({
+        "v=0",
+        "o=- 1234567890 1 IN IP4 192.168.1.1",
+        "s=IPMX Audio",
+        "t=0 0",
+        "a=ts-refclk:localmac=AA-BB-CC-DD-EE-FF",
+        "a=extmap:1 urn:ietf:params:rtp-hdrext:smpte-tc",
+        "m=audio 5010 RTP/AVP 97",
+        "c=IN IP4 239.100.0.2/64",
+        "a=rtpmap:97 L24/48000/8",
+        "a=fmtp:97 channel-order=SMPTE2110.(ST); IPMX",  -- no measuredsamplerate
+        "a=mediaclk:direct=0",
+        "a=ts-refclk:localmac=AA-BB-CC-DD-EE-FF",
+        "a=ptime:1",
+      }, "\r\n")
+      local doc = sdp.parse(text)
+      local ok, err = doc:validate("ipmx")
+      assert.is_nil(ok)
+      assert.matches("measuredsamplerate", err.message)
+      assert.equal("TR-10-1 §10.3", err.spec_ref)
+    end)
+  end)
+
+  describe("M25 M10: TP required on IPMX video fmtp (TR-10-TP-1 §13.2)", function()
+    it("rejects IPMX video fmtp missing TP", function()
+      local fmtp = "a=fmtp:96 sampling=YCbCr-4:2:2; width=1920; height=1080; exactframerate=25; depth=10; TCS=SDR; colorimetry=BT709; PM=2110GPM; SSN=ST2110-20:2022; measuredpixclk=148500000; vtotal=1125; htotal=2200; IPMX"
+      local doc = sdp.parse(base_ipmx_sdp({}, {}, fmtp))
+      local ok, err = doc:validate("ipmx")
+      assert.is_nil(ok)
+      assert.matches("TP", err.message)
+    end)
+  end)
+
+  describe("M25 H6: b=AS required for jxsv blocks (TR-10-7 §11)", function()
+    local PTP = "a=ts-refclk:ptp=IEEE1588-2008:00-11-22-FF-FE-33-44-55:0"
+    local function jxsv_sdp(b_as_line)
+      local lines = {
+        "v=0",
+        "o=- 1234567890 1 IN IP4 192.168.1.1",
+        "s=IPMX JPEG-XS",
+        "t=0 0",
+        PTP,
+        "a=extmap:1 urn:ietf:params:rtp-hdrext:smpte-tc",
+        "m=video 5000 RTP/AVP 96",
+        "c=IN IP4 239.100.0.1/64",
+      }
+      if b_as_line then lines[#lines+1] = b_as_line end
+      lines[#lines+1] = "a=rtpmap:96 jxsv/90000"
+      lines[#lines+1] = "a=fmtp:96 sampling=YCbCr-4:2:2; width=1920; height=1080; exactframerate=25; depth=10; TCS=SDR; colorimetry=BT709; PM=2110GPM; SSN=ST2110-22:2019; TP=2110TPNL; profile=High444.12; level=2k-1; sublevel=Sublev3bpp; transmode=1; packetmode=0; measuredpixclk=148500000; vtotal=1125; htotal=2200; IPMX"
+      lines[#lines+1] = "a=mediaclk:direct=0"
+      lines[#lines+1] = PTP
+      return table.concat(lines, "\r\n")
+    end
+
+    it("accepts jxsv with b=AS:50000", function()
+      local doc, err = sdp.parse(jxsv_sdp("b=AS:50000"), "ipmx")
+      assert.is_nil(err)
+      assert.is_table(doc)
+    end)
+
+    it("rejects jxsv missing b=AS", function()
+      local doc = sdp.parse(jxsv_sdp(nil))
+      local ok, err = doc:validate("ipmx")
+      assert.is_nil(ok)
+      assert.matches("b=AS", err.message)
+      assert.matches("TR%-10%-7", err.spec_ref)
+    end)
+  end)
+
+  describe("M25 M1/M2: JPEG XS fmtp value enums (TR-10-15-Part1 §8/§9)", function()
+    local PTP = "a=ts-refclk:ptp=IEEE1588-2008:00-11-22-FF-FE-33-44-55:0"
+    local function jxsv_with_fmtp(fmtp_extras)
+      local fmtp = "a=fmtp:96 sampling=YCbCr-4:2:2; width=1920; height=1080; exactframerate=25; depth=10; TCS=SDR; colorimetry=BT709; PM=2110GPM; SSN=ST2110-22:2019; TP=2110TPNL; " .. fmtp_extras .. "; measuredpixclk=148500000; vtotal=1125; htotal=2200; IPMX"
+      return table.concat({
+        "v=0",
+        "o=- 1 1 IN IP4 192.168.1.1",
+        "s=jxsv enums",
+        "t=0 0",
+        PTP,
+        "a=extmap:1 urn:ietf:params:rtp-hdrext:smpte-tc",
+        "m=video 5000 RTP/AVP 96",
+        "c=IN IP4 239.100.0.1/64",
+        "b=AS:50000",
+        "a=rtpmap:96 jxsv/90000",
+        fmtp,
+        "a=mediaclk:direct=0",
+        PTP,
+      }, "\r\n")
+    end
+
+    -- M1
+    it("accepts profile=High444.12", function()
+      local doc, err = sdp.parse(jxsv_with_fmtp(
+        "profile=High444.12; level=2k-1; sublevel=Sublev3bpp; transmode=1; packetmode=0"), "ipmx")
+      assert.is_nil(err)
+      assert.is_table(doc)
+    end)
+
+    it("rejects profile=garbage", function()
+      local doc = sdp.parse(jxsv_with_fmtp(
+        "profile=garbage; level=2k-1; sublevel=Sublev3bpp; transmode=1; packetmode=0"))
+      local ok, err = doc:validate("ipmx")
+      assert.is_nil(ok)
+      assert.matches("profile", err.message)
+    end)
+
+    it("rejects level=999X", function()
+      local doc = sdp.parse(jxsv_with_fmtp(
+        "profile=High444.12; level=999X; sublevel=Sublev3bpp; transmode=1; packetmode=0"))
+      local ok, err = doc:validate("ipmx")
+      assert.is_nil(ok)
+      assert.matches("level", err.message)
+    end)
+
+    it("accepts sublevel=Sublev12bpp (above 4bpp per TR-10-15 §7.1)", function()
+      local doc, err = sdp.parse(jxsv_with_fmtp(
+        "profile=High444.12; level=2k-1; sublevel=Sublev12bpp; transmode=1; packetmode=0"), "ipmx")
+      assert.is_nil(err)
+      assert.is_table(doc)
+    end)
+
+    it("rejects sublevel=Sublev5bpp (not defined)", function()
+      local doc = sdp.parse(jxsv_with_fmtp(
+        "profile=High444.12; level=2k-1; sublevel=Sublev5bpp; transmode=1; packetmode=0"))
+      local ok, err = doc:validate("ipmx")
+      assert.is_nil(ok)
+      assert.matches("sublevel", err.message)
+    end)
+
+    -- M2
+    it("accepts transmode=0 and packetmode=0", function()
+      local doc, err = sdp.parse(jxsv_with_fmtp(
+        "profile=High444.12; level=2k-1; sublevel=Sublev3bpp; transmode=0; packetmode=0"), "ipmx")
+      assert.is_nil(err)
+      assert.is_table(doc)
+    end)
+
+    it("accepts transmode=1 and packetmode=1", function()
+      local doc, err = sdp.parse(jxsv_with_fmtp(
+        "profile=High444.12; level=2k-1; sublevel=Sublev3bpp; transmode=1; packetmode=1"), "ipmx")
+      assert.is_nil(err)
+      assert.is_table(doc)
+    end)
+
+    it("rejects transmode=2", function()
+      local doc = sdp.parse(jxsv_with_fmtp(
+        "profile=High444.12; level=2k-1; sublevel=Sublev3bpp; transmode=2; packetmode=0"))
+      local ok, err = doc:validate("ipmx")
+      assert.is_nil(ok)
+      assert.matches("transmode", err.message)
+    end)
+
+    it("rejects packetmode=99", function()
+      local doc = sdp.parse(jxsv_with_fmtp(
+        "profile=High444.12; level=2k-1; sublevel=Sublev3bpp; transmode=1; packetmode=99"))
+      local ok, err = doc:validate("ipmx")
+      assert.is_nil(ok)
+      assert.matches("packetmode", err.message)
+    end)
+  end)
+
+  describe("M25 H3/M8/M9: a=infoframe port-association and placement (TR-10-10 §8)", function()
+    it("accepts a=infoframe with port == media port + 3", function()
+      local doc, err = sdp.parse(
+        base_ipmx_sdp({ "a=infoframe:5003 SSN=ST2110-41:2024;DIT=100100" }), "ipmx")
+      assert.is_nil(err)
+      assert.is_table(doc)
+    end)
+
+    it("H3 rejects a=infoframe whose port doesn't match any media port + 3", function()
+      local doc = sdp.parse(
+        base_ipmx_sdp({ "a=infoframe:9999 SSN=ST2110-41:2024;DIT=100100" }))
+      local ok, err = doc:validate("ipmx")
+      assert.is_nil(ok)
+      assert.matches("infoframe", err.message)
+      assert.matches("port", err.message)
+      assert.equal("TR-10-10 §8", err.spec_ref)
+    end)
+
+    it("H3 rejects a=infoframe whose port equals media port + 1 (RTCP collision)", function()
+      local doc = sdp.parse(
+        base_ipmx_sdp({ "a=infoframe:5001 SSN=ST2110-41:2024;DIT=100100" }))
+      local ok, err = doc:validate("ipmx")
+      assert.is_nil(ok)
+      assert.matches("infoframe", err.message)
+    end)
+
+    it("M8 rejects duplicate a=infoframe port", function()
+      local doc = sdp.parse(base_ipmx_sdp({
+        "a=infoframe:5003 SSN=ST2110-41:2024;DIT=100100",
+        "a=infoframe:5003 SSN=ST2110-41:2024;DIT=100100",
+      }))
+      local ok, err = doc:validate("ipmx")
+      assert.is_nil(ok)
+      assert.matches("infoframe", err.message)
+      assert.matches("duplicate", err.message)
+    end)
+
+    it("M9 rejects media-level a=infoframe (must be session-level)", function()
+      local doc = sdp.parse(
+        base_ipmx_sdp({}, { "a=infoframe:5003 SSN=ST2110-41:2024;DIT=100100" }))
+      local ok, err = doc:validate("ipmx")
+      assert.is_nil(ok)
+      assert.matches("infoframe", err.message)
+      assert.matches("session", err.message)
+    end)
+  end)
+
+  describe("M25 M11: a=hkep placement is session-only (TR-10-5 §10)", function()
+    local VALID_HKEP = "10000 IN IP4 192.168.1.100 550e8400-e29b-41d4-a716-446655440000 01-02-03-04-05"
+
+    it("accepts a=hkep at session level", function()
+      local doc, err = sdp.parse(
+        base_ipmx_sdp({ "a=hkep:" .. VALID_HKEP }), "ipmx")
+      assert.is_nil(err)
+      assert.is_table(doc)
+    end)
+
+    it("rejects a=hkep at media block level (session-only per TR-10-5 §10)", function()
+      local doc = sdp.parse(
+        base_ipmx_sdp({}, { "a=hkep:" .. VALID_HKEP }))
+      local ok, err = doc:validate("ipmx")
+      assert.is_nil(ok)
+      assert.matches("hkep", err.message)
+      assert.matches("session", err.message)
+    end)
+  end)
+
+  describe("M25 M7: PEP IV-Counter extmap direction must be sendonly (TR-10-13 §20.1)", function()
+    local PEP_FULL = "urn:ietf:params:rtp-hdrext:PEP-Full-IV-Counter"
+    local PEP_SHORT = "urn:ietf:params:rtp-hdrext:PEP-Short-IV-Counter"
+
+    it("accepts PEP-Full-IV-Counter extmap with /sendonly direction", function()
+      local doc, err = sdp.parse(base_ipmx_sdp({
+        "a=extmap:2/sendonly " .. PEP_FULL,
+      }), "ipmx")
+      assert.is_nil(err)
+      assert.is_table(doc)
+    end)
+
+    it("accepts PEP-Short-IV-Counter extmap with /sendonly direction", function()
+      local doc, err = sdp.parse(base_ipmx_sdp({
+        "a=extmap:2/sendonly " .. PEP_SHORT,
+      }), "ipmx")
+      assert.is_nil(err)
+      assert.is_table(doc)
+    end)
+
+    it("rejects PEP-Full-IV-Counter extmap with /recvonly direction", function()
+      local doc = sdp.parse(base_ipmx_sdp({
+        "a=extmap:2/recvonly " .. PEP_FULL,
+      }))
+      local ok, err = doc:validate("ipmx")
+      assert.is_nil(ok)
+      assert.matches("sendonly", err.message)
+      assert.equal("TR-10-13 §20.1", err.spec_ref)
+    end)
+
+    it("rejects PEP-Full-IV-Counter extmap with no direction", function()
+      local doc = sdp.parse(base_ipmx_sdp({
+        "a=extmap:2 " .. PEP_FULL,
+      }))
+      local ok, err = doc:validate("ipmx")
+      assert.is_nil(ok)
+      assert.matches("sendonly", err.message)
+    end)
+
+    it("accepts non-PEP extmap with any direction", function()
+      local doc, err = sdp.parse(base_ipmx_sdp({
+        "a=extmap:2/recvonly urn:ietf:params:rtp-hdrext:smpte-tc-other",
+      }), "ipmx")
+      assert.is_nil(err)
+      assert.is_table(doc)
+    end)
+  end)
+
+  -- ── M25 LOW: coverage tightening ──────────────────────────────────────────────
+
+  describe("M25 LOW: a=hkep IPv6 unicast address (TR-10-5 §10)", function()
+    it("accepts a=hkep with IP6 addrtype and IPv6 unicast address", function()
+      local doc, err = sdp.parse(base_ipmx_sdp({
+        "a=hkep:10000 IN IP6 fe80::1 550e8400-e29b-41d4-a716-446655440000 01-02-03-04-05",
+      }), "ipmx")
+      assert.is_nil(err)
+      assert.is_table(doc)
+    end)
+  end)
+
+  describe("M25 LOW: PEP ECDH non-AAD on USB (TR-10-14 §12)", function()
+    local function with_usb_privacy(privacy_value)
+      local lines = {
+        "v=0",
+        "o=- 1234567890 1 IN IP4 192.168.1.1",
+        "s=IPMX USB",
+        "t=0 0",
+        "a=ts-refclk:localmac=AA-BB-CC-DD-EE-FF",
+        "a=extmap:1 urn:ietf:params:rtp-hdrext:smpte-tc",
+        "m=video 5000 RTP/AVP 96",
+        "c=IN IP4 239.100.0.1/64",
+        "a=rtpmap:96 raw/90000",
+        "a=fmtp:96 sampling=YCbCr-4:2:2; width=1920; height=1080; exactframerate=25; depth=10; TCS=SDR; colorimetry=BT709; PM=2110GPM; SSN=ST2110-20:2022; TP=2110TPN; measuredpixclk=148500000; vtotal=1125; htotal=2200; IPMX",
+        "a=mediaclk:direct=0",
+        "a=ts-refclk:localmac=AA-BB-CC-DD-EE-FF",
+        "m=application 5100 TCP usb",
+        "c=IN IP4 192.168.1.200",
+        "a=setup:passive",
+        "a=privacy: " .. privacy_value,
+      }
+      return table.concat(lines, "\r\n")
+    end
+
+    it("rejects ECDH_AES-128-CTR_CMAC-64 on USB (non-AAD ECDH variant not allowed)", function()
+      local doc = sdp.parse(with_usb_privacy(
+        "protocol=USB_KV; mode=ECDH_AES-128-CTR_CMAC-64; iv=0102030405060708; key_generator=aabbccddeeff00112233445566778899; key_version=01020304; key_id=deadbeefcafebabe"))
+      local ok, err = doc:validate("ipmx")
+      assert.is_nil(ok)
+      assert.matches("mode", err.message)
+    end)
+  end)
+
+  describe("M25 LOW: a=privacy key-order invariance (TR-10-13 §13)", function()
+    local function privacy_text(value)
+      return base_ipmx_sdp({ "a=privacy: " .. value })
+    end
+
+    it("accepts a=privacy with key_id appearing before protocol", function()
+      local doc, err = sdp.parse(privacy_text(
+        "key_id=deadbeefcafebabe; protocol=RTP; mode=AES-128-CTR; iv=0102030405060708; key_generator=aabbccddeeff00112233445566778899; key_version=01020304"
+      ), "ipmx")
+      assert.is_nil(err)
+      assert.is_table(doc)
+    end)
+  end)
+
+  describe("M25 LOW: USB block without a=privacy (TR-10-14 §12 encryption-off)", function()
+    it("accepts USB block without a=privacy attribute", function()
+      local text = table.concat({
+        "v=0",
+        "o=- 1234567890 1 IN IP4 192.168.1.1",
+        "s=IPMX USB no privacy",
+        "t=0 0",
+        "a=ts-refclk:localmac=AA-BB-CC-DD-EE-FF",
+        "a=extmap:1 urn:ietf:params:rtp-hdrext:smpte-tc",
+        "m=video 5000 RTP/AVP 96",
+        "c=IN IP4 239.100.0.1/64",
+        "a=rtpmap:96 raw/90000",
+        "a=fmtp:96 sampling=YCbCr-4:2:2; width=1920; height=1080; exactframerate=25; depth=10; TCS=SDR; colorimetry=BT709; PM=2110GPM; SSN=ST2110-20:2022; TP=2110TPN; measuredpixclk=148500000; vtotal=1125; htotal=2200; IPMX",
+        "a=mediaclk:direct=0",
+        "a=ts-refclk:localmac=AA-BB-CC-DD-EE-FF",
+        "m=application 5100 TCP usb",
+        "c=IN IP4 192.168.1.200",
+        "a=setup:passive",
+      }, "\r\n")
+      local doc, err = sdp.parse(text, "ipmx")
+      assert.is_nil(err)
+      assert.is_table(doc)
+    end)
+  end)
+
+  describe("M25 LOW: IPMX jxsv full-stack acceptance test", function()
+    it("accepts a complete valid IPMX JPEG-XS SDP", function()
+      local text = table.concat({
+        "v=0",
+        "o=- 1 1 IN IP4 192.168.1.1",
+        "s=IPMX JXS",
+        "t=0 0",
+        "a=ts-refclk:ptp=IEEE1588-2008:00-11-22-FF-FE-33-44-55:0",
+        "a=extmap:1 urn:ietf:params:rtp-hdrext:smpte-tc",
+        "m=video 5000 RTP/AVP 96",
+        "c=IN IP4 239.100.0.1/64",
+        "b=AS:50000",
+        "a=rtpmap:96 jxsv/90000",
+        "a=fmtp:96 sampling=YCbCr-4:2:2; width=1920; height=1080; exactframerate=25; depth=10; TCS=SDR; colorimetry=BT709; PM=2110GPM; SSN=ST2110-22:2019; TP=2110TPNL; profile=High444.12; level=2k-1; sublevel=Sublev3bpp; transmode=1; packetmode=0; measuredpixclk=148500000; vtotal=1125; htotal=2200; IPMX",
+        "a=mediaclk:direct=0",
+        "a=ts-refclk:ptp=IEEE1588-2008:00-11-22-FF-FE-33-44-55:0",
+      }, "\r\n")
+      local doc, err = sdp.parse(text, "ipmx")
+      assert.is_nil(err)
+      assert.is_table(doc)
+    end)
+  end)
+
+  describe("M25 LOW: a=infoframe port range and SSN year coverage", function()
+    it("accepts a=infoframe SSN year 2099", function()
+      local doc, err = sdp.parse(
+        base_ipmx_sdp({ "a=infoframe:5003 SSN=ST2110-41:2099;DIT=100100" }), "ipmx")
+      assert.is_nil(err)
+      assert.is_table(doc)
+    end)
+
+    it("rejects a=infoframe with malformed (non-4-digit) SSN year", function()
+      local doc = sdp.parse(
+        base_ipmx_sdp({ "a=infoframe:5003 SSN=ST2110-41:24;DIT=100100" }))
+      local ok, err = doc:validate("ipmx")
+      assert.is_nil(ok)
+      assert.matches("infoframe", err.message)
+    end)
+  end)
+
+  describe("M25 M5: session-level b=AS validation (TR-10-7 §11)", function()
+    it("rejects session-level b=AS:0 at IPMX tier", function()
+      local text = table.concat({
+        "v=0",
+        "o=- 1234567890 1 IN IP4 192.168.1.1",
+        "s=IPMX session b=AS:0",
+        "b=AS:0",
+        "t=0 0",
+        "a=ts-refclk:localmac=AA-BB-CC-DD-EE-FF",
+        "a=extmap:1 urn:ietf:params:rtp-hdrext:smpte-tc",
+        "m=video 5000 RTP/AVP 96",
+        "c=IN IP4 239.100.0.1/64",
+        "a=rtpmap:96 raw/90000",
+        "a=fmtp:96 sampling=YCbCr-4:2:2; width=1920; height=1080; exactframerate=25; depth=10; TCS=SDR; colorimetry=BT709; PM=2110GPM; SSN=ST2110-20:2022; TP=2110TPN; measuredpixclk=148500000; vtotal=1125; htotal=2200; IPMX",
+        "a=mediaclk:direct=0",
+        "a=ts-refclk:localmac=AA-BB-CC-DD-EE-FF",
+      }, "\r\n")
+      local doc = sdp.parse(text)
+      local ok, err = doc:validate("ipmx")
+      assert.is_nil(ok)
+      assert.matches("b=AS", err.message)
+    end)
+  end)
+
+  describe("M25 LOW: b=AS:1 lower-bound acceptance", function()
+    it("accepts b=AS:1 (lower positive integer boundary)", function()
+      local text = table.concat({
+        "v=0",
+        "o=- 1234567890 1 IN IP4 192.168.1.1",
+        "s=IPMX b=AS lower bound",
+        "t=0 0",
+        "a=ts-refclk:localmac=AA-BB-CC-DD-EE-FF",
+        "a=extmap:1 urn:ietf:params:rtp-hdrext:smpte-tc",
+        "m=video 5000 RTP/AVP 96",
+        "c=IN IP4 239.100.0.1/64",
+        "b=AS:1",
+        "a=rtpmap:96 raw/90000",
+        "a=fmtp:96 sampling=YCbCr-4:2:2; width=1920; height=1080; exactframerate=25; depth=10; TCS=SDR; colorimetry=BT709; PM=2110GPM; SSN=ST2110-20:2022; TP=2110TPN; measuredpixclk=148500000; vtotal=1125; htotal=2200; IPMX",
+        "a=mediaclk:direct=0",
+        "a=ts-refclk:localmac=AA-BB-CC-DD-EE-FF",
+      }, "\r\n")
+      local doc, err = sdp.parse(text, "ipmx")
       assert.is_nil(err)
       assert.is_table(doc)
     end)

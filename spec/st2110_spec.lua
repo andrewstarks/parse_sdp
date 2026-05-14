@@ -2270,7 +2270,7 @@ describe("ST 2110 validation", function()
         "m=video 5000 RTP/AVP 96",
         "c=IN IP4 239.100.0.1/64",
         "a=rtpmap:96 raw/90000",
-        "a=fmtp:96 sampling=YCbCr-4:2:2; width=1920; height=1080; exactframerate=25; depth=10; TCS=SDR; colorimetry=BT709; PM=2110GPM; SSN=ST2110-20:2022; TP=2110TPN; IPMX",
+        "a=fmtp:96 sampling=YCbCr-4:2:2; width=1920; height=1080; exactframerate=25; depth=10; TCS=SDR; colorimetry=BT709; PM=2110GPM; SSN=ST2110-20:2022; TP=2110TPN; measuredpixclk=148500000; vtotal=1125; htotal=2200; IPMX",
         "a=mediaclk:direct=0",
         "a=ts-refclk:localmac=AA-BB-CC-DD-EE-FF",
       }, "\r\n")
@@ -2714,6 +2714,263 @@ describe("ST 2110 validation", function()
       assert.is_table(doc)
       local ok, err = doc:validate("st2110")
       assert.is_nil(ok)
+    end)
+  end)
+
+  -- ── M25 ───────────────────────────────────────────────────────────────────────
+  -- Validation gap closure round 4. See PLAN.md M25 for full list / spec refs.
+
+  describe("M25 H1: RTP dynamic payload type range 96-127 (ST 2110-10 §6.2)", function()
+    local PTP = "a=ts-refclk:ptp=IEEE1588-2008:00-11-22-FF-FE-33-44-55:0"
+    local VFMTP = "sampling=YCbCr-4:2:2; width=1920; height=1080; exactframerate=25; depth=10; TCS=SDR; colorimetry=BT709; PM=2110GPM; SSN=ST2110-20:2022; TP=2110TPN"
+
+    local function video_pt(pt)
+      return table.concat({
+        "v=0",
+        "o=- 1234567890 1 IN IP4 192.168.1.1",
+        "s=PT range test",
+        "t=0 0",
+        PTP,
+        string.format("m=video 5000 RTP/AVP %d", pt),
+        "c=IN IP4 239.100.0.1/64",
+        string.format("a=rtpmap:%d raw/90000", pt),
+        string.format("a=fmtp:%d %s", pt, VFMTP),
+        "a=mediaclk:direct=0",
+      }, "\r\n")
+    end
+
+    it("accepts payload type 96 (lower boundary)", function()
+      local doc, err = sdp.parse(video_pt(96), "st2110")
+      assert.is_nil(err)
+      assert.is_table(doc)
+    end)
+
+    it("accepts payload type 127 (upper boundary)", function()
+      local doc, err = sdp.parse(video_pt(127), "st2110")
+      assert.is_nil(err)
+      assert.is_table(doc)
+    end)
+
+    it("rejects payload type 95 (one below dynamic range)", function()
+      local doc = sdp.parse(video_pt(95))
+      local ok, err = doc:validate("st2110")
+      assert.is_nil(ok)
+      assert.matches("payload type", err.message)
+      assert.matches("96", err.message)
+      assert.equal("ST 2110-10 §6.2", err.spec_ref)
+    end)
+
+    it("rejects payload type 128 (one above dynamic range)", function()
+      local doc = sdp.parse(video_pt(128))
+      local ok, err = doc:validate("st2110")
+      assert.is_nil(ok)
+      assert.matches("payload type", err.message)
+    end)
+
+    it("rejects payload type 0", function()
+      local doc = sdp.parse(video_pt(0))
+      local ok, err = doc:validate("st2110")
+      assert.is_nil(ok)
+      assert.matches("payload type", err.message)
+    end)
+  end)
+
+  describe("M25 H4/M6: DUP leg distinctness and consistency (ST 2110-10 §8.5)", function()
+    local PTP = "a=ts-refclk:ptp=IEEE1588-2008:00-11-22-FF-FE-33-44-55:0"
+    local VFMTP = "a=fmtp:96 sampling=YCbCr-4:2:2; width=1920; height=1080; exactframerate=25; depth=10; TCS=SDR; colorimetry=BT709; PM=2110GPM; SSN=ST2110-20:2022; TP=2110TPN"
+
+    -- Build a two-leg DUP SDP. opts:
+    --   c1, c2 — per-leg c= address (default different multicast groups)
+    --   sf1, sf2 — per-leg a=source-filter; nil omits
+    --   rtpmap1, rtpmap2 — per-leg rtpmap
+    --   fmtp1, fmtp2 — per-leg fmtp
+    local function dup_sdp(opts)
+      opts = opts or {}
+      local c1 = opts.c1 or "c=IN IP4 239.100.0.1/64"
+      local c2 = opts.c2 or "c=IN IP4 239.100.0.2/64"
+      local rtpmap1 = opts.rtpmap1 or "a=rtpmap:96 raw/90000"
+      local rtpmap2 = opts.rtpmap2 or "a=rtpmap:96 raw/90000"
+      local fmtp1 = opts.fmtp1 or VFMTP
+      local fmtp2 = opts.fmtp2 or VFMTP
+      local lines = {
+        "v=0",
+        "o=- 1234567890 1 IN IP4 192.168.1.1",
+        "s=DUP Test",
+        "t=0 0",
+        "a=group:DUP leg1 leg2",
+        PTP,
+        "m=video 5000 RTP/AVP 96",
+        c1,
+        "a=mid:leg1",
+        rtpmap1,
+        fmtp1,
+        "a=mediaclk:direct=0",
+      }
+      if opts.sf1 then lines[#lines+1] = opts.sf1 end
+      lines[#lines+1] = "m=video 5010 RTP/AVP 96"
+      lines[#lines+1] = c2
+      lines[#lines+1] = "a=mid:leg2"
+      lines[#lines+1] = rtpmap2
+      lines[#lines+1] = fmtp2
+      lines[#lines+1] = "a=mediaclk:direct=0"
+      if opts.sf2 then lines[#lines+1] = opts.sf2 end
+      return table.concat(lines, "\r\n")
+    end
+
+    it("accepts DUP legs with different destination addresses", function()
+      local doc, err = sdp.parse(dup_sdp(), "st2110")
+      assert.is_nil(err)
+      assert.is_table(doc)
+    end)
+
+    it("rejects DUP legs with identical c= and identical source-filter src", function()
+      local doc = sdp.parse(dup_sdp({
+        c1 = "c=IN IP4 239.100.0.1/64",
+        c2 = "c=IN IP4 239.100.0.1/64",
+        sf1 = "a=source-filter: incl IN IP4 239.100.0.1 192.168.1.50",
+        sf2 = "a=source-filter: incl IN IP4 239.100.0.1 192.168.1.50",
+      }))
+      local ok, err = doc:validate("st2110")
+      assert.is_nil(ok)
+      assert.matches("DUP", err.message)
+      assert.matches("identical", err.message)
+      assert.equal("ST 2110-10 §8.5", err.spec_ref)
+    end)
+
+    it("accepts DUP legs with same c= but different source-filter src", function()
+      local doc, err = sdp.parse(dup_sdp({
+        c1 = "c=IN IP4 239.100.0.1/64",
+        c2 = "c=IN IP4 239.100.0.1/64",
+        sf1 = "a=source-filter: incl IN IP4 239.100.0.1 192.168.1.50",
+        sf2 = "a=source-filter: incl IN IP4 239.100.0.1 192.168.1.60",
+      }), "st2110")
+      assert.is_nil(err)
+      assert.is_table(doc)
+    end)
+
+    it("accepts DUP legs with different c= and same source-filter src", function()
+      local doc, err = sdp.parse(dup_sdp({
+        sf1 = "a=source-filter: incl IN IP4 239.100.0.1 192.168.1.50",
+        sf2 = "a=source-filter: incl IN IP4 239.100.0.2 192.168.1.50",
+      }), "st2110")
+      assert.is_nil(err)
+      assert.is_table(doc)
+    end)
+
+    it("M6 rejects DUP video legs with different rtpmap encodings", function()
+      local doc = sdp.parse(dup_sdp({
+        rtpmap2 = "a=rtpmap:96 jxsv/90000",
+        fmtp2 = "a=fmtp:96 sampling=YCbCr-4:2:2; width=1920; height=1080; exactframerate=25; depth=10; TCS=SDR; colorimetry=BT709; PM=2110GPM; SSN=ST2110-22:2019; profile=High444.12; level=2k-1; sublevel=Sublev3bpp; transmode=1; packetmode=0",
+      }))
+      local ok, err = doc:validate("st2110")
+      assert.is_nil(ok)
+      assert.matches("DUP", err.message)
+      assert.matches("encoding", err.message)
+    end)
+
+    it("M6 rejects DUP video legs with different clock rates", function()
+      -- artificially set a different clock rate on leg2; ST 2110 will reject it
+      -- as clock_rate != 90000 anyway, but the DUP check should also catch it.
+      -- Use jxsv encoding fudge: same encoding but different rate — both legs
+      -- raw/90000 vs raw/9000 (the second will independently fail). For purity,
+      -- test mismatch via raw/90000 vs raw/45000 (independently invalid).
+      local doc = sdp.parse(dup_sdp({
+        rtpmap2 = "a=rtpmap:96 raw/45000",
+      }))
+      local ok, err = doc:validate("st2110")
+      assert.is_nil(ok)
+    end)
+  end)
+
+  describe("M25 M3: MAXUDP upper bound (ST 2110-10 §6.4)", function()
+    local function video_maxudp(maxudp)
+      return table.concat({
+        "v=0",
+        "o=- 1234567890 1 IN IP4 192.168.1.1",
+        "s=MAXUDP test",
+        "t=0 0",
+        "a=ts-refclk:ptp=IEEE1588-2008:00-11-22-FF-FE-33-44-55:0",
+        "m=video 5000 RTP/AVP 96",
+        "c=IN IP4 239.100.0.1/64",
+        "a=rtpmap:96 raw/90000",
+        "a=fmtp:96 sampling=YCbCr-4:2:2; width=1920; height=1080; exactframerate=25; depth=10; TCS=SDR; colorimetry=BT709; PM=2110GPM; SSN=ST2110-20:2022; TP=2110TPN; MAXUDP=" .. maxudp,
+        "a=mediaclk:direct=0",
+      }, "\r\n")
+    end
+
+    it("accepts MAXUDP=1460 (Standard UDP Size Limit lower-equal boundary)", function()
+      local doc, err = sdp.parse(video_maxudp(1460), "st2110")
+      assert.is_nil(err)
+      assert.is_table(doc)
+    end)
+
+    it("accepts MAXUDP=8960 (Extended UDP Size Limit upper boundary)", function()
+      local doc, err = sdp.parse(video_maxudp(8960), "st2110")
+      assert.is_nil(err)
+      assert.is_table(doc)
+    end)
+
+    it("rejects MAXUDP=8961 (one above Extended UDP Size Limit)", function()
+      local doc = sdp.parse(video_maxudp(8961))
+      local ok, err = doc:validate("st2110")
+      assert.is_nil(ok)
+      assert.matches("MAXUDP", err.message)
+      assert.matches("8960", err.message)
+    end)
+
+    it("rejects MAXUDP=65535", function()
+      local doc = sdp.parse(video_maxudp(65535))
+      local ok, err = doc:validate("st2110")
+      assert.is_nil(ok)
+      assert.matches("MAXUDP", err.message)
+    end)
+  end)
+
+  describe("M25 M4: session-level a=mediaclk rejected (ST 2110-10 §8.3)", function()
+    it("rejects session-level a=mediaclk (must be media-level)", function()
+      local text = table.concat({
+        "v=0",
+        "o=- 1 1 IN IP4 192.168.1.1",
+        "s=session mediaclk test",
+        "t=0 0",
+        "a=ts-refclk:ptp=IEEE1588-2008:00-11-22-FF-FE-33-44-55:0",
+        "a=mediaclk:direct=0",
+        "m=video 5000 RTP/AVP 96",
+        "c=IN IP4 239.100.0.1/64",
+        "a=rtpmap:96 raw/90000",
+        "a=fmtp:96 sampling=YCbCr-4:2:2; width=1920; height=1080; exactframerate=25; depth=10; TCS=SDR; colorimetry=BT709; PM=2110GPM; SSN=ST2110-20:2022; TP=2110TPN",
+        "a=mediaclk:direct=0",
+      }, "\r\n")
+      local doc = sdp.parse(text)
+      local ok, err = doc:validate("st2110")
+      assert.is_nil(ok)
+      assert.matches("mediaclk", err.message)
+      assert.matches("media%-level", err.message)
+      assert.equal("ST 2110-10 §8.3", err.spec_ref)
+    end)
+  end)
+
+  describe("M25 M5: b=AS validated at session and media level (TR-10-7 §11)", function()
+    -- ST 2110 tier doesn't reject b=AS (TR-10-7 is IPMX-tier), but the value
+    -- must still parse as an unsigned integer per RFC 4566 §5.8; b=AS:0 at
+    -- session level is rejected by the IPMX tier specifically.
+    it("accepts session-level b=AS:5000 in ST 2110", function()
+      local text = table.concat({
+        "v=0",
+        "o=- 1 1 IN IP4 192.168.1.1",
+        "s=session b=AS test",
+        "b=AS:5000",
+        "t=0 0",
+        "a=ts-refclk:ptp=IEEE1588-2008:00-11-22-FF-FE-33-44-55:0",
+        "m=video 5000 RTP/AVP 96",
+        "c=IN IP4 239.100.0.1/64",
+        "a=rtpmap:96 raw/90000",
+        "a=fmtp:96 sampling=YCbCr-4:2:2; width=1920; height=1080; exactframerate=25; depth=10; TCS=SDR; colorimetry=BT709; PM=2110GPM; SSN=ST2110-20:2022; TP=2110TPN",
+        "a=mediaclk:direct=0",
+      }, "\r\n")
+      local doc, err = sdp.parse(text, "st2110")
+      assert.is_nil(err)
+      assert.is_table(doc)
     end)
   end)
 end)

@@ -686,6 +686,46 @@ local VALID_AUDIO_ENC = { ["L16"]=true, ["L24"]=true, ["AM824"]=true }
 -- Valid TSMODE values per ST 2110-10 §8.7 (RTP timestamp generation mode).
 local VALID_TSMODE = { ["SAMP"]=true, ["NEW"]=true, ["PRES"]=true }
 
+-- JPEG XS fmtp value enums per VSF TR-08 §8.1.1 and ISO/IEC 21122-2.
+-- Cited from TR-10-15-Part1 §8/§9 (which incorporates TR-08 §8.1.1 by reference).
+local VALID_JXS_PROFILE = {
+  ["Unrestricted"]         = true,
+  ["Light422.10"]          = true,
+  ["Light444.12"]          = true,
+  ["LightSubline422.10"]   = true,
+  ["LightSubline444.12"]   = true,
+  ["Main422.10"]           = true,
+  ["Main444.12"]           = true,
+  ["High444.12"]           = true,
+  ["MLS.12"]               = true,
+  ["LightBayer"]           = true,
+  ["MainBayer"]            = true,
+  ["HighBayer"]            = true,
+  ["MLSBayer"]             = true,
+}
+local VALID_JXS_LEVEL = {
+  ["Unrestricted"] = true,
+  ["1k-1"] = true,
+  ["2k-1"] = true,
+  ["4k-1"] = true, ["4k-2"] = true, ["4k-3"] = true,
+  ["8k-1"] = true, ["8k-2"] = true, ["8k-3"] = true,
+  ["16k-1"] = true, ["16k-2"] = true, ["16k-3"] = true,
+}
+-- Sublevels per TR-10-15-Part1 §7.1 / ISO/IEC 21122-2. TR-10-15 explicitly
+-- allows values above 4 bpp; Sublev5bpp is not a defined point.
+local VALID_JXS_SUBLEVEL = {
+  ["Unrestricted"] = true,
+  ["Full"]         = true,
+  ["Sublev12bpp"]  = true,
+  ["Sublev9bpp"]   = true,
+  ["Sublev6bpp"]   = true,
+  ["Sublev4bpp"]   = true,
+  ["Sublev3bpp"]   = true,
+  ["Sublev2bpp"]   = true,
+}
+-- transmode (T-bit) and packetmode (K-bit) per RFC 9134 / TR-10-15-Part1 §9.
+local VALID_JXS_BIT = { ["0"] = true, ["1"] = true }
+
 -- Returns true if value is a key in set, otherwise nil + "invalid <name> value: <value>".
 local function valid_enum(value, set, name)
   if set[value] then return true end
@@ -696,6 +736,18 @@ end
 local function valid_pos_int(value)
   if not _pos_int_pat:match(value) then return nil, "expected positive integer" end
   if tonumber(value) <= 0 then return nil, "value must be positive" end
+  return true
+end
+
+-- ST 2110-10 §6.4: Extended UDP Size Limit is 8960 octets. MAXUDP signals
+-- that a sender exceeds the Standard UDP Size Limit (1460); the value SHALL
+-- not exceed the Extended limit.
+local function valid_maxudp(value)
+  local ok, msg = valid_pos_int(value)
+  if not ok then return nil, msg end
+  if tonumber(value) > 8960 then
+    return nil, "MAXUDP must not exceed Extended UDP Size Limit of 8960 (ST 2110-10 §6.4)"
+  end
   return true
 end
 
@@ -822,6 +874,17 @@ function st2110.validate(doc)
 
   local sess_attrs = doc.session.attributes or {}
 
+  -- ST 2110-10 §8.3: mediaclk SHALL be media-level only. Reject any session
+  -- scope occurrence.
+  for _, a in ipairs(sess_attrs) do
+    if a.name == "mediaclk" then
+      return nil, errors.new(
+        "a=mediaclk must be media-level, not session-level",
+        { field_path = "session.attributes[mediaclk]",
+          spec_ref = "ST 2110-10 §8.3", code = "INVALID_VALUE" })
+    end
+  end
+
   -- Validate session-level c= if present (ST 2110-10 §6.5).
   local sess_conn = doc.session and doc.session.connection
   if sess_conn then
@@ -919,6 +982,15 @@ function st2110.validate(doc)
           tostring(fmtp_pt), tostring(rtp_pt)),
         mpath, "fmtp", "ST 2110-10 §7", "INVALID_VALUE")
     end
+    -- ST 2110-10 §6.2: dynamic payload types SHALL be in 96..127.
+    -- ST 2110 essence formats (raw, smpte291, L16/L24/AM824, jxsv, ST2110-41)
+    -- have no IANA-static assignment, so the range is always required here.
+    local pt_n = tonumber(rtp_pt)
+    if not pt_n or pt_n < 96 or pt_n > 127 then
+      return attr_err(
+        string.format("RTP payload type %s out of dynamic range (must be 96-127)", tostring(rtp_pt)),
+        mpath, "rtpmap", "ST 2110-10 §6.2", "INVALID_VALUE")
+    end
 
     local enc, clock_rate = rtpmap_parse(rtpmap.value or "")
 
@@ -1006,11 +1078,12 @@ function st2110.validate(doc)
             return nil, "invalid SSN value (expected ST2110-22:YYYY, e.g. ST2110-22:2019)"
           end },
         -- JPEG-XS codec params required by TR-10-11 / IPMX JPEG-XS Profile §6.1.4.
-        { "profile",    valid_nonempty },
-        { "level",      valid_nonempty },
-        { "sublevel",   valid_nonempty },
-        { "transmode",  valid_nonneg_int },
-        { "packetmode", valid_nonneg_int },
+        -- Value enums per TR-10-15-Part1 §8/§9 + TR-08 §8.1.1 / ISO/IEC 21122-2.
+        { "profile",    function(v) return valid_enum(v, VALID_JXS_PROFILE,  "profile")    end },
+        { "level",      function(v) return valid_enum(v, VALID_JXS_LEVEL,    "level")      end },
+        { "sublevel",   function(v) return valid_enum(v, VALID_JXS_SUBLEVEL, "sublevel")   end },
+        { "transmode",  function(v) return valid_enum(v, VALID_JXS_BIT,      "transmode")  end },
+        { "packetmode", function(v) return valid_enum(v, VALID_JXS_BIT,      "packetmode") end },
       }
       for _, ck in ipairs(jxs_req) do
         local key, fn = ck[1], ck[2]
@@ -1041,14 +1114,19 @@ function st2110.validate(doc)
             mpath, "fmtp", "ST 2110-22 §7", "INVALID_VALUE")
         end
       end
-      -- Optional: MAXUDP, CMAX (positive integers).
-      for _, k in ipairs({ "MAXUDP", "CMAX" }) do
-        local v = params[k]
-        if v ~= nil and v ~= true then
-          local vok, vmsg = valid_pos_int(tostring(v))
-          if not vok then
-            return attr_err(k .. ": " .. vmsg, mpath, "fmtp", "ST 2110-22 §7", "INVALID_VALUE")
-          end
+      -- Optional: MAXUDP (1..8960 per ST 2110-10 §6.4), CMAX (positive integer).
+      local maxudp_v = params["MAXUDP"]
+      if maxudp_v ~= nil and maxudp_v ~= true then
+        local vok, vmsg = valid_maxudp(tostring(maxudp_v))
+        if not vok then
+          return attr_err("MAXUDP: " .. vmsg, mpath, "fmtp", "ST 2110-22 §7", "INVALID_VALUE")
+        end
+      end
+      local cmax_v = params["CMAX"]
+      if cmax_v ~= nil and cmax_v ~= true then
+        local vok, vmsg = valid_pos_int(tostring(cmax_v))
+        if not vok then
+          return attr_err("CMAX: " .. vmsg, mpath, "fmtp", "ST 2110-22 §7", "INVALID_VALUE")
         end
       end
       -- Optional: fbblevel (positive integer, TR-10-11 §12).
@@ -1111,7 +1189,7 @@ function st2110.validate(doc)
       -- TSMODE / TSDELAY are from ST 2110-10 §8.7 (RTP timestamp generation).
       local video_opt_checks = {
         { "TP",      function(v) return valid_enum(v, VALID_TP, "TP") end },
-        { "MAXUDP",  valid_pos_int },
+        { "MAXUDP",  valid_maxudp },
         { "PAR",     valid_par },
         { "TROFF",   valid_nonneg_int },
         { "CMAX",    valid_pos_int },
@@ -1192,12 +1270,53 @@ function st2110.validate(doc)
   end
 
   -- Validate a=group:DUP grouping per ST 2110-10 §8.5 + RFC 7104.
+  -- Rules enforced:
+  --   * Same media type across legs.
+  --   * Same rtpmap encoding name and clock rate across legs (M6) — ST 2022-7
+  --     requires identical streams.
+  --   * No two legs share BOTH source address and destination address (H4) —
+  --     §8.5 "SHALL NOT use both identical source addresses and identical
+  --     destination addresses at the same time."
+  local function leg_addrs(block)
+    local conn = block.connection or (doc.session and doc.session.connection)
+    local dst = conn and conn.address or ""
+    -- Source address is taken from the first a=source-filter line on the leg.
+    -- Without source-filter, the source is unconstrained ("*") which cannot
+    -- match identically across legs by this rule (empty string sentinel).
+    local src = ""
+    for _, a in ipairs(block.attributes or {}) do
+      if a.name == "source-filter" then
+        local s = (a.value or ""):match("^%s*%S+%s+%S+%s+%S+%s+%S+%s+(%S+)$")
+        if s then src = s end
+        break
+      end
+    end
+    return src, dst
+  end
   local dup_ok, dup_err = each_dup_group(doc, "ST 2110-10 §8.5", function(legs)
     local base_type = legs[1].block.media
+    local base_rtpmap = find_attr(legs[1].block.attributes or {}, "rtpmap")
+    local base_enc, base_rate = rtpmap_parse((base_rtpmap and base_rtpmap.value) or "")
+    local base_src, base_dst = leg_addrs(legs[1].block)
     for j = 2, #legs do
       if legs[j].block.media ~= base_type then
         return nil, errors.new(
           "a=group:DUP legs must have the same media type",
+          { field_path = "session.attributes[group]",
+            spec_ref = "ST 2110-10 §8.5", code = "INVALID_VALUE" })
+      end
+      local rm = find_attr(legs[j].block.attributes or {}, "rtpmap")
+      local enc, rate = rtpmap_parse((rm and rm.value) or "")
+      if enc ~= base_enc or rate ~= base_rate then
+        return nil, errors.new(
+          "a=group:DUP legs must have the same rtpmap encoding and clock rate",
+          { field_path = "session.attributes[group]",
+            spec_ref = "ST 2110-10 §8.5", code = "INVALID_VALUE" })
+      end
+      local src, dst = leg_addrs(legs[j].block)
+      if dst ~= "" and dst == base_dst and src == base_src then
+        return nil, errors.new(
+          "a=group:DUP legs must not use identical source and destination addresses (ST 2110-10 §8.5)",
           { field_path = "session.attributes[group]",
             spec_ref = "ST 2110-10 §8.5", code = "INVALID_VALUE" })
       end
@@ -1247,6 +1366,12 @@ local VALID_EXTMAP_PAT = _extmap_id
                        * (P(" ") * P(1)^0)^-1
                        * P(-1)
 
+-- TR-10-13 §20.1: PEP IV-Counter extmap URIs SHALL declare direction=sendonly.
+local PEP_EXTMAP_URIS = {
+  ["urn:ietf:params:rtp-hdrext:PEP-Full-IV-Counter"]  = true,
+  ["urn:ietf:params:rtp-hdrext:PEP-Short-IV-Counter"] = true,
+}
+
 local function valid_extmap(value)
   if not VALID_EXTMAP_PAT:match(value) then
     return nil, "invalid a=extmap format (expected: entry-count[/direction] URI)"
@@ -1257,6 +1382,24 @@ local function valid_extmap(value)
   end
   if id > 255 then
     return nil, "a=extmap entry count must be 1-255 (RFC 5285)"
+  end
+  return true
+end
+
+-- Extract the direction (or nil) and URI from a valid extmap value.
+-- Caller is expected to have run valid_extmap first.
+local function extmap_dir_uri(value)
+  local direction, uri = value:match("^%d+/(%S+)%s+(%S+)")
+  if direction then return direction, uri end
+  return nil, value:match("^%d+%s+(%S+)")
+end
+
+-- TR-10-13 §20.1: if extmap URI is a PEP IV-Counter URN, direction must be
+-- sendonly. Returns true on success or nil + error message string.
+local function pep_extmap_direction_ok(value)
+  local direction, uri = extmap_dir_uri(value)
+  if uri and PEP_EXTMAP_URIS[uri] and direction ~= "sendonly" then
+    return nil, "PEP IV-Counter extmap must declare /sendonly direction"
   end
   return true
 end
@@ -1327,8 +1470,13 @@ local PRIVACY_USB_MODES = {
 -- Pass usb_only=true to apply the USB transport rules (protocol must be USB_KV;
 -- mode must be one of the four AAD variants).
 local function valid_privacy(value, usb_only)
+  local trimmed_value = value:match("^%s*(.-)%s*$")
+  -- TR-10-13 §13: "There shall be no semicolon after the last parameter."
+  if trimmed_value:sub(-1) == ";" then
+    return nil, "trailing semicolon is not permitted after the last parameter"
+  end
   local params = {}
-  for kv in (value:match("^%s*(.-)%s*$")):gmatch("[^;]+") do
+  for kv in trimmed_value:gmatch("[^;]+") do
     local trimmed = kv:match("^%s*(.-)%s*$")
     if trimmed ~= "" then
       local k, v = trimmed:match("^([^=]+)%s*=%s*(.*)$")
@@ -1427,7 +1575,6 @@ function ipmx.validate(doc)
   end
 
   -- Reject a=group:FID — TR-10-1 §10 ("shall not be used under this TR").
-  -- Validate a=infoframe values at the same loop (TR-10-10 §8) — optional attribute.
   for _, attr in ipairs(doc.session.attributes or {}) do
     if attr.name == "group" then
       local sem = (attr.value or ""):match("^(%S+)")
@@ -1437,13 +1584,73 @@ function ipmx.validate(doc)
           { field_path = "session.attributes[group]",
             spec_ref = "TR-10-1 §10", code = "INVALID_VALUE" })
       end
-    elseif attr.name == "infoframe" then
-      local ok, msg = valid_infoframe(attr.value or "")
+    end
+  end
+
+  -- M9: a=infoframe SHALL be a session attribute (TR-10-10 §8).
+  for i, m in ipairs(doc.media) do
+    if find_attr(m.attributes or {}, "infoframe") then
+      return attr_err(
+        "a=infoframe must be a session-level attribute, not media-level",
+        string.format("media[%d]", i), "infoframe", "TR-10-10 §8", "INVALID_VALUE")
+    end
+  end
+
+  -- H3/M8: Validate every session-level a=infoframe — format, port = m.port + 3
+  -- for some media block, and per-port uniqueness across infoframe lines.
+  local infoframe_ports_seen = {}
+  for _, attr in ipairs(doc.session.attributes or {}) do
+    if attr.name == "infoframe" then
+      local value = attr.value or ""
+      local ok, msg = valid_infoframe(value)
       if not ok then
         return nil, errors.new("invalid a=infoframe: " .. msg, {
           field_path = "session.attributes[infoframe]",
           spec_ref   = "TR-10-10 §8", code = "INVALID_VALUE",
         })
+      end
+      local port = tonumber((value:match("^(%d+)")) or "") or 0
+      if infoframe_ports_seen[port] then
+        return nil, errors.new(
+          string.format("duplicate a=infoframe port %d", port),
+          { field_path = "session.attributes[infoframe]",
+            spec_ref = "TR-10-10 §8", code = "INVALID_VALUE" })
+      end
+      infoframe_ports_seen[port] = true
+      -- port SHALL equal some media-block port + 3.
+      local matched = false
+      for _, m in ipairs(doc.media) do
+        if m.port and port == m.port + 3 then matched = true; break end
+      end
+      if not matched then
+        return nil, errors.new(
+          string.format("a=infoframe port %d does not match any media port + 3 (TR-10-10 §8)", port),
+          { field_path = "session.attributes[infoframe]",
+            spec_ref = "TR-10-10 §8", code = "INVALID_VALUE" })
+      end
+    end
+  end
+
+  -- RFC 4145 §4 enum check for a=setup / a=connection on every block that
+  -- carries them. Run before the TR-10-14 USB passive check so the more
+  -- specific "must be passive" message wins when the value is in-enum.
+  local VALID_SETUP = {
+    active = true, passive = true, actpass = true, holdconn = true,
+  }
+  local VALID_CONNECTION = { ["new"] = true, ["existing"] = true }
+  for i, m in ipairs(doc.media) do
+    for _, a in ipairs(m.attributes or {}) do
+      if a.name == "setup" and not VALID_SETUP[a.value or ""] then
+        return attr_err(
+          "invalid a=setup value '" .. tostring(a.value) ..
+            "' (must be active, passive, actpass, or holdconn)",
+          string.format("media[%d]", i), "setup", "RFC 4145 §4", "INVALID_VALUE")
+      end
+      if a.name == "connection" and not VALID_CONNECTION[a.value or ""] then
+        return attr_err(
+          "invalid a=connection value '" .. tostring(a.value) ..
+            "' (must be new or existing)",
+          string.format("media[%d]", i), "connection", "RFC 4145 §4", "INVALID_VALUE")
       end
     end
   end
@@ -1464,18 +1671,40 @@ function ipmx.validate(doc)
     end
   end
 
-  -- b=AS bandwidth (TR-10-7 §11): when present on RTP blocks, value must be a
-  -- positive integer (kilobits per second).
+  -- b=AS bandwidth (TR-10-7 §11): value must be a positive integer (kbps) when
+  -- present. For jxsv (compressed video) blocks, ST 2110-22 §7.3 makes b=AS
+  -- REQUIRED.
   for i, m in ipairs(doc.media) do
     if not non_rtp_set[i] then
+      local has_as = false
       for _, b in ipairs(m.bandwidths or {}) do
-        if b.type == "AS" and (not b.value or b.value <= 0) then
-          return nil, errors.new(
-            "b=AS value must be a positive integer (kbps)",
-            { field_path = string.format("media[%d].bandwidths", i),
-              spec_ref = "TR-10-7 §11", code = "INVALID_VALUE" })
+        if b.type == "AS" then
+          has_as = true
+          if not b.value or b.value <= 0 then
+            return nil, errors.new(
+              "b=AS value must be a positive integer (kbps)",
+              { field_path = string.format("media[%d].bandwidths", i),
+                spec_ref = "TR-10-7 §11", code = "INVALID_VALUE" })
+          end
         end
       end
+      local rm = find_attr(m.attributes or {}, "rtpmap")
+      local enc = rm and rtpmap_parse(rm.value or "")
+      if enc == "jxsv" and not has_as then
+        return nil, errors.new(
+          "b=AS is required on jxsv (compressed video) media blocks",
+          { field_path = string.format("media[%d].bandwidths", i),
+            spec_ref = "TR-10-7 §11" })
+      end
+    end
+  end
+  -- Session-level b=AS, when present, must also be a positive integer.
+  for _, b in ipairs(doc.session.bandwidths or {}) do
+    if b.type == "AS" and (not b.value or b.value <= 0) then
+      return nil, errors.new(
+        "session-level b=AS value must be a positive integer (kbps)",
+        { field_path = "session.bandwidths",
+          spec_ref = "TR-10-7 §11", code = "INVALID_VALUE" })
     end
   end
 
@@ -1496,14 +1725,23 @@ function ipmx.validate(doc)
     })
   end
 
-  -- Validate URI format of every a=extmap attribute (RFC 5285).
+  -- Validate URI format of every a=extmap attribute (RFC 5285). For PEP
+  -- IV-Counter URIs, also enforce direction=sendonly (TR-10-13 §20.1).
   for _, attr in ipairs(doc.session.attributes or {}) do
     if attr.name == "extmap" then
-      local ok, msg = valid_extmap(attr.value or "")
+      local val = attr.value or ""
+      local ok, msg = valid_extmap(val)
       if not ok then
         return nil, errors.new("invalid a=extmap: " .. msg, {
           field_path = "session.attributes[extmap]",
           spec_ref   = "IPMX §6 / RFC 5285", code = "INVALID_VALUE",
+        })
+      end
+      local pok, pmsg = pep_extmap_direction_ok(val)
+      if not pok then
+        return nil, errors.new("invalid a=extmap: " .. pmsg, {
+          field_path = "session.attributes[extmap]",
+          spec_ref   = "TR-10-13 §20.1", code = "INVALID_VALUE",
         })
       end
     end
@@ -1512,11 +1750,19 @@ function ipmx.validate(doc)
     if not non_rtp_set[i] then
       for _, attr in ipairs(m.attributes or {}) do
         if attr.name == "extmap" then
-          local ok, emsg = valid_extmap(attr.value or "")
+          local val = attr.value or ""
+          local ok, emsg = valid_extmap(val)
           if not ok then
             return nil, errors.new("invalid a=extmap: " .. emsg, {
               field_path = string.format("media[%d].attributes[extmap]", i),
               spec_ref   = "IPMX §6 / RFC 5285", code = "INVALID_VALUE",
+            })
+          end
+          local pok, pmsg = pep_extmap_direction_ok(val)
+          if not pok then
+            return nil, errors.new("invalid a=extmap: " .. pmsg, {
+              field_path = string.format("media[%d].attributes[extmap]", i),
+              spec_ref   = "TR-10-13 §20.1", code = "INVALID_VALUE",
             })
           end
         end
@@ -1594,40 +1840,50 @@ function ipmx.validate(doc)
             end
           end
         end
-        -- Baseband params must be positive integers when present (TR-10-2 §11, TR-10-3 §10.3).
+        -- H5: TR-10-1 §10.2 requires baseband senders to include measuredpixclk,
+        -- vtotal, htotal. TR-10-9 §10 extends this to non-baseband senders
+        -- (with specific value formulae). The SDP-level validator can't tell
+        -- baseband from non-baseband intent, so it requires presence in all
+        -- IPMX video fmtps. M10: TP is also required (TR-10-TP-1 §13.2).
         if m.media == "video" then
+          if not params["TP"] then
+            return attr_err(
+              "fmtp missing required 'TP' parameter for IPMX video (TR-10-TP-1 §13.2)",
+              mpath, "fmtp", "TR-10-TP-1 §13.2")
+          end
           for _, bp in ipairs({ "measuredpixclk", "vtotal", "htotal" }) do
-            if params[bp] then
-              local n = tonumber(params[bp])
-              if not n or n <= 0 or n ~= math.floor(n) then
-                return attr_err(
-                  string.format("fmtp '%s' must be a positive integer", bp),
-                  mpath, "fmtp", "TR-10-2 §11", "INVALID_VALUE")
-              end
+            local v = params[bp]
+            if v == nil then
+              return attr_err(
+                string.format("fmtp missing required '%s' parameter for IPMX video", bp),
+                mpath, "fmtp", "TR-10-1 §10.2")
+            end
+            local n = tonumber(tostring(v))
+            if not n or n <= 0 or n ~= math.floor(n) then
+              return attr_err(
+                string.format("fmtp '%s' must be a positive integer", bp),
+                mpath, "fmtp", "TR-10-1 §10.2", "INVALID_VALUE")
             end
           end
         elseif m.media == "audio" then
-          if params["measuredsamplerate"] then
-            local n = tonumber(params["measuredsamplerate"])
-            if not n or n <= 0 or n ~= math.floor(n) then
-              return attr_err(
-                "fmtp 'measuredsamplerate' must be a positive integer",
-                mpath, "fmtp", "TR-10-3 §10.3", "INVALID_VALUE")
-            end
+          -- H5: TR-10-1 §10.3 / TR-10-9 §10 — measuredsamplerate is required.
+          local v = params["measuredsamplerate"]
+          if v == nil then
+            return attr_err(
+              "fmtp missing required 'measuredsamplerate' parameter for IPMX audio",
+              mpath, "fmtp", "TR-10-1 §10.3")
+          end
+          local n = tonumber(tostring(v))
+          if not n or n <= 0 or n ~= math.floor(n) then
+            return attr_err(
+              "fmtp 'measuredsamplerate' must be a positive integer",
+              mpath, "fmtp", "TR-10-1 §10.3", "INVALID_VALUE")
           end
         end
       end
-      -- IPMX audio: ptime is required (TR-10-3 §8); AM824 encoding is not valid.
+      -- IPMX audio: ptime is required (TR-10-3 §8). AM824 is permitted under
+      -- TR-10-12 (IPMX equivalent of ST 2110-31 AES3 transparent transport).
       if m.media == "audio" then
-        local rtpmap_a = find_attr(m.attributes or {}, "rtpmap")
-        if rtpmap_a then
-          local enc_a = rtpmap_parse(rtpmap_a.value or "")
-          if enc_a == "AM824" then
-            return attr_err(
-              "AM824 encoding is not valid for IPMX audio (use L16 or L24)",
-              mpath, "rtpmap", "TR-10-3 §8", "INVALID_VALUE")
-          end
-        end
         if not find_attr(m.attributes or {}, "ptime") then
           return attr_err(
             "a=ptime is required for IPMX audio",
@@ -1650,18 +1906,12 @@ function ipmx.validate(doc)
     end
   end
 
-  -- Validate a=hkep at media block level if present (TR-10-5 §10).
+  -- M11: TR-10-5 §10 specifies a=hkep as a session attribute only.
   for i, m in ipairs(doc.media) do
-    for _, attr in ipairs(m.attributes or {}) do
-      if attr.name == "hkep" then
-        local ok, herr = valid_hkep(attr.value or "")
-        if not ok then
-          return nil, errors.new("invalid a=hkep: " .. herr, {
-            field_path = string.format("media[%d].attributes[hkep]", i),
-            spec_ref   = "TR-10-5 §10", code = "INVALID_VALUE",
-          })
-        end
-      end
+    if find_attr(m.attributes or {}, "hkep") then
+      return attr_err(
+        "a=hkep must be a session-level attribute, not media-level",
+        string.format("media[%d]", i), "hkep", "TR-10-5 §10", "INVALID_VALUE")
     end
   end
 

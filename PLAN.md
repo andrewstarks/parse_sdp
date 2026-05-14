@@ -684,6 +684,110 @@ is present, but no IPMX-level tests cover these values.
 
 ---
 
+### M25 — Validation completeness audit ✓ (2026-05-14, round 4)
+
+**Done when:** All gaps from the parallel cross-spec audit (ST 2110-10:2022 PDF,
+TR-10-0 … TR-10-16, TR-10-TP-1, three IPMX Released Profile docs) are addressed.
+
+#### Critical fixes (correctness bugs from round 3)
+
+- [x] **C1: IPMX AM824 rejection removed** (TR-10-12).
+  TR-10-12 is the IPMX equivalent of SMPTE ST 2110-31 (AES3 transparent transport),
+  which mandates AM824. The IPMX validator previously rejected AM824 citing TR-10-3 §8;
+  that rejection was wrong and is removed. Flipped existing M22 AM824 rejection tests.
+- [x] **C2: a=privacy trailing semicolon rejected** (TR-10-13 §13 line 338 — *"There
+  shall be no semicolon after the last parameter."*). The parser previously consumed
+  `[^;]+` segments silently, masking a trailing `;`. Now explicit-rejected.
+
+#### HIGH-severity (SHALL violations passing today)
+
+- [x] **H1: RTP dynamic payload type range 96–127 enforced** (ST 2110-10 §6.2).
+  `st2110.validate` rejects any rtpmap payload type outside the dynamic range.
+- [x] **H3: a=infoframe port = associated media port + 3** (TR-10-10 §8 line 135).
+  Cross-check against every media block's port; reject orphan ports.
+- [x] **H4: DUP legs may not share identical (src, dst) addresses** (ST 2110-10 §8.5).
+  `each_dup_group` callback compares c= and a=source-filter src across legs.
+- [x] **H5: IPMX baseband fmtp params required** (TR-10-1 §10.2 / §10.3 + TR-10-9 §10).
+  `measuredpixclk`, `vtotal`, `htotal` required on every IPMX video fmtp;
+  `measuredsamplerate` required on every IPMX audio fmtp.
+- [x] **H6: b=AS required on jxsv blocks** (TR-10-7 §11 / ST 2110-22 §7.3).
+  Compressed-video media blocks must declare bandwidth.
+- [x] **H7: RFC 4145 a=setup / a=connection enum check** (RFC 4145 §4).
+  General enum validation: `setup` ∈ {active, passive, actpass, holdconn};
+  `connection` ∈ {new, existing}. Runs before the TR-10-14 USB-specific passive check.
+
+H2 (ts-refclk restricted to ptp/localmac) was investigated and **skipped** —
+TR-10-1 §10.4 reads "as specified in ST 2110-10 section 8.2," which permits
+gps/gal/glonass/ntp forms. The audit agent over-interpreted; not a gap.
+
+#### MEDIUM-severity
+
+- [x] **M1: JPEG XS profile/level/sublevel enum validation** (TR-10-15-Part1 §8/§9 +
+  TR-08 §8.1.1 / ISO/IEC 21122-2). Replace `valid_nonempty` with explicit enums
+  (`VALID_JXS_PROFILE`, `VALID_JXS_LEVEL`, `VALID_JXS_SUBLEVEL`).
+- [x] **M2: JPEG XS transmode/packetmode ∈ {0, 1}** (RFC 9134 / TR-10-15 §9 —
+  both are 1-bit values). Replace `valid_nonneg_int` with `valid_enum`.
+- [x] **M3: MAXUDP upper bound 8960** (ST 2110-10 §6.4 — Extended UDP Size Limit).
+  New `valid_maxudp` wraps `valid_pos_int` with the 8960 ceiling.
+- [x] **M4: Session-level a=mediaclk rejected** (ST 2110-10 §8.3 — "media-level mediaclk").
+- [x] **M5: Session-level b=AS validated at IPMX tier** (TR-10-7 §11). Positive
+  integer required on both session and media scope.
+- [x] **M6: DUP legs must share rtpmap encoding and clock rate** (ST 2022-7 / ST 2110-10 §8.5).
+- [x] **M7: PEP IV-Counter extmap direction = sendonly** (TR-10-13 §20.1).
+- [x] **M8: a=infoframe per-port uniqueness across multiple lines** (TR-10-10 §8 implied).
+- [x] **M9: a=infoframe must be session-level only** (TR-10-10 §8 — "session attribute").
+- [x] **M10: TP required on IPMX video fmtp** (TR-10-TP-1 §13.2).
+- [x] **M11: a=hkep must be session-level only** (TR-10-5 §10 — "session attribute"). The
+  previous M15 implementation tolerated media-level placement; tightened to reject.
+
+#### LOW coverage tightening
+
+- [x] a=hkep with IPv6 unicast address (positive test).
+- [x] PEP `ECDH_AES-128-CTR_CMAC-64` (non-AAD) rejected on USB.
+- [x] a=privacy key-order invariance (positive test).
+- [x] USB block without a=privacy (encryption-off path) accepted.
+- [x] Valid IPMX JPEG-XS SDP — IPMX-tier acceptance.
+- [x] a=infoframe SSN year coverage (2099 accepted, malformed 24 rejected).
+- [x] b=AS:1 lower-bound accepted; b=AS:0 rejected at IPMX tier.
+- [x] New fixture: `examples/ipmx/valid/04_jpegxs.sdp`.
+
+#### Fixture / docs updates
+
+- [x] `IPMX_VIDEO_SDP`, `base_ipmx_sdp` defaults, and all 29 inline IPMX video
+  fmtp strings updated with `measuredpixclk=148500000; vtotal=1125; htotal=2200`.
+- [x] All 5 inline IPMX audio fmtp strings updated with `measuredsamplerate=48000`.
+- [x] Example fixtures in `examples/ipmx/valid/` (01–04, dup_group_video) and
+  `examples/ipmx/invalid/` (dup_privacy_mismatch, rtcp_mux) updated for new required fields.
+
+**Tests:**
+
+- 60 new tests across `spec/st2110_spec.lua` and `spec/ipmx_spec.lua`.
+- 2 obsolete tests removed (M22 AM824 rejection + spec_ref for AM824 rejection).
+- 2 obsoleted media-level a=hkep tests removed (replaced by M11 placement tests).
+- Final count: 559 passing / 0 failing.
+
+**Spec references for M25:**
+
+- SMPTE ST 2110-10:2022 §6.2 — dynamic payload type range
+- SMPTE ST 2110-10:2022 §6.4 — Extended UDP Size Limit (8960)
+- SMPTE ST 2110-10:2022 §8.3 — mediaclk media-level only
+- SMPTE ST 2110-10:2022 §8.5 — DUP redundant streams
+- SMPTE ST 2110-22:2019 §7.3 — compressed video b=AS required
+- IETF RFC 4145 §4 — setup/connection enums
+- IETF RFC 9134 / VSF TR-10-15-Part1 §8–§9 — JPEG XS params
+- VSF TR-10-1 §10.2, §10.3 — IPMX baseband fmtp
+- VSF TR-10-5 §10 — a=hkep session attribute
+- VSF TR-10-7 §11 — b=AS positive integer
+- VSF TR-10-9 §10 — non-baseband IPMX fmtp
+- VSF TR-10-10 §8 — a=infoframe port association
+- VSF TR-10-12 §1 — IPMX AES3 transparent transport (AM824)
+- VSF TR-10-13 §13 — a=privacy trailing-semicolon rule
+- VSF TR-10-13 §20.1 — PEP IV-Counter extmap direction
+- VSF TR-10-14 §12 — USB privacy AAD modes
+- VSF TR-10-TP-1 §13.2 — IPMX required fmtp parameters
+
+---
+
 ### M24 — Validation completeness audit ✓ (2026-05-13, round 3)
 
 **Done when:** All gaps identified in the comprehensive spec audit are addressed.

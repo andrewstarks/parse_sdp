@@ -9,6 +9,56 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 
+### Added (M25 — validation completeness audit 2026-05-14, round 4)
+
+A parallel multi-spec audit (ST 2110-10:2022 PDF, all TR-10 docs, TR-10-TP-1, three IPMX Released Profile docs) found a further 9 SHALL-level gaps and several enum-and-coverage tightenings.
+
+**Critical fixes (correctness bugs from round 3):**
+
+- **IPMX now accepts AM824 audio encoding** (VSF TR-10-12 — IPMX equivalent of SMPTE ST 2110-31 AES3 transparent transport). The previous blanket rejection in IPMX mode was incorrect.
+- **`a=privacy` trailing semicolon rejected** (TR-10-13 §13 — "There shall be no semicolon after the last parameter."). Previously the trailing `;` was silently dropped.
+
+**HIGH-severity (SHALL violations that previously passed):**
+
+- **RTP dynamic payload type SHALL be 96–127** (ST 2110-10 §6.2). `st2110.validate` rejects any rtpmap PT outside this range.
+- **`a=infoframe` port SHALL equal associated media port + 3** (TR-10-10 §8). Cross-checked against every media block; orphan ports are rejected.
+- **DUP redundant streams SHALL NOT use both identical source and identical destination** (ST 2110-10 §8.5). Compared via `c=` and `a=source-filter` source address.
+- **IPMX video fmtp SHALL include `measuredpixclk`, `vtotal`, `htotal`** (TR-10-1 §10.2 + TR-10-9 §10). IPMX audio fmtp SHALL include `measuredsamplerate` (TR-10-1 §10.3). Previously validated by value only when present.
+- **Compressed video (jxsv) SHALL declare `b=AS`** (TR-10-7 §11 / ST 2110-22 §7.3).
+- **RFC 4145 `a=setup` and `a=connection` enum-validated** (RFC 4145 §4): `setup` ∈ {active, passive, actpass, holdconn}; `connection` ∈ {new, existing}. Applies to every block carrying the attribute, before TR-10-14's stricter USB-passive rule.
+
+**MEDIUM-severity gaps:**
+
+- **JPEG XS `profile`, `level`, `sublevel` enum-validated** (TR-10-15-Part1 §8/§9 + TR-08 §8.1.1 / ISO/IEC 21122-2). Replaces the previous `valid_nonempty` allow-anything check.
+- **JPEG XS `transmode` and `packetmode` restricted to {0, 1}** (RFC 9134 / TR-10-15 §9 — both are 1-bit values).
+- **`MAXUDP` ≤ 8960** (ST 2110-10 §6.4 — Extended UDP Size Limit). Applies to both ST 2110-20 and ST 2110-22 video.
+- **Session-level `a=mediaclk` rejected** (ST 2110-10 §8.3 — mediaclk SHALL be media-level).
+- **Session-level `b=AS` value must be positive** when present (TR-10-7 §11). Already enforced at media level.
+- **DUP legs must share rtpmap encoding and clock rate** (ST 2022-7 / ST 2110-10 §8.5). Different encodings on redundant legs are now rejected.
+- **PEP IV-Counter extmap SHALL declare `/sendonly`** (TR-10-13 §20.1). Direction is enforced for `urn:ietf:params:rtp-hdrext:PEP-Full-IV-Counter` and `…:PEP-Short-IV-Counter`.
+- **Duplicate `a=infoframe` port rejected** within a single SDP.
+- **`a=infoframe` must be session-level** (TR-10-10 §8 — "session attribute"). Media-level placement is rejected.
+- **`a=hkep` must be session-level** (TR-10-5 §10 — "session attribute"). Media-level placement is rejected (previously tolerated).
+- **`TP` required on IPMX video fmtp** (TR-10-TP-1 §13.2). Previously optional.
+
+**LOW coverage tightening:**
+
+- a=hkep with IPv6 unicast address — positive test.
+- USB block without a=privacy (encryption disabled) — positive test.
+- a=privacy key-order invariance — positive test.
+- Valid IPMX JPEG-XS SDP — IPMX-tier acceptance.
+- a=infoframe SSN year 2099 accepted; malformed year rejected.
+- b=AS:1 lower-bound accepted; b=AS:0 rejected at IPMX tier.
+- PEP `ECDH_AES-128-CTR_CMAC-64` (non-AAD ECDH variant) rejected on USB.
+
+**Fixtures:**
+
+- `examples/ipmx/valid/04_jpegxs.sdp` added.
+- All IPMX video fmtps updated with `measuredpixclk=148500000; vtotal=1125; htotal=2200`.
+- All IPMX audio fmtps updated with `measuredsamplerate=48000`.
+
+**Test count:** 559 (was 499 before M25; +62 net after two test deletions made obsolete by AM824 reversal and a=hkep media-level removal).
+
 ### Added (M24 — validation completeness audit 2026-05-13, round 3)
 
 Cross-reference against ST 2110-10:2022, TR-10-0 through TR-10-16, and the IPMX profile docs surfaced 11 SHALL-level rules not yet enforced. All are now validated.

@@ -430,6 +430,8 @@ When `a=group:DUP <mid1> <mid2> …` is present at session level, the library va
 
 - Every named `mid` must correspond to a media block carrying a matching `a=mid` attribute.
 - All legs in the DUP group must have the same media type (`video`, `audio`, etc.).
+- All legs must share the same rtpmap encoding name and clock rate.
+- No two legs may use **both** the same destination address (`c=`) and the same source address (`a=source-filter` src). Distinct on at least one axis is required (ST 2110-10 §8.5).
 - A DUP group with fewer than 2 legs is rejected.
 - Absence of `a=group:DUP` is not an error.
 - More than two legs are allowed (RFC 7104 permits any number ≥ 2).
@@ -453,10 +455,10 @@ When a `c=` line is present (at either session or media level), the address is v
 | Attribute | Requirement |
 | --- | --- |
 | `a=ts-refclk` | Required. Accepted: `ptp=IEEE1588-2008:<gmid>[:<domain>]` (domain 0–127); `localmac=<mac>`; `ntp=<addr>` (addr must be a valid IPv4, IPv6, or hostname); `gps`; `gal`; `glonass` |
-| `a=mediaclk` | Required. Accepted: `direct=0` (offset SHALL be zero per ST 2110-10 §7.3) or `sender` |
+| `a=mediaclk` | Required, **media-level only**. Accepted: `direct=0` (offset SHALL be zero per ST 2110-10 §7.3) or `sender`. Session-level `a=mediaclk` is rejected (ST 2110-10 §8.3) |
 | `a=mid` | Optional. When present, value must be unique within the session (RFC 5888 §8.1) |
 | `a=source-filter` | Optional. When present, must follow RFC 4570: `<incl\|excl> IN <IP4\|IP6> <dest> <src>+` |
-| `a=rtpmap` | Required. Clock rate validated: must be 90000 for video, `smpte291`, and `ST2110-41`; audio clock rate validated against known rates. Audio encoding name validated: must be `L16`, `L24`, or `AM824`. Payload type must match the payload type in `a=fmtp` |
+| `a=rtpmap` | Required. RTP payload type must be in the dynamic range 96–127 (ST 2110-10 §6.2). Clock rate validated: must be 90000 for video, `smpte291`, and `ST2110-41`; audio clock rate validated against known rates. Audio encoding name validated: must be `L16`, `L24`, or `AM824`. Payload type must match the payload type in `a=fmtp` |
 | `a=fmtp` | Required. Key=value pairs validated per sub-standard |
 
 ### ST 2110-20 (video) `fmtp` parameters
@@ -482,7 +484,7 @@ Optional parameters validated when present:
 | --- | --- | --- |
 | `RANGE` | `NARROW`, `FULLPROTECT`, `FULL` | ST 2110-20 §7.2 |
 | `TP` | `2110TPN`, `2110TPNL`, `2110TPW` | ST 2110-21 |
-| `MAXUDP` | positive integer | ST 2110-20 §7.2 |
+| `MAXUDP` | positive integer ≤ 8960 (Extended UDP Size Limit) | ST 2110-10 §6.4 |
 | `PAR` | `W:H` (both positive integers) | ST 2110-20 §7.2 |
 | `TROFF` | non-negative integer (requires `TP` to also be present) | ST 2110-21 §8 |
 | `CMAX` | positive integer (requires `TP` to also be present) | ST 2110-21 §8 |
@@ -533,11 +535,11 @@ Required parameters (all must be present):
 | `colorimetry` | `BT709` | same set as ST 2110-20 |
 | `PM` | `2110GPM` | `2110GPM`, `2110BPM` |
 | `SSN` | `ST2110-22:2019` | must be `ST2110-22:YYYY` (4-digit year) |
-| `profile` | `High444.12` | non-empty string (TR-10-11 §12) |
-| `level` | `1k-1` | non-empty string (TR-10-11 §12) |
-| `sublevel` | `Sublev3bpp` | non-empty string (TR-10-11 §12) |
-| `transmode` | `1` | non-negative integer |
-| `packetmode` | `0` | non-negative integer |
+| `profile` | `High444.12` | enum (TR-10-15 §8 / TR-08 §8.1.1): `Unrestricted`, `Light422.10`, `Light444.12`, `LightSubline422.10`, `LightSubline444.12`, `Main422.10`, `Main444.12`, `High444.12`, `MLS.12`, `LightBayer`, `MainBayer`, `HighBayer`, `MLSBayer` |
+| `level` | `2k-1` | enum (TR-10-15 §9 / ISO/IEC 21122-2): `Unrestricted`, `1k-1`, `2k-1`, `4k-1`, `4k-2`, `4k-3`, `8k-1`, `8k-2`, `8k-3`, `16k-1`, `16k-2`, `16k-3` |
+| `sublevel` | `Sublev3bpp` | enum (TR-10-15 §7.1 / ISO/IEC 21122-2): `Unrestricted`, `Full`, `Sublev12bpp`, `Sublev9bpp`, `Sublev6bpp`, `Sublev4bpp`, `Sublev3bpp`, `Sublev2bpp` |
+| `transmode` | `0` or `1` | 1-bit value (RFC 9134 / TR-10-15 §9) |
+| `packetmode` | `0` or `1` | 1-bit value (RFC 9134 / TR-10-15 §9) |
 
 Optional parameters validated when present:
 
@@ -545,9 +547,11 @@ Optional parameters validated when present:
 | --- | --- | --- |
 | `RANGE` | `NARROW`, `FULLPROTECT`, `FULL` | ST 2110-22 §7 |
 | `TP` | `2110TPNL`, `2110TPW` | ST 2110-22 §7 (2110TPN is **not** valid) |
-| `MAXUDP` | positive integer | ST 2110-22 §7 |
+| `MAXUDP` | positive integer ≤ 8960 (Extended UDP Size Limit) | ST 2110-10 §6.4 |
 | `CMAX` | positive integer | ST 2110-22 §7 |
 | `fbblevel` | positive integer | TR-10-11 §12 |
+
+A `b=AS:<positive integer>` bandwidth line is **required** on every `jxsv` media block (TR-10-7 §11 / ST 2110-22 §7.3).
 
 ### ST 2110-41 (fast metadata) `fmtp` parameters
 
@@ -572,26 +576,37 @@ on all non-USB media blocks, then checks IPMX-specific requirements:
 | `a=group:FID` forbidden | TR-10-1 §10 | FID (Flow Identification) semantics shall not be used; any session-level `a=group:FID` is rejected |
 | Media port must be even and > 1024 | TR-10-1 §7 | Applies to all non-USB RTP media blocks |
 | `a=extmap` present with valid URI | IPMX §6 / RFC 5285 | Must appear at session level or in at least one RTP media block; every `a=extmap` value must be in RFC 5285 format: `entry-count[/direction] URI` where direction is `sendonly`, `recvonly`, `sendrecv`, or `inactive` and URI has a scheme (e.g. `urn:`, `http:`); ID must be 1–255; IDs must be unique within their scope (session scope and each media-block scope are checked separately) |
+| PEP IV-Counter `a=extmap` direction must be `/sendonly` | TR-10-13 §20.1 | Applies when URI is `urn:ietf:params:rtp-hdrext:PEP-Full-IV-Counter` or `…:PEP-Short-IV-Counter` |
 | `IPMX` bare flag in every `a=fmtp` | TR-10-1 §10.1 | Required in all non-USB media blocks |
-| Audio encoding must be `L16` or `L24` | TR-10-3 §8 | `AM824` (AES3) is not valid at the IPMX tier |
+| Audio encoding | TR-10-3 §8 / TR-10-12 | `L16`, `L24` (TR-10-3 PCM) or `AM824` (TR-10-12 AES3 transparent transport) |
 | `a=ptime` required for audio blocks | TR-10-3 §8 | Must be present on every IPMX audio media block |
+| `a=setup` enum | RFC 4145 §4 | `active`, `passive`, `actpass`, or `holdconn` (USB blocks further required to be `passive` per TR-10-14 §14) |
+| `a=connection` enum | RFC 4145 §4 | `new` or `existing` |
 
-### Optional extensions (validated when present)
+### Required IPMX fmtp parameters
 
-#### Baseband measurement `fmtp` parameters (TR-10-2 §11 / TR-10-3 §10.3)
+#### Baseband measurement params (TR-10-1 §10.2 / §10.3, TR-10-9 §10)
 
-When present in an IPMX non-USB media block's `a=fmtp`, the following parameters are validated as positive integers:
+Every IPMX video and audio media block's `a=fmtp` must include these parameters
+as positive integers. TR-10-1 specifies them for baseband senders; TR-10-9 §10
+extends the requirement to non-baseband IPMX senders (with the values reflecting
+the rtpmap signaling). The SDP-level validator therefore requires presence on
+every IPMX video/audio fmtp.
 
 | Parameter | Media type | Spec ref |
 | --- | --- | --- |
-| `measuredpixclk` | video | TR-10-2 §11 |
-| `vtotal` | video | TR-10-2 §11 |
-| `htotal` | video | TR-10-2 §11 |
-| `measuredsamplerate` | audio | TR-10-3 §10.3 |
+| `measuredpixclk` | video | TR-10-1 §10.2 |
+| `vtotal` | video | TR-10-1 §10.2 |
+| `htotal` | video | TR-10-1 §10.2 |
+| `TP` | video | TR-10-TP-1 §13.2 |
+| `measuredsamplerate` | audio | TR-10-1 §10.3 |
+
+### Optional extensions (validated when present)
 
 #### HDCP Key Exchange — `a=hkep` (TR-10-5 §10)
 
-When present at session or media level, the `a=hkep` attribute is validated against:
+`a=hkep` is a **session-level** attribute (TR-10-5 §10); media-level placement
+is rejected. When present, the value is validated against:
 
 ```text
 a=hkep:<port> IN <IP4|IP6> <unicast-address> <node-id> <port-id>
@@ -615,6 +630,8 @@ When present (at session or media level), the `a=privacy` attribute is validated
 ```text
 a=privacy: protocol=<p>; mode=<m>; iv=<iv>; key_generator=<kg>; key_version=<kv>; key_id=<kid>
 ```
+
+A trailing semicolon after the last parameter is rejected (TR-10-13 §13).
 
 | Parameter | Valid values |
 | --- | --- |
@@ -651,7 +668,8 @@ ST 2110 RTP-specific checks but are not subject to the TR-10-14 USB rules.
 
 #### HDMI InfoFrame — `a=infoframe` (TR-10-10 §8)
 
-When present at session level, the `a=infoframe` attribute is validated:
+`a=infoframe` is a **session-level** attribute; media-level placement is
+rejected. When present, the value is validated:
 
 ```text
 a=infoframe:<port> SSN=ST2110-41:YYYY;DIT=100100
@@ -659,7 +677,7 @@ a=infoframe:<port> SSN=ST2110-41:YYYY;DIT=100100
 
 | Field | Validation |
 | --- | --- |
-| `<port>` | Integer (associated media port + 3 per the spec; the +3 relationship is not enforced because there can be multiple associated streams) |
+| `<port>` | Integer; SHALL equal some media block's UDP port + 3 (TR-10-10 §8). Multiple `a=infoframe` lines must use distinct ports. |
 | `SSN` | Must be `ST2110-41:YYYY` (4-digit year) |
 | `DIT` | Must be exactly `100100` (HDMI InfoFrame Data Item Type) |
 
