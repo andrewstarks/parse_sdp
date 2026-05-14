@@ -7,7 +7,7 @@
 -- ── External dependencies ─────────────────────────────────────────────────────
 local lpeg   = require("lpeg")
 local dkjson = require("dkjson")
-local P, R, C, Cp, Ct = lpeg.P, lpeg.R, lpeg.C, lpeg.Cp, lpeg.Ct
+local P, R, V, C, Cp, Ct = lpeg.P, lpeg.R, lpeg.V, lpeg.C, lpeg.Cp, lpeg.Ct
 
 -- ── Errors ────────────────────────────────────────────────────────────────────
 local errors = {}
@@ -436,18 +436,86 @@ local _ntp_octet =
   (P("1") * R("09") * R("09")) +
   (R("19") * R("09")) +
   R("09")
-local _ntp_ipv4 =
-  _ntp_octet * P(".") * _ntp_octet * P(".") * _ntp_octet * P(".") * _ntp_octet * P(-1)
-local _ntp_alnum    = R("az", "AZ", "09")
--- Label: alnum followed by zero-or-more (optional-hyphens then alnum).
--- Possessive-safe: P("-")^0 only eats hyphens; the trailing alnum terminates each group
--- cleanly so the outer ^0 never over-consumes.
+-- _ipv4_raw: dotted-quad without end-anchor; shared as ls32 in the IPv6 grammar below.
+local _ipv4_raw =
+  _ntp_octet * P(".") * _ntp_octet * P(".") * _ntp_octet * P(".") * _ntp_octet
+local _ntp_ipv4 = _ipv4_raw * P(-1)
+
+local _ntp_alnum = R("az", "AZ", "09")
+-- P("-")^0 allows consecutive hyphens (valid in IDN labels, e.g. xn--); trailing alnum
+-- ensures labels never end with a hyphen.
 local _ntp_label    = _ntp_alnum * (P("-")^0 * _ntp_alnum)^0
 local _ntp_hostname = _ntp_label * (P(".") * _ntp_label)^0 * P(-1)
--- IPv6: optional leading hex digits, then a required colon, then the rest.
--- The required P(":") after ^0 prevents _ntp_hex^0 from eating the colon possessively.
-local _ntp_hex      = R("09", "af", "AF")
-local _ntp_ipv6     = (_ntp_hex^0 * P(":")) * (_ntp_hex + P(":") + P("."))^0 * P(-1)
+
+-- RFC 4291 / RFC 3986 §3.2.2 IPv6 address grammar.
+-- Adapted from lpeg_patterns (MIT) © 2012–2016 daurnimator
+-- https://github.com/daurnimator/lpeg_patterns
+-- All value captures stripped; pure structural validation only.
+local _HEXDIG = R("09", "af", "AF")
+local _ntp_ipv6 = P({
+  h16    = _HEXDIG * _HEXDIG^-3;
+  h16c   = V"h16" * P":";
+  ls32   = (V"h16c" * V"h16") + _ipv4_raw;
+
+  mh16c_1 = V"h16c";
+  mh16c_2 = V"h16c" * V"h16c";
+  mh16c_3 = V"h16c" * V"h16c" * V"h16c";
+  mh16c_4 = V"h16c" * V"h16c" * V"h16c" * V"h16c";
+  mh16c_5 = V"h16c" * V"h16c" * V"h16c" * V"h16c" * V"h16c";
+  mh16c_6 = V"h16c" * V"h16c" * V"h16c" * V"h16c" * V"h16c" * V"h16c";
+
+  -- mcc_N in the source grammar injected N zero-captures; without captures all
+  -- variants reduce to the same P"::" token, so one rule suffices.
+  mcc = P"::";
+
+  mh16_1 = V"h16";
+  mh16_2 = V"mh16c_1" * V"h16";
+  mh16_3 = V"mh16c_2" * V"h16";
+  mh16_4 = V"mh16c_3" * V"h16";
+  mh16_5 = V"mh16c_4" * V"h16";
+  mh16_6 = V"mh16c_5" * V"h16";
+  mh16_7 = V"mh16c_6" * V"h16";
+
+  -- start rule: all 38 valid IPv6 forms (RFC 4291 §2.2 / RFC 3986 §3.2.2)
+                         V"mh16c_6" * V"ls32"
+  +             V"mcc" * V"mh16c_5" * V"ls32"
+  +             V"mcc" * V"mh16c_4" * V"ls32"
+  + V"h16"    * V"mcc" * V"mh16c_4" * V"ls32"
+  +             V"mcc" * V"mh16c_3" * V"ls32"
+  + V"h16"    * V"mcc" * V"mh16c_3" * V"ls32"
+  + V"mh16_2" * V"mcc" * V"mh16c_3" * V"ls32"
+  +             V"mcc" * V"mh16c_2" * V"ls32"
+  + V"h16"    * V"mcc" * V"mh16c_2" * V"ls32"
+  + V"mh16_2" * V"mcc" * V"mh16c_2" * V"ls32"
+  + V"mh16_3" * V"mcc" * V"mh16c_2" * V"ls32"
+  +             V"mcc" * V"h16c"    * V"ls32"
+  + V"h16"    * V"mcc" * V"h16c"    * V"ls32"
+  + V"mh16_2" * V"mcc" * V"h16c"    * V"ls32"
+  + V"mh16_3" * V"mcc" * V"h16c"    * V"ls32"
+  + V"mh16_4" * V"mcc" * V"h16c"    * V"ls32"
+  +             V"mcc" *              V"ls32"
+  + V"h16"    * V"mcc" *              V"ls32"
+  + V"mh16_2" * V"mcc" *              V"ls32"
+  + V"mh16_3" * V"mcc" *              V"ls32"
+  + V"mh16_4" * V"mcc" *              V"ls32"
+  + V"mh16_5" * V"mcc" *              V"ls32"
+  +             V"mcc" * V"h16"
+  + V"h16"    * V"mcc" * V"h16"
+  + V"mh16_2" * V"mcc" * V"h16"
+  + V"mh16_3" * V"mcc" * V"h16"
+  + V"mh16_4" * V"mcc" * V"h16"
+  + V"mh16_5" * V"mcc" * V"h16"
+  + V"mh16_6" * V"mcc" * V"h16"
+  +             V"mcc"
+  + V"mh16_1" * V"mcc"
+  + V"mh16_2" * V"mcc"
+  + V"mh16_3" * V"mcc"
+  + V"mh16_4" * V"mcc"
+  + V"mh16_5" * V"mcc"
+  + V"mh16_6" * V"mcc"
+  + V"mh16_7" * V"mcc";
+}) * P(-1)
+
 local _ntp_addr_pat = _ntp_ipv4 + _ntp_ipv6 + _ntp_hostname
 
 -- Validate the value of a ts-refclk attribute per ST 2110-10 §7.2.

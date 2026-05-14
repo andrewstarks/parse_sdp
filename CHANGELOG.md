@@ -14,12 +14,12 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 - ST 2110-30 channel count (§7.1): the third component of `a=rtpmap` (e.g. `/8` in `L24/48000/8`) is now required and validated as an integer in the range 1–16; missing or out-of-range values are rejected
 - ST 2110-30 `a=ptime` format validation (§7.2): when present, the value must be a positive number; zero and non-numeric values are rejected
 - ST 2110: `a=rtpmap` and `a=fmtp` payload type consistency (ST 2110-10 §7): the numeric payload type at the start of each attribute's value must match; a mismatch is now rejected
-- ts-refclk `ntp=` address format validation (LPEG): the address after `ntp=` is now validated against IPv4 dotted-decimal, IPv6, and hostname formats; invalid strings are rejected
+- ts-refclk `ntp=` address format validation (LPEG): the address after `ntp=` is now validated against IPv4 dotted-decimal, IPv6 (full RFC 4291 / RFC 3986 §3.2.2 grammar), and hostname formats; invalid strings are rejected
 - IPMX FEC: `FEC_ADD_LATENCY_VIDEO` and `FEC_ADD_LATENCY_AUDIO` now require `FECPROFILE` to also be present in the same `a=fmtp`; specifying a latency parameter without `FECPROFILE` is rejected
 
 ### Tests (M20)
 
-- `spec/st2110_spec.lua`: 12 new tests — rtpmap/fmtp PT mismatch (match accepted, mismatch rejected); ST 2110-30 channel count (1/8/16 accepted; 0, 17, missing rejected); ST 2110-30 ptime (absent OK, 1/20 accepted; 0 and non-numeric rejected); CMAX=0 rejected; ts-refclk PTP GMID wrong octet count (6 and 9 octets rejected); ts-refclk ntp= LPEG (valid IPv4, hostname, single-label, IPv6 accepted; `not@valid!` and hyphen-prefix label rejected)
+- `spec/st2110_spec.lua`: 18 new tests — rtpmap/fmtp PT mismatch (match accepted, mismatch rejected); ST 2110-30 channel count (1/8/16 accepted; 0, 17, missing rejected); ST 2110-30 ptime (absent OK, 1/20 accepted; 0 and non-numeric rejected); CMAX=0 rejected; ts-refclk PTP GMID wrong octet count (6 and 9 octets rejected); ts-refclk ntp= LPEG (valid IPv4, hostname, single-label, IPv6 accepted; `not@valid!` and hyphen-prefix label rejected); RFC-compliant IPv6 grammar (loopback `::1`, all-zeros `::`, compressed, IPv4-mapped accepted; triple-colon `:::` and bare 3-group `1:2:3` rejected)
 - `spec/ipmx_spec.lua`: 8 new tests — `protocol=RTP_KV` accepted; non-hex `key_generator`, `key_version`, `key_id` each rejected; `FEC_ADD_LATENCY_AUDIO=notanumber` rejected; `FEC_ADD_LATENCY_VIDEO` without FECPROFILE rejected; `FEC_ADD_LATENCY_AUDIO` without FECPROFILE rejected; `FEC_ADD_LATENCY_VIDEO` with FECPROFILE accepted
 
 ### Added

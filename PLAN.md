@@ -540,9 +540,9 @@ but untested code paths.
 **Additional validation in `valid_tsrefclk`:**
 
 - [x] `ntp=` address: LPEG pattern validates that the address is a well-formed IPv4 address
-  (`N.N.N.N`, each octet 0–255), an IPv6 address (hex digits, colons, and dots), or an
-  RFC 1123 hostname (dot-separated labels of alphanumeric/hyphen characters); plainly
-  malformed values (empty, non-address tokens) are rejected
+  (`N.N.N.N`, each octet 0–255), an IPv6 address (full RFC 4291 / RFC 3986 §3.2.2 grammar,
+  adapted from lpeg_patterns MIT © daurnimator), or an RFC 1123 hostname (dot-separated
+  labels of alphanumeric/hyphen characters); plainly malformed values are rejected
 
 **New tests in `spec/st2110_spec.lua`:**
 
