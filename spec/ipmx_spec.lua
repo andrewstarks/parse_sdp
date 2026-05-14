@@ -2298,4 +2298,165 @@ describe("IPMX validation", function()
       assert.is_table(doc)
     end)
   end)
+
+  -- ── M26 ──────────────────────────────────────────────────────────────────────
+  -- Round-5 audit gap closure. Each describe block names the gap ID it addresses.
+
+  describe("M26 H1: a=privacy session→media inheritance for DUP (TR-10-13 §13 line 859)", function()
+    local MAC  = "a=ts-refclk:localmac=AA-BB-CC-DD-EE-FF"
+    local VFMTP_IPMX = "a=fmtp:96 sampling=YCbCr-4:2:2; width=1920; height=1080; exactframerate=25; depth=10; TCS=SDR; colorimetry=BT709; PM=2110GPM; SSN=ST2110-20:2022; TP=2110TPN; measuredpixclk=148500000; vtotal=1125; htotal=2200; IPMX"
+    local PRIV = "a=privacy: protocol=RTP; mode=AES-128-CTR; iv=0102030405060708; key_generator=aabbccddeeff00112233445566778899; key_version=01020304; key_id=deadbeefcafebabe"
+    local PRIV2 = "a=privacy: protocol=RTP; mode=AES-256-CTR; iv=0102030405060708; key_generator=aabbccddeeff00112233445566778899; key_version=01020304; key_id=deadbeefcafebabe"
+
+    -- Build DUP-grouped IPMX SDP with optional session_privacy + per-leg privacy.
+    local function dup_sdp(opts)
+      opts = opts or {}
+      local lines = {
+        "v=0",
+        "o=- 1234567890 1 IN IP4 192.168.1.1",
+        "s=IPMX M26 H1",
+        "t=0 0",
+        "a=group:DUP leg1 leg2",
+        MAC,
+      }
+      if opts.session_privacy then lines[#lines+1] = opts.session_privacy end
+      lines[#lines+1] = "m=video 5000 RTP/AVP 96"
+      lines[#lines+1] = "c=IN IP4 239.100.0.1/64"
+      lines[#lines+1] = "a=mid:leg1"
+      lines[#lines+1] = "a=rtpmap:96 raw/90000"
+      lines[#lines+1] = VFMTP_IPMX
+      lines[#lines+1] = "a=mediaclk:direct=0"
+      lines[#lines+1] = MAC
+      lines[#lines+1] = "a=extmap:1 urn:ietf:params:rtp-hdrext:smpte-tc"
+      if opts.privacy1 then lines[#lines+1] = opts.privacy1 end
+      lines[#lines+1] = "m=video 5010 RTP/AVP 96"
+      lines[#lines+1] = "c=IN IP4 239.100.0.2/64"
+      lines[#lines+1] = "a=mid:leg2"
+      lines[#lines+1] = "a=rtpmap:96 raw/90000"
+      lines[#lines+1] = VFMTP_IPMX
+      lines[#lines+1] = "a=mediaclk:direct=0"
+      lines[#lines+1] = MAC
+      if opts.privacy2 then lines[#lines+1] = opts.privacy2 end
+      return table.concat(lines, "\r\n")
+    end
+
+    it("accepts DUP legs where session has a=privacy and both legs inherit", function()
+      local doc, err = sdp.parse(dup_sdp({ session_privacy = PRIV }), "ipmx")
+      assert.is_nil(err)
+      assert.is_table(doc)
+    end)
+
+    it("accepts DUP legs where session has a=privacy, leg1 inherits, leg2 explicit-same", function()
+      local doc, err = sdp.parse(
+        dup_sdp({ session_privacy = PRIV, privacy2 = PRIV }), "ipmx")
+      assert.is_nil(err)
+      assert.is_table(doc)
+    end)
+
+    it("accepts DUP legs where session has a=privacy, leg2 inherits, leg1 explicit-same", function()
+      local doc, err = sdp.parse(
+        dup_sdp({ session_privacy = PRIV, privacy1 = PRIV }), "ipmx")
+      assert.is_nil(err)
+      assert.is_table(doc)
+    end)
+
+    it("rejects DUP legs where inherited (session) value differs from explicit media value", function()
+      local doc = sdp.parse(dup_sdp({ session_privacy = PRIV, privacy2 = PRIV2 }))
+      assert.is_table(doc)
+      local ok, err = doc:validate("ipmx")
+      assert.is_nil(ok)
+      assert.is_table(err)
+      assert.matches("privacy", err.message)
+      assert.equal("TR-10-13 §13", err.spec_ref)
+    end)
+
+    it("rejects DUP legs where both legs have explicit different a=privacy values (regression)", function()
+      local doc = sdp.parse(dup_sdp({ privacy1 = PRIV, privacy2 = PRIV2 }))
+      assert.is_table(doc)
+      local ok, err = doc:validate("ipmx")
+      assert.is_nil(ok)
+      assert.is_table(err)
+      assert.matches("privacy", err.message)
+    end)
+  end)
+
+  describe("M26 H2: IPMX ts-refclk PTP version (TR-10-1 §10.4)", function()
+    local function ipmx_with_tsrefclk(ts_value)
+      return table.concat({
+        "v=0",
+        "o=- 1234567890 1 IN IP4 192.168.1.1",
+        "s=IPMX M26 H2",
+        "t=0 0",
+        "a=ts-refclk:" .. ts_value,
+        "a=extmap:1 urn:ietf:params:rtp-hdrext:smpte-tc",
+        "m=video 5000 RTP/AVP 96",
+        "c=IN IP4 239.100.0.1/64",
+        "a=rtpmap:96 raw/90000",
+        "a=fmtp:96 sampling=YCbCr-4:2:2; width=1920; height=1080; exactframerate=25; depth=10; TCS=SDR; colorimetry=BT709; PM=2110GPM; SSN=ST2110-20:2022; TP=2110TPN; measuredpixclk=148500000; vtotal=1125; htotal=2200; IPMX",
+        "a=mediaclk:direct=0",
+        "a=ts-refclk:" .. ts_value,
+      }, "\r\n")
+    end
+
+    it("accepts ptp=IEEE1588-2008:<gmid>:<domain>", function()
+      local doc, err = sdp.parse(
+        ipmx_with_tsrefclk("ptp=IEEE1588-2008:00-11-22-FF-FE-33-44-55:0"), "ipmx")
+      assert.is_nil(err)
+      assert.is_table(doc)
+    end)
+
+    it("accepts ptp=IEEE1588-2008:traceable", function()
+      local doc, err = sdp.parse(
+        ipmx_with_tsrefclk("ptp=IEEE1588-2008:traceable"), "ipmx")
+      assert.is_nil(err)
+      assert.is_table(doc)
+    end)
+
+    it("rejects ptp=IEEE1588-2019:<gmid>:<domain>", function()
+      local doc = sdp.parse(ipmx_with_tsrefclk("ptp=IEEE1588-2019:00-11-22-FF-FE-33-44-55:0"))
+      assert.is_table(doc)
+      local ok, err = doc:validate("ipmx")
+      assert.is_nil(ok)
+      assert.is_table(err)
+      assert.matches("IEEE1588%-2008", err.message)
+    end)
+
+    it("rejects ptp=IEEE1588-2002:<gmid>:<domain>", function()
+      local doc = sdp.parse(ipmx_with_tsrefclk("ptp=IEEE1588-2002:00-11-22-FF-FE-33-44-55:0"))
+      assert.is_table(doc)
+      local ok, err = doc:validate("ipmx")
+      assert.is_nil(ok)
+      assert.is_table(err)
+      assert.matches("IEEE1588%-2008", err.message)
+    end)
+
+    it("rejects bare ptp=IEEE1588 (missing year suffix)", function()
+      local doc = sdp.parse(ipmx_with_tsrefclk("ptp=IEEE1588:00-11-22-FF-FE-33-44-55:0"))
+      assert.is_table(doc)
+      local ok, err = doc:validate("ipmx")
+      assert.is_nil(ok)
+      assert.is_table(err)
+    end)
+
+    it("accepts localmac= (rule does not apply to non-ptp clock sources)", function()
+      local doc, err = sdp.parse(
+        ipmx_with_tsrefclk("localmac=AA-BB-CC-DD-EE-FF"), "ipmx")
+      assert.is_nil(err)
+      assert.is_table(doc)
+    end)
+  end)
+
+  describe("M26 L1: a=rtcp port upper bound (RFC 768)", function()
+    -- base_ipmx_sdp uses media port 5000, so rtcp must equal 5001. To exercise
+    -- the upper-bound check specifically (not the port+1 check), use a port
+    -- that wins on size: 100000 fails the upper bound regardless of media port.
+    it("rejects a=rtcp:100000 (above UDP range)", function()
+      local doc = sdp.parse(base_ipmx_sdp({}, { "a=rtcp:100000" }))
+      assert.is_table(doc)
+      local ok, err = doc:validate("ipmx")
+      assert.is_nil(ok)
+      assert.is_table(err)
+      assert.matches("65535", err.message)
+    end)
+  end)
 end)

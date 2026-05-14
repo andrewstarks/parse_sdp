@@ -441,12 +441,14 @@ When `a=group:DUP <mid1> <mid2> …` is present at session level, the library va
 
 A connection address is required at either session level or media-block level (ST 2110-10 §6.3). A media block with no per-media `c=` and no session-level `c=` is rejected.
 
-When a `c=` line is present (at either session or media level), the address is validated (ST 2110-10 §6.5):
+When a `c=` line is present (at either session or media level), the address is validated (ST 2110-10 §6.5 / RFC 4566 §5.7):
 
 - IPv4 multicast addresses (224.0.0.0–239.255.255.255) must include a TTL suffix (e.g. `239.100.0.1/64`).
-- TTL must be an integer in the range 1–255.
+- IPv4 TTL must be an integer in the range 1–255.
 - The Local Network Control Block (`224.0.0.0/24`) and Internetwork Control Block (`224.0.1.0/24`) are forbidden per RFC 5771.
-- Unicast addresses must not carry a TTL suffix.
+- IPv4 unicast addresses must not carry a TTL suffix.
+- IPv6 multicast addresses (`ff` prefix) may carry an optional `/<positive-integer>` scope suffix (e.g. `ff02::1/64`).
+- IPv6 unicast addresses must not include any `/` suffix.
 
 ### Per media block
 
@@ -454,7 +456,7 @@ When a `c=` line is present (at either session or media level), the address is v
 
 | Attribute | Requirement |
 | --- | --- |
-| `a=ts-refclk` | Required. Accepted: `ptp=IEEE1588-2008:<gmid>[:<domain>]` (domain 0–127); `localmac=<mac>`; `ntp=<addr>` (addr must be a valid IPv4, IPv6, or hostname); `gps`; `gal`; `glonass` |
+| `a=ts-refclk` | Required. The `ptp=` version token is restricted to `IEEE1588-2008` (ST 2110-10:2022 §6.1 mandates PTPv2; TR-10-1 §10.4 confirms the same for IPMX). `IEEE1588-2002`, `IEEE1588-2019`, and bare `IEEE1588` are rejected at both tiers. Accepted: `ptp=IEEE1588-2008:<gmid>[:<domain>]` (domain 0–127); `ptp=IEEE1588-2008:traceable`; `localmac=<mac>`; `ntp=<addr>` (addr must be a valid IPv4, IPv6, or hostname); `gps`; `gal`; `glonass` |
 | `a=mediaclk` | Required, **media-level only**. Accepted: `direct=0` (offset SHALL be zero per ST 2110-10 §7.3) or `sender`. Session-level `a=mediaclk` is rejected (ST 2110-10 §8.3) |
 | `a=mid` | Optional. When present, value must be unique within the session (RFC 5888 §8.1) |
 | `a=source-filter` | Optional. When present, must follow RFC 4570: `<incl\|excl> IN <IP4\|IP6> <dest> <src>+` |
@@ -575,6 +577,7 @@ on all non-USB media blocks, then checks IPMX-specific requirements:
 | --- | --- | --- |
 | `a=group:FID` forbidden | TR-10-1 §10 | FID (Flow Identification) semantics shall not be used; any session-level `a=group:FID` is rejected |
 | Media port must be even and > 1024 | TR-10-1 §7 | Applies to all non-USB RTP media blocks |
+| Media port must be ≤ 65535 | RFC 768 | Applies at the parser level to all `m=` blocks (rejected during parse, not validate) |
 | `a=extmap` present with valid URI | IPMX §6 / RFC 5285 | Must appear at session level or in at least one RTP media block; every `a=extmap` value must be in RFC 5285 format: `entry-count[/direction] URI` where direction is `sendonly`, `recvonly`, `sendrecv`, or `inactive` and URI has a scheme (e.g. `urn:`, `http:`); ID must be 1–255; IDs must be unique within their scope (session scope and each media-block scope are checked separately) |
 | PEP IV-Counter `a=extmap` direction must be `/sendonly` | TR-10-13 §20.1 | Applies when URI is `urn:ietf:params:rtp-hdrext:PEP-Full-IV-Counter` or `…:PEP-Short-IV-Counter` |
 | `IPMX` bare flag in every `a=fmtp` | TR-10-1 §10.1 | Required in all non-USB media blocks |
@@ -632,6 +635,11 @@ a=privacy: protocol=<p>; mode=<m>; iv=<iv>; key_generator=<kg>; key_version=<kv>
 ```
 
 A trailing semicolon after the last parameter is rejected (TR-10-13 §13).
+
+A session-level `a=privacy` is the default for each media-level `a=privacy`
+(TR-10-13 §13 line 859). For DUP-group consistency checks, the library compares
+the *effective* (media-or-session) value across legs — a leg without a
+media-level `a=privacy` inherits the session-level value.
 
 | Parameter | Valid values |
 | --- | --- |
@@ -699,9 +707,10 @@ When the `FECPROFILE` key appears in a media block's `a=fmtp`, the library valid
 
 #### ST 2022-7 DUP group — privacy consistency (TR-10-13 §13)
 
-When `a=group:DUP` is present and any leg carries `a=privacy`, the library checks that
-all legs in the group carry **identical** `a=privacy` values. A leg missing `a=privacy`
-while another has it is also a violation.
+When `a=group:DUP` is present, the library checks that all legs in the group
+carry **identical** `a=privacy` values. Inheritance is applied first: a leg
+without a media-level `a=privacy` inherits the session-level value (TR-10-13
+§13 line 859) before legs are compared.
 
 #### RTCP port convention (TR-10-1 §8.7)
 
@@ -710,6 +719,7 @@ IPMX mandates that RTCP Sender Reports are sent to media port + 1. The library c
 | Check | Result |
 | --- | --- |
 | `a=rtcp-mux` present on a media block | Rejected — RTCP must be on a separate port |
+| `a=rtcp:<port>` with `port > 65535` | Rejected (above UDP range, RFC 768) |
 | `a=rtcp:<port>` present but `port ≠ media-port + 1` | Rejected |
 | No `a=rtcp` present | Accepted (implicit port+1 convention) |
 

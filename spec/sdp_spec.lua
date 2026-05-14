@@ -514,6 +514,25 @@ describe("grammar.parse_media", function()
     assert.is_nil(m)
     assert.is_number(pos)
   end)
+
+  -- M26 L1: UDP port range (RFC 768).
+  it("accepts port at the upper bound (65535)", function()
+    local m = grammar.parse_media("video 65535 RTP/AVP 96")
+    assert.is_table(m)
+    assert.equal(65535, m.port)
+  end)
+
+  it("rejects port above UDP range (65536)", function()
+    local m, pos = grammar.parse_media("video 65536 RTP/AVP 96")
+    assert.is_nil(m)
+    assert.is_number(pos)
+  end)
+
+  it("rejects port well above UDP range (100000)", function()
+    local m, pos = grammar.parse_media("video 100000 RTP/AVP 96")
+    assert.is_nil(m)
+    assert.is_number(pos)
+  end)
 end)
 
 describe("sdp.parse — media blocks (M5)", function()

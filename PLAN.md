@@ -684,6 +684,66 @@ is present, but no IPMX-level tests cover these values.
 
 ---
 
+### M26 — Validation gap closure ✓ (audit 2026-05-14, round 5)
+
+**Done when:** Four gaps surfaced by the round-5 cross-spec audit are addressed.
+
+#### HIGH-severity (SHALL violations passing today)
+
+- [x] **H1: a=privacy session→media inheritance for DUP consistency**
+  (TR-10-13 §13 line 859 — *"a session-level privacy attribute represents the
+  default value for each media-level privacy attribute unless an explicit
+  media-level privacy attribute is provided"*). The DUP-leg privacy equality
+  check compared only media-level attributes; a leg without media-level
+  `a=privacy` against a leg with one would falsely report a mismatch even
+  when the inherited session-level value matched. `ipmx.validate` now resolves
+  effective privacy (media-or-session) before the leg-equality test.
+- [x] **H2: `ts-refclk:ptp=` version must be `IEEE1588-2008`**. The round-5
+  audit recommended enforcing this in IPMX mode; the test-first pass revealed
+  that `valid_tsrefclk` ([parse_sdp.lua:555](parse_sdp.lua#L555)) already
+  enforced it at the **ST 2110** tier per ST 2110-10:2022 §6.1 / §8.2 (PTPv2
+  is mandated; the RFC 7273 grammar is parametric but the ST 2110-10 profile
+  pins it). IPMX inherits this restriction. No code change needed; tests
+  pinning the behavior were added at both tiers and the asymmetry is
+  documented in GUIDE.md.
+
+#### LOW coverage tightening
+
+- [x] **L1: UDP port upper bound** — `m=` port and `a=rtcp:<port>` must be
+  ≤ 65535 (RFC 768). `grammar.parse_media` now rejects ports > 65535;
+  IPMX `a=rtcp` validation rejects > 65535 before the port+1 check. `a=hkep`
+  already enforced it.
+- [x] **L2: IPv6 multicast c= scope suffix** — `valid_connection_address`
+  short-circuited for IP6. Now: IPv6 multicast (`ff` prefix) may carry
+  `/<positive-integer>` suffix; IPv6 unicast must not include a suffix.
+
+#### Tests to add
+
+- DUP legs both without media-level a=privacy but session has one → success.
+- DUP legs where session has a=privacy + leg2 has same value explicitly + leg1 inherits → success (currently fails).
+- DUP legs where session has a=privacy + leg2 has DIFFERENT value + leg1 inherits → reject.
+- IPMX SDP with `ptp=IEEE1588-2008:...` → success.
+- IPMX SDP with `ptp=IEEE1588-2019:...` → reject (HIGH).
+- IPMX SDP with `ptp=IEEE1588:...` → reject.
+- ST 2110 mode with `ptp=IEEE1588-2019:...` → still success (intentional asymmetry).
+- IPMX SDP with `localmac=` (no ptp) → success (rule does not apply).
+- `m=video 65536 RTP/AVP 96` → parse error.
+- `a=rtcp:65536` → reject in IPMX mode.
+- `c=IN IP6 ff02::1` (multicast missing scope) — accept-or-reject per chosen rule.
+- `c=IN IP6 2001:db8::1/64` (unicast with suffix) → reject.
+- `c=IN IP6 ff02::1/64` (multicast with valid scope) → success.
+
+**Spec references for M26:**
+
+- VSF TR-10-1 (2024-02-23) §10.4 line 196 — IEEE 1588-2008 mandated for IPMX PTP
+- VSF TR-10-13 (2026-02-17 v2) §13 line 859 — session-level a=privacy is the
+  default for each media-level a=privacy
+- RFC 768 — UDP port range
+- RFC 4566 §5.7 — connection address grammar
+- RFC 7273 / ST 2110-10:2022 §8.2 — ts-refclk grammar permits multiple PTP versions
+
+---
+
 ### M25 — Validation completeness audit ✓ (2026-05-14, round 4)
 
 **Done when:** All gaps from the parallel cross-spec audit (ST 2110-10:2022 PDF,

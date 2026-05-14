@@ -9,6 +9,35 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 
+### Added (M26 — validation gap closure 2026-05-14, round 5)
+
+A round-5 cross-spec audit (ST 2110-10:2022, all TR-10 docs, TR-10-TP-1, IPMX Released Profiles) surfaced one correctness bug, two missing range checks, and one near-miss that turned out to already be enforced. All four are now documented and locked in by tests.
+
+**HIGH-severity fixes:**
+
+- **DUP-leg `a=privacy` consistency now resolves inheritance** (TR-10-13 §13 line 859 — *"a session-level privacy attribute represents the default value for each media-level privacy attribute unless an explicit media-level privacy attribute is provided"*). Previously the DUP equality check compared raw media-level attributes; a leg that inherited from a session-level `a=privacy` against a leg with an explicit (identical) media-level value would falsely report a mismatch. `ipmx.validate` now compares *effective* (media-or-session) privacy across legs.
+
+**HIGH-severity confirmations (already enforced; tests added):**
+
+- **`ts-refclk:ptp=` version must be `IEEE1588-2008`** (ST 2110-10:2022 §6.1 / §8.2; TR-10-1 §10.4). Enforced at the ST 2110 tier and inherited by IPMX. The round-5 audit recommended adding an IPMX-specific check; the test-first pass revealed it was redundant. Tests at both tiers now lock the behavior in, and GUIDE.md notes the restriction.
+
+**LOW coverage tightenings:**
+
+- **UDP port upper bound** (RFC 768). `grammar.parse_media` now rejects `m=` ports > 65535. IPMX `a=rtcp:<port>` validation rejects > 65535 before the port+1 check (with explicit `RFC 768` spec_ref). `a=hkep` already enforced it.
+- **IPv6 multicast `c=` scope suffix** (RFC 4566 §5.7 / ST 2110-10 §6.5). `valid_connection_address` previously short-circuited for IP6, accepting both `c=IN IP6 ff02::1` (multicast missing scope) and `c=IN IP6 2001:db8::1/64` (unicast with bogus suffix). Now: IPv6 multicast addresses (`ff` prefix) may carry an optional `/<positive-integer>` scope suffix; IPv6 unicast addresses must not include any `/` suffix.
+
+**Tests:** 22 new tests across `spec/ipmx_spec.lua`, `spec/st2110_spec.lua`, and `spec/sdp_spec.lua`. Final count: 581 passing / 0 failing.
+
+**Spec references for M26:**
+
+- IETF RFC 768 — UDP port range (1–65535)
+- IETF RFC 4566 §5.7 — c= connection-address grammar (IPv6 multicast scope suffix)
+- IETF RFC 7273 — RTP Clock Source Signalling (parametric PTP version)
+- SMPTE ST 2110-10:2022 §6.1 — PTPv2 (IEEE 1588-2008) mandate
+- SMPTE ST 2110-10:2022 §8.2 — ts-refclk format
+- VSF TR-10-1 (2024-02-23) §10.4 line 196 — IEEE 1588-2008 PTPv2 for IPMX
+- VSF TR-10-13 (2026-02-17 v2) §13 line 859 — session-level a=privacy default for media-level
+
 ### Added (M25 — validation completeness audit 2026-05-14, round 4)
 
 A parallel multi-spec audit (ST 2110-10:2022 PDF, all TR-10 docs, TR-10-TP-1, three IPMX Released Profile docs) found a further 9 SHALL-level gaps and several enum-and-coverage tightenings.

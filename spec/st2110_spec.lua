@@ -2973,4 +2973,94 @@ describe("ST 2110 validation", function()
       assert.is_table(doc)
     end)
   end)
+
+  -- ── M26 ──────────────────────────────────────────────────────────────────────
+
+  describe("M26 H2: ST 2110 mode restricts ts-refclk ptp version to IEEE1588-2008 (§6.1/§8.2)", function()
+    local function st2110_with_tsrefclk(ts_value)
+      return table.concat({
+        "v=0",
+        "o=- 1234567890 1 IN IP4 192.168.1.1",
+        "s=ST 2110 M26 H2",
+        "t=0 0",
+        "a=ts-refclk:" .. ts_value,
+        "m=video 5000 RTP/AVP 96",
+        "c=IN IP4 239.100.0.1/64",
+        "a=rtpmap:96 raw/90000",
+        "a=fmtp:96 sampling=YCbCr-4:2:2; width=1920; height=1080; exactframerate=25; depth=10; TCS=SDR; colorimetry=BT709; PM=2110GPM; SSN=ST2110-20:2022; TP=2110TPN",
+        "a=mediaclk:direct=0",
+        "a=ts-refclk:" .. ts_value,
+      }, "\r\n")
+    end
+
+    it("rejects ptp=IEEE1588-2019:<gmid> in ST 2110 mode", function()
+      local doc = sdp.parse(st2110_with_tsrefclk("ptp=IEEE1588-2019:00-11-22-FF-FE-33-44-55:0"))
+      assert.is_table(doc)
+      local ok, err = doc:validate("st2110")
+      assert.is_nil(ok)
+      assert.matches("IEEE1588%-2008", err.message)
+    end)
+
+    it("rejects ptp=IEEE1588-2002:<gmid> in ST 2110 mode", function()
+      local doc = sdp.parse(st2110_with_tsrefclk("ptp=IEEE1588-2002:00-11-22-FF-FE-33-44-55:0"))
+      assert.is_table(doc)
+      local ok, err = doc:validate("st2110")
+      assert.is_nil(ok)
+      assert.matches("IEEE1588%-2008", err.message)
+    end)
+  end)
+
+  describe("M26 L2: IPv6 c= multicast scope (ST 2110-10 §6.5 / RFC 4566 §5.7)", function()
+    local function st2110_with_c(c_line)
+      return table.concat({
+        "v=0",
+        "o=- 1234567890 1 IN IP6 2001:db8::1",
+        "s=ST 2110 M26 L2",
+        "t=0 0",
+        "a=ts-refclk:localmac=AA-BB-CC-DD-EE-FF",
+        "m=video 5000 RTP/AVP 96",
+        c_line,
+        "a=rtpmap:96 raw/90000",
+        "a=fmtp:96 sampling=YCbCr-4:2:2; width=1920; height=1080; exactframerate=25; depth=10; TCS=SDR; colorimetry=BT709; PM=2110GPM; SSN=ST2110-20:2022; TP=2110TPN",
+        "a=mediaclk:direct=0",
+      }, "\r\n")
+    end
+
+    it("accepts IPv6 multicast with /scope suffix (ff02::1/64)", function()
+      local doc, err = sdp.parse(st2110_with_c("c=IN IP6 ff02::1/64"), "st2110")
+      assert.is_nil(err)
+      assert.is_table(doc)
+    end)
+
+    it("accepts IPv6 unicast without suffix", function()
+      local doc, err = sdp.parse(st2110_with_c("c=IN IP6 2001:db8::1"), "st2110")
+      assert.is_nil(err)
+      assert.is_table(doc)
+    end)
+
+    it("rejects IPv6 unicast with /scope suffix", function()
+      local doc = sdp.parse(st2110_with_c("c=IN IP6 2001:db8::1/64"))
+      assert.is_table(doc)
+      local ok, err = doc:validate("st2110")
+      assert.is_nil(ok)
+      assert.is_table(err)
+      assert.matches("unicast", err.message)
+    end)
+
+    it("rejects IPv6 multicast with non-numeric /scope suffix", function()
+      local doc = sdp.parse(st2110_with_c("c=IN IP6 ff02::1/abc"))
+      assert.is_table(doc)
+      local ok, err = doc:validate("st2110")
+      assert.is_nil(ok)
+      assert.is_table(err)
+    end)
+
+    it("rejects IPv6 multicast with /scope=0", function()
+      local doc = sdp.parse(st2110_with_c("c=IN IP6 ff02::1/0"))
+      assert.is_table(doc)
+      local ok, err = doc:validate("st2110")
+      assert.is_nil(ok)
+      assert.is_table(err)
+    end)
+  end)
 end)

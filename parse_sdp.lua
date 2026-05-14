@@ -227,9 +227,11 @@ function grammar.parse_media(s)
   local port_str, count_str = port_field:match("^(%d+)/(%d+)$")
   if not port_str then port_str = port_field:match("^(%d+)$") end
   if not port_str then return nil, 1 end
+  local port = tonumber(port_str)
+  if port > 65535 then return nil, 1 end
   return {
     media      = mtype,
-    port       = tonumber(port_str),
+    port       = port,
     port_count = count_str and tonumber(count_str) or nil,
     proto      = proto,
     fmts       = fmts,
@@ -644,6 +646,27 @@ end
 -- Local Network Control Block (224.0.0.0/24) or Internetwork Control Block
 -- (224.0.1.0/24) forbidden ranges defined in RFC 5771.
 local function valid_connection_address(addr_type, addr)
+  if addr_type == "IP6" then
+    local ip6, rest6 = addr:match("^([^/]+)(.*)")
+    if not ip6 then return nil, "invalid IPv6 address in c= line" end
+    local is_mc6 = ip6:sub(1, 2):lower() == "ff"
+    if is_mc6 then
+      if rest6 == "" then return true end
+      local n_str = rest6:match("^/(%d+)$")
+      if not n_str then
+        return nil, "IPv6 multicast c= suffix must be '/<integer>' (RFC 4566 §5.7)"
+      end
+      local n = tonumber(n_str)
+      if not n or n < 1 then
+        return nil, "IPv6 multicast c= suffix must be a positive integer"
+      end
+      return true
+    end
+    if rest6 ~= "" then
+      return nil, "IPv6 unicast address must not include a '/' suffix"
+    end
+    return true
+  end
   if addr_type ~= "IP4" then return true end
   local ip, rest = addr:match("^([^/]+)(.*)")
   local o1 = tonumber((ip or addr):match("^(%d+)%."))
@@ -1923,15 +1946,23 @@ function ipmx.validate(doc)
     if not pok2 then return nil, perr2 end
   end
 
-  -- DUP group privacy consistency (TR-10-13 §13).
-  -- Undefined mids were already rejected by st2110.validate above.
+  -- DUP group privacy consistency (TR-10-13 §13). Effective privacy for a leg
+  -- is its media-level value, or the session-level value when absent (TR-10-13
+  -- §13 line 859: "a session-level privacy attribute represents the default
+  -- value for each media-level privacy attribute unless an explicit media-level
+  -- privacy attribute is provided"). Undefined mids were already rejected by
+  -- st2110.validate above.
+  local sess_pattr  = find_attr(doc.session.attributes or {}, "privacy")
+  local sess_priv   = sess_pattr and sess_pattr.value or false
+  local function effective_privacy(block)
+    local p = find_attr(block.attributes or {}, "privacy")
+    if p then return p.value end
+    return sess_priv
+  end
   local dup_ok, dup_err = each_dup_group(doc, "TR-10-13 §13", function(legs)
-    local first_pattr = find_attr(legs[1].block.attributes or {}, "privacy")
-    local first_val = first_pattr and first_pattr.value or false
+    local first_val = effective_privacy(legs[1].block)
     for j = 2, #legs do
-      local pattr = find_attr(legs[j].block.attributes or {}, "privacy")
-      local val = pattr and pattr.value or false
-      if val ~= first_val then
+      if effective_privacy(legs[j].block) ~= first_val then
         return nil, errors.new(
           "a=privacy values must be identical on all DUP group legs",
           { field_path = "session.attributes[group]",
@@ -1973,7 +2004,16 @@ function ipmx.validate(doc)
       if rtcp_attr then
         local rtcp_port_s = (rtcp_attr.value or ""):match("^(%d+)")
         local rtcp_port   = rtcp_port_s and tonumber(rtcp_port_s)
-        if not rtcp_port or rtcp_port ~= (m.port + 1) then
+        if not rtcp_port then
+          return attr_err("a=rtcp has no port number",
+            mpath, "rtcp", "RFC 3605 §2.1", "INVALID_VALUE")
+        end
+        if rtcp_port > 65535 then
+          return attr_err(
+            string.format("a=rtcp port %d is above UDP range (must be 1-65535)", rtcp_port),
+            mpath, "rtcp", "RFC 768", "INVALID_VALUE")
+        end
+        if rtcp_port ~= (m.port + 1) then
           return attr_err(
             string.format("a=rtcp port must be media port+1 (expected %d, got %s)",
               m.port + 1, tostring(rtcp_port)),
