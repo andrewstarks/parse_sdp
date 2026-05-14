@@ -1,3 +1,4 @@
+---@diagnostic disable
 local dkjson = require("dkjson")
 
 -- Run `lua parse_sdp.lua <args_str>` as a subprocess.

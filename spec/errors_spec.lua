@@ -1,3 +1,4 @@
+---@diagnostic disable
 local errors = require("parse_sdp")._errors
 
 describe("errors.format", function()

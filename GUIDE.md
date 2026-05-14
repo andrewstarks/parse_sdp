@@ -430,9 +430,18 @@ When `a=group:DUP <mid1> <mid2> …` is present at session level, the library va
 
 - Every named `mid` must correspond to a media block carrying a matching `a=mid` attribute.
 - All legs in the DUP group must have the same media type (`video`, `audio`, etc.).
+- A DUP group with fewer than 2 legs is rejected.
 - Absence of `a=group:DUP` is not an error.
 - More than two legs are allowed (RFC 7104 permits any number ≥ 2).
 - Legs may use different destination addresses or ports (ST 2022-7 permits this).
+
+### Connection address (`c=`)
+
+When a `c=` line is present on a media block, the address is validated (ST 2110-10 §6.5):
+
+- IPv4 multicast addresses (224.0.0.0–239.255.255.255) must include a TTL suffix (e.g. `239.100.0.1/64`).
+- The Local Network Control Block (`224.0.0.0/24`) and Internetwork Control Block (`224.0.1.0/24`) are forbidden per RFC 5771.
+- Unicast addresses must not carry a TTL suffix.
 
 ### Per media block
 
@@ -520,14 +529,14 @@ on all non-USB media blocks, then checks IPMX-specific requirements:
 
 | Check | Spec ref | Detail |
 | --- | --- | --- |
-| `a=extmap` present | IPMX §6 | Must appear at session level or in at least one RTP media block |
+| `a=extmap` present with valid URI | IPMX §6 / RFC 5285 | Must appear at session level or in at least one RTP media block; every `a=extmap` value must be in RFC 5285 format: `entry-count[/direction] URI` where direction is `sendonly`, `recvonly`, `sendrecv`, or `inactive` and URI has a scheme (e.g. `urn:`, `http:`) |
 | `IPMX` bare flag in every `a=fmtp` | TR-10-1 §10.1 | Required in all non-USB media blocks |
 
 ### Optional extensions (validated when present)
 
 #### HDCP Key Exchange — `a=hkep` (TR-10-5 §10)
 
-When present at session level, the `a=hkep` attribute is validated against:
+When present at session or media level, the `a=hkep` attribute is validated against:
 
 ```text
 a=hkep:<port> IN <IP4|IP6> <unicast-address> <node-id> <port-id>

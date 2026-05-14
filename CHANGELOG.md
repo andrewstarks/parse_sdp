@@ -9,6 +9,18 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 
+### Added (M21 — validation gap closure: DUP legs, hkep media-level, c= address, extmap URI)
+
+- `a=group:DUP` minimum leg count (ST 2110-10 §8.5): a DUP group with fewer than 2 legs is now rejected; previously single-leg groups were silently accepted
+- `a=hkep` at media block level (TR-10-5 §10): format validation now applies to `a=hkep` at media block level, not only at session level
+- `c=` connection address validation for ST 2110 media blocks (ST 2110-10 §6.5 / RFC 5771): IPv4 multicast addresses require a TTL suffix; the Local Network Control Block (224.0.0.0/24) and Internetwork Control Block (224.0.1.0/24) are rejected; unicast addresses must not carry a TTL suffix
+- `a=extmap` URI format validation (IPMX §6 / RFC 5285): every `a=extmap` value is now validated to conform to RFC 5285 format (`entry-count[/direction] URI`); an invalid direction keyword or a URI without a scheme is rejected; applies to session-level and non-USB media-block extmap attributes
+
+### Tests (M21)
+
+- `spec/st2110_spec.lua`: 8 new tests — single-leg DUP group rejected; `c=` multicast without TTL rejected; forbidden ranges 224.0.0.0/24 and 224.0.1.0/24 rejected; unicast with TTL rejected; valid multicast/unicast accepted; `exactframerate=0`, `width=0`, `height=0`, `depth=0` rejected; `MAXUDP=0` rejected; `PAR=1:0` (zero denominator) rejected; session-level-only `ts-refclk` accepted
+- `spec/ipmx_spec.lua`: 12 new tests — single-leg DUP group rejected; valid `a=hkep` at media level accepted; invalid `a=hkep` at media level rejected; `a=extmap` URI format: standard urn:, direction qualifier, IPMX vendor URI accepted; missing URI scheme, invalid direction, ID-only each rejected; field_path identifies `session.attributes[extmap]`; bad extmap at media level reports `media[1]`; `FEC_ADD_LATENCY_VIDEO=0` and `FEC_ADD_LATENCY_AUDIO=0` accepted; empty `iv=` in `a=privacy` rejected
+
 ### Added (M20 — validation audit and gap closure)
 
 - ST 2110-30 channel count (§7.1): the third component of `a=rtpmap` (e.g. `/8` in `L24/48000/8`) is now required and validated as an integer in the range 1–16; missing or out-of-range values are rejected
@@ -24,6 +36,7 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ### Added
 
+- `spec/.luarc.json`: suppress lua-language-server false-positive undefined-global warnings for busted globals (`describe`, `it`, `context`, `assert`) scoped to `spec/` only
 - M18: ST 2110-20 fmtp value validation — all nine required `fmtp` parameters (`sampling`, `width`, `height`, `exactframerate`, `depth`, `TCS`, `colorimetry`, `PM`, `SSN`) are now validated for both presence and value format per ST 2110-20 §7.2
 - M18: ST 2110-30 `channel-order` format validation — value must match `SMPTE2110.(<group>)` with a non-empty group token per ST 2110-30 §7
 - ST 2110-20 optional `RANGE` fmtp parameter validated when present (`NARROW`, `FULLPROTECT`, `FULL`) per §7.2

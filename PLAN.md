@@ -517,6 +517,29 @@ validated when present. ST 2110-30 rtpmap encoding name is validated. ST 2110-40
 
 ---
 
+### M21 — Validation gap closure (audit 2026-05-13 follow-up)
+
+**Done when:** All gaps identified in the M20 post-commit audit are addressed.
+
+**New validation:**
+
+- [x] `a=group:DUP` must have at least 2 legs; single-leg DUP groups are now rejected (ST 2110-10 §8.5)
+- [x] `a=hkep` format validated at media block level, not only session level (TR-10-5 §10)
+- [x] `c=` connection address validated for ST 2110 media blocks: IPv4 multicast requires TTL; forbidden ranges 224.0.0.0/24 and 224.0.1.0/24 rejected; unicast must not carry TTL (ST 2110-10 §6.5 / RFC 5771)
+- [x] `a=extmap` URI format validated per RFC 5285: `entry-count[/direction] URI`; invalid direction or missing URI scheme rejected (IPMX §6)
+
+**Test gap coverage:**
+
+- [x] `exactframerate=0`, `width=0`, `height=0`, `depth=0` rejected (positive int required)
+- [x] `MAXUDP=0` rejected
+- [x] `PAR=1:0` (zero denominator) rejected; renamed existing `PAR=0:1` test for clarity
+- [x] `FEC_ADD_LATENCY_VIDEO=0` and `FEC_ADD_LATENCY_AUDIO=0` accepted (non-negative integer)
+- [x] Empty `iv=` value in `a=privacy` rejected
+- [x] Session-level-only `ts-refclk` (no per-media attribute) accepted
+- [x] `---@diagnostic disable` added to all spec files (suppresses busted false positives)
+
+---
+
 ### M20 — Validation gaps closed (audit 2026-05-13)
 
 **Done when:** All gaps identified in the M19 post-commit audit are addressed: new validation

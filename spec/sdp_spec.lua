@@ -1,3 +1,4 @@
+---@diagnostic disable
 describe("parse_sdp", function()
   it("loads without error", function()
     local sdp = require("parse_sdp")

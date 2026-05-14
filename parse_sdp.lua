@@ -7,7 +7,7 @@
 -- ── External dependencies ─────────────────────────────────────────────────────
 local lpeg   = require("lpeg")
 local dkjson = require("dkjson")
-local P, R, V, C, Cp, Ct = lpeg.P, lpeg.R, lpeg.V, lpeg.C, lpeg.Cp, lpeg.Ct
+local P, R, S, V, C, Cp, Ct = lpeg.P, lpeg.R, lpeg.S, lpeg.V, lpeg.C, lpeg.Cp, lpeg.Ct
 
 -- ── Errors ────────────────────────────────────────────────────────────────────
 local errors = {}
@@ -411,6 +411,12 @@ local function each_dup_group(doc, spec_ref, callback)
           end
           legs[#legs + 1] = entry
         end
+        if #legs < 2 then
+          return nil, errors.new(
+            "a=group:DUP must have at least 2 legs",
+            { field_path = "session.attributes[group]",
+              spec_ref = spec_ref, code = "INVALID_VALUE" })
+        end
         local ok, err = callback(legs)
         if not ok then return nil, err end
       end
@@ -541,9 +547,14 @@ local function valid_tsrefclk(value)
   end
   local ptp_rest = value:match("^ptp=(.+)$")
   if ptp_rest then
-    -- version:gmid[:domain] — GMID must be 8 HH-separated hex octets
-    local _, gmid = ptp_rest:match("^([^:]+):([^:]+)")
+    -- version:gmid[:domain] — version must be IEEE1588-2008 (ST 2110-10:2022 §8.2);
+    -- GMID is either the literal "traceable" or 8 HH-separated hex octets (EUI-64).
+    local version, gmid = ptp_rest:match("^([^:]+):([^:]+)")
     if not gmid then return nil, "invalid ts-refclk ptp value" end
+    if version ~= "IEEE1588-2008" then
+      return nil, "unrecognized ptp version '" .. version .. "' (expected IEEE1588-2008)"
+    end
+    if gmid == "traceable" then return true end
     local count = 0
     for octet in gmid:gmatch("[^%-]+") do
       if not octet:match("^%x%x$") then return nil, "invalid ts-refclk ptp value" end
@@ -589,6 +600,37 @@ local VALID_COLORIMETRY = {
 }
 local VALID_PM    = { ["2110GPM"]=true, ["2110BPM"]=true }
 local VALID_RANGE = { ["NARROW"]=true, ["FULLPROTECT"]=true, ["FULL"]=true }
+-- Valid m= transport protocols for ST 2110 RTP media blocks (ST 2110-10 §8.1).
+local VALID_ST2110_PROTO = { ["RTP/AVP"] = true }
+
+-- Validate the address field of a c= line for ST 2110 media blocks (RFC 4566 +
+-- ST 2110-10 §6.5). IPv4 multicast requires a TTL and must not fall within the
+-- Local Network Control Block (224.0.0.0/24) or Internetwork Control Block
+-- (224.0.1.0/24) forbidden ranges defined in RFC 5771.
+local function valid_connection_address(addr_type, addr)
+  if addr_type ~= "IP4" then return true end
+  local ip, rest = addr:match("^([^/]+)(.*)")
+  local o1 = tonumber((ip or addr):match("^(%d+)%."))
+  if not o1 then return nil, "invalid IPv4 address in c= line" end
+  local is_mc = o1 >= 224 and o1 <= 239
+  if is_mc then
+    if not rest:match("^/(%d+)") then
+      return nil, "IPv4 multicast address requires a TTL (e.g. 239.x.x.x/32)"
+    end
+    local o2 = tonumber(ip:match("^%d+%.(%d+)%."))
+    local o3 = tonumber(ip:match("^%d+%.%d+%.(%d+)%."))
+    if o1 == 224 and o2 == 0 and (o3 == 0 or o3 == 1) then
+      return nil, string.format(
+        "forbidden multicast range 224.0.%d.0/24 (ST 2110-10 §6.5): %s", o3, ip)
+    end
+  else
+    if rest ~= "" then
+      return nil, "unicast address must not include a TTL suffix"
+    end
+  end
+  return true
+end
+
 -- Known professional audio sample rates (Hz).
 local VALID_AUDIO_RATES = {
   [32000]=true, [44100]=true, [48000]=true,
@@ -709,6 +751,23 @@ function st2110.validate(doc)
   for i, m in ipairs(doc.media) do
     local mpath  = string.format("media[%d]", i)
     local mattrs = m.attributes or {}
+
+    if not VALID_ST2110_PROTO[m.proto or ""] then
+      return nil, errors.new(
+        string.format("invalid media protocol '%s' (expected RTP/AVP)", tostring(m.proto)),
+        { field_path = mpath .. ".proto", spec_ref = "ST 2110-10 §8.1", code = "INVALID_VALUE" })
+    end
+
+    local conn = m.connection
+    if conn then
+      local cok, msg = valid_connection_address(conn.addr_type, conn.address)
+      if not cok then
+        return nil, errors.new(msg, {
+          field_path = mpath .. ".connection",
+          spec_ref   = "ST 2110-10 §6.5", code = "INVALID_VALUE",
+        })
+      end
+    end
 
     local tsrefclk = find_attr(sess_attrs, "ts-refclk") or find_attr(mattrs, "ts-refclk")
     if not tsrefclk then
@@ -918,15 +977,13 @@ function st2110.validate(doc)
 
   -- Validate a=group:DUP grouping per ST 2110-10 §8.5 + RFC 7104.
   local dup_ok, dup_err = each_dup_group(doc, "ST 2110-10 §8.5", function(legs)
-    if #legs >= 2 then
-      local base_type = legs[1].block.media
-      for j = 2, #legs do
-        if legs[j].block.media ~= base_type then
-          return nil, errors.new(
-            "a=group:DUP legs must have the same media type",
-            { field_path = "session.attributes[group]",
-              spec_ref = "ST 2110-10 §8.5", code = "INVALID_VALUE" })
-        end
+    local base_type = legs[1].block.media
+    for j = 2, #legs do
+      if legs[j].block.media ~= base_type then
+        return nil, errors.new(
+          "a=group:DUP legs must have the same media type",
+          { field_path = "session.attributes[group]",
+            spec_ref = "ST 2110-10 §8.5", code = "INVALID_VALUE" })
       end
     end
     return true
@@ -938,6 +995,29 @@ end
 
 -- ── IPMX ──────────────────────────────────────────────────────────────────────
 local ipmx = {}
+
+-- RFC 5285 a=extmap: entry-count ["/direction"] SP URI [SP ext-attr]
+local _extmap_id  = R("09")^1
+local _extmap_dir = P("sendonly") + P("recvonly") + P("sendrecv") + P("inactive")
+local _uri_scheme = R("az","AZ") * (R("az","AZ","09") + S("+-.")  )^0
+local _uri_body   = (P(1) - S(" \t"))^1
+local VALID_EXTMAP_PAT = _extmap_id
+                       * (P("/") * _extmap_dir)^-1
+                       * P(" ")
+                       * _uri_scheme * P(":") * _uri_body
+                       * (P(" ") * P(1)^0)^-1
+                       * P(-1)
+
+local function valid_extmap(value)
+  if not VALID_EXTMAP_PAT:match(value) then
+    return nil, "invalid a=extmap format (expected: entry-count[/direction] URI)"
+  end
+  local id = tonumber(value:match("^(%d+)"))
+  if not id or id < 1 then
+    return nil, "a=extmap entry count must be >= 1"
+  end
+  return true
+end
 
 -- Validate an a=hkep attribute value per VSF TR-10-5 §10.
 -- Format: <port> IN <IP4|IP6> <addr> <node-id> <port-id>
@@ -1089,6 +1169,34 @@ function ipmx.validate(doc)
     })
   end
 
+  -- Validate URI format of every a=extmap attribute (RFC 5285).
+  for _, attr in ipairs(doc.session.attributes or {}) do
+    if attr.name == "extmap" then
+      local ok, msg = valid_extmap(attr.value or "")
+      if not ok then
+        return nil, errors.new("invalid a=extmap: " .. msg, {
+          field_path = "session.attributes[extmap]",
+          spec_ref   = "IPMX §6 / RFC 5285", code = "INVALID_VALUE",
+        })
+      end
+    end
+  end
+  for i, m in ipairs(doc.media) do
+    if not usb_set[i] then
+      for _, attr in ipairs(m.attributes or {}) do
+        if attr.name == "extmap" then
+          local ok, emsg = valid_extmap(attr.value or "")
+          if not ok then
+            return nil, errors.new("invalid a=extmap: " .. emsg, {
+              field_path = string.format("media[%d].attributes[extmap]", i),
+              spec_ref   = "IPMX §6 / RFC 5285", code = "INVALID_VALUE",
+            })
+          end
+        end
+      end
+    end
+  end
+
   -- Check IPMX fmtp marker and optional FEC params in each non-USB block (TR-10-1 §10.1).
   for i, m in ipairs(doc.media) do
     if not usb_set[i] then
@@ -1139,6 +1247,21 @@ function ipmx.validate(doc)
     end
   end
 
+  -- Validate a=hkep at media block level if present (TR-10-5 §10).
+  for i, m in ipairs(doc.media) do
+    for _, attr in ipairs(m.attributes or {}) do
+      if attr.name == "hkep" then
+        local ok, herr = valid_hkep(attr.value or "")
+        if not ok then
+          return nil, errors.new("invalid a=hkep: " .. herr, {
+            field_path = string.format("media[%d].attributes[hkep]", i),
+            spec_ref   = "TR-10-5 §10", code = "INVALID_VALUE",
+          })
+        end
+      end
+    end
+  end
+
   local pok, perr = check_privacy(doc.session.attributes, "session", false)
   if not pok then return nil, perr end
   for i, m in ipairs(doc.media) do
@@ -1150,19 +1273,16 @@ function ipmx.validate(doc)
   -- DUP group privacy consistency (TR-10-13 §13).
   -- Undefined mids were already rejected by st2110.validate above.
   local dup_ok, dup_err = each_dup_group(doc, "TR-10-13 §13", function(legs)
-    if #legs >= 2 then
-      local first_pattr = find_attr(legs[1].block.attributes or {}, "privacy")
-      -- use false as "absent" sentinel so nil doesn't create table holes
-      local first_val = first_pattr and first_pattr.value or false
-      for j = 2, #legs do
-        local pattr = find_attr(legs[j].block.attributes or {}, "privacy")
-        local val = pattr and pattr.value or false
-        if val ~= first_val then
-          return nil, errors.new(
-            "a=privacy values must be identical on all DUP group legs",
-            { field_path = "session.attributes[group]",
-              spec_ref = "TR-10-13 §13", code = "INVALID_VALUE" })
-        end
+    local first_pattr = find_attr(legs[1].block.attributes or {}, "privacy")
+    local first_val = first_pattr and first_pattr.value or false
+    for j = 2, #legs do
+      local pattr = find_attr(legs[j].block.attributes or {}, "privacy")
+      local val = pattr and pattr.value or false
+      if val ~= first_val then
+        return nil, errors.new(
+          "a=privacy values must be identical on all DUP group legs",
+          { field_path = "session.attributes[group]",
+            spec_ref = "TR-10-13 §13", code = "INVALID_VALUE" })
       end
     end
     return true

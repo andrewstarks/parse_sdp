@@ -1,3 +1,4 @@
+---@diagnostic disable
 describe("IPMX validation", function()
   local sdp = require("parse_sdp")
 
@@ -304,6 +305,32 @@ describe("IPMX validation", function()
       assert.matches("session", err.field_path)
       assert.matches("TR%-10%-5", err.spec_ref)
     end)
+
+    it("accepts valid a=hkep at media block level", function()
+      local text = base_ipmx_sdp(
+        {},
+        { "a=hkep:10000 IN IP4 192.168.1.100 550e8400-e29b-41d4-a716-446655440000 01-02-03-04-05" }
+      )
+      local doc = sdp.parse(text)
+      assert.is_table(doc)
+      local ok, err = doc:validate("ipmx")
+      assert.is_nil(err)
+      assert.equal(true, ok)
+    end)
+
+    it("rejects invalid a=hkep at media block level", function()
+      local text = base_ipmx_sdp(
+        {},
+        { "a=hkep:10000 IN IP4 192.168.1.100 not-a-valid-uuid 01-02-03-04-05" }
+      )
+      local doc = sdp.parse(text)
+      assert.is_table(doc)
+      local ok, err = doc:validate("ipmx")
+      assert.is_nil(ok)
+      assert.is_table(err)
+      assert.matches("hkep", err.message)
+      assert.matches("media%[1%]", err.field_path)
+    end)
   end)
 
   -- ── a=privacy validation (TR-10-13 §13) ──────────────────────────────────────
@@ -573,6 +600,22 @@ describe("IPMX validation", function()
       assert.is_nil(err)
       assert.equal(true, ok)
     end)
+
+    it("accepts FEC_ADD_LATENCY_VIDEO=0 (zero is valid: non-negative integer)", function()
+      local text = base_ipmx_sdp({}, {},
+        "a=fmtp:96 sampling=YCbCr-4:2:2; width=1920; height=1080; exactframerate=25; depth=10; TCS=SDR; colorimetry=BT709; PM=2110GPM; SSN=ST2110-20:2022; TP=2110TPN; FECPROFILE=profile-a; FEC_ADD_LATENCY_VIDEO=0; IPMX")
+      local doc, err = sdp.parse(text, "ipmx")
+      assert.is_nil(err)
+      assert.is_table(doc)
+    end)
+
+    it("accepts FEC_ADD_LATENCY_AUDIO=0 (zero is valid: non-negative integer)", function()
+      local text = base_ipmx_sdp({}, {},
+        "a=fmtp:96 sampling=YCbCr-4:2:2; width=1920; height=1080; exactframerate=25; depth=10; TCS=SDR; colorimetry=BT709; PM=2110GPM; SSN=ST2110-20:2022; TP=2110TPN; FECPROFILE=profile-a; FEC_ADD_LATENCY_AUDIO=0; IPMX")
+      local doc, err = sdp.parse(text, "ipmx")
+      assert.is_nil(err)
+      assert.is_table(doc)
+    end)
   end)
 
   -- ── HKEP and PEP coexistence ──────────────────────────────────────────────────
@@ -685,6 +728,31 @@ describe("IPMX validation", function()
       assert.is_nil(ok)
       assert.is_table(err)
       assert.equal("TR-10-13 §13", err.spec_ref)
+    end)
+
+    it("rejects a=group:DUP with only one leg", function()
+      local text = table.concat({
+        "v=0",
+        "o=- 1234567890 1 IN IP4 192.168.1.1",
+        "s=IPMX DUP Test",
+        "t=0 0",
+        "a=group:DUP leg1",
+        MAC,
+        "m=video 5000 RTP/AVP 96",
+        "c=IN IP4 239.100.0.1/64",
+        "a=mid:leg1",
+        "a=rtpmap:96 raw/90000",
+        VFMTP_IPMX,
+        "a=mediaclk:direct=0",
+        MAC,
+        "a=extmap:1 urn:ietf:params:rtp-hdrext:smpte-tc",
+      }, "\r\n")
+      local doc = sdp.parse(text)
+      assert.is_table(doc)
+      local ok, err = doc:validate("ipmx")
+      assert.is_nil(ok)
+      assert.is_table(err)
+      assert.matches("DUP", err.message)
     end)
   end)
 
@@ -817,6 +885,15 @@ describe("IPMX validation", function()
       assert.is_table(err)
       assert.matches("key_id", err.message)
     end)
+
+    it("rejects empty iv value", function()
+      local doc = sdp.parse(privacy_with({ iv = "" }))
+      assert.is_table(doc)
+      local ok, err = doc:validate("ipmx")
+      assert.is_nil(ok)
+      assert.is_table(err)
+      assert.matches("iv", err.message)
+    end)
   end)
 
   -- ── FEC_ADD_LATENCY_AUDIO invalid value ───────────────────────────────────────
@@ -869,6 +946,160 @@ describe("IPMX validation", function()
       local doc, err = sdp.parse(text, "ipmx")
       assert.is_nil(err)
       assert.is_table(doc)
+    end)
+  end)
+
+  -- ── m= protocol field validation (IPMX inherits ST 2110-10 §8.1) ─────────────
+
+  describe("m= protocol field validation (IPMX)", function()
+    local function ipmx_with_proto(proto)
+      return table.concat({
+        "v=0",
+        "o=- 1234567890 1 IN IP4 192.168.1.1",
+        "s=IPMX Video",
+        "t=0 0",
+        "a=ts-refclk:localmac=AA-BB-CC-DD-EE-FF",
+        "a=extmap:1 urn:ietf:params:rtp-hdrext:smpte-tc",
+        "m=video 5000 " .. proto .. " 96",
+        "c=IN IP4 239.100.0.1/64",
+        "a=rtpmap:96 raw/90000",
+        "a=fmtp:96 sampling=YCbCr-4:2:2; width=1920; height=1080; exactframerate=25; depth=10; TCS=SDR; colorimetry=BT709; PM=2110GPM; SSN=ST2110-20:2022; TP=2110TPN; IPMX",
+        "a=mediaclk:direct=0",
+        "a=ts-refclk:localmac=AA-BB-CC-DD-EE-FF",
+      }, "\r\n")
+    end
+
+    it("rejects non-RTP/AVP protocol on RTP media block", function()
+      local doc = sdp.parse(ipmx_with_proto("RTP/SAVPF"))
+      assert.is_table(doc)
+      local ok, err = doc:validate("ipmx")
+      assert.is_nil(ok)
+      assert.is_table(err)
+      assert.matches("proto", err.message)
+    end)
+
+    it("USB block with TCP protocol is exempt from RTP/AVP check", function()
+      local text = table.concat({
+        "v=0",
+        "o=- 1234567890 1 IN IP4 192.168.1.1",
+        "s=IPMX USB",
+        "t=0 0",
+        "a=ts-refclk:localmac=AA-BB-CC-DD-EE-FF",
+        "a=extmap:1 urn:ietf:params:rtp-hdrext:smpte-tc",
+        "m=video 5000 RTP/AVP 96",
+        "c=IN IP4 239.100.0.1/64",
+        "a=rtpmap:96 raw/90000",
+        "a=fmtp:96 sampling=YCbCr-4:2:2; width=1920; height=1080; exactframerate=25; depth=10; TCS=SDR; colorimetry=BT709; PM=2110GPM; SSN=ST2110-20:2022; TP=2110TPN; IPMX",
+        "a=mediaclk:direct=0",
+        "a=ts-refclk:localmac=AA-BB-CC-DD-EE-FF",
+        "m=application 9 TCP/MSRP *",
+        "c=IN IP4 192.168.1.1",
+      }, "\r\n")
+      local doc, err = sdp.parse(text, "ipmx")
+      assert.is_nil(err)
+      assert.is_table(doc)
+    end)
+  end)
+
+  -- ── a=extmap URI format validation (RFC 5285) ─────────────────────────────
+
+  describe("a=extmap URI format validation (RFC 5285)", function()
+    local function ipmx_with_session_extmap(extmap_value)
+      return table.concat({
+        "v=0",
+        "o=- 1234567890 1 IN IP4 192.168.1.1",
+        "s=IPMX Video",
+        "t=0 0",
+        "a=ts-refclk:localmac=AA-BB-CC-DD-EE-FF",
+        "a=extmap:" .. extmap_value,
+        "m=video 5000 RTP/AVP 96",
+        "c=IN IP4 239.100.0.1/64",
+        "a=rtpmap:96 raw/90000",
+        "a=fmtp:96 sampling=YCbCr-4:2:2; width=1920; height=1080; exactframerate=25; depth=10; TCS=SDR; colorimetry=BT709; PM=2110GPM; SSN=ST2110-20:2022; TP=2110TPN; IPMX",
+        "a=mediaclk:direct=0",
+        "a=ts-refclk:localmac=AA-BB-CC-DD-EE-FF",
+      }, "\r\n")
+    end
+
+    it("accepts standard urn: URI", function()
+      local doc, err = sdp.parse(
+        ipmx_with_session_extmap("1 urn:ietf:params:rtp-hdrext:smpte-tc"), "ipmx")
+      assert.is_nil(err)
+      assert.is_table(doc)
+    end)
+
+    it("accepts extmap with direction qualifier", function()
+      local doc, err = sdp.parse(
+        ipmx_with_session_extmap("1/sendonly urn:ietf:params:rtp-hdrext:smpte-tc"), "ipmx")
+      assert.is_nil(err)
+      assert.is_table(doc)
+    end)
+
+    it("accepts IPMX vendor urn:x-ipmx: URI", function()
+      local doc, err = sdp.parse(
+        ipmx_with_session_extmap("2 urn:x-ipmx:signal-id"), "ipmx")
+      assert.is_nil(err)
+      assert.is_table(doc)
+    end)
+
+    it("rejects extmap with no URI scheme", function()
+      local doc = sdp.parse(ipmx_with_session_extmap("1 not-a-uri"))
+      assert.is_table(doc)
+      local ok, err = doc:validate("ipmx")
+      assert.is_nil(ok)
+      assert.is_table(err)
+      assert.matches("extmap", err.message)
+    end)
+
+    it("rejects extmap with invalid direction", function()
+      local doc = sdp.parse(
+        ipmx_with_session_extmap("1/baddir urn:ietf:params:rtp-hdrext:smpte-tc"))
+      assert.is_table(doc)
+      local ok, err = doc:validate("ipmx")
+      assert.is_nil(ok)
+      assert.is_table(err)
+      assert.matches("extmap", err.message)
+    end)
+
+    it("rejects extmap with ID only and no URI", function()
+      local doc = sdp.parse(ipmx_with_session_extmap("1"))
+      assert.is_table(doc)
+      local ok, err = doc:validate("ipmx")
+      assert.is_nil(ok)
+      assert.is_table(err)
+      assert.matches("extmap", err.message)
+    end)
+
+    it("error field_path identifies session.attributes[extmap]", function()
+      local doc = sdp.parse(ipmx_with_session_extmap("1 not-a-uri"))
+      assert.is_table(doc)
+      local _, err = doc:validate("ipmx")
+      assert.matches("extmap", err.field_path)
+    end)
+
+    it("rejects bad extmap at media block level", function()
+      local text = table.concat({
+        "v=0",
+        "o=- 1234567890 1 IN IP4 192.168.1.1",
+        "s=IPMX Video",
+        "t=0 0",
+        "a=ts-refclk:localmac=AA-BB-CC-DD-EE-FF",
+        "a=extmap:1 urn:ietf:params:rtp-hdrext:smpte-tc",
+        "m=video 5000 RTP/AVP 96",
+        "c=IN IP4 239.100.0.1/64",
+        "a=rtpmap:96 raw/90000",
+        "a=fmtp:96 sampling=YCbCr-4:2:2; width=1920; height=1080; exactframerate=25; depth=10; TCS=SDR; colorimetry=BT709; PM=2110GPM; SSN=ST2110-20:2022; TP=2110TPN; IPMX",
+        "a=mediaclk:direct=0",
+        "a=ts-refclk:localmac=AA-BB-CC-DD-EE-FF",
+        "a=extmap:2 bad-value-no-scheme",
+      }, "\r\n")
+      local doc = sdp.parse(text)
+      assert.is_table(doc)
+      local ok, err = doc:validate("ipmx")
+      assert.is_nil(ok)
+      assert.is_table(err)
+      assert.matches("extmap", err.message)
+      assert.matches("media%[1%]", err.field_path)
     end)
   end)
 end)
