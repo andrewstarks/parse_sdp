@@ -445,6 +445,7 @@ A connection address is required at either session level or media-block level (S
 
 When a `c=` line is present (at either session or media level), the address is validated (ST 2110-10 §6.5 / RFC 4566 §5.7):
 
+- The address (before any `/<ttl>` or `/<scope>` suffix) must parse as a literal IPv4 (RFC 791) or IPv6 (RFC 2460) address, depending on the declared `addr_type`. FQDNs and malformed addresses (e.g. `c=IN IP4 1.2.3`, `c=IN IP4 999.0.0.0`, `c=IN IP6 not-an-ipv6`) are rejected.
 - IPv4 multicast addresses (224.0.0.0–239.255.255.255) must include a TTL suffix (e.g. `239.100.0.1/64`).
 - IPv4 TTL must be an integer in the range 1–255.
 - The Local Network Control Block (`224.0.0.0/24`) and Internetwork Control Block (`224.0.1.0/24`) are forbidden per RFC 5771.
@@ -461,7 +462,7 @@ When a `c=` line is present (at either session or media level), the address is v
 | `a=ts-refclk` | Required. The `ptp=` version token is restricted to `IEEE1588-2008` (ST 2110-10:2022 §6.1 mandates PTPv2; TR-10-1 §10.4 confirms the same for IPMX). `IEEE1588-2002`, `IEEE1588-2019`, and bare `IEEE1588` are rejected at both tiers. Accepted: `ptp=IEEE1588-2008:<gmid>[:<domain>]` (domain 0–127); `ptp=IEEE1588-2008:traceable`; `localmac=<mac>`; `ntp=<addr>` (addr must be a valid IPv4, IPv6, or hostname); `gps`; `gal`; `glonass` |
 | `a=mediaclk` | Required, **media-level only**. Accepted: `direct=0` (offset SHALL be zero per ST 2110-10 §7.3) or `sender`. Session-level `a=mediaclk` is rejected (ST 2110-10 §8.3) |
 | `a=mid` | Optional. When present, value must be unique within the session (RFC 5888 §8.1) |
-| `a=source-filter` | Optional. When present, must follow RFC 4570: `<incl\|excl> IN <IP4\|IP6> <dest> <src>+` |
+| `a=source-filter` | At ST 2110 tier: optional. At IPMX tier: **required** on every RTP block, either media-level or session-level (TR-10-TP-1 §13.2). Format follows RFC 4570: `<incl\|excl> IN <IP4\|IP6> <dest> <src>+`. The dest and every src must be a literal address of the declared family — FQDNs and malformed addresses are rejected (ST 2110-10 §6.5 / RFC 4570). |
 | `a=rtpmap` | Required. RTP payload type must be in the dynamic range 96–127 (ST 2110-10 §6.2). Clock rate validated: must be 90000 for video, `smpte291`, and `ST2110-41`; audio clock rate validated against known rates. Audio encoding name validated: must be `L16`, `L24`, or `AM824`. Payload type must match the payload type in `a=fmtp` |
 | `a=fmtp` | Required. Key=value pairs validated per sub-standard |
 
@@ -493,7 +494,7 @@ Optional parameters validated when present:
 | `TROFF` | non-negative integer (requires `TP` to also be present) | ST 2110-21 §8 |
 | `CMAX` | positive integer (requires `TP` to also be present) | ST 2110-21 §8 |
 | `TSMODE` | `SAMP`, `NEW`, `PRES` | ST 2110-10 §8.7 |
-| `TSDELAY` | non-negative integer (microseconds) | ST 2110-10 §8.7 |
+| `TSDELAY` | positive integer (microseconds — ST 2110-10 §8.7 defines this as a decimal positive integer; `TSDELAY=0` is rejected) | ST 2110-10 §8.7 |
 
 Bare-flag parameters `interlace` and `segmented` are accepted. `segmented` SHALL only appear together with `interlace` (ST 2110-20 §7.3); signaling `segmented` alone is rejected. Any other unrecognized key=value pairs pass through silently.
 

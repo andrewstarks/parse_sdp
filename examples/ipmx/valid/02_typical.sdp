@@ -8,11 +8,13 @@ a=ts-refclk:ptp=IEEE1588-2008:08-00-11-FF-FE-22-33-44:127
 m=video 20000 RTP/AVP 96
 c=IN IP4 239.201.0.1/64
 b=AS:1485000
+a=source-filter: incl IN IP4 239.201.0.1 192.168.50.10
 a=rtpmap:96 raw/90000
 a=fmtp:96 sampling=YCbCr-4:2:2; width=1920; height=1080; exactframerate=25; depth=10; TCS=SDR; colorimetry=BT709; PM=2110GPM; TP=2110TPN; SSN=ST2110-20:2017; measuredpixclk=148500000; vtotal=1125; htotal=2200; IPMX
 a=mediaclk:direct=0
 m=audio 20010 RTP/AVP 97
 c=IN IP4 239.201.0.2/64
+a=source-filter: incl IN IP4 239.201.0.2 192.168.50.10
 a=rtpmap:97 L24/48000/2
 a=fmtp:97 channel-order=SMPTE2110.(ST); measuredsamplerate=48000; IPMX
 a=ptime:1

@@ -11,6 +11,7 @@ m=video 30000 RTP/AVP 96
 i=Primary 4K — YCbCr-4:2:2 10-bit 50p
 c=IN IP4 239.201.10.1/64
 b=AS:8910000
+a=source-filter: incl IN IP4 239.201.10.1 10.50.0.1
 a=rtpmap:96 raw/90000
 a=fmtp:96 sampling=YCbCr-4:2:2; width=3840; height=2160; exactframerate=50; depth=10; TCS=SDR; colorimetry=BT2020; PM=2110GPM; TP=2110TPN; SSN=ST2110-20:2017; measuredpixclk=594000000; vtotal=2250; htotal=4400; IPMX
 a=mediaclk:direct=0
@@ -18,6 +19,7 @@ m=video 30002 RTP/AVP 96
 i=Primary 4K redundant — separate network path
 c=IN IP4 239.201.10.2/64
 b=AS:8910000
+a=source-filter: incl IN IP4 239.201.10.2 10.50.0.1
 a=rtpmap:96 raw/90000
 a=fmtp:96 sampling=YCbCr-4:2:2; width=3840; height=2160; exactframerate=50; depth=10; TCS=SDR; colorimetry=BT2020; PM=2110GPM; TP=2110TPN; SSN=ST2110-20:2017; measuredpixclk=594000000; vtotal=2250; htotal=4400; IPMX
 a=mediaclk:direct=0
@@ -25,6 +27,7 @@ m=video 30004 RTP/AVP 97
 i=Secondary HD — YCbCr-4:2:2 10-bit 1080p25 proxy
 c=IN IP4 239.201.10.3/64
 b=AS:1485000
+a=source-filter: incl IN IP4 239.201.10.3 10.50.0.1
 a=rtpmap:97 raw/90000
 a=fmtp:97 sampling=YCbCr-4:2:2; width=1920; height=1080; exactframerate=25; depth=10; TCS=SDR; colorimetry=BT709; PM=2110GPM; TP=2110TPN; SSN=ST2110-20:2017; measuredpixclk=148500000; vtotal=1125; htotal=2200; IPMX
 a=extmap:4 urn:x-ipmx:stream-group
@@ -32,6 +35,7 @@ a=mediaclk:direct=0
 m=audio 31000 RTP/AVP 98
 i=Main audio — English 5.1 L24 48kHz
 c=IN IP4 239.201.11.1/64
+a=source-filter: incl IN IP4 239.201.11.1 10.50.0.1
 a=rtpmap:98 L24/48000/6
 a=fmtp:98 channel-order=SMPTE2110.(51); measuredsamplerate=48000; IPMX
 a=ptime:1
@@ -39,6 +43,7 @@ a=mediaclk:direct=0
 m=audio 31002 RTP/AVP 99
 i=Secondary audio — Spanish stereo L24 48kHz
 c=IN IP4 239.201.11.2/64
+a=source-filter: incl IN IP4 239.201.11.2 10.50.0.1
 a=rtpmap:99 L24/48000/2
 a=fmtp:99 channel-order=SMPTE2110.(ST); measuredsamplerate=48000; IPMX
 a=ptime:1
@@ -46,6 +51,7 @@ a=mediaclk:direct=0
 m=audio 31004 RTP/AVP 100
 i=Backup audio — mono program mix L16 48kHz
 c=IN IP4 239.201.11.3/64
+a=source-filter: incl IN IP4 239.201.11.3 10.50.0.1
 a=rtpmap:100 L16/48000/1
 a=fmtp:100 channel-order=SMPTE2110.(M); measuredsamplerate=48000; IPMX
 a=ptime:1
@@ -53,6 +59,7 @@ a=mediaclk:direct=0
 m=application 32000 RTP/AVP 101
 i=ANC — CEA-708 captions
 c=IN IP4 239.201.12.1/64
+a=source-filter: incl IN IP4 239.201.12.1 10.50.0.1
 a=rtpmap:101 smpte291/90000
 a=fmtp:101 DID_SDID={0x61,0x01}; VPID_Code=148; IPMX
 a=mediaclk:direct=0

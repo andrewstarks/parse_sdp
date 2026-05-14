@@ -4,7 +4,8 @@ describe("IPMX validation", function()
 
   -- ── Fixtures ──────────────────────────────────────────────────────────────────
 
-  -- Minimal valid IPMX SDP: passes ST 2110, has a=extmap, has IPMX fmtp marker.
+  -- Minimal valid IPMX SDP: passes ST 2110, has a=extmap, has IPMX fmtp marker,
+  -- and (per M29 G4) a=source-filter on every RTP block.
   local IPMX_VIDEO_SDP = table.concat({
     "v=0",
     "o=- 1234567890 1 IN IP4 192.168.1.1",
@@ -13,6 +14,7 @@ describe("IPMX validation", function()
     "a=ts-refclk:localmac=AA-BB-CC-DD-EE-FF",
     "m=video 5000 RTP/AVP 96",
     "c=IN IP4 239.100.0.1/64",
+    "a=source-filter: incl IN IP4 239.100.0.1 192.168.1.1",
     "a=rtpmap:96 raw/90000",
     "a=fmtp:96 sampling=YCbCr-4:2:2; width=1920; height=1080; exactframerate=25; depth=10; TCS=SDR; colorimetry=BT709; PM=2110GPM; SSN=ST2110-20:2022; TP=2110TPN; measuredpixclk=148500000; vtotal=1125; htotal=2200; IPMX",
     "a=mediaclk:direct=0",
@@ -29,6 +31,7 @@ describe("IPMX validation", function()
     "a=ts-refclk:ptp=IEEE1588-2008:00-11-22-FF-FE-33-44-55:0",
     "m=video 5000 RTP/AVP 96",
     "c=IN IP4 239.100.0.1/64",
+    "a=source-filter: incl IN IP4 239.100.0.1 192.168.1.1",
     "a=rtpmap:96 raw/90000",
     "a=fmtp:96 sampling=YCbCr-4:2:2; width=1920; height=1080; exactframerate=25; depth=10; TCS=SDR; colorimetry=BT709; PM=2110GPM; SSN=ST2110-20:2022; TP=2110TPN; measuredpixclk=148500000; vtotal=1125; htotal=2200",
     "a=mediaclk:direct=0",
@@ -58,6 +61,7 @@ describe("IPMX validation", function()
     for _, a in ipairs(extra_session_attrs or {}) do lines[#lines + 1] = a end
     lines[#lines + 1] = "m=video 5000 RTP/AVP 96"
     lines[#lines + 1] = "c=IN IP4 239.100.0.1/64"
+    lines[#lines + 1] = "a=source-filter: incl IN IP4 239.100.0.1 192.168.1.1"
     lines[#lines + 1] = "a=rtpmap:96 raw/90000"
     lines[#lines + 1] = fmtp
     lines[#lines + 1] = "a=mediaclk:direct=0"
@@ -139,6 +143,7 @@ describe("IPMX validation", function()
         "a=extmap:1 urn:ietf:params:rtp-hdrext:smpte-tc",
         "m=video 5000 RTP/AVP 96",
         "c=IN IP4 239.100.0.1/64",
+        "a=source-filter: incl IN IP4 239.100.0.1 192.168.1.1",
         "a=rtpmap:96 raw/90000",
         "a=fmtp:96 sampling=YCbCr-4:2:2; width=1920; height=1080; exactframerate=25; depth=10; TCS=SDR; colorimetry=BT709; PM=2110GPM; SSN=ST2110-20:2022; TP=2110TPN; measuredpixclk=148500000; vtotal=1125; htotal=2200; IPMX",
         "a=mediaclk:direct=0",
@@ -431,6 +436,7 @@ describe("IPMX validation", function()
         "a=extmap:1 urn:ietf:params:rtp-hdrext:smpte-tc",
         "m=video 5000 RTP/AVP 96",
         "c=IN IP4 239.100.0.1/64",
+        "a=source-filter: incl IN IP4 239.100.0.1 192.168.1.1",
         "a=rtpmap:96 raw/90000",
         "a=fmtp:96 sampling=YCbCr-4:2:2; width=1920; height=1080; exactframerate=25; depth=10; TCS=SDR; colorimetry=BT709; PM=2110GPM; SSN=ST2110-20:2022; TP=2110TPN; measuredpixclk=148500000; vtotal=1125; htotal=2200; IPMX",
         "a=mediaclk:direct=0",
@@ -456,6 +462,7 @@ describe("IPMX validation", function()
         "a=extmap:1 urn:ietf:params:rtp-hdrext:smpte-tc",
         "m=video 5000 RTP/AVP 96",
         "c=IN IP4 239.100.0.1/64",
+        "a=source-filter: incl IN IP4 239.100.0.1 192.168.1.1",
         "a=rtpmap:96 raw/90000",
         "a=fmtp:96 sampling=YCbCr-4:2:2; width=1920; height=1080; exactframerate=25; depth=10; TCS=SDR; colorimetry=BT709; PM=2110GPM; SSN=ST2110-20:2022; TP=2110TPN; measuredpixclk=148500000; vtotal=1125; htotal=2200; IPMX",
         "a=mediaclk:direct=0",
@@ -482,6 +489,7 @@ describe("IPMX validation", function()
         "a=extmap:1 urn:ietf:params:rtp-hdrext:smpte-tc",
         "m=video 5000 RTP/AVP 96",
         "c=IN IP4 239.100.0.1/64",
+        "a=source-filter: incl IN IP4 239.100.0.1 192.168.1.1",
         "a=rtpmap:96 raw/90000",
         "a=fmtp:96 sampling=YCbCr-4:2:2; width=1920; height=1080; exactframerate=25; depth=10; TCS=SDR; colorimetry=BT709; PM=2110GPM; SSN=ST2110-20:2022; TP=2110TPN; measuredpixclk=148500000; vtotal=1125; htotal=2200; IPMX",
         "a=mediaclk:direct=0",
@@ -515,6 +523,7 @@ describe("IPMX validation", function()
         "a=extmap:1 urn:ietf:params:rtp-hdrext:smpte-tc",
         "m=video 5000 RTP/AVP 96",
         "c=IN IP4 239.100.0.1/64",
+        "a=source-filter: incl IN IP4 239.100.0.1 192.168.1.1",
         "a=rtpmap:96 raw/90000",
         "a=fmtp:96 sampling=YCbCr-4:2:2; width=1920; height=1080; exactframerate=25; depth=10; TCS=SDR; colorimetry=BT709; PM=2110GPM; SSN=ST2110-20:2022; TP=2110TPN; measuredpixclk=148500000; vtotal=1125; htotal=2200; IPMX",
         "a=mediaclk:direct=0",
@@ -575,6 +584,7 @@ describe("IPMX validation", function()
         "a=extmap:1 urn:ietf:params:rtp-hdrext:smpte-tc",
         "m=video 5000 RTP/AVP 96",
         "c=IN IP4 239.100.0.1/64",
+        "a=source-filter: incl IN IP4 239.100.0.1 192.168.1.1",
         "a=rtpmap:96 raw/90000",
         "a=fmtp:96 sampling=YCbCr-4:2:2; width=1920; height=1080; exactframerate=25; depth=10; TCS=SDR; colorimetry=BT709; PM=2110GPM; SSN=ST2110-20:2022; TP=2110TPN; measuredpixclk=148500000; vtotal=1125; htotal=2200; IPMX",
         "a=mediaclk:direct=0",
@@ -703,6 +713,7 @@ describe("IPMX validation", function()
         -- leg 1
         "m=video 5000 RTP/AVP 96",
         "c=IN IP4 239.100.0.1/64",
+        "a=source-filter: incl IN IP4 239.100.0.1 192.168.1.1",
         "a=mid:leg1",
         "a=rtpmap:96 raw/90000",
         VFMTP_IPMX,
@@ -714,6 +725,7 @@ describe("IPMX validation", function()
       -- leg 2
       lines[#lines+1] = "m=video 5010 RTP/AVP 96"
       lines[#lines+1] = "c=IN IP4 239.100.0.2/64"
+      lines[#lines+1] = "a=source-filter: incl IN IP4 239.100.0.2 192.168.1.1"
       lines[#lines+1] = "a=mid:leg2"
       lines[#lines+1] = "a=rtpmap:96 raw/90000"
       lines[#lines+1] = VFMTP_IPMX
@@ -786,6 +798,7 @@ describe("IPMX validation", function()
         MAC,
         "m=video 5000 RTP/AVP 96",
         "c=IN IP4 239.100.0.1/64",
+        "a=source-filter: incl IN IP4 239.100.0.1 192.168.1.1",
         "a=mid:leg1",
         "a=rtpmap:96 raw/90000",
         VFMTP_IPMX,
@@ -896,6 +909,7 @@ describe("IPMX validation", function()
         "a=ts-refclk:ptp=IEEE1588-2008:00-11-22-FF-FE-33-44-55:0",
         "m=video 5000 RTP/AVP 96",
         "c=IN IP4 239.100.0.1/64",
+        "a=source-filter: incl IN IP4 239.100.0.1 192.168.1.1",
         "a=rtpmap:96 raw/90000",
         "a=fmtp:96 sampling=YCbCr-4:2:2; width=1920; height=1080; exactframerate=25; depth=10; TCS=SDR; colorimetry=BT709; PM=2110GPM; SSN=ST2110-20:2022; TP=2110TPN; measuredpixclk=148500000; vtotal=1125; htotal=2200",
         "a=mediaclk:direct=0",
@@ -1073,6 +1087,7 @@ describe("IPMX validation", function()
         "a=extmap:1 urn:ietf:params:rtp-hdrext:smpte-tc",
         "m=video 5000 RTP/AVP 96",
         "c=IN IP4 239.100.0.1/64",
+        "a=source-filter: incl IN IP4 239.100.0.1 192.168.1.1",
         "a=rtpmap:96 raw/90000",
         "a=fmtp:96 sampling=YCbCr-4:2:2; width=1920; height=1080; exactframerate=25; depth=10; TCS=SDR; colorimetry=BT709; PM=2110GPM; SSN=ST2110-20:2022; TP=2110TPN; measuredpixclk=148500000; vtotal=1125; htotal=2200; IPMX",
         "a=mediaclk:direct=0",
@@ -1099,6 +1114,7 @@ describe("IPMX validation", function()
         "a=extmap:" .. extmap_value,
         "m=video 5000 RTP/AVP 96",
         "c=IN IP4 239.100.0.1/64",
+        "a=source-filter: incl IN IP4 239.100.0.1 192.168.1.1",
         "a=rtpmap:96 raw/90000",
         "a=fmtp:96 sampling=YCbCr-4:2:2; width=1920; height=1080; exactframerate=25; depth=10; TCS=SDR; colorimetry=BT709; PM=2110GPM; SSN=ST2110-20:2022; TP=2110TPN; measuredpixclk=148500000; vtotal=1125; htotal=2200; IPMX",
         "a=mediaclk:direct=0",
@@ -1192,6 +1208,7 @@ describe("IPMX validation", function()
         "a=extmap:1 urn:ietf:params:rtp-hdrext:smpte-tc",
         "m=video 5000 RTP/AVP 96",
         "c=IN IP4 239.100.0.1/64",
+        "a=source-filter: incl IN IP4 239.100.0.1 192.168.1.1",
         "a=rtpmap:96 raw/90000",
         "a=fmtp:96 sampling=YCbCr-4:2:2; width=1920; height=1080; exactframerate=25; depth=10; TCS=SDR; colorimetry=BT709; PM=2110GPM; SSN=ST2110-20:2022; TP=2110TPN; measuredpixclk=148500000; vtotal=1125; htotal=2200; IPMX",
         "a=mediaclk:direct=0",
@@ -1221,6 +1238,7 @@ describe("IPMX validation", function()
         "a=extmap:1 urn:ietf:params:rtp-hdrext:smpte-tc",
         "m=video " .. port .. " RTP/AVP 96",
         "c=IN IP4 239.100.0.1/64",
+        "a=source-filter: incl IN IP4 239.100.0.1 192.168.1.1",
         "a=rtpmap:96 raw/90000",
         "a=fmtp:96 sampling=YCbCr-4:2:2; width=1920; height=1080; exactframerate=25; depth=10; TCS=SDR; colorimetry=BT709; PM=2110GPM; SSN=ST2110-20:2022; TP=2110TPN; measuredpixclk=148500000; vtotal=1125; htotal=2200; IPMX",
         "a=mediaclk:direct=0",
@@ -1279,6 +1297,7 @@ describe("IPMX validation", function()
         "a=extmap:1 urn:ietf:params:rtp-hdrext:smpte-tc",
         "m=video 5000 RTP/AVP 96",
         "c=IN IP4 239.100.0.1/64",
+        "a=source-filter: incl IN IP4 239.100.0.1 192.168.1.1",
         "a=rtpmap:96 raw/90000",
         "a=fmtp:96 sampling=YCbCr-4:2:2; width=1920; height=1080; exactframerate=25; depth=10; TCS=SDR; colorimetry=BT709; PM=2110GPM; SSN=ST2110-20:2022; TP=2110TPN; measuredpixclk=148500000; vtotal=1125; htotal=2200; IPMX",
         "a=mediaclk:direct=0",
@@ -1309,6 +1328,7 @@ describe("IPMX validation", function()
         "a=extmap:1 urn:ietf:params:rtp-hdrext:smpte-tc",
         "m=audio 5010 RTP/AVP 97",
         "c=IN IP4 239.100.0.2/64",
+        "a=source-filter: incl IN IP4 239.100.0.2 192.168.1.1",
         rtpmap,
         fmtp,
         "a=mediaclk:direct=0",
@@ -1412,6 +1432,7 @@ describe("IPMX validation", function()
         "a=extmap:1 urn:ietf:params:rtp-hdrext:smpte-tc",
         "m=audio 5010 RTP/AVP 97",
         "c=IN IP4 239.100.0.2/64",
+        "a=source-filter: incl IN IP4 239.100.0.2 192.168.1.1",
         "a=rtpmap:97 L24/48000/8",
         "a=fmtp:97 channel-order=SMPTE2110.(ST); measuredsamplerate=48000; IPMX; " .. extra,
         "a=mediaclk:direct=0",
@@ -1526,6 +1547,7 @@ describe("IPMX validation", function()
         "a=group:FID 1 2",
         "m=video 5000 RTP/AVP 96",
         "c=IN IP4 239.100.0.1/64",
+        "a=source-filter: incl IN IP4 239.100.0.1 192.168.1.1",
         "a=rtpmap:96 raw/90000",
         "a=fmtp:96 sampling=YCbCr-4:2:2; width=1920; height=1080; exactframerate=25; depth=10; TCS=SDR; colorimetry=BT709; PM=2110GPM; SSN=ST2110-20:2022",
         "a=mediaclk:direct=0",
@@ -1580,6 +1602,7 @@ describe("IPMX validation", function()
         "a=extmap:1 urn:ietf:params:rtp-hdrext:smpte-tc",
         "m=audio 5010 RTP/AVP 97",
         "c=IN IP4 239.100.0.2/64",
+        "a=source-filter: incl IN IP4 239.100.0.2 192.168.1.1",
         "a=rtpmap:97 L24/48000/8",
         "a=fmtp:97 channel-order=SMPTE2110.(ST); measuredsamplerate=48000; IPMX",
         "a=mediaclk:direct=0",
@@ -1623,6 +1646,7 @@ describe("IPMX validation", function()
         "a=extmap:1 urn:ietf:params:rtp-hdrext:smpte-tc",
         "m=video 5000 RTP/AVP 96",
         "c=IN IP4 239.100.0.1/64",
+        "a=source-filter: incl IN IP4 239.100.0.1 192.168.1.1",
         "a=rtpmap:96 raw/90000",
         "a=fmtp:96 sampling=YCbCr-4:2:2; width=1920; height=1080; exactframerate=25; depth=10; TCS=SDR; colorimetry=BT709; PM=2110GPM; SSN=ST2110-20:2022; TP=2110TPN; measuredpixclk=148500000; vtotal=1125; htotal=2200; IPMX",
         "a=mediaclk:direct=0",
@@ -1676,6 +1700,7 @@ describe("IPMX validation", function()
         "a=extmap:1 urn:ietf:params:rtp-hdrext:smpte-tc",
         "m=video 5000 RTP/AVP 96",
         "c=IN IP4 239.100.0.1/64",
+        "a=source-filter: incl IN IP4 239.100.0.1 192.168.1.1",
         "a=rtpmap:96 raw/90000",
         "a=fmtp:96 sampling=YCbCr-4:2:2; width=1920; height=1080; exactframerate=25; depth=10; TCS=SDR; colorimetry=BT709; PM=2110GPM; SSN=ST2110-20:2022; TP=2110TPN; measuredpixclk=148500000; vtotal=1125; htotal=2200; IPMX",
         "a=mediaclk:direct=0",
@@ -1801,6 +1826,7 @@ describe("IPMX validation", function()
         "c=IN IP4 239.100.0.1/64",
       }
       if b_line then lines[#lines + 1] = b_line end
+      lines[#lines + 1] = "a=source-filter: incl IN IP4 239.100.0.1 192.168.1.1"
       lines[#lines + 1] = "a=rtpmap:96 raw/90000"
       lines[#lines + 1] = "a=fmtp:96 sampling=YCbCr-4:2:2; width=1920; height=1080; exactframerate=25; depth=10; TCS=SDR; colorimetry=BT709; PM=2110GPM; SSN=ST2110-20:2022; TP=2110TPN; measuredpixclk=148500000; vtotal=1125; htotal=2200; IPMX"
       lines[#lines + 1] = "a=mediaclk:direct=0"
@@ -1912,6 +1938,7 @@ describe("IPMX validation", function()
         "a=extmap:1 urn:ietf:params:rtp-hdrext:smpte-tc",
         "m=video 5000 RTP/AVP 96",
         "c=IN IP4 239.100.0.1/64",
+        "a=source-filter: incl IN IP4 239.100.0.1 192.168.1.1",
         "a=rtpmap:96 raw/90000",
         "a=fmtp:96 sampling=YCbCr-4:2:2; width=1920; height=1080; exactframerate=25; depth=10; TCS=SDR; colorimetry=BT709; PM=2110GPM; SSN=ST2110-20:2022; TP=2110TPN; measuredpixclk=148500000; vtotal=1125; htotal=2200; IPMX",
         "a=mediaclk:direct=0",
@@ -2014,6 +2041,7 @@ describe("IPMX validation", function()
         "a=extmap:1 urn:ietf:params:rtp-hdrext:smpte-tc",
         "m=audio 5010 RTP/AVP 97",
         "c=IN IP4 239.100.0.2/64",
+        "a=source-filter: incl IN IP4 239.100.0.2 192.168.1.1",
         "a=rtpmap:97 L24/48000/8",
         "a=fmtp:97 channel-order=SMPTE2110.(ST); IPMX",  -- no measuredsamplerate
         "a=mediaclk:direct=0",
@@ -2052,6 +2080,7 @@ describe("IPMX validation", function()
         "c=IN IP4 239.100.0.1/64",
       }
       if b_as_line then lines[#lines+1] = b_as_line end
+      lines[#lines+1] = "a=source-filter: incl IN IP4 239.100.0.1 192.168.1.1"
       lines[#lines+1] = "a=rtpmap:96 jxsv/90000"
       lines[#lines+1] = "a=fmtp:96 sampling=YCbCr-4:2:2; width=1920; height=1080; exactframerate=25; depth=10; TCS=SDR; colorimetry=BT709; PM=2110GPM; SSN=ST2110-22:2019; TP=2110TPNL; profile=High444.12; level=2k-1; sublevel=Sublev3bpp; transmode=1; packetmode=0; measuredpixclk=148500000; vtotal=1125; htotal=2200; IPMX"
       lines[#lines+1] = "a=mediaclk:direct=0"
@@ -2088,6 +2117,7 @@ describe("IPMX validation", function()
         "m=video 5000 RTP/AVP 96",
         "c=IN IP4 239.100.0.1/64",
         "b=AS:50000",
+        "a=source-filter: incl IN IP4 239.100.0.1 192.168.1.1",
         "a=rtpmap:96 jxsv/90000",
         fmtp,
         "a=mediaclk:direct=0",
@@ -2304,6 +2334,7 @@ describe("IPMX validation", function()
         "a=extmap:1 urn:ietf:params:rtp-hdrext:smpte-tc",
         "m=video 5000 RTP/AVP 96",
         "c=IN IP4 239.100.0.1/64",
+        "a=source-filter: incl IN IP4 239.100.0.1 192.168.1.1",
         "a=rtpmap:96 raw/90000",
         "a=fmtp:96 sampling=YCbCr-4:2:2; width=1920; height=1080; exactframerate=25; depth=10; TCS=SDR; colorimetry=BT709; PM=2110GPM; SSN=ST2110-20:2022; TP=2110TPN; measuredpixclk=148500000; vtotal=1125; htotal=2200; IPMX",
         "a=mediaclk:direct=0",
@@ -2350,6 +2381,7 @@ describe("IPMX validation", function()
         "a=extmap:1 urn:ietf:params:rtp-hdrext:smpte-tc",
         "m=video 5000 RTP/AVP 96",
         "c=IN IP4 239.100.0.1/64",
+        "a=source-filter: incl IN IP4 239.100.0.1 192.168.1.1",
         "a=rtpmap:96 raw/90000",
         "a=fmtp:96 sampling=YCbCr-4:2:2; width=1920; height=1080; exactframerate=25; depth=10; TCS=SDR; colorimetry=BT709; PM=2110GPM; SSN=ST2110-20:2022; TP=2110TPN; measuredpixclk=148500000; vtotal=1125; htotal=2200; IPMX",
         "a=mediaclk:direct=0",
@@ -2376,6 +2408,7 @@ describe("IPMX validation", function()
         "m=video 5000 RTP/AVP 96",
         "c=IN IP4 239.100.0.1/64",
         "b=AS:50000",
+        "a=source-filter: incl IN IP4 239.100.0.1 192.168.1.1",
         "a=rtpmap:96 jxsv/90000",
         "a=fmtp:96 sampling=YCbCr-4:2:2; width=1920; height=1080; exactframerate=25; depth=10; TCS=SDR; colorimetry=BT709; PM=2110GPM; SSN=ST2110-22:2019; TP=2110TPNL; profile=High444.12; level=2k-1; sublevel=Sublev3bpp; transmode=1; packetmode=0; measuredpixclk=148500000; vtotal=1125; htotal=2200; IPMX",
         "a=mediaclk:direct=0",
@@ -2416,6 +2449,7 @@ describe("IPMX validation", function()
         "a=extmap:1 urn:ietf:params:rtp-hdrext:smpte-tc",
         "m=video 5000 RTP/AVP 96",
         "c=IN IP4 239.100.0.1/64",
+        "a=source-filter: incl IN IP4 239.100.0.1 192.168.1.1",
         "a=rtpmap:96 raw/90000",
         "a=fmtp:96 sampling=YCbCr-4:2:2; width=1920; height=1080; exactframerate=25; depth=10; TCS=SDR; colorimetry=BT709; PM=2110GPM; SSN=ST2110-20:2022; TP=2110TPN; measuredpixclk=148500000; vtotal=1125; htotal=2200; IPMX",
         "a=mediaclk:direct=0",
@@ -2440,6 +2474,7 @@ describe("IPMX validation", function()
         "m=video 5000 RTP/AVP 96",
         "c=IN IP4 239.100.0.1/64",
         "b=AS:1",
+        "a=source-filter: incl IN IP4 239.100.0.1 192.168.1.1",
         "a=rtpmap:96 raw/90000",
         "a=fmtp:96 sampling=YCbCr-4:2:2; width=1920; height=1080; exactframerate=25; depth=10; TCS=SDR; colorimetry=BT709; PM=2110GPM; SSN=ST2110-20:2022; TP=2110TPN; measuredpixclk=148500000; vtotal=1125; htotal=2200; IPMX",
         "a=mediaclk:direct=0",
@@ -2474,6 +2509,7 @@ describe("IPMX validation", function()
       if opts.session_privacy then lines[#lines+1] = opts.session_privacy end
       lines[#lines+1] = "m=video 5000 RTP/AVP 96"
       lines[#lines+1] = "c=IN IP4 239.100.0.1/64"
+      lines[#lines+1] = "a=source-filter: incl IN IP4 239.100.0.1 192.168.1.1"
       lines[#lines+1] = "a=mid:leg1"
       lines[#lines+1] = "a=rtpmap:96 raw/90000"
       lines[#lines+1] = VFMTP_IPMX
@@ -2483,6 +2519,7 @@ describe("IPMX validation", function()
       if opts.privacy1 then lines[#lines+1] = opts.privacy1 end
       lines[#lines+1] = "m=video 5010 RTP/AVP 96"
       lines[#lines+1] = "c=IN IP4 239.100.0.2/64"
+      lines[#lines+1] = "a=source-filter: incl IN IP4 239.100.0.2 192.168.1.1"
       lines[#lines+1] = "a=mid:leg2"
       lines[#lines+1] = "a=rtpmap:96 raw/90000"
       lines[#lines+1] = VFMTP_IPMX
@@ -2543,6 +2580,7 @@ describe("IPMX validation", function()
         "a=extmap:1 urn:ietf:params:rtp-hdrext:smpte-tc",
         "m=video 5000 RTP/AVP 96",
         "c=IN IP4 239.100.0.1/64",
+        "a=source-filter: incl IN IP4 239.100.0.1 192.168.1.1",
         "a=rtpmap:96 raw/90000",
         "a=fmtp:96 sampling=YCbCr-4:2:2; width=1920; height=1080; exactframerate=25; depth=10; TCS=SDR; colorimetry=BT709; PM=2110GPM; SSN=ST2110-20:2022; TP=2110TPN; measuredpixclk=148500000; vtotal=1125; htotal=2200; IPMX",
         "a=mediaclk:direct=0",
@@ -2609,6 +2647,56 @@ describe("IPMX validation", function()
       assert.is_nil(ok)
       assert.is_table(err)
       assert.matches("65535", err.message)
+    end)
+  end)
+
+  -- ── M29 G4: a=source-filter required on every IPMX RTP block ───────────────
+  -- TR-10-TP-1 §13.2 lists a=source-filter under the parameters verified on
+  -- every sender; senders certifying against IPMX are expected to emit one.
+  -- Underlying ST 2110-10 §8.4 only says SHOULD, so this is an IPMX-only
+  -- elevation. USB (non-RTP) blocks remain exempt.
+  describe("M29 G4: a=source-filter required for IPMX RTP blocks", function()
+    -- Mirror of base_ipmx_sdp but WITHOUT a=source-filter, used as the negative
+    -- baseline. base_ipmx_sdp itself is updated to include source-filter so the
+    -- rest of the suite continues to validate.
+    local function ipmx_without_source_filter()
+      return table.concat({
+        "v=0",
+        "o=- 1234567890 1 IN IP4 192.168.1.1",
+        "s=IPMX no source-filter",
+        "t=0 0",
+        "a=ts-refclk:localmac=AA-BB-CC-DD-EE-FF",
+        "a=extmap:1 urn:ietf:params:rtp-hdrext:smpte-tc",
+        "m=video 5000 RTP/AVP 96",
+        "c=IN IP4 239.100.0.1/64",
+        "a=rtpmap:96 raw/90000",
+        "a=fmtp:96 sampling=YCbCr-4:2:2; width=1920; height=1080; exactframerate=25; depth=10; TCS=SDR; colorimetry=BT709; PM=2110GPM; SSN=ST2110-20:2022; TP=2110TPN; measuredpixclk=148500000; vtotal=1125; htotal=2200; IPMX",
+        "a=mediaclk:direct=0",
+        "a=ts-refclk:localmac=AA-BB-CC-DD-EE-FF",
+      }, "\r\n")
+    end
+
+    it("rejects IPMX SDP missing a=source-filter on the RTP block", function()
+      local doc = sdp.parse(ipmx_without_source_filter())
+      assert.is_table(doc)
+      local ok, err = doc:validate("ipmx")
+      assert.is_nil(ok)
+      assert.is_table(err)
+      assert.matches("source%-filter", err.message)
+      assert.equals("TR-10-TP-1 §13.2", err.spec_ref)
+    end)
+
+    it("accepts IPMX SDP with a media-level a=source-filter", function()
+      -- The base template now includes a=source-filter; just confirm it passes.
+      local doc, err = sdp.parse(base_ipmx_sdp(), "ipmx")
+      assert.is_nil(err)
+      assert.is_table(doc)
+    end)
+
+    it("accepts the same SDP at ST 2110 tier (regression — no requirement there)", function()
+      local doc, err = sdp.parse(ipmx_without_source_filter(), "st2110")
+      assert.is_nil(err)
+      assert.is_table(doc)
     end)
   end)
 end)

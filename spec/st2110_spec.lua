@@ -2410,6 +2410,7 @@ describe("ST 2110 validation", function()
         "a=extmap:" .. id .. " urn:ietf:params:rtp-hdrext:smpte-tc",
         "m=video 5000 RTP/AVP 96",
         "c=IN IP4 239.100.0.1/64",
+        "a=source-filter: incl IN IP4 239.100.0.1 192.168.1.1",
         "a=rtpmap:96 raw/90000",
         "a=fmtp:96 sampling=YCbCr-4:2:2; width=1920; height=1080; exactframerate=25; depth=10; TCS=SDR; colorimetry=BT709; PM=2110GPM; SSN=ST2110-20:2022; TP=2110TPN; measuredpixclk=148500000; vtotal=1125; htotal=2200; IPMX",
         "a=mediaclk:direct=0",
@@ -2880,12 +2881,20 @@ describe("ST 2110 validation", function()
       assert.matches("TSMODE", err.message)
     end)
 
-    it("accepts TSDELAY=0 and positive integer", function()
-      for _, v in ipairs({ "0", "1000" }) do
-        local doc, err = sdp.parse(video_sdp("; TSDELAY=" .. v), "st2110")
-        assert.is_nil(err, "TSDELAY=" .. v .. " should accept")
-        assert.is_table(doc)
-      end
+    -- M29 G5: ST 2110-10 §8.7 specifies TSDELAY as a "decimal positive
+    -- integer number of microseconds" — zero is not a valid signaled delay.
+    it("accepts positive TSDELAY", function()
+      local doc, err = sdp.parse(video_sdp("; TSDELAY=1000"), "st2110")
+      assert.is_nil(err)
+      assert.is_table(doc)
+    end)
+
+    it("rejects TSDELAY=0 (must be positive per ST 2110-10 §8.7)", function()
+      local doc = sdp.parse(video_sdp("; TSDELAY=0"))
+      assert.is_table(doc)
+      local ok, err = doc:validate("st2110")
+      assert.is_nil(ok)
+      assert.matches("TSDELAY", err.message)
     end)
 
     it("rejects negative TSDELAY", function()
@@ -3339,6 +3348,189 @@ describe("ST 2110 validation", function()
       local ok, err = doc:validate("st2110")
       assert.is_nil(ok)
       assert.is_table(err)
+    end)
+  end)
+
+  -- ── M29 G1: c= IPv4/IPv6 literal address syntax (ST 2110-10 §6.5) ──────────
+  -- ST 2110-10 §6.5 mandates IPv4 unicast per RFC 791 and IPv6 per RFC 2460.
+  -- The old valid_connection_address only extracted the first octet to test
+  -- multicast range; the rest of the address was passed through unchecked.
+  describe("M29 G1: c= IPv4/IPv6 literal address syntax", function()
+    local function st2110_with_c(c_line)
+      return table.concat({
+        "v=0",
+        "o=- 1234567890 1 IN IP4 192.168.1.1",
+        "s=ST 2110 M29 G1",
+        "t=0 0",
+        "a=ts-refclk:localmac=AA-BB-CC-DD-EE-FF",
+        "m=video 5000 RTP/AVP 96",
+        c_line,
+        "a=rtpmap:96 raw/90000",
+        "a=fmtp:96 sampling=YCbCr-4:2:2; width=1920; height=1080; exactframerate=25; depth=10; TCS=SDR; colorimetry=BT709; PM=2110GPM; SSN=ST2110-20:2022; TP=2110TPN",
+        "a=mediaclk:direct=0",
+      }, "\r\n")
+    end
+
+    it("rejects IPv4 with only three octets (1.2.3)", function()
+      local doc = sdp.parse(st2110_with_c("c=IN IP4 1.2.3"))
+      assert.is_table(doc)
+      local ok, err = doc:validate("st2110")
+      assert.is_nil(ok)
+      assert.matches("IPv4", err.message)
+    end)
+
+    it("rejects IPv4 with octet > 255 (unicast path)", function()
+      local doc = sdp.parse(st2110_with_c("c=IN IP4 999.0.0.0"))
+      assert.is_table(doc)
+      local ok, err = doc:validate("st2110")
+      assert.is_nil(ok)
+      assert.matches("IPv4", err.message)
+    end)
+
+    it("rejects IPv4 with octet > 255 inside (192.168.999.1)", function()
+      local doc = sdp.parse(st2110_with_c("c=IN IP4 192.168.999.1"))
+      assert.is_table(doc)
+      local ok, err = doc:validate("st2110")
+      assert.is_nil(ok)
+      assert.matches("IPv4", err.message)
+    end)
+
+    it("rejects IPv4 with five octets (192.168.1.1.5)", function()
+      local doc = sdp.parse(st2110_with_c("c=IN IP4 192.168.1.1.5"))
+      assert.is_table(doc)
+      local ok, err = doc:validate("st2110")
+      assert.is_nil(ok)
+      assert.matches("IPv4", err.message)
+    end)
+
+    it("rejects IPv6 unicast with non-IPv6 syntax (not-an-ipv6)", function()
+      local doc = sdp.parse(st2110_with_c("c=IN IP6 not-an-ipv6"))
+      assert.is_table(doc)
+      local ok, err = doc:validate("st2110")
+      assert.is_nil(ok)
+      assert.matches("IPv6", err.message)
+    end)
+
+    it("rejects IPv6 multicast with garbage tail (ff02::garbage)", function()
+      local doc = sdp.parse(st2110_with_c("c=IN IP6 ff02::garbage"))
+      assert.is_table(doc)
+      local ok, err = doc:validate("st2110")
+      assert.is_nil(ok)
+      assert.matches("IPv6", err.message)
+    end)
+
+    it("accepts IPv4 max-octet boundary (255.255.255.254)", function()
+      local doc, err = sdp.parse(st2110_with_c("c=IN IP4 255.255.255.254"), "st2110")
+      assert.is_nil(err)
+      assert.is_table(doc)
+    end)
+
+    it("accepts compressed IPv6 unicast (2001:db8::1)", function()
+      local doc, err = sdp.parse(st2110_with_c("c=IN IP6 2001:db8::1"), "st2110")
+      assert.is_nil(err)
+      assert.is_table(doc)
+    end)
+  end)
+
+  -- ── M29 G2: a=source-filter literal address syntax (ST 2110-10 §6.5 / RFC 4570) ──
+  -- The previous _sf_token captured any non-space token for dest and src;
+  -- the addresses now must parse as literal IPv4/IPv6 per the declared addrtype.
+  describe("M29 G2: a=source-filter literal address syntax", function()
+    local function st2110_with_sf(sf_line)
+      return table.concat({
+        "v=0",
+        "o=- 1234567890 1 IN IP4 192.168.1.1",
+        "s=ST 2110 M29 G2",
+        "t=0 0",
+        "a=ts-refclk:localmac=AA-BB-CC-DD-EE-FF",
+        "m=video 5000 RTP/AVP 96",
+        "c=IN IP4 239.100.0.1/64",
+        "a=rtpmap:96 raw/90000",
+        "a=fmtp:96 sampling=YCbCr-4:2:2; width=1920; height=1080; exactframerate=25; depth=10; TCS=SDR; colorimetry=BT709; PM=2110GPM; SSN=ST2110-20:2022; TP=2110TPN",
+        "a=mediaclk:direct=0",
+        sf_line,
+      }, "\r\n")
+    end
+
+    it("rejects source-filter with non-IPv4 src token", function()
+      local doc = sdp.parse(st2110_with_sf(
+        "a=source-filter: incl IN IP4 239.100.0.1 not-an-ip-at-all"))
+      assert.is_table(doc)
+      local ok, err = doc:validate("st2110")
+      assert.is_nil(ok)
+      assert.matches("source%-filter", err.message)
+    end)
+
+    it("rejects source-filter with non-IPv4 dest token", function()
+      local doc = sdp.parse(st2110_with_sf(
+        "a=source-filter: incl IN IP4 hostname.example 192.168.1.5"))
+      assert.is_table(doc)
+      local ok, err = doc:validate("st2110")
+      assert.is_nil(ok)
+      assert.matches("source%-filter", err.message)
+    end)
+
+    it("rejects source-filter with IPv4 octet > 255", function()
+      local doc = sdp.parse(st2110_with_sf(
+        "a=source-filter: incl IN IP4 239.999.0.1 192.168.1.5"))
+      assert.is_table(doc)
+      local ok, err = doc:validate("st2110")
+      assert.is_nil(ok)
+      assert.matches("source%-filter", err.message)
+    end)
+
+    it("rejects source-filter with non-IPv6 src token (when addrtype=IP6)", function()
+      local doc = sdp.parse(st2110_with_sf(
+        "a=source-filter: incl IN IP6 ff02::1 garbage"))
+      assert.is_table(doc)
+      local ok, err = doc:validate("st2110")
+      assert.is_nil(ok)
+      assert.matches("source%-filter", err.message)
+    end)
+
+    it("accepts source-filter with valid IPv4 dest and src", function()
+      local doc, err = sdp.parse(st2110_with_sf(
+        "a=source-filter: incl IN IP4 239.100.0.1 192.168.1.50"), "st2110")
+      assert.is_nil(err)
+      assert.is_table(doc)
+    end)
+
+    it("accepts source-filter with multiple valid IPv4 src addresses", function()
+      local doc, err = sdp.parse(st2110_with_sf(
+        "a=source-filter: incl IN IP4 239.100.0.1 192.168.1.50 192.168.1.51"), "st2110")
+      assert.is_nil(err)
+      assert.is_table(doc)
+    end)
+
+    it("accepts source-filter with valid IPv6 dest and src", function()
+      local doc, err = sdp.parse(st2110_with_sf(
+        "a=source-filter: incl IN IP6 ff02::1 2001:db8::1"), "st2110")
+      assert.is_nil(err)
+      assert.is_table(doc)
+    end)
+  end)
+
+  -- ── M29 G4 (ST 2110 side): source-filter NOT required at ST 2110 tier ──────
+  -- The matching requirement at IPMX tier (TR-10-TP-1 §13.2) is tested in
+  -- ipmx_spec. ST 2110-10 §8.4 only says SHOULD; this regression guard ensures
+  -- the strict tier does not falsely reject SDPs that omit a=source-filter.
+  describe("M29 G4 (ST 2110): a=source-filter is optional at ST 2110 tier", function()
+    it("accepts ST 2110 SDP with no a=source-filter", function()
+      local text = table.concat({
+        "v=0",
+        "o=- 1234567890 1 IN IP4 192.168.1.1",
+        "s=ST 2110 G4 regression",
+        "t=0 0",
+        "a=ts-refclk:localmac=AA-BB-CC-DD-EE-FF",
+        "m=video 5000 RTP/AVP 96",
+        "c=IN IP4 239.100.0.1/64",
+        "a=rtpmap:96 raw/90000",
+        "a=fmtp:96 sampling=YCbCr-4:2:2; width=1920; height=1080; exactframerate=25; depth=10; TCS=SDR; colorimetry=BT709; PM=2110GPM; SSN=ST2110-20:2022; TP=2110TPN",
+        "a=mediaclk:direct=0",
+      }, "\r\n")
+      local doc, err = sdp.parse(text, "st2110")
+      assert.is_nil(err)
+      assert.is_table(doc)
     end)
   end)
 end)

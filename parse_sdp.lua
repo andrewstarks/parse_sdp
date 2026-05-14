@@ -561,6 +561,12 @@ local _ntp_ipv6 = P({
 
 local _ntp_addr_pat = _ntp_ipv4 + _ntp_ipv6 + _ntp_hostname
 
+-- Aliases for the anchored IPv4/IPv6 patterns used by c= and a=source-filter
+-- address validators. Spec basis: ST 2110-10 §6.5 (RFC 791 IPv4 / RFC 2460 IPv6
+-- literal addressing for ST 2110/IPMX) and RFC 4570 for source-filter.
+local _ipv4_addr_pat = _ntp_ipv4
+local _ipv6_addr_pat = _ntp_ipv6
+
 -- Validate the value of a ts-refclk attribute per ST 2110-10 §7.2.
 -- Returns true on success, or nil + error message string on failure.
 local function valid_tsrefclk(value)
@@ -671,19 +677,40 @@ local VALID_SOURCE_FILTER_PAT =
   * (P(" ") * _sf_token)^1          -- one or more source addresses
   * P(-1)
 
+-- M29 G2: validate source-filter dest and every src as a literal IPv4/IPv6
+-- address matching the declared addrtype (ST 2110-10 §6.5 / RFC 4570).
 local function valid_source_filter(value)
-  if VALID_SOURCE_FILTER_PAT:match(value) then return true end
-  return nil, "invalid a=source-filter format (RFC 4570)"
+  if not VALID_SOURCE_FILTER_PAT:match(value) then
+    return nil, "invalid a=source-filter format (RFC 4570)"
+  end
+  local trimmed = value:gsub("^%s+", "")
+  local addrtype, rest = trimmed:match("^%S+ IN (IP[46]) (.+)$")
+  if not addrtype then return true end
+  local pat = (addrtype == "IP4") and _ipv4_addr_pat or _ipv6_addr_pat
+  local idx = 0
+  for tok in rest:gmatch("%S+") do
+    idx = idx + 1
+    if not pat:match(tok) then
+      local which = (idx == 1) and "destination" or ("source #" .. (idx - 1))
+      return nil, string.format(
+        "invalid %s address in a=source-filter %s: %s", addrtype, which, tok)
+    end
+  end
+  return true
 end
 
 -- Validate the address field of a c= line for ST 2110 media blocks (RFC 4566 +
 -- ST 2110-10 §6.5). IPv4 multicast requires a TTL and must not fall within the
 -- Local Network Control Block (224.0.0.0/24) or Internetwork Control Block
--- (224.0.1.0/24) forbidden ranges defined in RFC 5771.
+-- (224.0.1.0/24) forbidden ranges defined in RFC 5771. M29 G1: the address
+-- portion (before any /suffix) must parse as a literal IPv4 or IPv6 address.
 local function valid_connection_address(addr_type, addr)
   if addr_type == "IP6" then
     local ip6, rest6 = addr:match("^([^/]+)(.*)")
     if not ip6 then return nil, "invalid IPv6 address in c= line" end
+    if not _ipv6_addr_pat:match(ip6) then
+      return nil, "invalid IPv6 address syntax in c= line: " .. ip6
+    end
     local is_mc6 = ip6:sub(1, 2):lower() == "ff"
     if is_mc6 then
       if rest6 == "" then return true end
@@ -704,9 +731,14 @@ local function valid_connection_address(addr_type, addr)
   end
   if addr_type ~= "IP4" then return true end
   local ip, rest = addr:match("^([^/]+)(.*)")
-  local o1 = tonumber((ip or addr):match("^(%d+)%."))
-  if not o1 then return nil, "invalid IPv4 address in c= line" end
-  local is_mc = o1 >= 224 and o1 <= 239
+  if not ip or ip == "" then
+    return nil, "invalid IPv4 address in c= line"
+  end
+  if not _ipv4_addr_pat:match(ip) then
+    return nil, "invalid IPv4 address syntax in c= line: " .. ip
+  end
+  local o1 = tonumber(ip:match("^(%d+)%."))
+  local is_mc = o1 and o1 >= 224 and o1 <= 239
   if is_mc then
     local ttl_str = rest:match("^/(%d+)$")
     if not ttl_str then
@@ -1283,7 +1315,8 @@ function st2110.validate(doc, opts)
         { "TROFF",   valid_nonneg_int },
         { "CMAX",    valid_pos_int },
         { "TSMODE",  function(v) return valid_enum(v, VALID_TSMODE, "TSMODE") end },
-        { "TSDELAY", valid_nonneg_int },
+        -- M29 G5: ST 2110-10 §8.7 — TSDELAY is a "decimal positive integer".
+        { "TSDELAY", valid_pos_int },
       }
       for _, ck in ipairs(video_opt_checks) do
         local key, fn = ck[1], ck[2]
@@ -2187,6 +2220,21 @@ function ipmx.validate(doc)
               mpath, "rtcp", "RFC 3605 §2.1", "INVALID_VALUE")
           end
         end
+      end
+    end
+  end
+
+  -- M29 G4: TR-10-TP-1 §13.2 lists a=source-filter under the parameters every
+  -- IPMX sender's SDP is verified for. RFC 4570 allows the attribute at session
+  -- level (applies to all media) or media level. Required on every RTP block;
+  -- non-RTP application blocks (TR-10-14 USB) are exempt.
+  local has_sess_sf = find_attr(doc.session.attributes or {}, "source-filter") ~= nil
+  if not has_sess_sf then
+    for i, m in ipairs(doc.media) do
+      if not non_rtp_set[i] and not find_attr(m.attributes or {}, "source-filter") then
+        return attr_err(
+          "a=source-filter is required on every IPMX RTP media block (or at session level)",
+          string.format("media[%d]", i), "source-filter", "TR-10-TP-1 §13.2")
       end
     end
   end

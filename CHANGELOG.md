@@ -9,6 +9,38 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 
+### Added (M29 — audit 2026-05-14, round 8: IP address syntax + IPMX source-filter)
+
+Six parallel research agents read the SDP-relevant sections of ST 2110-10:2022, TR-10-1, TR-10-2/3/4/7/9/10/11/12 (per-media-type IPMX TRs), TR-10-5/6/13/14/15/16 + the 2026-01 IPMX Released Profile docs, and TR-10-TP-1 (the IPMX conformance test plan). Two more agents mapped the validator's ~140 checks and ~600 tests. Cross-referencing surfaced four real false-negative gaps and one minor SHOULD/MUST-wording strictness gap; all were verified by running invalid SDPs through the validator (e.g. `c=IN IP4 999.0.0.0` and `c=IN IP6 not-an-ipv6` both used to be accepted).
+
+**False-negative fixes (non-conformant SDPs that used to pass):**
+
+- **G1: c= IPv4/IPv6 literal address syntax** (ST 2110-10 §6.5 mandates RFC 791 IPv4 / RFC 2460 IPv6 for the connection address). `valid_connection_address` previously extracted only the first octet to test the multicast range and accepted anything else. It now anchors the address (before any `/<ttl>` or `/<scope>` suffix) against the existing LPEG IPv4/IPv6 patterns aliased as `_ipv4_addr_pat` / `_ipv6_addr_pat`. Catches `c=IN IP4 1.2.3` (3 octets), `c=IN IP4 999.0.0.0`, `c=IN IP4 192.168.999.1`, `c=IN IP4 192.168.1.1.5`, `c=IN IP6 not-an-ipv6`, `c=IN IP6 ff02::garbage`.
+- **G2: a=source-filter dest/src literal address syntax** (RFC 4570 / ST 2110-10 §6.5). The RFC 4570 LPEG format pattern matched but the dest and source addresses were unchecked tokens. After the format passes, the validator now parses out the addrtype, dest, and each src and validates each as a literal address of that family. Rejects e.g. `a=source-filter: incl IN IP4 239.100.0.1 not-an-ip-at-all`.
+- **G4: a=source-filter required on every IPMX RTP block** (TR-10-TP-1 §13.2). The IPMX conformance test plan lists `a=source-filter` under the parameters verified for every sender. User-confirmed: enforce at IPMX tier only — ST 2110-10 §8.4 only says SHOULD, so the ST 2110 tier is unchanged. Session-level `a=source-filter` (RFC 4570: applies to all media) satisfies the requirement; non-RTP application blocks (TR-10-14 USB) remain exempt. Check fires late in the IPMX validator so existing per-block errors continue to fire first.
+- **G5: TSDELAY must be a positive integer** (ST 2110-10 §8.7 — "decimal positive integer number of microseconds"). The optional video fmtp validator used `valid_nonneg_int`, which accepted `TSDELAY=0`. Switched to `valid_pos_int`; the previously-passing "accepts TSDELAY=0" test was inverted to a rejection.
+
+**Gap surfaced but deliberately not fixed:**
+
+- **G3: o= line `unicast_address` syntax** — RFC 4566 §5.7 ABNF allows `IP4-address / IP6-address / FQDN / extn-addr`, and FQDN single-label hostnames like "localhost" match valid RFC 1123 hostname grammar, so a strict format check would reject very little while risking real-world senders that put hostnames there. Skipped pending a clear ST 2110 requirement that o= must be a literal IP.
+
+**Fixture updates:**
+
+- `IPMX_VIDEO_SDP`, `base_ipmx_sdp`, and ~30 inline IPMX test fixtures across `spec/ipmx_spec.lua` and `spec/st2110_spec.lua` updated to include `a=source-filter` on every RTP block (RFC 4566 §5 order preserved: b= before a=).
+- All five valid example fixtures in `examples/ipmx/valid/` updated with `a=source-filter`. All four invalid fixtures in `examples/ipmx/invalid/` still reject for their intended reasons (extmap missing, ts-refclk missing, privacy mismatch, rtcp-mux) — those checks fire before the new source-filter check.
+
+**Tests:** 616 → 636 (20 net new tests across `spec/st2110_spec.lua` and `spec/ipmx_spec.lua`).
+
+**Spec references for M29:**
+
+- SMPTE ST 2110-10:2022 §6.5 — IPv4/IPv6 literal addressing for c=
+- SMPTE ST 2110-10:2022 §8.7 — TSDELAY decimal positive integer
+- IETF RFC 4570 — a=source-filter
+- IETF RFC 791 / RFC 2460 — IPv4 / IPv6 address literals
+- VSF TR-10-TP-1 §13.2 — IPMX sender SDP verification (a=source-filter on every essence type)
+
+---
+
 ### Added (M28 — IETF RFC strictness audit 2026-05-14, round 7)
 
 After M27 closed the major SMPTE/VSF strictness gaps, a second-pass audit was run with a deliberately different angle: read the **IETF RFCs** the library depends on (independent of SMPTE/VSF prose) and compare ABNFs to the validator. Two parallel research agents covered RFCs 4145, 4570, 5285, 5761, 5888, 7104, 3605 (transport + grouping) and RFCs 7273, 8331, 9134, 5771 (clock + payload formats). Direct ABNF re-verification against the RFC source text was used before any code change because the audit prose was approximate in places (one agent claimed RFC 5285 ext-attrs are "VCHAR-only" — actually `byte-string` per RFC 4566, broader). Three real low-severity strictness gaps were fixed.

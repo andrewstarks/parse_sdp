@@ -684,6 +684,45 @@ is present, but no IPMX-level tests cover these values.
 
 ---
 
+### M29 — Validation gap closure ✓ (audit 2026-05-14, round 8: IP address syntax + IPMX source-filter)
+
+**Done when:** Gaps surfaced by a six-spec parallel audit (ST 2110-10:2022 PDF, TR-10-1, the per-media-type TR-10-2/3/4/7/9/10/11/12, the extension TR-10-5/6/13/14/15/16, the three 2026-01 IPMX Released Profile docs, and TR-10-TP-1 the IPMX test plan) are addressed. The audit cross-referenced the validator's ~140 checks and ~600 tests against ~250 normative SDP requirements. Five gaps surfaced; four were verified false-negatives by running invalid SDPs through the validator (e.g. `c=IN IP4 999.0.0.0` and `c=IN IP6 not-an-ipv6` both used to pass), one was a SHOULD→MUST-wording strictness gap.
+
+#### False-negative fixes (non-conformant SDPs that used to pass)
+
+- [x] **G1: c= IPv4/IPv6 literal address syntax** (ST 2110-10 §6.5 — IPv4 unicast per RFC 791, IPv6 per RFC 2460). `valid_connection_address` previously extracted only the first octet to check the multicast range and accepted anything else. Now the address (before any `/<ttl>` or `/<scope>` suffix) must match the LPEG IPv4/IPv6 patterns (aliased as `_ipv4_addr_pat` / `_ipv6_addr_pat` from the existing `valid_tsrefclk` patterns). Catches `c=IN IP4 1.2.3` (3 octets), `c=IN IP4 999.0.0.0` (octet > 255), `c=IN IP4 192.168.1.1.5` (5 octets), `c=IN IP6 not-an-ipv6`, `c=IN IP6 ff02::garbage`. ([parse_sdp.lua:683-737](parse_sdp.lua#L683-L737))
+- [x] **G2: a=source-filter dest/src literal address syntax** (RFC 4570 / ST 2110-10 §6.5). The format LPEG pattern matched but the dest and src tokens were unchecked. After format match, the validator now parses out addrtype, dest, and each src and validates each as a literal address of that family. ([parse_sdp.lua:679-697](parse_sdp.lua#L679-L697))
+- [x] **G4: a=source-filter required on every IPMX RTP block** (TR-10-TP-1 §13.2). User-confirmed: enforce at IPMX tier only — ST 2110-10 §8.4 only says SHOULD, so ST 2110 mode is unchanged. Session-level `a=source-filter` (RFC 4570: applies to all media) satisfies the requirement. TR-10-14 USB blocks remain exempt. Check fires at the end of `ipmx.validate` so existing more-specific errors continue to fire first.
+- [x] **G5: TSDELAY must be a positive integer** (ST 2110-10 §8.7: "decimal positive integer number of microseconds"). The optional video fmtp validator entry used `valid_nonneg_int`, which accepted `TSDELAY=0`. Switched to `valid_pos_int`; the previously-passing "accepts TSDELAY=0" test was inverted to a rejection.
+
+#### Gap surfaced but deliberately not fixed
+
+- **G3: o= line `unicast_address` syntax**. RFC 4566 §5.7 ABNF allows `IP4-address / IP6-address / FQDN / extn-addr`. FQDN single-label tokens like "localhost" match valid RFC 1123 hostname grammar, so any strict check would reject very little while risking real-world senders that legitimately put hostnames in `o=`. Skipped pending a clear ST 2110/IPMX requirement that `o=` must be a literal IP.
+
+#### Fixture / docs updates
+
+- [x] `IPMX_VIDEO_SDP`, `base_ipmx_sdp`, and ~30 inline IPMX test fixtures across `spec/ipmx_spec.lua` and `spec/st2110_spec.lua` updated to include `a=source-filter` on every RTP block (RFC 4566 §5 order preserved: b= before a=). For helpers that conditionally append `b=AS:...`, the source-filter line was moved after the conditional so order stays valid for both call shapes.
+- [x] All five valid example fixtures in `examples/ipmx/valid/` updated with `a=source-filter`. The four invalid fixtures in `examples/ipmx/invalid/` still reject for their intended reasons (extmap missing, ts-refclk missing, DUP privacy mismatch, rtcp-mux) — each of those errors fires before the new source-filter check.
+
+#### Tests added (20 net new)
+
+- M29 G1 (c= IPv4/IPv6 syntax): 8 new tests in `spec/st2110_spec.lua` (3-octet, octet>255, 5-octet, IPv4 syntax bad-inner-octet, IPv6 garbage, IPv6 garbage-multicast, IPv4 boundary 255.255.255.254, IPv6 compressed).
+- M29 G2 (source-filter address syntax): 7 new tests in `spec/st2110_spec.lua` (non-IPv4 src, non-IPv4 dest, IPv4 octet>255, non-IPv6 src, valid IPv4, multi-src IPv4, valid IPv6).
+- M29 G4 (IPMX source-filter required): 3 new tests in `spec/ipmx_spec.lua` + 1 regression-guard in `spec/st2110_spec.lua` confirming ST 2110 tier does not require it.
+- M29 G5 (TSDELAY positive): 1 net new test (`rejects TSDELAY=0`), 1 test inverted (`accepts TSDELAY=0 and positive integer` → `accepts positive TSDELAY`).
+
+**Tests:** 616 → 636.
+
+**Spec references for M29:**
+
+- SMPTE ST 2110-10:2022 §6.5 — IPv4/IPv6 literal addressing requirements for the `c=` connection field
+- SMPTE ST 2110-10:2022 §8.7 — `TSDELAY` decimal positive integer
+- IETF RFC 4570 — `a=source-filter` syntax
+- IETF RFC 791 / RFC 2460 — IPv4 / IPv6 address literal grammar
+- VSF TR-10-TP-1 §13.2 — IPMX sender SDP verification (`a=source-filter` verified on every essence type)
+
+---
+
 ### M28 — IETF RFC strictness audit ✓ (audit 2026-05-14, round 7)
 
 **Done when:** Gaps surfaced by an IETF-RFC-focused audit (different angle from the SMPTE/VSF-focused M27 round) are addressed. Two parallel research agents read RFC 4145, 4570, 5285, 5761, 5888, 7104, 3605 (Agent 1) and RFC 7273, 8331, 9134, 5771 (Agent 2) and compared the prose ABNFs to the validator. Several agent claims were rejected after direct ABNF verification (see "Rejected claims" below); three real low-severity strictness gaps were fixed.
