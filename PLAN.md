@@ -488,6 +488,35 @@ format validation, meaning syntactically garbage values pass today.
 
 ---
 
+### M19 — Optional fmtp param validation and audio encoding name ✓
+
+**Done when:** All ST 2110-20 optional `fmtp` parameters with defined value formats are
+validated when present. ST 2110-30 rtpmap encoding name is validated. ST 2110-40
+`VPID_Code` and ST 2110-41 `DIT` value formats are validated.
+
+- [x] ST 2110-20 optional `fmtp` params: `TP` (`2110TPN`/`2110TPNL`/`2110TPW`), `MAXUDP`
+  (positive integer), `PAR` (`W:H` with positive integers), `TROFF` (non-negative integer),
+  `CMAX` (positive integer) — validated when present; absent is fine
+- [x] ST 2110-20 bare-flag params `interlace` and `segmented` — accepted without value check
+- [x] ST 2110-30 `a=rtpmap` encoding name validated: must be `L16`, `L24`, or `AM824`
+- [x] ST 2110-40 `VPID_Code` — optional; validated as non-negative integer when present
+- [x] ST 2110-41 `DIT` — required; value validated as non-negative integer (was presence-only)
+- [x] `GUIDE.md` updated; inaccurate "audio clock rate is not validated" corrected
+
+**Tests added (spec/st2110_spec.lua):**
+
+- TP: accepts all three valid values; rejects unknown value; absent OK
+- MAXUDP: accepts valid integer; rejects non-integer; absent OK
+- PAR: accepts `1:1` and `16:15`; rejects wrong format and zero dimension; absent OK
+- TROFF: accepts `0` and positive value; rejects non-integer; absent OK
+- CMAX: accepts valid integer; rejects non-integer; absent OK
+- `interlace`, `segmented`: accepted as bare flags; both together accepted
+- ST 2110-30 encoding: accepts L16, L24, AM824; rejects OPUS and AAC
+- ST 2110-40 VPID_Code: accepts integer and zero; rejects non-integer and negative
+- ST 2110-41 DIT: accepts 0 and 100; rejects non-integer, decimal, and empty value
+
+---
+
 ## Commit Gates
 
 Before any commit:

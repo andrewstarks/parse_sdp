@@ -944,5 +944,346 @@ describe("ST 2110 validation", function()
         assert.is_table(doc)
       end)
     end)
+
+    describe("TP (transport profile)", function()
+      it("accepts TP=2110TPN", function()
+        local doc, err = sdp.parse(video20_sdp(BASE .. "; TP=2110TPN"), "st2110")
+        assert.is_nil(err)
+        assert.is_table(doc)
+      end)
+
+      it("accepts TP=2110TPNL", function()
+        local doc, err = sdp.parse(video20_sdp(BASE .. "; TP=2110TPNL"), "st2110")
+        assert.is_nil(err)
+        assert.is_table(doc)
+      end)
+
+      it("accepts TP=2110TPW", function()
+        local doc, err = sdp.parse(video20_sdp(BASE .. "; TP=2110TPW"), "st2110")
+        assert.is_nil(err)
+        assert.is_table(doc)
+      end)
+
+      it("rejects invalid TP value", function()
+        local doc = sdp.parse(video20_sdp(BASE .. "; TP=2110BADTP"))
+        assert.is_table(doc)
+        local ok, err = doc:validate("st2110")
+        assert.is_nil(ok)
+        assert.is_table(err)
+        assert.matches("TP", err.message)
+        assert.equal("ST 2110-20 §7.2", err.spec_ref)
+      end)
+
+      it("absent TP is accepted (optional parameter)", function()
+        local doc, err = sdp.parse(video20_sdp(BASE), "st2110")
+        assert.is_nil(err)
+        assert.is_table(doc)
+      end)
+    end)
+
+    describe("MAXUDP", function()
+      it("accepts a valid positive integer", function()
+        local doc, err = sdp.parse(video20_sdp(BASE .. "; MAXUDP=1460"), "st2110")
+        assert.is_nil(err)
+        assert.is_table(doc)
+      end)
+
+      it("rejects non-integer MAXUDP", function()
+        local doc = sdp.parse(video20_sdp(BASE .. "; MAXUDP=notanumber"))
+        assert.is_table(doc)
+        local ok, err = doc:validate("st2110")
+        assert.is_nil(ok)
+        assert.is_table(err)
+        assert.matches("MAXUDP", err.message)
+      end)
+
+      it("absent MAXUDP is accepted (optional parameter)", function()
+        local doc, err = sdp.parse(video20_sdp(BASE), "st2110")
+        assert.is_nil(err)
+        assert.is_table(doc)
+      end)
+    end)
+
+    describe("PAR (pixel aspect ratio)", function()
+      it("accepts PAR=1:1 (square pixels)", function()
+        local doc, err = sdp.parse(video20_sdp(BASE .. "; PAR=1:1"), "st2110")
+        assert.is_nil(err)
+        assert.is_table(doc)
+      end)
+
+      it("accepts PAR=16:15", function()
+        local doc, err = sdp.parse(video20_sdp(BASE .. "; PAR=16:15"), "st2110")
+        assert.is_nil(err)
+        assert.is_table(doc)
+      end)
+
+      it("rejects PAR with wrong format (no colon)", function()
+        local doc = sdp.parse(video20_sdp(BASE .. "; PAR=1x1"))
+        assert.is_table(doc)
+        local ok, err = doc:validate("st2110")
+        assert.is_nil(ok)
+        assert.is_table(err)
+        assert.matches("PAR", err.message)
+      end)
+
+      it("rejects PAR with zero dimension", function()
+        local doc = sdp.parse(video20_sdp(BASE .. "; PAR=0:1"))
+        assert.is_table(doc)
+        local ok, err = doc:validate("st2110")
+        assert.is_nil(ok)
+        assert.is_table(err)
+        assert.matches("PAR", err.message)
+      end)
+
+      it("absent PAR is accepted (optional parameter)", function()
+        local doc, err = sdp.parse(video20_sdp(BASE), "st2110")
+        assert.is_nil(err)
+        assert.is_table(doc)
+      end)
+    end)
+
+    describe("TROFF (timestamp offset)", function()
+      it("accepts TROFF=0", function()
+        local doc, err = sdp.parse(video20_sdp(BASE .. "; TROFF=0"), "st2110")
+        assert.is_nil(err)
+        assert.is_table(doc)
+      end)
+
+      it("accepts a positive TROFF", function()
+        local doc, err = sdp.parse(video20_sdp(BASE .. "; TROFF=4500"), "st2110")
+        assert.is_nil(err)
+        assert.is_table(doc)
+      end)
+
+      it("rejects non-integer TROFF", function()
+        local doc = sdp.parse(video20_sdp(BASE .. "; TROFF=notanumber"))
+        assert.is_table(doc)
+        local ok, err = doc:validate("st2110")
+        assert.is_nil(ok)
+        assert.is_table(err)
+        assert.matches("TROFF", err.message)
+      end)
+
+      it("absent TROFF is accepted (optional parameter)", function()
+        local doc, err = sdp.parse(video20_sdp(BASE), "st2110")
+        assert.is_nil(err)
+        assert.is_table(doc)
+      end)
+    end)
+
+    describe("CMAX (max consecutive packets)", function()
+      it("accepts a valid positive integer", function()
+        local doc, err = sdp.parse(video20_sdp(BASE .. "; CMAX=3"), "st2110")
+        assert.is_nil(err)
+        assert.is_table(doc)
+      end)
+
+      it("rejects non-integer CMAX", function()
+        local doc = sdp.parse(video20_sdp(BASE .. "; CMAX=notanumber"))
+        assert.is_table(doc)
+        local ok, err = doc:validate("st2110")
+        assert.is_nil(ok)
+        assert.is_table(err)
+        assert.matches("CMAX", err.message)
+      end)
+
+      it("absent CMAX is accepted (optional parameter)", function()
+        local doc, err = sdp.parse(video20_sdp(BASE), "st2110")
+        assert.is_nil(err)
+        assert.is_table(doc)
+      end)
+    end)
+
+    describe("interlace and segmented (bare flags)", function()
+      it("accepts interlace bare flag", function()
+        local doc, err = sdp.parse(video20_sdp(BASE .. "; interlace"), "st2110")
+        assert.is_nil(err)
+        assert.is_table(doc)
+      end)
+
+      it("accepts segmented bare flag", function()
+        local doc, err = sdp.parse(video20_sdp(BASE .. "; segmented"), "st2110")
+        assert.is_nil(err)
+        assert.is_table(doc)
+      end)
+
+      it("accepts interlace and segmented together", function()
+        local doc, err = sdp.parse(video20_sdp(BASE .. "; interlace; segmented"), "st2110")
+        assert.is_nil(err)
+        assert.is_table(doc)
+      end)
+    end)
+  end)
+
+  -- ── ST 2110-30: audio rtpmap encoding name ────────────────────────────────────
+
+  describe("ST 2110-30 audio rtpmap encoding name (§7.1)", function()
+    local function audio_sdp_enc(enc, rate)
+      rate = rate or 48000
+      return table.concat({
+        "v=0",
+        "o=- 1234567890 1 IN IP4 192.168.1.1",
+        "s=ST2110 Audio",
+        "t=0 0",
+        "a=ts-refclk:ptp=IEEE1588-2008:00-11-22-FF-FE-33-44-55:0",
+        "m=audio 5010 RTP/AVP 97",
+        "c=IN IP4 239.100.0.2/64",
+        "a=rtpmap:97 " .. enc .. "/" .. rate .. "/8",
+        "a=fmtp:97 channel-order=SMPTE2110.(ST)",
+        "a=mediaclk:direct=0",
+      }, "\r\n")
+    end
+
+    it("accepts L16 encoding", function()
+      local doc, err = sdp.parse(audio_sdp_enc("L16"), "st2110")
+      assert.is_nil(err)
+      assert.is_table(doc)
+    end)
+
+    it("accepts L24 encoding", function()
+      local doc, err = sdp.parse(audio_sdp_enc("L24"), "st2110")
+      assert.is_nil(err)
+      assert.is_table(doc)
+    end)
+
+    it("accepts AM824 encoding at 48000 Hz", function()
+      local doc, err = sdp.parse(audio_sdp_enc("AM824", 48000), "st2110")
+      assert.is_nil(err)
+      assert.is_table(doc)
+    end)
+
+    it("rejects unknown audio encoding name", function()
+      local doc = sdp.parse(audio_sdp_enc("OPUS"))
+      assert.is_table(doc)
+      local ok, err = doc:validate("st2110")
+      assert.is_nil(ok)
+      assert.is_table(err)
+      assert.matches("OPUS", err.message)
+      assert.equal("ST 2110-30 §7.1", err.spec_ref)
+    end)
+
+    it("rejects another unknown audio encoding name (AAC)", function()
+      local doc = sdp.parse(audio_sdp_enc("AAC"))
+      assert.is_table(doc)
+      local ok, err = doc:validate("st2110")
+      assert.is_nil(ok)
+      assert.is_table(err)
+      assert.matches("AAC", err.message)
+    end)
+  end)
+
+  -- ── ST 2110-40: VPID_Code optional fmtp param ─────────────────────────────────
+
+  describe("ST 2110-40 VPID_Code optional fmtp param (§7.2)", function()
+    local function anc_sdp(fmtp_str)
+      return table.concat({
+        "v=0",
+        "o=- 1234567890 1 IN IP4 192.168.1.1",
+        "s=ST2110 Ancillary",
+        "t=0 0",
+        "a=ts-refclk:ptp=IEEE1588-2008:00-11-22-FF-FE-33-44-55:0",
+        "m=video 5020 RTP/AVP 96",
+        "c=IN IP4 239.100.0.3/64",
+        "a=rtpmap:96 smpte291/90000",
+        "a=fmtp:96 " .. fmtp_str,
+        "a=mediaclk:direct=0",
+      }, "\r\n")
+    end
+
+    it("accepts a valid integer VPID_Code", function()
+      local doc, err = sdp.parse(anc_sdp("DID_SDID={0x61,0x02}; VPID_Code=133"), "st2110")
+      assert.is_nil(err)
+      assert.is_table(doc)
+    end)
+
+    it("accepts VPID_Code=0", function()
+      local doc, err = sdp.parse(anc_sdp("DID_SDID={0x61,0x02}; VPID_Code=0"), "st2110")
+      assert.is_nil(err)
+      assert.is_table(doc)
+    end)
+
+    it("rejects non-integer VPID_Code", function()
+      local doc = sdp.parse(anc_sdp("DID_SDID={0x61,0x02}; VPID_Code=notanumber"))
+      assert.is_table(doc)
+      local ok, err = doc:validate("st2110")
+      assert.is_nil(ok)
+      assert.is_table(err)
+      assert.matches("VPID_Code", err.message)
+      assert.equal("ST 2110-40 §7.2", err.spec_ref)
+    end)
+
+    it("rejects negative VPID_Code", function()
+      local doc = sdp.parse(anc_sdp("DID_SDID={0x61,0x02}; VPID_Code=-1"))
+      assert.is_table(doc)
+      local ok, err = doc:validate("st2110")
+      assert.is_nil(ok)
+      assert.is_table(err)
+      assert.matches("VPID_Code", err.message)
+    end)
+
+    it("absent VPID_Code is accepted (optional)", function()
+      local doc, err = sdp.parse(anc_sdp("DID_SDID={0x61,0x02}"), "st2110")
+      assert.is_nil(err)
+      assert.is_table(doc)
+    end)
+  end)
+
+  -- ── ST 2110-41: DIT value format ───────────────────────────────────────────────
+
+  describe("ST 2110-41 DIT value format (§7.2)", function()
+    local function meta_sdp(fmtp_str)
+      return table.concat({
+        "v=0",
+        "o=- 1234567890 1 IN IP4 192.168.1.1",
+        "s=ST2110 Metadata",
+        "t=0 0",
+        "a=ts-refclk:ptp=IEEE1588-2008:00-11-22-FF-FE-33-44-55:0",
+        "m=video 5030 RTP/AVP 96",
+        "c=IN IP4 239.100.0.4/64",
+        "a=rtpmap:96 ST2110-41/90000",
+        "a=fmtp:96 " .. fmtp_str,
+        "a=mediaclk:direct=0",
+      }, "\r\n")
+    end
+
+    it("accepts DIT=0", function()
+      local doc, err = sdp.parse(meta_sdp("SSN=ST2110-41:2024; DIT=0"), "st2110")
+      assert.is_nil(err)
+      assert.is_table(doc)
+    end)
+
+    it("accepts DIT=100", function()
+      local doc, err = sdp.parse(meta_sdp("SSN=ST2110-41:2024; DIT=100"), "st2110")
+      assert.is_nil(err)
+      assert.is_table(doc)
+    end)
+
+    it("rejects non-integer DIT", function()
+      local doc = sdp.parse(meta_sdp("SSN=ST2110-41:2024; DIT=notanumber"))
+      assert.is_table(doc)
+      local ok, err = doc:validate("st2110")
+      assert.is_nil(ok)
+      assert.is_table(err)
+      assert.matches("DIT", err.message)
+      assert.equal("ST 2110-41 §7.2", err.spec_ref)
+    end)
+
+    it("rejects DIT with decimal point", function()
+      local doc = sdp.parse(meta_sdp("SSN=ST2110-41:2024; DIT=1.5"))
+      assert.is_table(doc)
+      local ok, err = doc:validate("st2110")
+      assert.is_nil(ok)
+      assert.is_table(err)
+      assert.matches("DIT", err.message)
+    end)
+
+    it("rejects empty DIT value", function()
+      local doc = sdp.parse(meta_sdp("SSN=ST2110-41:2024; DIT="))
+      assert.is_table(doc)
+      local ok, err = doc:validate("st2110")
+      assert.is_nil(ok)
+      assert.is_table(err)
+      assert.matches("DIT", err.message)
+    end)
   end)
 end)

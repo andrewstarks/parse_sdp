@@ -442,7 +442,7 @@ When `a=group:DUP <mid1> <mid2> …` is present at session level, the library va
 | --- | --- |
 | `a=ts-refclk` | Required. Accepted: `ptp=<version>:<gmid>[:<domain>]`; `localmac=<mac>`; `ntp=<addr>`; `gps`; `gal`; `glonass` |
 | `a=mediaclk` | Required. Accepted: `direct=<integer>` (sample offset, may be negative); `sender` |
-| `a=rtpmap` | Required. Clock rate validated: must be 90000 for video, `smpte291`, and `ST2110-41`; audio clock rate is not validated |
+| `a=rtpmap` | Required. Clock rate validated: must be 90000 for video, `smpte291`, and `ST2110-41`; audio clock rate validated against known rates. Audio encoding name validated: must be `L16`, `L24`, or `AM824` |
 | `a=fmtp` | Required. Key=value pairs validated per sub-standard |
 
 ### ST 2110-20 (video) `fmtp` parameters
@@ -467,15 +467,19 @@ Optional parameters validated when present:
 | Parameter | Valid values | Spec ref |
 | --- | --- | --- |
 | `RANGE` | `NARROW`, `FULLPROTECT`, `FULL` | ST 2110-20 §7.2 |
+| `TP` | `2110TPN`, `2110TPNL`, `2110TPW` | ST 2110-21 |
+| `MAXUDP` | positive integer | ST 2110-20 §7.2 |
+| `PAR` | `W:H` (both positive integers) | ST 2110-20 §7.2 |
+| `TROFF` | non-negative integer | ST 2110-20 §7.2 |
+| `CMAX` | positive integer | ST 2110-20 §7.2 |
 
-Optional parameters accepted but not validated: `TP` (ST 2110-21 traffic shaping profile),
-`interlace`, `segmented`, `MAXUDP`, `PAR`, and any other unrecognized keys.
+Bare-flag parameters with no value (`interlace`, `segmented`) are accepted without restriction. Any other unrecognized key=value pairs pass through silently.
 
 ### ST 2110-30 (audio) `rtpmap` and `fmtp` parameters
 
-The `a=rtpmap` clock rate is validated against known audio sample rates: 32000, 44100,
-48000, 88200, 96000, 176400, 192000 Hz. `channel-order` is validated for presence and
-value format.
+The `a=rtpmap` encoding name is validated: must be `L16`, `L24`, or `AM824`. The clock
+rate is validated against known audio sample rates: 32000, 44100, 48000, 88200, 96000,
+176400, 192000 Hz. `channel-order` is validated for presence and value format.
 
 | Parameter | Example | Valid values |
 | --- | --- | --- |
@@ -488,7 +492,7 @@ Ancillary data flows use rtpmap encoding name `smpte291` at clock rate 90000 (RF
 | Parameter | Example | Validated |
 | --- | --- | --- |
 | `DID_SDID` | `{0x61,0x02}` | yes — required; each octet must be exactly two hex digits |
-| `VPID_Code` | `133` | no |
+| `VPID_Code` | `133` | yes — optional; must be a non-negative integer when present |
 
 Multiple `DID_SDID` entries are allowed in the SDP; at least one must be present. All entries are validated — any entry with a malformed value is rejected.
 
@@ -499,7 +503,7 @@ Fast metadata flows use rtpmap encoding name `ST2110-41` at clock rate 90000. Th
 | Parameter | Example | Validated |
 | --- | --- | --- |
 | `SSN` | `ST2110-41:2024` | yes — required; value must start with `ST2110-41:` |
-| `DIT` | `100` | yes — required (presence only) |
+| `DIT` | `100` | yes — required; must be a non-negative integer |
 
 ---
 

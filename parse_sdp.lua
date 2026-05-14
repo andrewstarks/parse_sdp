@@ -478,6 +478,7 @@ local _pos_int_pat  = _digit_seq * P(-1)
 local _efr_pat      = (_digit_seq * P("/") * _digit_seq + _digit_seq) * P(-1)
 local _chan_ord_pat  = P("SMPTE2110.(") * (P(1) - P(")"))^1 * P(")") * P(-1)
 local _ssn20_pat    = P("ST2110-20:")
+local _par_pat      = _digit_seq * P(":") * _digit_seq * P(-1)
 
 -- Allowed values for ST 2110-20 §7.2 enumerated fmtp fields.
 local VALID_SAMPLING = {
@@ -502,6 +503,10 @@ local VALID_AUDIO_RATES = {
   [32000]=true, [44100]=true, [48000]=true,
   [88200]=true, [96000]=true, [176400]=true, [192000]=true,
 }
+-- Valid TP (transport profile) values per ST 2110-21.
+local VALID_TP = { ["2110TPN"]=true, ["2110TPNL"]=true, ["2110TPW"]=true }
+-- Valid rtpmap encoding names for ST 2110-30/31 audio.
+local VALID_AUDIO_ENC = { ["L16"]=true, ["L24"]=true, ["AM824"]=true }
 
 -- Returns true if value is a key in set, otherwise nil + "invalid <name> value: <value>".
 local function valid_enum(value, set, name)
@@ -529,6 +534,24 @@ local function valid_exactframerate(value)
     return true
   end
   if tonumber(value) == 0 then return nil, "exactframerate must be positive" end
+  return true
+end
+
+-- Returns true for a string of one or more digits (including zero).
+local function valid_nonneg_int(value)
+  if not _pos_int_pat:match(value) then return nil, "expected non-negative integer" end
+  return true
+end
+
+-- Returns true for a PAR value in <W>:<H> format with both dimensions positive.
+local function valid_par(value)
+  if not _par_pat:match(value) then
+    return nil, "invalid PAR format (expected W:H with positive integers)"
+  end
+  local w, h = value:match("^(%d+):(%d+)$")
+  if tonumber(w) == 0 or tonumber(h) == 0 then
+    return nil, "PAR dimensions must be positive"
+  end
   return true
 end
 
@@ -653,6 +676,14 @@ function st2110.validate(doc)
           return attr_err("invalid DID_SDID: " .. derr, mpath, "fmtp", "ST 2110-40 §7.2", "INVALID_VALUE")
         end
       end
+      local vpid = params["VPID_Code"]
+      if vpid ~= nil and vpid ~= true then
+        local n = tonumber(tostring(vpid))
+        if not n or n < 0 or n ~= math.floor(n) then
+          return attr_err("invalid VPID_Code value (must be a non-negative integer)",
+            mpath, "fmtp", "ST 2110-40 §7.2", "INVALID_VALUE")
+        end
+      end
 
     elseif enc == "ST2110-41" then
       -- ST 2110-41: fast metadata
@@ -671,6 +702,11 @@ function st2110.validate(doc)
       end
       if not params["DIT"] then
         return attr_err("fmtp missing required 'DIT' parameter for ST 2110-41", mpath, "fmtp", "ST 2110-41 §7.2")
+      end
+      local dit_val = tostring(params["DIT"])
+      if not dit_val:match("^%d+$") then
+        return attr_err("invalid DIT value (must be a non-negative integer)",
+          mpath, "fmtp", "ST 2110-41 §7.2", "INVALID_VALUE")
       end
 
     elseif m.media == "video" then
@@ -714,9 +750,33 @@ function st2110.validate(doc)
           return attr_err(vmsg, mpath, "fmtp", "ST 2110-20 §7.2", "INVALID_VALUE")
         end
       end
+      -- Optional ST 2110-20 fmtp params that have defined value formats.
+      local video_opt_checks = {
+        { "TP",     function(v) return valid_enum(v, VALID_TP, "TP") end },
+        { "MAXUDP", valid_pos_int },
+        { "PAR",    valid_par },
+        { "TROFF",  valid_nonneg_int },
+        { "CMAX",   valid_pos_int },
+      }
+      for _, ck in ipairs(video_opt_checks) do
+        local key, fn = ck[1], ck[2]
+        local val = params[key]
+        if val ~= nil and val ~= true then
+          local vok, vmsg = fn(tostring(val))
+          if not vok then
+            return attr_err(key .. ": " .. vmsg, mpath, "fmtp", "ST 2110-20 §7.2", "INVALID_VALUE")
+          end
+        end
+      end
 
     elseif m.media == "audio" then
-      -- ST 2110-30: audio (PCM)
+      -- ST 2110-30: audio (PCM) and ST 2110-31 (AES3/AM824)
+      if enc and not VALID_AUDIO_ENC[enc] then
+        return attr_err(
+          string.format("rtpmap encoding '%s' is not valid for ST 2110-30 audio (must be L16, L24, or AM824)",
+            tostring(enc)),
+          mpath, "rtpmap", "ST 2110-30 §7.1", "INVALID_VALUE")
+      end
       if not VALID_AUDIO_RATES[clock_rate] then
         return attr_err(
           string.format("rtpmap clock rate %s is not a known audio sample rate", tostring(clock_rate)),

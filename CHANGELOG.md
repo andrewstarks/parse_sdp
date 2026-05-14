@@ -15,6 +15,11 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 - M18: ST 2110-30 `channel-order` format validation — value must match `SMPTE2110.(<group>)` with a non-empty group token per ST 2110-30 §7
 - ST 2110-20 optional `RANGE` fmtp parameter validated when present (`NARROW`, `FULLPROTECT`, `FULL`) per §7.2
 - ST 2110-30 audio `rtpmap` clock rate validated against known professional sample rates: 32000, 44100, 48000, 88200, 96000, 176400, 192000 Hz
+- M19: ST 2110-20 optional `fmtp` parameters now validated when present: `TP` (`2110TPN`/`2110TPNL`/`2110TPW`), `MAXUDP` (positive integer), `PAR` (`W:H` with positive integers), `TROFF` (non-negative integer), `CMAX` (positive integer)
+- M19: ST 2110-20 bare-flag parameters `interlace` and `segmented` accepted without value restriction
+- M19: ST 2110-30 `a=rtpmap` encoding name validated — must be `L16`, `L24`, or `AM824`
+- M19: ST 2110-40 `VPID_Code` optional fmtp parameter validated as non-negative integer when present
+- M19: ST 2110-41 `DIT` required fmtp parameter value validated as non-negative integer (was presence-only)
 
 ### Fixed
 
