@@ -1807,7 +1807,25 @@ function st2110.validate(doc)
           string.format("rtpmap channel count %s must be positive", ch_s),
           mpath, "rtpmap", "RFC 3551 §6", "INVALID_VALUE")
       end
+      -- AM824-specific SHALLs from ST 2110-31:2022.
+      -- N2 (§6.1): "the number of AES3 Subframe sequences <nchan> expressed
+      --   in the SDP object shall always be an even number."
+      -- N3 (§5.5 + §6.1): clock-rate SHALL be one of {44100, 48000, 96000}.
+      if enc == "AM824" then
+        if (ch % 2) ~= 0 then
+          return attr_err(
+            string.format("AM824 channel count %d must be even (ST 2110-31:2022 §6.1)", ch),
+            mpath, "rtpmap", "ST 2110-31:2022 §6.1", "INVALID_VALUE")
+        end
+        if clock_rate ~= 44100 and clock_rate ~= 48000 and clock_rate ~= 96000 then
+          return attr_err(
+            string.format("AM824 clock rate %s must be one of 44100, 48000, 96000 (ST 2110-31:2022 §5.5 / §6.1)", tostring(clock_rate)),
+            mpath, "rtpmap", "ST 2110-31:2022 §6.1", "INVALID_VALUE")
+        end
+      end
       -- Validate a=ptime if present (ST 2110-30 §7.2 recommends ptime=1 ms).
+      -- For AM824, ST 2110-31:2022 §6.1 makes a=ptime REQUIRED and constrains
+      -- its value to Table 1 (per-clock-rate enum).
       local ptime_attr = find_attr(mattrs, "ptime")
       local ptime_ms
       if ptime_attr then
@@ -1815,6 +1833,35 @@ function st2110.validate(doc)
         if not ptime_ms or ptime_ms <= 0 then
           return attr_err("invalid a=ptime value (expected positive number)",
             mpath, "ptime", "ST 2110-30 §7.2", "INVALID_VALUE")
+        end
+      end
+      if enc == "AM824" then
+        -- N4: "Senders under this standard shall signal a ptime attribute
+        -- in the SDP, as defined in IETF RFC 4566."
+        if not ptime_attr then
+          return attr_err("AM824 streams require a=ptime (ST 2110-31:2022 §6.1)",
+            mpath, "ptime", "ST 2110-31:2022 §6.1")
+        end
+        -- N5: "<packet-time> parameter shall take one of the values from
+        -- the Table 1, based on the prevailing sampling rate." Compare with
+        -- a small tolerance so equivalent decimal strings (0.080 vs 0.08)
+        -- aren't rejected for floating-point reasons.
+        local valid_ptimes = {
+          [44100] = { 1.09, 0.14, 0.09 },
+          [48000] = { 1, 0.12, 0.08 },
+          [96000] = { 1, 0.12, 0.08 },
+        }
+        local allowed = valid_ptimes[clock_rate]
+        local matched = false
+        if allowed then
+          for _, v in ipairs(allowed) do
+            if math.abs(ptime_ms - v) < 0.001 then matched = true; break end
+          end
+        end
+        if not matched then
+          return attr_err(
+            string.format("AM824 ptime %s not in ST 2110-31:2022 Table 1 for clock_rate %d", tostring(ptime_ms), clock_rate),
+            mpath, "ptime", "ST 2110-31:2022 §6.1", "INVALID_VALUE")
         end
       end
       -- Packet payload fit (ST 2110-10 §6.4 + ST 2110-30 §6.2.2). When ptime is

@@ -1780,8 +1780,9 @@ describe("ST 2110 validation", function()
         "a=ts-refclk:ptp=IEEE1588-2008:00-11-22-FF-FE-33-44-55:0",
         "m=audio 5010 RTP/AVP 97",
         "c=IN IP4 239.100.0.2/64",
-        "a=rtpmap:97 " .. enc .. "/" .. rate .. "/8",
+        "a=rtpmap:97 " .. enc .. "/" .. rate .. "/2",
         "a=fmtp:97 channel-order=SMPTE2110.(ST)",
+        "a=ptime:1",
         "a=mediaclk:direct=0",
       }, "\r\n") .. "\r\n"
     end
@@ -1821,6 +1822,85 @@ describe("ST 2110 validation", function()
       assert.is_nil(ok)
       assert.is_table(err)
       assert.matches("AAC", err.message)
+    end)
+  end)
+
+  -- ST 2110-31:2022 AM824-specific SHALLs (audit N2-N5).
+  describe("ST 2110-31 AM824 SHALLs (§5.5 / §6.1)", function()
+    local PTP = "a=ts-refclk:ptp=IEEE1588-2008:00-11-22-FF-FE-33-44-55:0"
+    local function am824_sdp(rate, ch, ptime)
+      return table.concat({
+        "v=0",
+        "o=- 1234567890 1 IN IP4 192.168.1.1",
+        "s=ST2110 AM824", "t=0 0", PTP,
+        "m=audio 5010 RTP/AVP 97",
+        "c=IN IP4 239.100.0.2/64",
+        "a=rtpmap:97 AM824/" .. rate .. "/" .. ch,
+        ptime and ("a=ptime:" .. ptime) or "a=mid:audio",
+        "a=mediaclk:direct=0",
+      }, "\r\n") .. "\r\n"
+    end
+
+    -- N2: <nchan> SHALL be even.
+    it("rejects AM824 with odd nchan (§6.1)", function()
+      local doc = sdp.parse(am824_sdp(48000, 3, "1"))
+      local ok, err = doc:validate("st2110")
+      assert.is_nil(ok)
+      assert.matches("even", err.message)
+    end)
+
+    it("accepts AM824 with even nchan", function()
+      local doc, err = sdp.parse(am824_sdp(48000, 2, "1"), "st2110")
+      assert.is_nil(err)
+      assert.is_table(doc)
+    end)
+
+    -- N3: clock-rate SHALL be one of {44100, 48000, 96000}.
+    it("rejects AM824 at 32000 Hz (§5.5 / §6.1 enum)", function()
+      local doc = sdp.parse(am824_sdp(32000, 2, "1"))
+      local ok, err = doc:validate("st2110")
+      assert.is_nil(ok)
+      assert.matches("44100", err.message)
+    end)
+
+    it("accepts AM824 at 96000 Hz", function()
+      local doc, err = sdp.parse(am824_sdp(96000, 2, "1"), "st2110")
+      assert.is_nil(err)
+      assert.is_table(doc)
+    end)
+
+    -- N4: a=ptime SHALL be present for AM824.
+    it("rejects AM824 without a=ptime (§6.1)", function()
+      local doc = sdp.parse(am824_sdp(48000, 2, nil))
+      local ok, err = doc:validate("st2110")
+      assert.is_nil(ok)
+      assert.matches("ptime", err.message)
+    end)
+
+    -- N5: ptime SHALL be from Table 1 for the prevailing clock_rate.
+    it("rejects AM824 ptime not in Table 1 (e.g. 0.5 ms at 48k)", function()
+      local doc = sdp.parse(am824_sdp(48000, 2, "0.5"))
+      local ok, err = doc:validate("st2110")
+      assert.is_nil(ok)
+      assert.matches("Table 1", err.message)
+    end)
+
+    it("accepts ptime 0.12 ms at 48k (Table 1 entry)", function()
+      local doc, err = sdp.parse(am824_sdp(48000, 2, "0.12"), "st2110")
+      assert.is_nil(err)
+      assert.is_table(doc)
+    end)
+
+    it("accepts ptime 0.080 ms at 48k (decimal-string equivalent of 0.08)", function()
+      local doc, err = sdp.parse(am824_sdp(48000, 2, "0.080"), "st2110")
+      assert.is_nil(err)
+      assert.is_table(doc)
+    end)
+
+    it("accepts ptime 1.09 ms at 44.1k (Table 1 entry)", function()
+      local doc, err = sdp.parse(am824_sdp(44100, 2, "1.09"), "st2110")
+      assert.is_nil(err)
+      assert.is_table(doc)
     end)
   end)
 

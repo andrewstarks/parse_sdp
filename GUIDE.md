@@ -607,12 +607,24 @@ The `a=rtpmap` encoding name is validated: must be `L16`, `L24`, or `AM824`
 (ST 2110-30 §6.1 mandates L16/L24; ST 2110-31 adds AM824 for AES3 transparent
 transport).
 
-The clock rate is **not enumerated** in either mode. ST 2110-30 §6.1 mandates
-48 kHz and permits 44.1/96 kHz, then says *"Other sampling frequencies and
-resolutions are out of scope of this standard."* Out-of-scope is not the same
-as forbidden (no "shall not"), so any well-formed positive rate is accepted.
-This matches IPMX practice, which already permits AES67-extended rates such as
-32 kHz, 88.2 kHz, 176.4 kHz, and 192 kHz.
+**For L16 / L24:** the clock rate is **not enumerated**. ST 2110-30 §6.1
+mandates 48 kHz and permits 44.1/96 kHz, then says *"Other sampling
+frequencies and resolutions are out of scope of this standard."* Out-of-scope
+is not the same as forbidden (no "shall not"), so any well-formed positive
+rate is accepted. This matches IPMX practice, which already permits
+AES67-extended rates such as 32 kHz, 88.2 kHz, 176.4 kHz, and 192 kHz.
+
+**For AM824 (ST 2110-31:2022):** the clock rate **SHALL** be one of `44100`,
+`48000`, or `96000` (§5.5 / §6.1). Channel count **SHALL** be even (§6.1:
+each AES3 signal contains two AES3 Subframe sequences). `a=ptime` is
+**required** (§6.1) and its value **SHALL** be one of the Table 1 entries
+for the prevailing clock rate:
+
+| `<clock-rate>` (Hz) | Permitted `<packet-time>` (ms) |
+| --- | --- |
+| 44100 | 1.09, 0.14, 0.09 |
+| 48000 | 1, 0.12, 0.08 |
+| 96000 | 1, 0.12, 0.08 |
 
 The channel count (third `/`-separated component in the rtpmap value,
 e.g. `L24/48000/8`) is required and must be a positive integer (RFC 3551 §6).

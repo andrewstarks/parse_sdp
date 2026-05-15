@@ -81,6 +81,17 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ### Fixed
 
+- **ST 2110-31:2022 AM824 SHALLs enforced (audit N2 + N3 + N4 + N5).**
+  - **N2 (§6.1)** — `<nchan>` SHALL be even ("each AES3 signal contains two
+    sequences of AES3 Subframes"). Odd channel counts on AM824 rejected.
+  - **N3 (§5.5 + §6.1)** — `<clock-rate>` SHALL be one of `44100`,
+    `48000`, `96000`. Other rates on AM824 rejected. (L16/L24 unchanged —
+    ST 2110-30 §6.1 leaves other rates "out of scope," not forbidden.)
+  - **N4 (§6.1)** — `a=ptime` SHALL be present on AM824. Absence rejected.
+  - **N5 (§6.1)** — `<packet-time>` SHALL be one of the Table 1 entries
+    for the prevailing clock rate. Float comparison uses ±0.001 ms
+    tolerance so equivalent decimal strings (e.g. `0.080` vs `0.08`)
+    match. L16/L24 unchanged.
 - **ST 2110-21:2022 §8.1 TP required at ST 2110 tier for raw video (audit
   N1).** ST 2110-20:2022 §6.1.1: *"Traffic shaping and transmission timing
   of the RTP stream shall be in accordance with the Network Compatibility

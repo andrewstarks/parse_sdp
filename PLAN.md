@@ -82,6 +82,9 @@ fixture findings, or user reports.
 - N1 — TP is required for raw video at the ST 2110 tier per ST 2110-20:2022
   §6.1.1 → ST 2110-21:2022 §8.1 chain. Cross-field "TROFF/CMAX require TP"
   check dropped (subsumed by the always-required TP).
+- N2 + N3 + N4 + N5 — ST 2110-31:2022 §5.5 / §6.1 AM824 SHALLs:
+  even `<nchan>`, clock-rate ∈ {44100, 48000, 96000}, `a=ptime` required,
+  ptime value in Table 1 for the prevailing rate. L16/L24 unaffected.
 
 These findings came out of a multi-spec audit that read every SDP-relevant
 SHALL / SHALL-NOT / defined-value clause across RFC 4566, RFC 8866,
@@ -111,108 +114,6 @@ SDPs; blockers for 1.0). N = false negatives (parser accepts non-conformant
 SDPs; should-fix). D = documentation/citation cleanups.
 
 ---
-
-### N2 — ST 2110-31 AM824 nchan even-number constraint not enforced
-
-**Parser behavior:** Audio branch [parse_sdp.lua:1614-1683](parse_sdp.lua#L1614)
-accepts any positive integer channel count for AM824.
-
-**Spec basis:** ST 2110-31:2022 §6.1: *"Since this standard transports AES3
-signals, and each AES3 signal contains two sequences of AES3 Subframes, the
-number of AES3 Subframe sequences <nchan> expressed in the SDP object shall
-always be an even number."*
-
-**Verify before acting:** Re-read §6.1 to confirm the "always be an even
-number" SHALL. Confirm it applies only to AM824 (encoding name), not to
-L16/L24.
-
-**Fix direction:** When the rtpmap encoding is `AM824`, reject odd `<nchan>`
-values. Add to the audio branch alongside the existing channel-count check.
-
-**Doc sync:** GUIDE.md "ST 2110-31 (AM824)" section (currently inherits from
-the §6.2.2 deferred item) — add the even-nchan SHALL.
-
-**Tests:** `a=rtpmap:96 AM824/48000/8` accepts; `a=rtpmap:96 AM824/48000/7`
-rejects.
-
-### N3 — ST 2110-31 AM824 clock rate enum not enforced
-
-**Parser behavior:** Audio branch accepts any positive rate for AM824. The
-code comment at L1623-1626 references ST 2110-30 "out of scope" rationale —
-that rationale doesn't transfer to ST 2110-31.
-
-**Spec basis:** ST 2110-31:2022 §5.5: *"AES3 streams in scope of this standard
-shall have a sampling frequency of 44.1 kHz, 48 kHz, or 96 kHz."* And §6.1:
-*"The <clock-rate> parameter shall take one of the values 44100, 48000, or
-96000."*
-
-**Verify before acting:** Re-read §5.5 and §6.1. Note this is an explicit
-enum SHALL, distinct from ST 2110-30's "other rates are out of scope" phrasing.
-
-**Fix direction:** When the rtpmap encoding is `AM824`, validate clock_rate ∈
-{44100, 48000, 96000}. Reject otherwise. L16/L24 behavior unchanged.
-
-**Doc sync:** GUIDE.md AM824 rtpmap section — state the {44.1, 48, 96} kHz enum.
-
-**Tests:** AM824 at 48000 accepts; at 32000 rejects.
-
-### N4 — ST 2110-31 AM824 `a=ptime` not required at ST 2110 tier
-
-**Parser behavior:** ST 2110 tier audio path [parse_sdp.lua:1642-1650](parse_sdp.lua#L1642)
-validates ptime *when present* but does not require it. (IPMX tier requires
-it at L2374-2380 with misattributed cite — see D1.)
-
-**Spec basis:** ST 2110-31:2022 §6.1: *"Senders under this standard shall
-signal a ptime attribute in the SDP, as defined in IETF RFC 4566."* Table 1
-enumerates valid `<packet-time>` values per clock rate.
-
-**Verify before acting:** Confirm §6.1's "shall signal a ptime attribute"
-language. Decide whether to also enforce Table 1 enum values for AM824 (see
-N5 — they're paired).
-
-**Fix direction:** When the rtpmap encoding is `AM824`, require `a=ptime`
-to be present. (Do not extend this requirement to L16/L24 unless N5/N4 are
-reframed via AES67 — see "open question" below.)
-
-**Open question to investigate:** Is `a=ptime` also a SHALL for L16/L24
-PCM audio? ST 2110-30:2025 §6.2.1 says "Audio senders and receivers shall
-comply with the provisions of AES67 Clause 7.1." AES67 may make ptime a
-SHALL. Verify by reading AES67-2018 (or current revision) §6/§7/§8 SDP
-clauses. If AES67 makes ptime SHALL, extend this fix to all audio encodings
-and update D1 accordingly.
-
-**Doc sync:** GUIDE.md ST 2110-31 / AM824 section: state ptime is required.
-
-**Tests:** AM824 SDP without ptime rejects; with valid ptime accepts.
-
-### N5 — ST 2110-31 AM824 ptime value not constrained to Table 1
-
-**Parser behavior:** Audio branch [parse_sdp.lua:1645-1649](parse_sdp.lua#L1645)
-validates `ptime > 0` only — accepts any positive number.
-
-**Spec basis:** ST 2110-31:2022 §6.1: *"The <packet-time> parameter shall
-take one of the values from the Table 1, based on the prevailing sampling
-rate and the desired number of AES3 Subframe sequences interleaved together
-within the RTP stream."* Table 1 enumerates: at 48k → {1, 0.12, 0.08} ms;
-at 96k → {1, 0.12, 0.08} ms; at 44.1k → {1.09, 0.14, 0.09} ms.
-
-**Verify before acting:** Re-read §6.1 and Table 1. Confirm the SHALL on
-"shall take one of the values from the Table 1". Note that Table 1 values
-are decimal fractions; the parser already handles `tonumber` of decimal
-strings.
-
-**Fix direction:** When encoding is `AM824`, look up the valid ptime set
-by clock_rate and reject any other value. (Allow small floating-point
-tolerance — e.g., ±0.001 ms — to avoid rejecting strings like "0.080" that
-round identically.)
-
-**Caution:** L16/L24 may have similar AES67-derived constraints; this fix
-should not silently extend to non-AM824 encodings.
-
-**Doc sync:** GUIDE.md AM824 section — list Table 1 values.
-
-**Tests:** AM824 at 48k with ptime=1 accepts; ptime=0.5 rejects; ptime=0.12
-accepts.
 
 ### N6 — ST 2110-22 frame rate signaling not required
 
