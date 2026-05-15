@@ -948,26 +948,49 @@ local function valid_nonempty(value)
   return nil, "value must be a non-empty string"
 end
 
--- Named channel-order grouping symbols from ST 2110-30:2017 §6.2.2 Table 1.
+-- Named channel-order grouping symbols from ST 2110-30:2025 §6.2.2 Table 1.
 -- Unn (U01–U64) are handled separately by numeric range check below.
+-- AES3 (ST 2110-31:2022 §6.2 Table 2) is added per-encoding (AM824 only)
+-- by valid_channel_order, not in this base table.
 local VALID_CHAN_GROUPS = {
   ["M"]=true, ["DM"]=true, ["ST"]=true, ["LtRt"]=true,
   ["51"]=true, ["71"]=true, ["222"]=true, ["SGRP"]=true,
 }
 
--- Returns true if value matches SMPTE2110.(<group>[,<group>...]) per ST 2110-30:2017 §6.2.2.
--- Each group must be a named symbol from Table 1 or Unn (U01–U64).
-local function valid_channel_order(value)
-  local groups_str = value:match("^SMPTE2110%.%((.+)%)$")
+-- Validate channel-order per ST 2110-30:2025 §6.2.2 (and ST 2110-31:2022 §6.2
+-- Table 2 for AES3). RFC 3190 §6 grammar: <convention>.<order>; both parts
+-- non-empty, no whitespace. SMPTE2110 is a SHOULD per §6.2.2 ("the
+-- <convention> of the channel-order should be SMPTE2110") — other tokens
+-- are permitted. When the convention is SMPTE2110, the order SHALL be
+-- "(symbol[,symbol]...)" where each symbol is from Table 1 (or Unn,
+-- U01–U64). The AES3 symbol from ST 2110-31 §6.2 Table 2 is permitted
+-- only on AM824 streams.
+local function valid_channel_order(value, enc)
+  local convention, order = value:match("^([^.%s]+)%.(%S+)$")
+  if not convention or order == "" then
+    return nil, "invalid channel-order (expected <convention>.<order> per RFC 3190)"
+  end
+  if convention ~= "SMPTE2110" then
+    -- Other conventions: ST 2110-30 §6.2.2 only requires RFC 3190 syntax;
+    -- it defines no symbol set. Spec is silent → accept structurally.
+    return true
+  end
+  local groups_str = order:match("^%((.+)%)$")
   if not groups_str then
-    return nil, "invalid channel-order (expected SMPTE2110.(<group>[,<group>...]))"
+    return nil, "invalid channel-order (SMPTE2110 convention requires '(<group>[,<group>...])')"
   end
   for grp in groups_str:gmatch("[^,]+") do
     local g = grp:match("^%s*(.-)%s*$")
     if g == "" then
       return nil, "empty channel-order group symbol"
     end
-    if not VALID_CHAN_GROUPS[g] then
+    if VALID_CHAN_GROUPS[g] then
+      -- ok
+    elseif g == "AES3" then
+      if enc ~= "AM824" then
+        return nil, "channel-order group 'AES3' is defined only for AM824 streams (ST 2110-31 §6.2 Table 2)"
+      end
+    else
       local nn = g:match("^U(%d%d)$")
       local n  = nn and tonumber(nn)
       if not n or n < 1 or n > 64 then
@@ -1693,7 +1716,7 @@ function st2110.validate(doc)
       -- parameter is optional. Validate format only when present.
       local co = params["channel-order"]
       if co ~= nil and co ~= true then
-        local cok, cmsg = valid_channel_order(tostring(co))
+        local cok, cmsg = valid_channel_order(tostring(co), enc)
         if not cok then
           return attr_err(cmsg, mpath, "fmtp", "ST 2110-30 §6.2.2", "INVALID_VALUE")
         end

@@ -627,7 +627,7 @@ Default MAXUDP is the Standard UDP Size Limit of 1460 octets per ST 2110-10 §6.
 
 | Parameter | Example | Valid values |
 | --- | --- | --- |
-| `channel-order` | `SMPTE2110.(ST)` | must be `SMPTE2110.(<group>[,<group>...])` where each group is one of: `M`, `DM`, `ST`, `LtRt`, `51`, `71`, `222`, `SGRP`, or `U01`–`U64` (ST 2110-30:2017 §6.2.2 Table 1) |
+| `channel-order` | `SMPTE2110.(ST)` | RFC 3190 §6 form `<convention>.<order>`. The convention is **SHOULD** `SMPTE2110` per ST 2110-30:2025 §6.2.2 — other tokens are accepted structurally (spec defines no symbol set for them). When the convention **is** `SMPTE2110`, the order **SHALL** be `(<group>[,<group>...])` where each group is `M`, `DM`, `ST`, `LtRt`, `51`, `71`, `222`, `SGRP`, `U01`–`U64`, or — only on AM824 streams — `AES3` (ST 2110-31:2022 §6.2 Table 2) |
 
 ### ST 2110-22 (JPEG-XS / jxsv) `fmtp` parameters
 

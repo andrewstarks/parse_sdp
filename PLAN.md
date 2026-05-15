@@ -65,6 +65,8 @@ fixture findings, or user reports.
 - F2 + D4 — `a=hkep` permitted at media level per TR-10-5 §17 + GUIDE doc sync.
 - F3 — ST 2110-41 DIT is optional + comma-separated uppercase hex per §6.
 - F4 — ST 2110-41 clock rate is Data-Item-defined per §5.3 (not fixed at 90 kHz).
+- F5 — `channel-order` convention is SHOULD per ST 2110-30:2025 §6.2.2; non-`SMPTE2110` accepted structurally.
+- F6 — `AES3` channel-grouping symbol added for AM824 per ST 2110-31:2022 §6.2 Table 2.
 
 These findings came out of a multi-spec audit that read every SDP-relevant
 SHALL / SHALL-NOT / defined-value clause across RFC 4566, RFC 8866,
@@ -94,67 +96,6 @@ SDPs; blockers for 1.0). N = false negatives (parser accepts non-conformant
 SDPs; should-fix). D = documentation/citation cleanups.
 
 ---
-
-### F5 — `channel-order` convention is SHOULD, not SHALL, be `SMPTE2110`
-
-**Parser behavior:** [parse_sdp.lua:953-957](parse_sdp.lua#L953)
-`valid_channel_order` requires the value to match `^SMPTE2110%.%((.+)%)$`.
-
-**Spec basis:** ST 2110-30:2025 §6.2.2: *"If channel order is signaled in
-the SDP, the syntax of IETF RFC 3190 for the parameter channel-order shall
-be used. **The <convention> of the channel-order should be SMPTE2110.**"*
-SHOULD, not SHALL — other convention tokens are permitted by the spec.
-
-**Verify before acting:** Confirm §6.2.2 still uses "should" (not "shall")
-for the convention name. ST 2110-30:2017 §6.2.2 used identical language.
-
-**Fix direction:** Relax the validator to accept any `<convention>.(…)`
-form where `<convention>` is a non-empty token (RFC 3190 grammar) and the
-group list inside the parentheses is well-formed. When the convention is
-`SMPTE2110` (the common case), validate the group symbols against
-`VALID_CHAN_GROUPS` ∪ {Unnn}. For other conventions, accept the structural
-form only (the spec only defines symbols for the SMPTE2110 convention).
-
-**Doc sync:**
-- GUIDE.md `channel-order` row: note that non-SMPTE2110 conventions are
-  accepted structurally; SMPTE2110 group symbols are validated against the
-  Table 1 enum (plus AES3 — see F6).
-
-**Tests:** `channel-order=AES.(M,M)` accepts (non-SMPTE2110 convention);
-`channel-order=SMPTE2110.(BOGUS)` rejects (SMPTE2110 convention with bad
-group); existing SMPTE2110 tests still pass.
-
-### F6 — ST 2110-31 adds `AES3` as a channel-grouping symbol
-
-**Parser behavior:** [parse_sdp.lua:946-949](parse_sdp.lua#L946)
-`VALID_CHAN_GROUPS` does not include `AES3`. An AM824 SDP with
-`channel-order=SMPTE2110.(AES3,AES3)` is rejected.
-
-**Spec basis:** ST 2110-31:2022 §6.2 Table 2: *"For AES3 Subframes containing
-PCM audio, Senders may signal the channel order in the SDP using the Channel
-Order Convention specified in SMPTE ST 2110-30. Because this standard can
-also transport non-PCM audio signals, the additional Channel Grouping Symbol
-listed in Table 2 may be used in addition to those specified in ST 2110-30."*
-Table 2 defines `AES3` (2 AES3 Subframe sequences).
-
-**Verify before acting:** Confirm Table 2 in ST 2110-31:2022 §6.2 still
-defines `AES3`. The symbol applies only to AM824 streams.
-
-**Fix direction:** Two paths to consider:
-- (a) Always accept `AES3` in `VALID_CHAN_GROUPS` (simpler but technically
-  permits `AES3` on L16/L24 — minor over-permissiveness).
-- (b) Pass the encoding name into `valid_channel_order` and accept `AES3`
-  only when encoding == `AM824` (strict).
-
-Recommend (b) for spec fidelity; (a) acceptable given the strictness
-principle's stance against opinion-based rejection of unusual but legal
-combinations.
-
-**Doc sync:**
-- GUIDE.md `channel-order` row: list `AES3` as valid for AM824.
-
-**Tests:** AM824 SDP with `channel-order=SMPTE2110.(AES3)` accepts; if
-(b) is chosen, L16 SDP with `AES3` rejects.
 
 ### F7 — IPv6 multicast `c=` `/N` suffix should be rejected, not accepted
 

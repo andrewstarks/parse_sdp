@@ -252,7 +252,7 @@ describe("ST 2110 validation", function()
       assert.is_true(ok, err and err.message)
     end)
 
-    it("validates channel-order format when present", function()
+    it("rejects channel-order without RFC 3190 <convention>.<order> separator", function()
       local text = table.concat({
         "v=0",
         "o=- 1234567890 1 IN IP4 192.168.1.1",
@@ -262,7 +262,7 @@ describe("ST 2110 validation", function()
         "m=audio 5010 RTP/AVP 97",
         "c=IN IP4 239.100.0.2/64",
         "a=rtpmap:97 L24/48000/8",
-        "a=fmtp:97 channel-order=NotAConvention.(ST)",
+        "a=fmtp:97 channel-order=NoSeparatorHere",
         "a=mediaclk:direct=0",
         "a=ts-refclk:ptp=IEEE1588-2008:00-11-22-FF-FE-33-44-55:0",
       }, "\r\n") .. "\r\n"
@@ -1316,7 +1316,7 @@ describe("ST 2110 validation", function()
       assert.is_table(doc)
     end)
 
-    it("rejects channel-order with wrong prefix", function()
+    it("rejects channel-order with no <convention>.<order> separator", function()
       local doc = sdp.parse(audio30_sdp("garbage"))
       assert.is_table(doc)
       local ok, err = doc:validate("st2110")
@@ -1332,6 +1332,69 @@ describe("ST 2110 validation", function()
       assert.is_nil(ok)
       assert.is_table(err)
       assert.matches("channel%-order", err.message)
+    end)
+
+    -- ST 2110-30:2025 §6.2.2: "The <convention> of the channel-order should
+    -- be SMPTE2110." SHOULD, not SHALL — non-SMPTE2110 conventions are
+    -- structurally accepted (RFC 3190 §6 only requires <convention>.<order>).
+    it("accepts non-SMPTE2110 convention structurally (§6.2.2 SHOULD)", function()
+      local doc, err = sdp.parse(audio30_sdp("AES.(M,M)"), "st2110")
+      assert.is_nil(err)
+      assert.is_table(doc)
+    end)
+
+    it("rejects SMPTE2110.(BOGUS) (Table 1 SHALL applies to SMPTE2110)", function()
+      local doc = sdp.parse(audio30_sdp("SMPTE2110.(BOGUS)"))
+      local ok, err = doc:validate("st2110")
+      assert.is_nil(ok)
+      assert.matches("channel%-order", err.message)
+    end)
+
+    -- ST 2110-31:2022 §6.2 Table 2 — AES3 symbol is defined only for
+    -- AM824 streams (this audio30_sdp uses L24, so AES3 is forbidden).
+    it("rejects SMPTE2110.(AES3) on L16/L24 (ST 2110-31 §6.2 Table 2 — AM824 only)", function()
+      local doc = sdp.parse(audio30_sdp("SMPTE2110.(AES3)"))
+      local ok, err = doc:validate("st2110")
+      assert.is_nil(ok)
+      assert.matches("AES3", err.message)
+    end)
+  end)
+
+  -- ST 2110-31:2022 §6.2 Table 2 adds the AES3 channel-grouping symbol for
+  -- AM824 streams. F6 audit fix.
+  describe("ST 2110-31 channel-order AES3 symbol (§6.2 Table 2)", function()
+    local function am824_sdp(co_value)
+      return table.concat({
+        "v=0",
+        "o=- 1234567890 1 IN IP4 192.168.1.1",
+        "s=ST2110 AM824",
+        "t=0 0",
+        "a=ts-refclk:ptp=IEEE1588-2008:00-11-22-FF-FE-33-44-55:0",
+        "m=audio 5010 RTP/AVP 97",
+        "c=IN IP4 239.100.0.2/64",
+        "a=rtpmap:97 AM824/48000/2",
+        "a=fmtp:97 channel-order=" .. co_value,
+        "a=ptime:1",
+        "a=mediaclk:direct=0",
+      }, "\r\n") .. "\r\n"
+    end
+
+    it("accepts SMPTE2110.(AES3) on AM824", function()
+      local doc, err = sdp.parse(am824_sdp("SMPTE2110.(AES3)"), "st2110")
+      assert.is_nil(err)
+      assert.is_table(doc)
+    end)
+
+    it("accepts SMPTE2110.(AES3,AES3) on AM824", function()
+      local doc, err = sdp.parse(am824_sdp("SMPTE2110.(AES3,AES3)"), "st2110")
+      assert.is_nil(err)
+      assert.is_table(doc)
+    end)
+
+    it("still accepts SMPTE2110.(ST) on AM824 (Table 1 symbols inherit)", function()
+      local doc, err = sdp.parse(am824_sdp("SMPTE2110.(ST)"), "st2110")
+      assert.is_nil(err)
+      assert.is_table(doc)
     end)
   end)
 

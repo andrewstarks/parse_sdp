@@ -70,6 +70,18 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ### Fixed
 
+- **ST 2110-30:2025 §6.2.2 `channel-order` convention is SHOULD, not SHALL
+  (audit F5).** §6.2.2: *"The `<convention>` of the channel-order should be
+  SMPTE2110."* The parser previously hard-required the `SMPTE2110.` prefix
+  and rejected any other convention. Now any RFC 3190 §6 `<convention>.<order>`
+  form is accepted structurally; the Table 1 symbol enum is enforced only
+  when the convention is `SMPTE2110`.
+- **ST 2110-31:2022 §6.2 Table 2 `AES3` channel-grouping symbol (audit F6).**
+  AM824 streams may signal `channel-order=SMPTE2110.(AES3,…)`. Previously
+  rejected because `AES3` was missing from the symbol enum. Now accepted on
+  AM824 only — L16/L24 streams still reject `AES3` (per §6.2's "for AES3
+  Subframes containing PCM audio" carve-out, the symbol is defined only for
+  AM824).
 - **ST 2110-41:2024 §6 DIT is optional, comma-separated uppercase hex
   (audit F3).** Previously the parser required `DIT` and validated it as
   a single non-negative decimal integer, which rejected the literal §6
