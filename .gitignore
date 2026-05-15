@@ -2,3 +2,4 @@
 luac.out
 .luarocks/
 luarocks.lock
+spec_conformance/.cache/

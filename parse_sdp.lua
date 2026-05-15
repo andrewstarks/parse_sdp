@@ -764,8 +764,11 @@ end
 
 -- Valid TP (transport profile) values per ST 2110-21 (uncompressed video, ST 2110-20).
 local VALID_TP = { ["2110TPN"]=true, ["2110TPNL"]=true, ["2110TPW"]=true }
--- Valid TP values for compressed video per ST 2110-22 (JPEG-XS); 2110TPN excluded.
-local VALID_TP_22 = { ["2110TPNL"]=true, ["2110TPW"]=true }
+-- Valid TP values for compressed video per ST 2110-22:2022 §7.2 Table 1 (which
+-- expanded the 2019 enum by adding 2110TPN). Both 2019 and 2022 SDPs are
+-- accepted; rejecting a value the 2022 standard explicitly permits would be
+-- spec-ungrounded.
+local VALID_TP_22 = { ["2110TPN"]=true, ["2110TPNL"]=true, ["2110TPW"]=true }
 -- Valid rtpmap encoding names for ST 2110-30/31 audio.
 local VALID_AUDIO_ENC = { ["L16"]=true, ["L24"]=true, ["AM824"]=true }
 -- Valid TSMODE values per ST 2110-10 §8.7 (RTP timestamp generation mode).
@@ -1087,18 +1090,22 @@ function st2110.validate(doc)
       return attr_err("missing required attribute 'rtpmap'", mpath, "rtpmap", "ST 2110-10 §7")
     end
 
+    -- a=fmtp is NOT universally required by ST 2110-10:2022 §8. §8 covers SDP
+    -- and contains no clause mandating fmtp on every RTP stream; presence
+    -- requirements belong to the per-encoding specs (-20 / -22 / -41 require
+    -- fmtp params; -30 / -31 / -40 do not require fmtp at all per IANA + the
+    -- underlying RFCs). Per-encoding branches below enforce what they need.
     local fmtp = find_attr(mattrs, "fmtp")
-    if not fmtp then
-      return attr_err("missing required attribute 'fmtp'", mpath, "fmtp", "ST 2110-10 §7")
-    end
 
-    local rtp_pt  = (rtpmap.value or ""):match("^(%d+)")
-    local fmtp_pt = (fmtp.value  or ""):match("^(%d+)")
-    if rtp_pt ~= fmtp_pt then
-      return attr_err(
-        string.format("fmtp payload type %s does not match rtpmap payload type %s",
-          tostring(fmtp_pt), tostring(rtp_pt)),
-        mpath, "fmtp", "ST 2110-10 §7", "INVALID_VALUE")
+    local rtp_pt = (rtpmap.value or ""):match("^(%d+)")
+    if fmtp then
+      local fmtp_pt = (fmtp.value or ""):match("^(%d+)")
+      if rtp_pt ~= fmtp_pt then
+        return attr_err(
+          string.format("fmtp payload type %s does not match rtpmap payload type %s",
+            tostring(fmtp_pt), tostring(rtp_pt)),
+          mpath, "fmtp", "RFC 4566 §6", "INVALID_VALUE")
+      end
     end
     -- ST 2110-10 §6.2: dynamic payload types SHALL be in 96..127.
     -- ST 2110 essence formats (raw, smpte291, L16/L24/AM824, jxsv, ST2110-41)
@@ -1112,9 +1119,13 @@ function st2110.validate(doc)
 
     local enc, clock_rate = rtpmap_parse(rtpmap.value or "")
 
-    local params, fmtp_err = fmtp_params(fmtp.value or "")
-    if not params then
-      return attr_err("invalid fmtp: " .. fmtp_err, mpath, "fmtp", "ST 2110-10 §7", "INVALID_VALUE")
+    local params = {}
+    if fmtp then
+      local p, fmtp_err = fmtp_params(fmtp.value or "")
+      if not p then
+        return attr_err("invalid fmtp: " .. fmtp_err, mpath, "fmtp", "RFC 4566 §6", "INVALID_VALUE")
+      end
+      params = p
     end
 
     if enc == "smpte291" then
@@ -1124,19 +1135,19 @@ function st2110.validate(doc)
           string.format("rtpmap clock rate must be 90000 for smpte291 (got %s)", tostring(clock_rate)),
           mpath, "rtpmap", "ST 2110-40 §7.2", "INVALID_VALUE")
       end
-      -- DID_SDID may appear multiple times; collect and validate every occurrence.
-      local did_sdid_list = {}
-      for v in (fmtp.value or ""):gmatch("DID_SDID=([^;%s]+)") do
-        did_sdid_list[#did_sdid_list + 1] = v
-      end
-      if #did_sdid_list == 0 then
-        return attr_err("fmtp missing required 'DID_SDID' parameter for ST 2110-40 (smpte291)",
-          mpath, "fmtp", "ST 2110-40 §7.2")
-      end
-      for _, dsval in ipairs(did_sdid_list) do
-        local dok, derr = valid_did_sdid(dsval)
-        if not dok then
-          return attr_err("invalid DID_SDID: " .. derr, mpath, "fmtp", "ST 2110-40 §7.2", "INVALID_VALUE")
+      -- DID_SDID is OPTIONAL. ST 2110-40:2023 §7 (Session Description Protocol)
+      -- does not mention DID_SDID at all; the SDP "shall be constructed as
+      -- described in IETF RFC 8331, subject also to the provisions of SMPTE
+      -- ST 2110-10." RFC 8331's media-type registration lists DID_SDID as
+      -- optional, with the explicit note that its absence signals that
+      -- receivers must inspect packets to determine DID/SDID. May appear
+      -- multiple times — validate format on every occurrence when present.
+      if fmtp then
+        for v in (fmtp.value or ""):gmatch("DID_SDID=([^;%s]+)") do
+          local dok, derr = valid_did_sdid(v)
+          if not dok then
+            return attr_err("invalid DID_SDID: " .. derr, mpath, "fmtp", "RFC 8331 §4", "INVALID_VALUE")
+          end
         end
       end
       local vpid = params["VPID_Code"]
@@ -1190,19 +1201,43 @@ function st2110.validate(doc)
         { "depth",          valid_pos_int },
         { "TCS",            function(v) return valid_enum(v, VALID_TCS,         "TCS")         end },
         { "colorimetry",    function(v) return valid_enum(v, VALID_COLORIMETRY, "colorimetry") end },
-        { "PM",             function(v) return valid_enum(v, VALID_PM,          "PM")          end },
-        { "SSN",            function(v)
-            if _ssn22_pat:match(v) then return true end
-            return nil, "invalid SSN value (expected ST2110-22:YYYY, e.g. ST2110-22:2019)"
-          end },
         -- JPEG-XS codec params required by TR-10-11 / IPMX JPEG-XS Profile §6.1.4.
         -- Value enums per TR-10-15-Part1 §8/§9 + TR-08 §8.1.1 / ISO/IEC 21122-2.
         { "profile",    function(v) return valid_enum(v, VALID_JXS_PROFILE,  "profile")    end },
         { "level",      function(v) return valid_enum(v, VALID_JXS_LEVEL,    "level")      end },
         { "sublevel",   function(v) return valid_enum(v, VALID_JXS_SUBLEVEL, "sublevel")   end },
-        { "transmode",  function(v) return valid_enum(v, VALID_JXS_BIT,      "transmode")  end },
         { "packetmode", function(v) return valid_enum(v, VALID_JXS_BIT,      "packetmode") end },
       }
+      -- transmode is OPTIONAL at the ST 2110 tier. ST 2110-22:2022 §7.2 does
+      -- not list transmode; the IANA video/jxsv registration marks it
+      -- optional. IPMX-JPEG-XS-Video-Profile §6.1.4 makes it mandatory for
+      -- IPMX senders — that belongs in the IPMX validator (follow-up: also
+      -- move profile/level/sublevel there). When present at this tier,
+      -- validate the value format only.
+      local transmode_v = params["transmode"]
+      if transmode_v ~= nil and transmode_v ~= true then
+        local vok, vmsg = valid_enum(tostring(transmode_v), VALID_JXS_BIT, "transmode")
+        if not vok then
+          return attr_err("transmode: " .. vmsg, mpath, "fmtp", "ST 2110-22 §7.2", "INVALID_VALUE")
+        end
+      end
+      -- PM (Packing Mode) is NOT a ST 2110-22 parameter. ST 2110-22:2019 §7.2
+      -- Table 1 lists only width / height / TP as mandatory format-specific
+      -- parameters; ST 2110-22:2022 §7.2 Table 1 is identical. PM (2110GPM /
+      -- 2110BPM) is the uncompressed-video packing-mode marker defined by
+      -- ST 2110-20 §7.2; for jxsv the analogous control is `packetmode` (IANA
+      -- video/jxsv required parameter, per RFC 9134 §4.3).
+      --
+      -- SSN is OPTIONAL for jxsv. ST 2110-22:2022 §7.2 Table 2 marks SSN as
+      -- optional with values ST2110-22:2019 or ST2110-22:2022; ST 2110-22:2019
+      -- did not define SSN at all. Validate format only when present.
+      local ssn = params["SSN"]
+      if ssn ~= nil and ssn ~= true then
+        if not _ssn22_pat:match(tostring(ssn)) then
+          return attr_err("invalid SSN value (expected ST2110-22:YYYY, e.g. ST2110-22:2019 or ST2110-22:2022)",
+            mpath, "fmtp", "ST 2110-22 §7.2", "INVALID_VALUE")
+        end
+      end
       for _, ck in ipairs(jxs_req) do
         local key, fn = ck[1], ck[2]
         local val = params[key]
@@ -1223,13 +1258,13 @@ function st2110.validate(doc)
           return attr_err(vmsg, mpath, "fmtp", "ST 2110-22 §7", "INVALID_VALUE")
         end
       end
-      -- Optional: TP — ST 2110-22 allows only 2110TPNL and 2110TPW (not 2110TPN).
+      -- TP per ST 2110-22:2022 §7.2 Table 1 — mandatory; values 2110TPN,
+      -- 2110TPNL, or 2110TPW (ST 2110-22:2019 omitted 2110TPN).
       local tp_val = params["TP"]
       if tp_val ~= nil and tp_val ~= true then
         local vok, vmsg = valid_enum(tostring(tp_val), VALID_TP_22, "TP")
         if not vok then
-          return attr_err("TP: " .. vmsg .. " (ST 2110-22 allows 2110TPNL or 2110TPW only)",
-            mpath, "fmtp", "ST 2110-22 §7", "INVALID_VALUE")
+          return attr_err("TP: " .. vmsg, mpath, "fmtp", "ST 2110-22 §7.2", "INVALID_VALUE")
         end
       end
       -- Optional: MAXUDP (1..8960 per ST 2110-10 §6.4), CMAX (positive integer).
@@ -1409,14 +1444,17 @@ function st2110.validate(doc)
           end
         end
       end
+      -- ST 2110-30:2017 §6.2.2: "If channel order is signaled in the SDP, the
+      -- syntax of IETF RFC 3190 for the parameter channel-order shall be used."
+      -- "If the channel-order parameter is not present, the audio channels
+      -- shall be treated as Undefined." Absence is explicitly defined; the
+      -- parameter is optional. Validate format only when present.
       local co = params["channel-order"]
-      if not co then
-        return attr_err("fmtp missing required 'channel-order' parameter for audio",
-          mpath, "fmtp", "ST 2110-30 §7.2")
-      end
-      local cok, cmsg = valid_channel_order(tostring(co))
-      if not cok then
-        return attr_err(cmsg, mpath, "fmtp", "ST 2110-30 §7.2", "INVALID_VALUE")
+      if co ~= nil and co ~= true then
+        local cok, cmsg = valid_channel_order(tostring(co))
+        if not cok then
+          return attr_err(cmsg, mpath, "fmtp", "ST 2110-30 §6.2.2", "INVALID_VALUE")
+        end
       end
     end
   end

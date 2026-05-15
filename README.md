@@ -86,13 +86,14 @@ Exit code `0` on success, `1` on error (human-readable detail on stderr).
 ```text
 parse_sdp/
 ├── parse_sdp.lua        # single-file library AND CLI executable
-├── spec/                # busted test suite
+├── spec/                # busted test suite (hermetic)
 │   ├── sdp_spec.lua
 │   ├── st2110_spec.lua
 │   ├── ipmx_spec.lua
 │   ├── errors_spec.lua
 │   ├── cli_spec.lua
 │   └── fixtures/        # sample .sdp files used by tests
+├── spec_conformance/    # opt-in: downloads pinned AMWA fixtures and parses them
 ├── examples/
 │   ├── examples.lua     # runnable API walkthrough
 │   ├── generic/         # RFC 4566 SDP samples (valid/ and invalid/)

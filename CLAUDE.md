@@ -141,6 +141,65 @@ When adding or auditing a check:
 See [GUIDE.md "What this library validates (and what it doesn't)"](GUIDE.md#what-this-library-validates-and-what-it-doesnt)
 for the user-facing version with worked examples.
 
+## Spec Verification Protocol
+
+This protocol applies to *auditing* existing checks (e.g. when a conformance
+finding suggests a check may be wrong), not to writing new ones. New checks
+follow the strictness principle above. Audits follow these rules:
+
+1. **Get the primary spec on disk before forming a verdict.** Before claiming
+   any check is over-strict, or that "the spec says X," locate the actual
+   SMPTE / IETF / VSF document text in a PDF or canonical source you can
+   quote. Do **not** substitute one of the following for primary spec text:
+   - an IANA media-type registration
+   - a downstream IETF RFC the SMPTE document builds on
+   - an AMWA NMOS profile / BCP that quotes the SMPTE clause
+   - a reference implementation's example files
+
+   These are useful triangulation, never authority. SMPTE can tighten or
+   loosen what its references say.
+
+2. **Search the filesystem before declaring a spec unavailable.** SMPTE has
+   made an increasing number of ST 2110 documents publicly available. Before
+   assuming a spec is paywalled or out of reach, run
+   `find ~/Downloads ~/Documents -iname "*<spec-id>*"` and ask the user.
+
+3. **An existing citation in the code is a claim to test, not authority to
+   trust.** Read the cited clause yourself, in primary source. If a check
+   cites a section that does not say what the check enforces, that is itself
+   evidence of a parser bug — do not go hunting for support elsewhere to
+   rescue the citation.
+
+4. **Reference implementations are evidence, not authority.** If multiple
+   independent reference implementations omit something the parser requires,
+   the suspicion is high — but the verdict still needs primary spec text.
+   When the spec is not yet on disk, label the finding "suspected — unconfirmed
+   against the cited document" and resolve it before changing code.
+
+5. **Distinguish "the spec is silent" from "the registration is silent."**
+   IANA registrations and IETF RFCs that ST 2110 builds on can be tightened
+   by the SMPTE document. The lower layer's optionality does not establish
+   ST 2110's optionality.
+
+6. **Bind bullets to their parent clause, not the section header.** When
+   reading a bulleted normative list, identify the verb-clause that
+   *immediately* introduces it. Read the full sentence aloud: *"The X
+   shall Y, including: [bullet]."* If that substitution doesn't parse, the
+   bullet belongs to a different scope. Section headers like "X & Y" never
+   bind bullets — only the parent clause does. Real example: IPMX
+   JPEG-XS Video Profile §6.1.4 is titled "Required Sender Signaling (Media
+   Info Block & SDP)", but its bullet list of `transmode, packetmode,
+   profile, level, sublevel, fbblevel` attaches to item 1's clause "shall
+   populate the JPEG-XS Media Info Block… including:" — those are RTCP
+   Media Info Block fields, not SDP fmtp requirements. Reading the bullets
+   as SDP requirements (because SDP is in the section title) is the
+   failure mode this rule prevents.
+
+When auditing a finding, the report should make clear which sources are
+primary and which are circumstantial. Suspected-but-unconfirmed findings stay
+allowlisted with a `spec_ref` and an "INVESTIGATE against the cited document" note;
+confirmed-against-primary-source findings get fixed.
+
 ## Coding Conventions
 
 - **Errors are values.** Never call `error()` for parse or validation failures.

@@ -561,7 +561,7 @@ When a `c=` line is present (at either session or media level), the address is v
 | `a=mid` | Optional. When present, value must be unique within the session (RFC 5888 §8.1) |
 | `a=source-filter` | At ST 2110 tier: optional. At IPMX tier: **required** on every RTP block, either media-level or session-level (TR-10-TP-1 §13.2). Format follows RFC 4570: `<incl\|excl> IN <IP4\|IP6> <dest> <src>+`. The dest and every src must be a literal address of the declared family — FQDNs and malformed addresses are rejected (ST 2110-10 §6.5 / RFC 4570). |
 | `a=rtpmap` | Required. RTP payload type must be in the dynamic range 96–127 (ST 2110-10 §6.2). Clock rate validated: must be 90000 for video, `smpte291`, and `ST2110-41`; audio clock rate accepted for any positive integer (ST 2110-30 §6.1 puts non-{44.1, 48, 96} kHz "out of scope" but does not forbid). Audio encoding name validated: must be `L16`, `L24`, or `AM824`. Payload type must match the payload type in `a=fmtp` |
-| `a=fmtp` | Required. Key=value pairs validated per sub-standard |
+| `a=fmtp` | Required for encodings whose spec mandates fmtp parameters (`raw` per ST 2110-20 §7.2, `jxsv` per ST 2110-22 §7, `ST2110-41` per ST 2110-41 §7.2). **Not** required for audio (`L16`/`L24`/`AM824`) or `smpte291` ancillary — ST 2110-10:2022 §8 imposes no universal fmtp requirement, and the per-encoding IANA registrations leave fmtp optional for these. Key=value pairs are validated per sub-standard when present. Payload type must match the payload type in `a=rtpmap` (RFC 4566 §6) |
 
 ### ST 2110-20 (video) `fmtp` parameters
 
@@ -612,7 +612,9 @@ The channel count (third `/`-separated component in the rtpmap value,
 e.g. `L24/48000/8`) is required and must be a positive integer (RFC 3551 §6).
 ST 2110-30 §6.2.2 / Table 2 documents Conformance Levels with channel counts
 up to 64; the spec contains no global upper bound, so the validator imposes
-none. `channel-order` is validated for presence and value format; mono
+none. `channel-order` is **optional** per ST 2110-30:2017 §6.2.2 ("If the
+channel-order parameter is not present, the audio channels shall be treated as
+Undefined"). When present, its value format is validated; mono
 (`SMPTE2110.(M)`) is permitted.
 
 When `a=ptime` is present, its value must be a positive number (ST 2110-30 §7.2).
@@ -624,6 +626,24 @@ Default MAXUDP is the Standard UDP Size Limit of 1460 octets per ST 2110-10 §6.
 | Parameter | Example | Valid values |
 | --- | --- | --- |
 | `channel-order` | `SMPTE2110.(ST)` | must be `SMPTE2110.(<group>[,<group>...])` where each group is one of: `M`, `DM`, `ST`, `LtRt`, `51`, `71`, `222`, `SGRP`, or `U01`–`U64` (ST 2110-30:2017 §6.2.2 Table 1) |
+
+### ST 2110-22 (JPEG-XS / jxsv) `fmtp` parameters
+
+Per ST 2110-22:2022 §7.2 Table 1, the mandatory fmtp parameters are `width`,
+`height`, and `TP`. Per IANA `video/jxsv` (RFC 9134), `packetmode` is also
+required. All other fmtp parameters defined by the spec are optional at this
+tier and validated only when present.
+
+`PM` is **not** an ST 2110-22 parameter — that is a ST 2110-20 (uncompressed
+video) packing-mode marker. `SSN` is optional per ST 2110-22:2022 §7.2 Table 2
+(and was not defined in ST 2110-22:2019 at all). `TP` permits all three values
+`2110TPN`, `2110TPNL`, `2110TPW` per the 2022 revision.
+
+The parser currently still requires `profile`, `level`, `sublevel` at the
+ST 2110 tier — no normative source in SDP supports this. The IPMX JPEG-XS
+Video Profile §6.1.4 references those parameters for the RTCP **Media Info
+Block** (out of validator scope), not SDP fmtp. See [PLAN.md](PLAN.md) for
+the planned correction.
 
 ### ST 2110-40 (smpte291 ancillary data) `fmtp` parameters
 

@@ -229,7 +229,12 @@ describe("ST 2110 validation", function()
       assert.matches("fmtp", err.message)
     end)
 
-    it("errors when audio fmtp lacks channel-order parameter", function()
+    it("accepts audio without channel-order (optional per ST 2110-30:2017 §6.2.2)", function()
+      -- §6.2.2: "If the channel-order parameter is not present, the audio
+      -- channels shall be treated as Undefined." Absence is explicitly defined
+      -- behavior, not an error. The fmtp itself is also optional for audio
+      -- (ST 2110-10:2022 §8 imposes no universal fmtp requirement; RFC 3551
+      -- registers channel-order as optional).
       local text = table.concat({
         "v=0",
         "o=- 1234567890 1 IN IP4 192.168.1.1",
@@ -239,7 +244,25 @@ describe("ST 2110 validation", function()
         "m=audio 5010 RTP/AVP 97",
         "c=IN IP4 239.100.0.2/64",
         "a=rtpmap:97 L24/48000/8",
-        "a=fmtp:97 some-param=value",
+        "a=mediaclk:direct=0",
+        "a=ts-refclk:ptp=IEEE1588-2008:00-11-22-FF-FE-33-44-55:0",
+      }, "\r\n")
+      local doc = sdp.parse(text)
+      local ok, err = doc:validate("st2110")
+      assert.is_true(ok, err and err.message)
+    end)
+
+    it("validates channel-order format when present", function()
+      local text = table.concat({
+        "v=0",
+        "o=- 1234567890 1 IN IP4 192.168.1.1",
+        "s=ST2110 Audio",
+        "t=0 0",
+        "a=ts-refclk:ptp=IEEE1588-2008:00-11-22-FF-FE-33-44-55:0",
+        "m=audio 5010 RTP/AVP 97",
+        "c=IN IP4 239.100.0.2/64",
+        "a=rtpmap:97 L24/48000/8",
+        "a=fmtp:97 channel-order=NotAConvention.(ST)",
         "a=mediaclk:direct=0",
         "a=ts-refclk:ptp=IEEE1588-2008:00-11-22-FF-FE-33-44-55:0",
       }, "\r\n")
@@ -492,13 +515,13 @@ describe("ST 2110 validation", function()
       assert.is_table(doc)
     end)
 
-    it("errors when fmtp is missing DID_SDID", function()
-      local doc = sdp.parse(ancillary_sdp("VPID_Code=133"))
+    it("accepts smpte291 SDP without DID_SDID (optional per RFC 8331 / ST 2110-40:2023 §7)", function()
+      -- ST 2110-40:2023 §7 imposes no DID_SDID requirement. RFC 8331's
+      -- media-type registration marks DID_SDID optional and notes that its
+      -- absence signals receivers to determine DID/SDID by inspecting packets.
+      local doc, err = sdp.parse(ancillary_sdp("VPID_Code=133"), "st2110")
+      assert.is_nil(err)
       assert.is_table(doc)
-      local ok, err = doc:validate("st2110")
-      assert.is_nil(ok)
-      assert.is_table(err)
-      assert.matches("DID_SDID", err.message)
     end)
 
     it("errors when DID_SDID has a non-hex octet", function()
@@ -1487,7 +1510,7 @@ describe("ST 2110 validation", function()
       assert.is_nil(ok)
       assert.is_table(err)
       assert.matches("payload type", err.message)
-      assert.equal("ST 2110-10 §7", err.spec_ref)
+      assert.equal("RFC 4566 §6", err.spec_ref)
     end)
   end)
 
@@ -2280,14 +2303,14 @@ describe("ST 2110 validation", function()
       assert.matches("SSN", err.message)
     end)
 
-    it("rejects TP=2110TPN (not valid for compressed video)", function()
+    it("accepts TP=2110TPN (added in ST 2110-22:2022 §7.2 Table 1)", function()
+      -- ST 2110-22:2019 §7.2 listed TP values as 2110TPNL or 2110TPW only.
+      -- ST 2110-22:2022 §7.2 Table 1 expanded this enum to add 2110TPN.
+      -- Both versions are in active use; the parser accepts the 2022 union.
       local fmtp = VALID_JXSV_FMTP:gsub("TP=2110TPNL", "TP=2110TPN")
-      local doc = sdp.parse(jxsv_sdp(fmtp))
+      local doc, err = sdp.parse(jxsv_sdp(fmtp), "st2110")
+      assert.is_nil(err)
       assert.is_table(doc)
-      local ok, err = doc:validate("st2110")
-      assert.is_nil(ok)
-      assert.is_table(err)
-      assert.matches("TP", err.message)
     end)
 
     it("accepts TP=2110TPW", function()
@@ -2327,14 +2350,14 @@ describe("ST 2110 validation", function()
       assert.matches("sublevel", err.message)
     end)
 
-    it("rejects missing transmode", function()
+    it("accepts missing transmode at ST 2110 tier (IPMX-only requirement)", function()
+      -- ST 2110-22:2022 §7.2 does not list transmode. IANA video/jxsv marks
+      -- transmode optional. The transmode requirement is IPMX-specific
+      -- (IPMX-JPEG-XS-Video-Profile §6.1.4) and belongs in the IPMX tier.
       local fmtp = VALID_JXSV_FMTP:gsub("; transmode=1", "")
-      local doc = sdp.parse(jxsv_sdp(fmtp))
+      local doc, err = sdp.parse(jxsv_sdp(fmtp), "st2110")
+      assert.is_nil(err)
       assert.is_table(doc)
-      local ok, err = doc:validate("st2110")
-      assert.is_nil(ok)
-      assert.is_table(err)
-      assert.matches("transmode", err.message)
     end)
 
     it("rejects missing packetmode", function()

@@ -12,3 +12,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - run: docker compose run --rm test
+
+  conformance:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: docker compose run --rm test busted spec_conformance/
