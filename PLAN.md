@@ -742,23 +742,39 @@ Two distinct SHALLs:
 1. `sampling=KEY` → `colorimetry=ALPHA` (positive).
 2. `sampling=KEY` → TCS absent (prohibitive).
 
-**Scope question — jxsv inheritance.** RFC 9134 §7.1 (IANA `video/jxsv`
-registration) defines jxsv's `sampling` parameter as inheriting from
-ST 2110-20 ("the same as for video/raw [RFC4175], as updated by SMPTE ST
-2110-20"). This brings the *value set* over (so `sampling=KEY` is a legal
-jxsv value). But it does **not** explicitly carry the KEY-specific cross-
-parameter constraints from §7.4.1.
+**Scope question — jxsv inheritance.** Verified directly against the
+RFC 9134 text (2026-05-15): RFC 9134 §7.1 does **not** cross-reference
+ST 2110-20 §7 by section number. Instead it rewrites every parameter
+(sampling, depth, exactframerate, TCS, colorimetry, RANGE, interlace,
+segmented) with its own self-contained prose. The §7.1 `sampling` entry
+ends with the line *"Key signals as defined in [SMPTE157] SHALL use the
+value key for the Media Type Parameter 'sampling'. The key signal is
+represented as a single component"* — and **stops there**. The next two
+sentences from ST 2110-20:2022 §7.4.1 — *"The Key signal does not have a
+specific TCS or Colorimetry value itself; the Key stream shall signal the
+colorimetry value 'ALPHA', and shall not signal a TCS value"* — are not
+carried into RFC 9134. Whether the omission was editorial or deliberate is
+not knowable from the text alone, but the result is the same: RFC 9134 §7.1
+contains no cross-parameter SHALL on KEY-sampling jxsv streams.
 
-Per the strictness principle ("silence is not a reason to reject"), the
-**raw-video** SHALLs are unambiguous and should be enforced; the
-**jxsv** application is debatable and should *not* be enforced unless
-RFC 9134 or ST 2110-22 explicitly cites §7.4.1 — which they don't.
+The **semantic** reasoning still holds: a key signal "as defined in
+SMPTE RP 157" (cited in both specs) is a single-component matte with no
+color or transfer characteristics, and JPEG-XS compression does not grant
+it any. A jxsv KEY stream with `colorimetry=BT2020` or `TCS=PQ` is
+semantically as incoherent as a raw one. But the strictness principle's
+explicit carve-out (CLAUDE.md): *"'Physically silly but not forbidden' …
+is not in scope. The validator tests for conformance, not for whether a
+device is saying things that can't be true."* — applies precisely to this
+case. Enforce on raw-video only; do not extend to jxsv.
 
 **Verify before acting:**
 - Re-read ST 2110-20:2022 §7.4.1 final paragraph for the raw-video SHALLs.
-- Re-read RFC 9134 §7.1 entries for `sampling`, `TCS`, `colorimetry`.
-  Confirm none of them explicitly carries the KEY constraints over.
-- If RFC 9134 or ST 2110-22 explicitly references §7.4.1, expand to jxsv.
+- Re-read RFC 9134 §7.1 `sampling` entry (the line beginning "Key signals
+  as defined in [SMPTE157]"). Confirm the entry stops where the audit says
+  it does — no ALPHA / no-TCS sentences follow.
+- If a later RFC 9134 update or a new ST 2110-22 revision adds an
+  explicit cross-reference to §7.4.1, the jxsv-out-of-scope decision
+  should be revisited.
 
 **Fix direction:** In the raw-video branch only (the `elseif m.media ==
 "video"` block, NOT the `elseif enc == "jxsv"` block):
@@ -795,11 +811,23 @@ interlaced video essence."*
 
 Affected sampling values: `YCbCr-4:2:0`, `CLYCbCr-4:2:0`, `ICtCp-4:2:0`.
 
-**Scope question — jxsv inheritance:** §6.2.5 is in the RTP-payload section
-of ST 2110-20, defining how 4:2:0 pgroups are constructed for raw video.
-Whether this constraint transfers to JPEG-XS (which doesn't use ST 2110-20's
-pgroup layout) is unclear. Same caveat as N12: enforce on raw video only;
-flag for discussion before extending to jxsv.
+**Scope question — jxsv inheritance:** Weaker case than N12 even
+semantically. §6.2.5 sits in ST 2110-20:2022 §6 ("Uncompressed Active Video
+RTP Essence Format"), which is the chapter that defines the raw pgroup
+construction tables. The chroma-sharing problem the SHALL prevents — 4:2:0
+pgroups span two adjacent luminance rows, so interlaced transmission
+creates ambiguity over which field "owns" the shared chroma sample — is a
+property of the raw RTP packetization, not of the underlying signal.
+JPEG-XS defines its own packetization (RFC 9134 §4) and its own handling
+of interlaced content; the pgroup ambiguity does not arise the same way.
+
+RFC 9134 §7.1 (verified 2026-05-15) gives `interlace` and `segmented` their
+own self-contained definitions and does not import §6.2.5 by reference.
+
+So unlike N12, the jxsv non-application here is supported by *both* the
+strictness principle (RFC 9134 silence) *and* the underlying technical
+reasoning (§6.2.5's mechanics are pgroup-specific, and jxsv has its own
+packetization). Enforce on raw video only.
 
 **Verify before acting:**
 - Re-read §6.2.5 to confirm the SHALL on "shall only be applied to
