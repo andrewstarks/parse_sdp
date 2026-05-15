@@ -59,8 +59,10 @@ fixture findings, or user reports.
 
 ## Pre-1.0 Conformance Audit (open findings, 2026-05-15)
 
-**Resolved since audit opened:** F1 + D3 (TCS optional per §7.3, doc sync) —
-2026-05-15.
+**Resolved since audit opened (2026-05-15):**
+
+- F1 + D3 — TCS optional per §7.3 + GUIDE doc sync.
+- F2 + D4 — `a=hkep` permitted at media level per TR-10-5 §17 + GUIDE doc sync.
 
 These findings came out of a multi-spec audit that read every SDP-relevant
 SHALL / SHALL-NOT / defined-value clause across RFC 4566, RFC 8866,
@@ -90,42 +92,6 @@ SDPs; blockers for 1.0). N = false negatives (parser accepts non-conformant
 SDPs; should-fix). D = documentation/citation cleanups.
 
 ---
-
-### F2 — `a=hkep` allowed at media level (not session-only)
-
-**Parser behavior:** [parse_sdp.lua:2398-2404](parse_sdp.lua#L2398) rejects
-any media-level `a=hkep`.
-
-**Spec basis:** TR-10-5 (2026-02-17 v2) §17 (IANA Registration), explicitly:
-*"its Usage Level is 'session, media', meaning that a session-level hkep
-attribute represents the default value for each media-level hkep attribute
-unless an explicit media-level hkep attribute is provided for the corresponding
-'m=' section. Accordingly, an SDP transport file may convey HKEP information
-at the session level, at the media level, or at both levels."* Plus: *"the
-use of the expression 'hkep session attribute' does not define the usage
-level of the hkep attribute but simply refers to it at its most generic
-level, which is the session level."*
-
-The §10 wording ("at least one 'hkep' session attribute when … HDCP Content")
-is the source of the misinterpretation: it requires *at least one* at session
-level when applicable, but does not forbid media-level placement.
-
-**Verify before acting:** Confirm TR-10-5 §17 is still present in the current
-revision (file: `VSF_TR-10-5_2026-02-17_v2.md`). If §17 is removed or reworded
-to say "session only", the finding is wrong.
-
-**Fix direction:** Remove the media-level rejection at L2398-2404. Validate
-every `a=hkep` (session or media) with `valid_hkep`. Implement session→media
-inheritance for the value when comparing across DUP legs (mirror the privacy
-inheritance pattern at L2420-2426).
-
-**Doc sync:**
-- GUIDE.md: rewrite the `a=hkep` section to state "session-level or
-  media-level; session-level acts as default per TR-10-5 §17".
-- CHANGELOG.md: note the cite-correction (the §10 reading was wrong).
-
-**Tests:** media-level `a=hkep` parses; combined session+media coexists;
-the existing rejection test is replaced with an acceptance test.
 
 ### F3 — ST 2110-41 `DIT` is a comma-separated hex list, not a single integer
 
@@ -864,17 +830,6 @@ not for SDP fmtp. **No spec defines `fbblevel` as an SDP fmtp parameter.**
 
 Recommend (a): remove. The check is technically opinion-based per the
 strictness principle.
-
-### D4 — GUIDE.md / CLAUDE.md describe `a=hkep` as session-only
-
-**Location:** GUIDE.md line 758 ("`a=hkep` is a **session-level** attribute
-(TR-10-5 §10); media-level placement is rejected"); CLAUDE.md may carry the
-same claim — search both.
-
-**Fix:** After F2 lands, update both files to state that `a=hkep` may
-appear at session level, media level, or both (TR-10-5 §17). Session-level
-acts as default for media legs lacking an explicit `a=hkep` (mirroring the
-privacy inheritance pattern).
 
 ---
 

@@ -327,9 +327,6 @@ describe("IPMX validation", function()
       assert.matches("TR%-10%-5", err.spec_ref)
     end)
 
-    -- M25 M11: TR-10-5 §10 specifies a=hkep as a session attribute only.
-    -- Media-level a=hkep is rejected; see "M25 M11" describe block below for
-    -- the new placement tests.
   end)
 
   -- ── a=privacy validation (TR-10-13 §13) ──────────────────────────────────────
@@ -2266,8 +2263,9 @@ describe("IPMX validation", function()
     end)
   end)
 
-  describe("M25 M11: a=hkep placement is session-only (TR-10-5 §10)", function()
+  describe("a=hkep placement: session, media, or both (TR-10-5 §17)", function()
     local VALID_HKEP = "10000 IN IP4 192.168.1.100 550e8400-e29b-41d4-a716-446655440000 01-02-03-04-05"
+    local VALID_HKEP_2 = "10001 IN IP4 192.168.1.101 660e8400-e29b-41d4-a716-446655440001 02-03-04-05-06"
 
     it("accepts a=hkep at session level", function()
       local doc, err = sdp.parse(
@@ -2276,13 +2274,27 @@ describe("IPMX validation", function()
       assert.is_table(doc)
     end)
 
-    it("rejects a=hkep at media block level (session-only per TR-10-5 §10)", function()
+    it("accepts a=hkep at media level (TR-10-5 §17 Usage Level 'session, media')", function()
+      local doc, err = sdp.parse(
+        base_ipmx_sdp({}, { "a=hkep:" .. VALID_HKEP }), "ipmx")
+      assert.is_nil(err)
+      assert.is_table(doc)
+    end)
+
+    it("accepts a=hkep at both session and media levels", function()
+      local doc, err = sdp.parse(
+        base_ipmx_sdp({ "a=hkep:" .. VALID_HKEP },
+                      { "a=hkep:" .. VALID_HKEP_2 }), "ipmx")
+      assert.is_nil(err)
+      assert.is_table(doc)
+    end)
+
+    it("rejects malformed media-level a=hkep value", function()
       local doc = sdp.parse(
-        base_ipmx_sdp({}, { "a=hkep:" .. VALID_HKEP }))
+        base_ipmx_sdp({}, { "a=hkep:10000 IN IP4 192.168.1.100 not-a-uuid 01-02-03-04-05" }))
       local ok, err = doc:validate("ipmx")
       assert.is_nil(ok)
       assert.matches("hkep", err.message)
-      assert.matches("session", err.message)
     end)
   end)
 

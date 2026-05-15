@@ -70,6 +70,16 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ### Fixed
 
+- **TR-10-5 §17 `a=hkep` permitted at media level (audit F2 + D4).**
+  Previously the parser rejected any media-level `a=hkep`, citing the
+  §10 "shall contain at least one 'hkep' session attribute" wording as
+  session-only. §17 (IANA Registration) is explicit: *"its Usage Level
+  is 'session, media' … an SDP transport file may convey HKEP
+  information at the session level, at the media level, or at both
+  levels."* §10 requires at least one session-level hkep when the stream
+  carries HDCP Content; it does not forbid additional media-level
+  attributes. Now validates every `a=hkep` (session or media) with the
+  same `valid_hkep` function.
 - **ST 2110-20:2022 §7.3 TCS is optional, not required (audit F1 + D3).**
   Raw-video `TCS` is listed in §7.3 "Media Type Parameters with default values",
   not in §7.2 ("Required Media Type Parameters"). §7.6: *"If the TCS value is

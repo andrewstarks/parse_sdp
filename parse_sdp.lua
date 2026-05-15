@@ -2389,7 +2389,11 @@ function ipmx.validate(doc)
     end
   end
 
-  -- Validate a=hkep at session level if present; multiple lines allowed (TR-10-5 §10).
+  -- Validate a=hkep at session level if present; multiple lines allowed.
+  -- TR-10-5 §17 (IANA Registration): Usage Level is "session, media" — an
+  -- "SDP transport file may convey HKEP information at the session level,
+  -- at the media level, or at both levels." A session-level value acts as
+  -- the default for media legs without an explicit hkep attribute.
   for _, attr in ipairs(doc.session.attributes or {}) do
     if attr.name == "hkep" then
       local ok, herr = valid_hkep(attr.value or "")
@@ -2402,12 +2406,15 @@ function ipmx.validate(doc)
     end
   end
 
-  -- M11: TR-10-5 §10 specifies a=hkep as a session attribute only.
   for i, m in ipairs(doc.media) do
-    if find_attr(m.attributes or {}, "hkep") then
-      return attr_err(
-        "a=hkep must be a session-level attribute, not media-level",
-        string.format("media[%d]", i), "hkep", "TR-10-5 §10", "INVALID_VALUE")
+    for _, attr in ipairs(m.attributes or {}) do
+      if attr.name == "hkep" then
+        local ok, herr = valid_hkep(attr.value or "")
+        if not ok then
+          return attr_err("invalid a=hkep: " .. herr,
+            string.format("media[%d]", i), "hkep", "TR-10-5 §10", "INVALID_VALUE")
+        end
+      end
     end
   end
 

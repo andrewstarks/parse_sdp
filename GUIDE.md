@@ -755,10 +755,14 @@ every IPMX video/audio fmtp.
 
 ### Optional extensions (validated when present)
 
-#### HDCP Key Exchange — `a=hkep` (TR-10-5 §10)
+#### HDCP Key Exchange — `a=hkep` (TR-10-5 §10 / §17)
 
-`a=hkep` is a **session-level** attribute (TR-10-5 §10); media-level placement
-is rejected. When present, the value is validated against:
+`a=hkep` may appear at session level, at media level, or at both
+(TR-10-5 §17 IANA Registration: *"its Usage Level is 'session, media'"* —
+a session-level value acts as the default for media legs lacking an
+explicit `a=hkep`). TR-10-5 §10 separately requires *at least one*
+session-level `a=hkep` whenever the stream carries HDCP Content. When
+present at either level, the value is validated against:
 
 ```text
 a=hkep:<port> IN <IP4|IP6> <unicast-address> <node-id> <port-id>
