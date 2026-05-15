@@ -883,26 +883,37 @@ local function valid_maxudp(value)
   return true
 end
 
+-- Returns the greatest common divisor of two positive integers.
+local function gcd(a, b)
+  while b ~= 0 do a, b = b, a % b end
+  return a
+end
+
 -- Returns true for a positive integer or a positive_n/positive_d fraction.
+-- ST 2110-20:2022 §7.2: "non-integer rates shall be signaled as a ratio of
+-- two integer decimal numbers separated by a 'forward-slash' character (e.g.
+-- '30000/1001'), utilizing the numerically smallest numerator value possible."
+-- The "smallest numerator" clause requires the ratio to be in lowest terms
+-- (gcd(n, d) == 1); 60000/2002 is rejected in favor of 30000/1001.
 local function valid_exactframerate(value)
   if not _efr_pat:match(value) then
     return nil, "invalid exactframerate: " .. value
   end
   local n, d = value:match("^(%d+)/(%d+)$")
   if n then
-    if tonumber(n) == 0 or tonumber(d) == 0 then
+    local nn, dd = tonumber(n), tonumber(d)
+    if nn == 0 or dd == 0 then
       return nil, "exactframerate fraction must have positive numerator and denominator"
+    end
+    if gcd(nn, dd) ~= 1 then
+      return nil, string.format(
+        "exactframerate %s/%s is not in lowest terms (ST 2110-20:2022 §7.2 — 'numerically smallest numerator value possible')",
+        n, d)
     end
     return true
   end
   if tonumber(value) == 0 then return nil, "exactframerate must be positive" end
   return true
-end
-
--- Returns the greatest common divisor of two positive integers.
-local function gcd(a, b)
-  while b ~= 0 do a, b = b, a % b end
-  return a
 end
 
 -- Returns true for a PAR value in <W>:<H> format with both dimensions positive
@@ -1506,6 +1517,28 @@ function st2110.validate(doc)
         local vok, vmsg = fn(tostring(val))
         if not vok then
           return attr_err(vmsg, mpath, "fmtp", ref, "INVALID_VALUE")
+        end
+      end
+      -- ST 2110-20:2022 §7.2 SSN clause (JT-NM Tested — AMWA sdpoker Issue
+      -- #11): "Senders implementing this standard shall signal the value
+      -- ST2110-20:2017 unless the colorimetry value ALPHA or the TCS value
+      -- ST2115LOGS3 are used, in which case the value ST2110-20:2022 shall
+      -- be signaled." Forward direction: a :2022-only value (ALPHA or
+      -- ST2115LOGS3) must be paired with SSN=ST2110-20:2022; the :2017 SSN
+      -- does not define those values. The reverse direction ("SSN=:2022
+      -- without :2022-only values is forbidden") is the spec's "default
+      -- :2017" guidance and is not enforced — see PLAN.md "Known Deferred
+      -- Items".
+      do
+        local ssn_str = tostring(params["SSN"])
+        local needs_2022 = nil
+        if params["TCS"] == "ST2115LOGS3" then needs_2022 = "TCS=ST2115LOGS3" end
+        if params["colorimetry"] == "ALPHA" then needs_2022 = "colorimetry=ALPHA" end
+        if needs_2022 and ssn_str ~= "ST2110-20:2022" then
+          return attr_err(string.format(
+            "SSN must be ST2110-20:2022 when %s is signaled (ST 2110-20:2022 §7.2 — value not defined in :2017)",
+            needs_2022),
+            mpath, "fmtp", "ST 2110-20:2022 §7.2", "INVALID_VALUE")
         end
       end
       local range_val = params["RANGE"]

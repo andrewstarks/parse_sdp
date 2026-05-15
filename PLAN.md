@@ -41,7 +41,7 @@ runs them through the parser. See [spec_conformance/README.md](spec_conformance/
 
 ## Current State
 
-718 tests passing (hermetic) · 10/10 upstream conformance · allowlist empty.
+728 tests passing (hermetic) · 10/10 upstream conformance · allowlist empty.
 Every validation check is grounded in explicit spec text. No known check is
 opinion-only.
 
@@ -53,28 +53,23 @@ specific spec citations.
 
 ## Next
 
-Remaining open work falls into two buckets:
-
-**Own milestones (broad scope):**
-
-- VSF TR-10-1 compatibility audit (AMWA Issue #36).
-- JT-NM Tested updates for the ST 2110 revision (AMWA Issue #11).
-
-**Smaller open items:**
-
-- Streampunk Issue #9 — `ts-refclk:localmac` edge cases.
-- Streampunk Issue #12 / AMWA Issue #19 — further source-filter spec
-  re-reads (currently we accept what RFC 4570 §3 allows; IPMX
-  TR-10-TP-1 §13.2 mandates presence at the IPMX tier only).
+The AMWA / Streampunk SDPoker backlog is fully walked. No tracked items
+remain open. Future work is driven by new spec releases, new conformance-
+fixture findings, or user reports.
 
 ## Known Deferred Items
 
 These were explicitly evaluated and set aside. Do not re-raise them in routine
 development unless new spec evidence emerges.
 
-- **`exactframerate` lowest-terms enforcement** — ST 2110-20 §7.2 says "the
-  numerically smallest numerator value possible" but does not phrase it as "shall
-  not." Not enforced; noted in GUIDE.md.
+- **ST 2110-20:2022 §7.2 "default to SSN=:2017 unless :2022-only values are
+  used"** — the §7.2 SSN clause has a reverse direction ("Senders implementing
+  this standard shall signal the value ST2110-20:2017 unless [exception]")
+  that, strictly enforced, would invalidate `SSN=ST2110-20:2022` whenever
+  neither `TCS=ST2115LOGS3` nor `colorimetry=ALPHA` is present. ~115 existing
+  test fixtures and most real-world :2022-implementing senders signal :2022
+  unconditionally. The forward direction (the JT-NM Tested ask) is enforced;
+  the reverse is left to a future audit if SMPTE or AMWA clarifies intent.
 - **Sampling × colorimetry × TCS × RANGE cross-table** — the spec lists value
   sets independently and contains no explicit "shall not" for any combination of
   valid individual values.
@@ -95,7 +90,20 @@ development unless new spec evidence emerges.
 - **ST 2110-10:2022 §8.7 vs Annex B TSDELAY zero** — §8.7 says
   "decimal positive integer"; Annex B (Informative) example shows
   `TSDELAY=0`. The §8.7 SHALL governs; parser rejects `TSDELAY=0`.
+- **VSF TR-10-1 (IPMX System Timing) SDP-validation audit** — every
+  SDP-touching SHALL in TR-10-1 §10 (and the SDP-adjacent §8.1 traffic
+  shape) is already enforced by the parser: §10 FID prohibition
+  ([parse_sdp.lua:2031](parse_sdp.lua#L2031)), §10.1 `IPMX` fmtp marker,
+  §10.2 `measuredpixclk`/`vtotal`/`htotal` (extended to all IPMX video
+  by TR-10-9 §10), §10.3 `measuredsamplerate` (extended by TR-10-9
+  §10), §10.4 media-level `ts-refclk` (via ST 2110-10 §8.2) and
+  `ts-refclk:localmac` format, §10.5 `mediaclk` presence + `direct=0`
+  enforcement (via ST 2110-10 §8.3 — same SHALL). §8.1 specifies
+  CMAX = Type W formula with an informative Note permitting Type N for
+  interop; Type NL is silent. The parser accepts the ST 2110-22:2022
+  §7.2 union {2110TPN, 2110TPNL, 2110TPW}; the strictness principle
+  ("silence is not a reason to reject") rules out narrowing further on
+  Note language alone. Audited 2026-05-15 — no actionable findings.
 - **`o=` unicast_address literal-IP requirement** — RFC 4566 §5.7 ABNF allows
   FQDNs in the origin address; no ST 2110 clause explicitly forbids them there.
-- **NMOS, RTCP Info Blocks, and capability subsetting** — out of SDP scope by
-  definition. See GUIDE.md "What this library validates (and what it doesn't)."
+

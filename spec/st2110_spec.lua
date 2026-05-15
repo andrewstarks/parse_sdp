@@ -1073,6 +1073,141 @@ describe("ST 2110 validation", function()
       assert.is_table(doc)
     end)
 
+    -- AMWA sdpoker Issue #11 (JT-NM Tested) — ST 2110-20:2022 §7.2 SSN clause:
+    -- "Senders implementing this standard shall signal the value ST2110-20:2017
+    -- unless the colorimetry value ALPHA or the TCS value ST2115LOGS3 are used,
+    -- in which case the value ST2110-20:2022 shall be signaled." A sender using
+    -- the :2022-only values must declare SSN=:2022.
+    describe("ST 2110-20:2022 §7.2 SSN ↔ TCS/colorimetry coupling", function()
+      it("rejects TCS=ST2115LOGS3 with SSN=ST2110-20:2017", function()
+        local fmtp = VALID:gsub("TCS=SDR", "TCS=ST2115LOGS3")
+                          :gsub("SSN=ST2110%-20:2022", "SSN=ST2110-20:2017")
+        local doc = sdp.parse(video20_sdp(fmtp))
+        assert.is_table(doc)
+        local ok, err = doc:validate("st2110")
+        assert.is_nil(ok)
+        assert.is_table(err)
+        assert.matches("SSN", err.message)
+        assert.matches("ST2115LOGS3", err.message)
+      end)
+
+      it("accepts TCS=ST2115LOGS3 with SSN=ST2110-20:2022 (boundary)", function()
+        local fmtp = VALID:gsub("TCS=SDR", "TCS=ST2115LOGS3")
+        local doc, err = sdp.parse(video20_sdp(fmtp), "st2110")
+        assert.is_nil(err)
+        assert.is_table(doc)
+      end)
+
+      it("rejects colorimetry=ALPHA with SSN=ST2110-20:2017", function()
+        local fmtp = VALID:gsub("colorimetry=BT709", "colorimetry=ALPHA")
+                          :gsub("SSN=ST2110%-20:2022", "SSN=ST2110-20:2017")
+        local doc = sdp.parse(video20_sdp(fmtp))
+        assert.is_table(doc)
+        local ok, err = doc:validate("st2110")
+        assert.is_nil(ok)
+        assert.is_table(err)
+        assert.matches("SSN", err.message)
+        assert.matches("ALPHA", err.message)
+      end)
+
+      it("accepts colorimetry=ALPHA with SSN=ST2110-20:2022 (boundary)", function()
+        local fmtp = VALID:gsub("colorimetry=BT709", "colorimetry=ALPHA")
+        local doc, err = sdp.parse(video20_sdp(fmtp), "st2110")
+        assert.is_nil(err)
+        assert.is_table(doc)
+      end)
+
+      it("accepts SSN=ST2110-20:2017 when neither :2022-only value is used", function()
+        local fmtp = VALID:gsub("SSN=ST2110%-20:2022", "SSN=ST2110-20:2017")
+        local doc, err = sdp.parse(video20_sdp(fmtp), "st2110")
+        assert.is_nil(err)
+        assert.is_table(doc)
+      end)
+    end)
+
+    -- ST 2110-20:2022 §7.2 exactframerate: "non-integer rates shall be signaled
+    -- as a ratio of two integer decimal numbers… utilizing the numerically
+    -- smallest numerator value possible." Reduce to lowest terms (gcd=1).
+    describe("ST 2110-20:2022 §7.2 exactframerate lowest-terms", function()
+      it("accepts 30000/1001 (lowest terms)", function()
+        local fmtp = VALID:gsub("exactframerate=25", "exactframerate=30000/1001")
+        local doc, err = sdp.parse(video20_sdp(fmtp), "st2110")
+        assert.is_nil(err)
+        assert.is_table(doc)
+      end)
+
+      it("rejects 60000/2002 (reducible to 30000/1001)", function()
+        local fmtp = VALID:gsub("exactframerate=25", "exactframerate=60000/2002")
+        local doc = sdp.parse(video20_sdp(fmtp))
+        assert.is_table(doc)
+        local ok, err = doc:validate("st2110")
+        assert.is_nil(ok)
+        assert.is_table(err)
+        assert.matches("exactframerate", err.message)
+      end)
+
+      it("rejects 50/2 (reducible to 25)", function()
+        local fmtp = VALID:gsub("exactframerate=25", "exactframerate=50/2")
+        local doc = sdp.parse(video20_sdp(fmtp))
+        assert.is_table(doc)
+        local ok, err = doc:validate("st2110")
+        assert.is_nil(ok)
+        assert.is_table(err)
+        assert.matches("exactframerate", err.message)
+      end)
+    end)
+
+    -- Streampunk sdpoker Issue #9 (regression): `ts-refclk:local` (no `mac=`)
+    -- is not a valid clock-source form per ST 2110-10 §8.2; only the listed
+    -- prefixes (gps/gal/glonass/ntp=/localmac=/ptp=) are accepted.
+    describe("ts-refclk:local rejection (Streampunk #9)", function()
+      it("rejects bare ts-refclk:local (typo of :localmac=)", function()
+        local text = table.concat({
+          "v=0",
+          "o=- 1 1 IN IP4 192.168.1.1",
+          "s=ST2110 Video",
+          "t=0 0",
+          "a=ts-refclk:local",
+          "m=video 5000 RTP/AVP 96",
+          "c=IN IP4 239.100.0.1/64",
+          "a=rtpmap:96 raw/90000",
+          "a=fmtp:96 " .. VALID,
+          "a=mediaclk:direct=0",
+        }, "\r\n") .. "\r\n"
+        local doc = sdp.parse(text)
+        assert.is_table(doc)
+        local ok, err = doc:validate("st2110")
+        assert.is_nil(ok)
+        assert.is_table(err)
+        assert.matches("ts%-refclk", err.message)
+      end)
+    end)
+
+    -- AMWA sdpoker Issue #19 / Streampunk #12 (regression): RFC 4570 §3 does
+    -- NOT mandate `a=source-filter` when a multicast address is used. The
+    -- ST 2110 tier therefore does not require it; only the IPMX tier does
+    -- (TR-10-TP-1 §13.2). Confirm the ST 2110 tier accepts a multicast SDP
+    -- without source-filter.
+    describe("source-filter not mandated at ST 2110 tier (AMWA #19)", function()
+      it("accepts multicast SDP without a=source-filter", function()
+        local text = table.concat({
+          "v=0",
+          "o=- 1 1 IN IP4 192.168.1.1",
+          "s=ST2110 Video",
+          "t=0 0",
+          "a=ts-refclk:ptp=IEEE1588-2008:00-11-22-FF-FE-33-44-55:0",
+          "m=video 5000 RTP/AVP 96",
+          "c=IN IP4 239.100.0.1/64",
+          "a=rtpmap:96 raw/90000",
+          "a=fmtp:96 " .. VALID,
+          "a=mediaclk:direct=0",
+        }, "\r\n") .. "\r\n"
+        local doc, err = sdp.parse(text, "st2110")
+        assert.is_nil(err)
+        assert.is_table(doc)
+      end)
+    end)
+
     -- AMWA sdpoker Issue #2 (CLOSED): early SDPoker rejected fmtp lines that
     -- did not end with "; ". RFC 4566 §6 imposes no such requirement and
     -- ST 2110-20:2022 §7.1 describes only inter-parameter separators. The

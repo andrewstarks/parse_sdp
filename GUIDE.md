@@ -573,12 +573,12 @@ and value format.
 | `sampling` | `YCbCr-4:2:2` | `YCbCr-4:4:4`, `YCbCr-4:2:2`, `YCbCr-4:2:0`, `CLYCbCr-4:4:4`, `CLYCbCr-4:2:2`, `CLYCbCr-4:2:0`, `ICtCp-4:4:4`, `ICtCp-4:2:2`, `ICtCp-4:2:0`, `RGB`, `XYZ`, `KEY` |
 | `width` | `1920` | integer between 1 and 32767 inclusive (ST 2110-20 §7.2) |
 | `height` | `1080` | integer between 1 and 32767 inclusive (ST 2110-20 §7.2) |
-| `exactframerate` | `30000/1001` | positive integer or `n/d` fraction (both parts positive). Reduction to lowest terms is **not** enforced — `60000/2002` is accepted (ST 2110-20 §7.2 requires "the numerically smallest numerator value possible" but the library does not currently check this) |
+| `exactframerate` | `30000/1001` | positive integer or `n/d` fraction (both parts positive, **in lowest terms** — `60000/2002` is rejected because ST 2110-20:2022 §7.2 requires "the numerically smallest numerator value possible") |
 | `depth` | `10` | one of `8`, `10`, `12`, `16`, `16f` (ST 2110-20 §7.4.2) |
 | `TCS` | `SDR` | `SDR`, `PQ`, `HLG`, `LINEAR`, `BT2100LINPQ`, `BT2100LINHLG`, `ST2065-1`, `ST428-1`, `DENSITY`, `ST2115LOGS3`, `UNSPECIFIED` (the full 11-value enum per ST 2110-20:2022 §7.6; `ST2115LOGS3` was added in :2022) |
 | `colorimetry` | `BT709` | `BT601`, `BT709`, `BT2020`, `BT2100`, `ST2065-1`, `ST2065-3`, `UNSPECIFIED`, `ALPHA`, `XYZ` |
 | `PM` | `2110GPM` | `2110GPM`, `2110BPM` |
-| `SSN` | `ST2110-20:2022` | must be `ST2110-20:YYYY` where YYYY is a 4-digit year (e.g. `ST2110-20:2017`, `ST2110-20:2022`) |
+| `SSN` | `ST2110-20:2022` | must be `ST2110-20:YYYY` where YYYY is a 4-digit year. Per ST 2110-20:2022 §7.2, `SSN=ST2110-20:2022` is **required** whenever `TCS=ST2115LOGS3` or `colorimetry=ALPHA` is signaled (those values aren't defined in :2017). The reverse direction ("default to :2017 unless a :2022-only value is used") is not enforced — see PLAN.md "Known Deferred Items". |
 
 Optional parameters validated when present:
 

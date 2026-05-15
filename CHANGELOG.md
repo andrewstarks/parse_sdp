@@ -50,6 +50,23 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
   parameter without the interlace parameter is forbidden."* Previously
   these were unconstrained in the jxsv path (they were enforced only in
   the raw-video / ST 2110-20 branch).
+- **ST 2110-20:2022 §7.2 SSN ↔ TCS/colorimetry coupling (JT-NM Tested,
+  AMWA Issue #11).** A :2022-only value SHALL be paired with `SSN=ST2110-20:2022`:
+  reject `TCS=ST2115LOGS3` or `colorimetry=ALPHA` when `SSN=ST2110-20:2017`
+  is signaled. (§7.2 SSN clause: "Senders implementing this standard
+  shall signal the value ST2110-20:2017 unless the colorimetry value
+  ALPHA or the TCS value ST2115LOGS3 are used, in which case the value
+  ST2110-20:2022 shall be signaled.") The reverse direction
+  ("`SSN=:2022` without :2022-only values is forbidden") is documented
+  as a deferred item — strict reading would invalidate ~115 existing
+  fixtures and most real-world :2022-implementing senders.
+- **ST 2110-20:2022 §7.2 `exactframerate` lowest-terms enforcement.**
+  Non-integer rates must be in lowest terms (gcd of numerator and
+  denominator must be 1): `30000/1001` accepted; `60000/2002` and `50/2`
+  rejected. §7.2: "non-integer rates shall be signaled as a ratio of two
+  integer decimal numbers… utilizing the numerically smallest numerator
+  value possible." Previously deferred; reading the clause as a SHALL
+  extension was the correct interpretation.
 
 ### Fixed
 
