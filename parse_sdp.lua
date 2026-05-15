@@ -1823,6 +1823,40 @@ function st2110.validate(doc)
           "MAXUDP must not be signaled with PM=2110BPM (ST 2110-20 §6.3.3 forbids Extended UDP size in BPM)",
           mpath, "fmtp", "ST 2110-20 §6.3.3", "INVALID_VALUE")
       end
+      -- N12 (audit): ST 2110-20:2022 §7.4.1 — "Key signals are used in
+      -- relationship to 'fill' signals of video content. The Key signal
+      -- does not have a specific TCS or Colorimetry value itself; the
+      -- Key stream shall signal the colorimetry value 'ALPHA', and shall
+      -- not signal a TCS value." Two distinct SHALLs on KEY-sampling raw
+      -- video. Scoped to raw video only — RFC 9134 §7.1 carries the
+      -- sampling value set into jxsv but does not import these
+      -- cross-parameter constraints (see PLAN.md jxsv-scope discussion).
+      if params["sampling"] == "KEY" then
+        if params["colorimetry"] ~= "ALPHA" then
+          return attr_err(
+            "sampling=KEY requires colorimetry=ALPHA (ST 2110-20:2022 §7.4.1)",
+            mpath, "fmtp", "ST 2110-20:2022 §7.4.1", "INVALID_VALUE")
+        end
+        if params["TCS"] ~= nil then
+          return attr_err(
+            "sampling=KEY must not signal a TCS value (ST 2110-20:2022 §7.4.1)",
+            mpath, "fmtp", "ST 2110-20:2022 §7.4.1", "INVALID_VALUE")
+        end
+      end
+      -- N13 (audit): ST 2110-20:2022 §6.2.5 — "The 4:2:0 sampling system
+      -- shall only be applied to progressive scan images transmitted in a
+      -- progressive manner. This sampling system does not apply to PsF or
+      -- interlaced video essence." Scoped to raw video only — §6.2.5 sits
+      -- in the RTP-payload (pgroup-construction) chapter, which jxsv does
+      -- not use; RFC 9134 §7.1 inherits the sampling value set, not the
+      -- §6 RTP packaging constraints.
+      if params["sampling"] and params["sampling"]:match("^[A-Za-z]+%-4:2:0$") then
+        if params["interlace"] then
+          return attr_err(
+            "4:2:0 sampling must not be combined with interlace (ST 2110-20:2022 §6.2.5: progressive scan only)",
+            mpath, "fmtp", "ST 2110-20:2022 §6.2.5", "INVALID_VALUE")
+        end
+      end
       -- Optional ST 2110-20 fmtp params that have defined value formats.
       -- TSMODE / TSDELAY are from ST 2110-10 §8.7 (RTP timestamp generation).
       -- Each entry: { key, validator, spec_ref (optional override of §7.2) }.

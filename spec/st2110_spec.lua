@@ -1109,6 +1109,65 @@ describe("ST 2110 validation", function()
       end)
     end
 
+    -- N12 (audit): ST 2110-20:2022 §7.4.1 KEY-sampling SHALLs.
+    describe("§7.4.1 KEY-sampling SHALLs (audit N12)", function()
+      it("accepts sampling=KEY with colorimetry=ALPHA and no TCS", function()
+        local fmtp = "sampling=KEY; width=1920; height=1080; exactframerate=25; depth=10; colorimetry=ALPHA; PM=2110GPM; SSN=ST2110-20:2022; TP=2110TPN"
+        local doc, err = sdp.parse(video20_sdp(fmtp), "st2110")
+        assert.is_nil(err)
+        assert.is_table(doc)
+      end)
+
+      it("rejects sampling=KEY with colorimetry=BT709", function()
+        local fmtp = "sampling=KEY; width=1920; height=1080; exactframerate=25; depth=10; colorimetry=BT709; PM=2110GPM; SSN=ST2110-20:2022; TP=2110TPN"
+        local doc = sdp.parse(video20_sdp(fmtp))
+        local ok, err = doc:validate("st2110")
+        assert.is_nil(ok)
+        assert.matches("ALPHA", err.message)
+      end)
+
+      it("rejects sampling=KEY with TCS signaled", function()
+        local fmtp = "sampling=KEY; width=1920; height=1080; exactframerate=25; depth=10; TCS=SDR; colorimetry=ALPHA; PM=2110GPM; SSN=ST2110-20:2022; TP=2110TPN"
+        local doc = sdp.parse(video20_sdp(fmtp))
+        local ok, err = doc:validate("st2110")
+        assert.is_nil(ok)
+        assert.matches("TCS", err.message)
+      end)
+    end)
+
+    -- N13 (audit): ST 2110-20:2022 §6.2.5 — 4:2:0 progressive-only.
+    describe("§6.2.5 4:2:0 progressive-only SHALL (audit N13)", function()
+      it("accepts sampling=YCbCr-4:2:0 progressive (no interlace flag)", function()
+        local fmtp = "sampling=YCbCr-4:2:0; width=1920; height=1080; exactframerate=25; depth=10; TCS=SDR; colorimetry=BT709; PM=2110GPM; SSN=ST2110-20:2022; TP=2110TPN"
+        local doc, err = sdp.parse(video20_sdp(fmtp), "st2110")
+        assert.is_nil(err)
+        assert.is_table(doc)
+      end)
+
+      it("rejects sampling=YCbCr-4:2:0 with interlace flag", function()
+        local fmtp = "sampling=YCbCr-4:2:0; width=1920; height=1080; exactframerate=25; depth=10; TCS=SDR; colorimetry=BT709; PM=2110GPM; SSN=ST2110-20:2022; TP=2110TPN; interlace"
+        local doc = sdp.parse(video20_sdp(fmtp))
+        local ok, err = doc:validate("st2110")
+        assert.is_nil(ok)
+        assert.matches("4:2:0", err.message)
+      end)
+
+      it("accepts sampling=YCbCr-4:2:2 with interlace (only 4:2:0 is restricted)", function()
+        local fmtp = "sampling=YCbCr-4:2:2; width=1920; height=1080; exactframerate=25; depth=10; TCS=SDR; colorimetry=BT709; PM=2110GPM; SSN=ST2110-20:2022; TP=2110TPN; interlace"
+        local doc, err = sdp.parse(video20_sdp(fmtp), "st2110")
+        assert.is_nil(err)
+        assert.is_table(doc)
+      end)
+
+      it("rejects sampling=ICtCp-4:2:0 with interlace (covers all 4:2:0 variants)", function()
+        local fmtp = "sampling=ICtCp-4:2:0; width=1920; height=1080; exactframerate=25; depth=10; TCS=SDR; colorimetry=BT2100; PM=2110GPM; SSN=ST2110-20:2022; TP=2110TPN; interlace"
+        local doc = sdp.parse(video20_sdp(fmtp))
+        local ok, err = doc:validate("st2110")
+        assert.is_nil(ok)
+        assert.matches("4:2:0", err.message)
+      end)
+    end)
+
     -- AMWA sdpoker PR #38: ST 2110-20:2022 §7.6 added ST2115LOGS3 to the TCS
     -- enum (alongside the 10 values from :2017). VALID_TCS now lists all 11.
     it("accepts TCS=ST2115LOGS3 (ST 2110-20:2022 §7.6)", function()

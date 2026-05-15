@@ -601,6 +601,11 @@ Optional parameters validated when present:
 
 Bare-flag parameters `interlace` and `segmented` are accepted. `segmented` SHALL only appear together with `interlace` (ST 2110-20 §7.3); signaling `segmented` alone is rejected. Both are flag-only — `interlace=anything` and `segmented=anything` are rejected (ST 2110-20 §7.1/§7.3 define no value form for these names). Any other unrecognized key=value pairs pass through silently.
 
+**Cross-parameter SHALLs (raw video only):**
+
+- **§7.4.1 KEY-sampling.** When `sampling=KEY`, the stream **shall** signal `colorimetry=ALPHA` and **shall not** signal a `TCS` value. Both halves are enforced. (RFC 9134 §7.1 carries the `sampling` value set into jxsv but does not import these cross-parameter constraints, so jxsv is unaffected — see PLAN.md "Pre-1.0 Conformance Audit" jxsv-scope discussion.)
+- **§6.2.5 4:2:0 progressive-only.** *"The 4:2:0 sampling system shall only be applied to progressive scan images transmitted in a progressive manner. This sampling system does not apply to PsF or interlaced video essence."* `sampling=YCbCr-4:2:0`, `CLYCbCr-4:2:0`, or `ICtCp-4:2:0` combined with the bare `interlace` flag is rejected. (§6.2.5 sits in the RTP-payload pgroup-construction chapter, which jxsv does not use; RFC 9134 §7.1 inherits the sampling values, not the §6 packaging constraints, so jxsv is unaffected.)
+
 ### ST 2110-30 (audio) `rtpmap` and `fmtp` parameters
 
 The `a=rtpmap` encoding name is validated: must be `L16`, `L24`, or `AM824`

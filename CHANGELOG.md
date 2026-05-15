@@ -81,6 +81,18 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ### Fixed
 
+- **ST 2110-20:2022 cross-parameter SHALLs on raw video (audit N12 + N13).**
+  - **N12 (§7.4.1)** — *"The Key signal does not have a specific TCS or
+    Colorimetry value itself; the Key stream shall signal the colorimetry
+    value 'ALPHA', and shall not signal a TCS value."* `sampling=KEY`
+    now requires `colorimetry=ALPHA` and rejects any `TCS=…`. Scoped to
+    raw video — RFC 9134 §7.1 imports the sampling value set into jxsv
+    but does not import the cross-parameter SHALL (verified explicitly).
+  - **N13 (§6.2.5)** — *"The 4:2:0 sampling system shall only be applied
+    to progressive scan images transmitted in a progressive manner."*
+    `sampling={YCbCr,CLYCbCr,ICtCp}-4:2:0` combined with the bare
+    `interlace` flag is rejected. Scoped to raw video — §6.2.5 sits in
+    the RTP-payload chapter, which jxsv does not use.
 - **MAXUDP forbidden on smpte291 / ST2110-41 / audio (audit N11).** Three
   SHALLs in the per-essence specs constrain UDP size to the Standard
   Limit (1460 octets, ST 2110-10:2022 §6.3). MAXUDP is the signal that

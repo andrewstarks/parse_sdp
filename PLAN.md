@@ -96,6 +96,11 @@ fixture findings, or user reports.
   ST 2110-40:2023 §6.1.4, ST 2110-41:2024 §5.4, ST 2110-30:2025 §6.2.1
   (each constrains UDP size to the Standard limit; ST 2110-10 §6.4 / §8.6
   define MAXUDP as the signal that the sender exceeds the Standard limit).
+- N12 + N13 — ST 2110-20:2022 cross-parameter SHALLs on raw video:
+  §7.4.1 KEY-sampling requires colorimetry=ALPHA and no TCS; §6.2.5
+  forbids 4:2:0 sampling combined with interlace. Both scoped to raw
+  video only — RFC 9134 §7.1 does not import either SHALL into jxsv
+  (verified directly against the RFC text).
 
 These findings came out of a multi-spec audit that read every SDP-relevant
 SHALL / SHALL-NOT / defined-value clause across RFC 4566, RFC 8866,
@@ -125,133 +130,6 @@ SDPs; blockers for 1.0). N = false negatives (parser accepts non-conformant
 SDPs; should-fix). D = documentation/citation cleanups.
 
 ---
-
-### N12 — ST 2110-20 §7.4.1 KEY-sampling SHALLs not enforced
-
-**Parser behavior:** Raw video branch [parse_sdp.lua:1478-1612](parse_sdp.lua#L1478)
-accepts any colorimetry with `sampling=KEY` and requires TCS even for KEY
-streams.
-
-**Spec basis:** ST 2110-20:2022 §7.4.1 (last paragraph): *"Key signals are
-used in relationship to 'fill' signals of video content. The Key signal does
-not have a specific TCS or Colorimetry value itself; the Key stream shall
-signal the colorimetry value 'ALPHA', and shall not signal a TCS value."*
-
-Two distinct SHALLs:
-1. `sampling=KEY` → `colorimetry=ALPHA` (positive).
-2. `sampling=KEY` → TCS absent (prohibitive).
-
-**Scope question — jxsv inheritance.** Verified directly against the
-RFC 9134 text (2026-05-15): RFC 9134 §7.1 does **not** cross-reference
-ST 2110-20 §7 by section number. Instead it rewrites every parameter
-(sampling, depth, exactframerate, TCS, colorimetry, RANGE, interlace,
-segmented) with its own self-contained prose. The §7.1 `sampling` entry
-ends with the line *"Key signals as defined in [SMPTE157] SHALL use the
-value key for the Media Type Parameter 'sampling'. The key signal is
-represented as a single component"* — and **stops there**. The next two
-sentences from ST 2110-20:2022 §7.4.1 — *"The Key signal does not have a
-specific TCS or Colorimetry value itself; the Key stream shall signal the
-colorimetry value 'ALPHA', and shall not signal a TCS value"* — are not
-carried into RFC 9134. Whether the omission was editorial or deliberate is
-not knowable from the text alone, but the result is the same: RFC 9134 §7.1
-contains no cross-parameter SHALL on KEY-sampling jxsv streams.
-
-The **semantic** reasoning still holds: a key signal "as defined in
-SMPTE RP 157" (cited in both specs) is a single-component matte with no
-color or transfer characteristics, and JPEG-XS compression does not grant
-it any. A jxsv KEY stream with `colorimetry=BT2020` or `TCS=PQ` is
-semantically as incoherent as a raw one. But the strictness principle's
-explicit carve-out (CLAUDE.md): *"'Physically silly but not forbidden' …
-is not in scope. The validator tests for conformance, not for whether a
-device is saying things that can't be true."* — applies precisely to this
-case. Enforce on raw-video only; do not extend to jxsv.
-
-**Verify before acting:**
-- Re-read ST 2110-20:2022 §7.4.1 final paragraph for the raw-video SHALLs.
-- Re-read RFC 9134 §7.1 `sampling` entry (the line beginning "Key signals
-  as defined in [SMPTE157]"). Confirm the entry stops where the audit says
-  it does — no ALPHA / no-TCS sentences follow.
-- If a later RFC 9134 update or a new ST 2110-22 revision adds an
-  explicit cross-reference to §7.4.1, the jxsv-out-of-scope decision
-  should be revisited.
-
-**Fix direction:** In the raw-video branch only (the `elseif m.media ==
-"video"` block, NOT the `elseif enc == "jxsv"` block):
-- If `params["sampling"] == "KEY"` and `params["colorimetry"] ~= "ALPHA"`,
-  reject (cite §7.4.1).
-- If `params["sampling"] == "KEY"` and `params["TCS"]` is set, reject
-  (cite §7.4.1). With TCS now in `video_opt_checks` (resolved F1, 2026-05-15),
-  "TCS is set" means the sender explicitly signaled it on a KEY stream,
-  which is what §7.4.1 forbids.
-
-**Doc sync:** GUIDE.md ST 2110-20 KEY-signal section. **Whichever scope is
-chosen (raw-only vs. raw+jxsv), document the decision and the reasoning
-behind it explicitly in GUIDE.md** — e.g., "We enforce §7.4.1 on raw video
-only; RFC 9134 §7.1 carries the sampling value set over to jxsv but does
-not reference §7.4.1's cross-parameter constraints, so by the strictness
-principle they don't transfer." Future readers (and a future auditor) need
-to see both *what* the parser does and *why* the spec supports that choice.
-Mirror the note in CLAUDE.md's "What we do reject" / "What we do not
-reject" lists if applicable.
-
-**Tests:** raw video with `sampling=KEY; colorimetry=ALPHA` (no TCS)
-accepts; with `sampling=KEY; colorimetry=BT709` rejects; with `sampling=KEY;
-colorimetry=ALPHA; TCS=SDR` rejects.
-
-### N13 — ST 2110-20 §6.2.5 4:2:0-progressive-only SHALL not enforced
-
-**Parser behavior:** Raw video branch accepts any `sampling=*-4:2:0` with
-the `interlace` or `segmented` bare flag.
-
-**Spec basis:** ST 2110-20:2022 §6.2.5 (opening sentence): *"The 4:2:0
-sampling system shall only be applied to progressive scan images transmitted
-in a progressive manner. This sampling system does not apply to PsF or
-interlaced video essence."*
-
-Affected sampling values: `YCbCr-4:2:0`, `CLYCbCr-4:2:0`, `ICtCp-4:2:0`.
-
-**Scope question — jxsv inheritance:** Weaker case than N12 even
-semantically. §6.2.5 sits in ST 2110-20:2022 §6 ("Uncompressed Active Video
-RTP Essence Format"), which is the chapter that defines the raw pgroup
-construction tables. The chroma-sharing problem the SHALL prevents — 4:2:0
-pgroups span two adjacent luminance rows, so interlaced transmission
-creates ambiguity over which field "owns" the shared chroma sample — is a
-property of the raw RTP packetization, not of the underlying signal.
-JPEG-XS defines its own packetization (RFC 9134 §4) and its own handling
-of interlaced content; the pgroup ambiguity does not arise the same way.
-
-RFC 9134 §7.1 (verified 2026-05-15) gives `interlace` and `segmented` their
-own self-contained definitions and does not import §6.2.5 by reference.
-
-So unlike N12, the jxsv non-application here is supported by *both* the
-strictness principle (RFC 9134 silence) *and* the underlying technical
-reasoning (§6.2.5's mechanics are pgroup-specific, and jxsv has its own
-packetization). Enforce on raw video only.
-
-**Verify before acting:**
-- Re-read §6.2.5 to confirm the SHALL on "shall only be applied to
-  progressive scan images."
-- Re-read §7.3 to confirm `interlace` and `segmented` are progressive/PsF
-  markers (already enforced separately).
-- For jxsv: don't enforce unless RFC 9134 or ST 2110-22 explicitly says so.
-
-**Fix direction:** In the raw-video branch only:
-- If `params["sampling"]` matches `^(YCbCr|CLYCbCr|ICtCp)-4:2:0$` and
-  `params["interlace"]` is set, reject (cite §6.2.5).
-- The "no `segmented` without `interlace`" rule already covers PsF
-  transitively (segmented requires interlace, and 4:2:0 forbids both).
-
-**Doc sync:** GUIDE.md ST 2110-20 §6.2.5 / sampling section. **As with N12,
-the scope decision (raw-only vs. raw+jxsv) and its reasoning must be
-documented in GUIDE.md regardless of which way it goes.** §6.2.5 sits in
-the RTP-payload (pgroup-construction) chapter of ST 2110-20, which jxsv
-does not use. RFC 9134's `sampling` inheritance carries the value set, not
-the §6 RTP packaging constraints. Note this in GUIDE.md so readers see the
-explicit reasoning, and mirror to CLAUDE.md if applicable.
-
-**Tests:** `sampling=YCbCr-4:2:0` with `interlace` flag rejects;
-`sampling=YCbCr-4:2:0` without flag (progressive) accepts;
-`sampling=YCbCr-4:2:2` with `interlace` still accepts.
 
 ---
 
