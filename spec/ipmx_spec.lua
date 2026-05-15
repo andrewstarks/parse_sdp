@@ -1569,7 +1569,7 @@ describe("IPMX validation", function()
         "c=IN IP4 239.100.0.1/64",
         "a=source-filter: incl IN IP4 239.100.0.1 192.168.1.1",
         "a=rtpmap:96 raw/90000",
-        "a=fmtp:96 sampling=YCbCr-4:2:2; width=1920; height=1080; exactframerate=25; depth=10; TCS=SDR; colorimetry=BT709; PM=2110GPM; SSN=ST2110-20:2022",
+        "a=fmtp:96 sampling=YCbCr-4:2:2; width=1920; height=1080; exactframerate=25; depth=10; TCS=SDR; colorimetry=BT709; PM=2110GPM; SSN=ST2110-20:2022; TP=2110TPN",
         "a=mediaclk:direct=0",
         "a=ts-refclk:ptp=IEEE1588-2008:00-11-22-FF-FE-33-44-55:0",
       }, "\r\n") .. "\r\n"

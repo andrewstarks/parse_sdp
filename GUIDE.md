@@ -567,9 +567,12 @@ When a `c=` line is present (at either session or media level), the address is v
 
 ### ST 2110-20 (video) `fmtp` parameters
 
-ST 2110-20 §7.2 requires eight `fmtp` parameters. All eight are validated for both presence
-and value format. TCS lives in §7.3 ("Media Type Parameters with default values") and is
-optional — §7.6 says receivers assume `SDR` when TCS is not signaled.
+ST 2110-20 §7.2 requires eight `fmtp` parameters; ST 2110-21:2022 §8.1 adds a
+ninth required parameter (`TP`) for any video stream conforming to
+ST 2110-20:2022 §6.1.1's compliance chain. All nine are validated for both
+presence and value format. TCS lives in §7.3 ("Media Type Parameters with
+default values") and is optional — §7.6 says receivers assume `SDR` when TCS
+is not signaled.
 
 | Parameter | Example | Valid values |
 | --- | --- | --- |
@@ -581,6 +584,7 @@ optional — §7.6 says receivers assume `SDR` when TCS is not signaled.
 | `colorimetry` | `BT709` | `BT601`, `BT709`, `BT2020`, `BT2100`, `ST2065-1`, `ST2065-3`, `UNSPECIFIED`, `ALPHA`, `XYZ` |
 | `PM` | `2110GPM` | `2110GPM`, `2110BPM` |
 | `SSN` | `ST2110-20:2022` | must be `ST2110-20:YYYY` where YYYY is a 4-digit year. Per ST 2110-20:2022 §7.2, `SSN=ST2110-20:2022` is **required** whenever `TCS=ST2115LOGS3` or `colorimetry=ALPHA` is signaled (those values aren't defined in :2017). The reverse direction ("default to :2017 unless a :2022-only value is used") is not enforced — see PLAN.md "Known Deferred Items". |
+| `TP` | `2110TPN`, `2110TPNL`, `2110TPW` | ST 2110-21:2022 §8.1 — required for any video stream conforming to the ST 2110-20 §6.1.1 → ST 2110-21 chain (i.e. all raw video) |
 
 Optional parameters validated when present:
 
@@ -588,11 +592,10 @@ Optional parameters validated when present:
 | --- | --- | --- |
 | `TCS` | `SDR`, `PQ`, `HLG`, `LINEAR`, `BT2100LINPQ`, `BT2100LINHLG`, `ST2065-1`, `ST428-1`, `DENSITY`, `ST2115LOGS3`, `UNSPECIFIED` (the full 11-value enum per ST 2110-20:2022 §7.6; `ST2115LOGS3` was added in :2022). Absent → receivers assume `SDR` per §7.6. | ST 2110-20:2022 §7.3 / §7.6 |
 | `RANGE` | `NARROW`, `FULLPROTECT`, `FULL` | ST 2110-20 §7.2 |
-| `TP` | `2110TPN`, `2110TPNL`, `2110TPW` | ST 2110-21 |
 | `MAXUDP` | positive integer ≤ 8960 (Extended UDP Size Limit). Must **not** be signaled when `PM=2110BPM` — ST 2110-20 §6.3.3 forbids the Extended UDP size in Block Packing Mode. | ST 2110-10 §6.4, ST 2110-20 §6.3.3 |
 | `PAR` | `W:H` (both positive integers, **in lowest terms** per ST 2110-20 §7.3 — e.g. `1:1`, `12:11`, `64:45`; `2:2` is rejected) | ST 2110-20 §7.3 |
-| `TROFF` | positive integer in microseconds (requires `TP` to also be present; `TROFF=0` rejected per the §8.2 value-form SHALL — §6.2 separately permits the underlying TROFFSET to be zero) | ST 2110-21:2022 §8.2 |
-| `CMAX` | any integer (requires `TP` to also be present). §8.2 defines the SDP form as "expressed as an integer number" — zero and negative integers are accepted because the spec attaches no sign restriction; §7.1's `MAX(4, …)` / `MAX(16, …)` formula is an upper bound on `CINST` (§6.6.1), not a lower bound on the SDP value. | ST 2110-21:2022 §8.2 |
+| `TROFF` | positive integer in microseconds (`TROFF=0` rejected per the §8.2 value-form SHALL — §6.2 separately permits the underlying TROFFSET to be zero) | ST 2110-21:2022 §8.2 |
+| `CMAX` | any integer. §8.2 defines the SDP form as "expressed as an integer number" — zero and negative integers are accepted because the spec attaches no sign restriction; §7.1's `MAX(4, …)` / `MAX(16, …)` formula is an upper bound on `CINST` (§6.6.1), not a lower bound on the SDP value. | ST 2110-21:2022 §8.2 |
 | `TSMODE` | `SAMP`, `NEW`, `PRES` | ST 2110-10 §8.7 |
 | `TSDELAY` | positive integer (microseconds — ST 2110-10 §8.7 defines this as a decimal positive integer; `TSDELAY=0` is rejected) | ST 2110-10 §8.7 |
 

@@ -1001,7 +1001,7 @@ describe("ST 2110 validation", function()
       }, "\r\n") .. "\r\n"
     end
 
-    local VALID = "sampling=YCbCr-4:2:2; width=1920; height=1080; exactframerate=25; depth=10; TCS=SDR; colorimetry=BT709; PM=2110GPM; SSN=ST2110-20:2022"
+    local VALID = "sampling=YCbCr-4:2:2; width=1920; height=1080; exactframerate=25; depth=10; TCS=SDR; colorimetry=BT709; PM=2110GPM; SSN=ST2110-20:2022; TP=2110TPN"
 
     it("accepts all eight required fmtp parameters plus optional TCS", function()
       local doc, err = sdp.parse(video20_sdp(VALID), "st2110")
@@ -1012,7 +1012,7 @@ describe("ST 2110 validation", function()
     -- ST 2110-20:2022 §7.3 lists TCS under "Media Type Parameters with default
     -- values"; §7.6 says receivers assume SDR when TCS is not signaled.
     it("accepts raw video fmtp without TCS (§7.3 — optional; §7.6 default SDR)", function()
-      local fmtp = "sampling=YCbCr-4:2:2; width=1920; height=1080; exactframerate=25; depth=10; colorimetry=BT709; PM=2110GPM; SSN=ST2110-20:2022"
+      local fmtp = "sampling=YCbCr-4:2:2; width=1920; height=1080; exactframerate=25; depth=10; colorimetry=BT709; PM=2110GPM; SSN=ST2110-20:2022; TP=2110TPN"
       local doc, err = sdp.parse(video20_sdp(fmtp), "st2110")
       assert.is_nil(err)
       assert.is_table(doc)
@@ -1025,16 +1025,19 @@ describe("ST 2110 validation", function()
       assert.is_table(doc)
     end)
 
-    -- Missing required field: one entry per required parameter.
+    -- Missing required field: one entry per required parameter (incl. TP, which
+    -- ST 2110-21:2022 §8.1 requires for all video streams conforming to
+    -- ST 2110-20:2022 §6.1.1's compliance chain).
     local missing = {
-      { "sampling",       "width=1920; height=1080; exactframerate=25; depth=10; TCS=SDR; colorimetry=BT709; PM=2110GPM; SSN=ST2110-20:2022" },
-      { "width",          "sampling=YCbCr-4:2:2; height=1080; exactframerate=25; depth=10; TCS=SDR; colorimetry=BT709; PM=2110GPM; SSN=ST2110-20:2022" },
-      { "height",         "sampling=YCbCr-4:2:2; width=1920; exactframerate=25; depth=10; TCS=SDR; colorimetry=BT709; PM=2110GPM; SSN=ST2110-20:2022" },
-      { "exactframerate", "sampling=YCbCr-4:2:2; width=1920; height=1080; depth=10; TCS=SDR; colorimetry=BT709; PM=2110GPM; SSN=ST2110-20:2022" },
-      { "depth",          "sampling=YCbCr-4:2:2; width=1920; height=1080; exactframerate=25; TCS=SDR; colorimetry=BT709; PM=2110GPM; SSN=ST2110-20:2022" },
-      { "colorimetry",    "sampling=YCbCr-4:2:2; width=1920; height=1080; exactframerate=25; depth=10; TCS=SDR; PM=2110GPM; SSN=ST2110-20:2022" },
-      { "PM",             "sampling=YCbCr-4:2:2; width=1920; height=1080; exactframerate=25; depth=10; TCS=SDR; colorimetry=BT709; SSN=ST2110-20:2022" },
-      { "SSN",            "sampling=YCbCr-4:2:2; width=1920; height=1080; exactframerate=25; depth=10; TCS=SDR; colorimetry=BT709; PM=2110GPM" },
+      { "sampling",       "width=1920; height=1080; exactframerate=25; depth=10; TCS=SDR; colorimetry=BT709; PM=2110GPM; SSN=ST2110-20:2022; TP=2110TPN" },
+      { "width",          "sampling=YCbCr-4:2:2; height=1080; exactframerate=25; depth=10; TCS=SDR; colorimetry=BT709; PM=2110GPM; SSN=ST2110-20:2022; TP=2110TPN" },
+      { "height",         "sampling=YCbCr-4:2:2; width=1920; exactframerate=25; depth=10; TCS=SDR; colorimetry=BT709; PM=2110GPM; SSN=ST2110-20:2022; TP=2110TPN" },
+      { "exactframerate", "sampling=YCbCr-4:2:2; width=1920; height=1080; depth=10; TCS=SDR; colorimetry=BT709; PM=2110GPM; SSN=ST2110-20:2022; TP=2110TPN" },
+      { "depth",          "sampling=YCbCr-4:2:2; width=1920; height=1080; exactframerate=25; TCS=SDR; colorimetry=BT709; PM=2110GPM; SSN=ST2110-20:2022; TP=2110TPN" },
+      { "colorimetry",    "sampling=YCbCr-4:2:2; width=1920; height=1080; exactframerate=25; depth=10; TCS=SDR; PM=2110GPM; SSN=ST2110-20:2022; TP=2110TPN" },
+      { "PM",             "sampling=YCbCr-4:2:2; width=1920; height=1080; exactframerate=25; depth=10; TCS=SDR; colorimetry=BT709; SSN=ST2110-20:2022; TP=2110TPN" },
+      { "SSN",            "sampling=YCbCr-4:2:2; width=1920; height=1080; exactframerate=25; depth=10; TCS=SDR; colorimetry=BT709; PM=2110GPM; TP=2110TPN" },
+      { "TP",             "sampling=YCbCr-4:2:2; width=1920; height=1080; exactframerate=25; depth=10; TCS=SDR; colorimetry=BT709; PM=2110GPM; SSN=ST2110-20:2022" },
     }
     for _, c in ipairs(missing) do
       local field, fmtp = c[1], c[2]
@@ -1050,15 +1053,16 @@ describe("ST 2110 validation", function()
 
     -- Invalid value: one entry per validated parameter.
     local invalid = {
-      { "sampling",       "sampling=garbage; width=1920; height=1080; exactframerate=25; depth=10; TCS=SDR; colorimetry=BT709; PM=2110GPM; SSN=ST2110-20:2022" },
-      { "width",          "sampling=YCbCr-4:2:2; width=abc; height=1080; exactframerate=25; depth=10; TCS=SDR; colorimetry=BT709; PM=2110GPM; SSN=ST2110-20:2022" },
-      { "height",         "sampling=YCbCr-4:2:2; width=1920; height=abc; exactframerate=25; depth=10; TCS=SDR; colorimetry=BT709; PM=2110GPM; SSN=ST2110-20:2022" },
-      { "exactframerate", "sampling=YCbCr-4:2:2; width=1920; height=1080; exactframerate=25.5; depth=10; TCS=SDR; colorimetry=BT709; PM=2110GPM; SSN=ST2110-20:2022" },
-      { "depth",          "sampling=YCbCr-4:2:2; width=1920; height=1080; exactframerate=25; depth=abc; TCS=SDR; colorimetry=BT709; PM=2110GPM; SSN=ST2110-20:2022" },
-      { "TCS",            "sampling=YCbCr-4:2:2; width=1920; height=1080; exactframerate=25; depth=10; TCS=BADTCS; colorimetry=BT709; PM=2110GPM; SSN=ST2110-20:2022" },
-      { "colorimetry",    "sampling=YCbCr-4:2:2; width=1920; height=1080; exactframerate=25; depth=10; TCS=SDR; colorimetry=BADCOLOR; PM=2110GPM; SSN=ST2110-20:2022" },
-      { "PM",             "sampling=YCbCr-4:2:2; width=1920; height=1080; exactframerate=25; depth=10; TCS=SDR; colorimetry=BT709; PM=BADPM; SSN=ST2110-20:2022" },
-      { "SSN",            "sampling=YCbCr-4:2:2; width=1920; height=1080; exactframerate=25; depth=10; TCS=SDR; colorimetry=BT709; PM=2110GPM; SSN=BADSSN" },
+      { "sampling",       "sampling=garbage; width=1920; height=1080; exactframerate=25; depth=10; TCS=SDR; colorimetry=BT709; PM=2110GPM; SSN=ST2110-20:2022; TP=2110TPN" },
+      { "width",          "sampling=YCbCr-4:2:2; width=abc; height=1080; exactframerate=25; depth=10; TCS=SDR; colorimetry=BT709; PM=2110GPM; SSN=ST2110-20:2022; TP=2110TPN" },
+      { "height",         "sampling=YCbCr-4:2:2; width=1920; height=abc; exactframerate=25; depth=10; TCS=SDR; colorimetry=BT709; PM=2110GPM; SSN=ST2110-20:2022; TP=2110TPN" },
+      { "exactframerate", "sampling=YCbCr-4:2:2; width=1920; height=1080; exactframerate=25.5; depth=10; TCS=SDR; colorimetry=BT709; PM=2110GPM; SSN=ST2110-20:2022; TP=2110TPN" },
+      { "depth",          "sampling=YCbCr-4:2:2; width=1920; height=1080; exactframerate=25; depth=abc; TCS=SDR; colorimetry=BT709; PM=2110GPM; SSN=ST2110-20:2022; TP=2110TPN" },
+      { "TCS",            "sampling=YCbCr-4:2:2; width=1920; height=1080; exactframerate=25; depth=10; TCS=BADTCS; colorimetry=BT709; PM=2110GPM; SSN=ST2110-20:2022; TP=2110TPN" },
+      { "colorimetry",    "sampling=YCbCr-4:2:2; width=1920; height=1080; exactframerate=25; depth=10; TCS=SDR; colorimetry=BADCOLOR; PM=2110GPM; SSN=ST2110-20:2022; TP=2110TPN" },
+      { "PM",             "sampling=YCbCr-4:2:2; width=1920; height=1080; exactframerate=25; depth=10; TCS=SDR; colorimetry=BT709; PM=BADPM; SSN=ST2110-20:2022; TP=2110TPN" },
+      { "SSN",            "sampling=YCbCr-4:2:2; width=1920; height=1080; exactframerate=25; depth=10; TCS=SDR; colorimetry=BT709; PM=2110GPM; SSN=BADSSN; TP=2110TPN" },
+      { "TP",             "sampling=YCbCr-4:2:2; width=1920; height=1080; exactframerate=25; depth=10; TCS=SDR; colorimetry=BT709; PM=2110GPM; SSN=ST2110-20:2022; TP=BADTP" },
     }
     for _, c in ipairs(invalid) do
       local field, fmtp = c[1], c[2]
@@ -1433,7 +1437,7 @@ describe("ST 2110 validation", function()
   -- ── ST 2110-20 optional fmtp parameters ──────────────────────────────────────
 
   describe("ST 2110-20 optional fmtp parameters", function()
-    local BASE = "sampling=YCbCr-4:2:2; width=1920; height=1080; exactframerate=25; depth=10; TCS=SDR; colorimetry=BT709; PM=2110GPM; SSN=ST2110-20:2022"
+    local BASE = "sampling=YCbCr-4:2:2; width=1920; height=1080; exactframerate=25; depth=10; TCS=SDR; colorimetry=BT709; PM=2110GPM; SSN=ST2110-20:2022; TP=2110TPN"
 
     local function video20_sdp(fmtp_str)
       return table.concat({
@@ -1512,13 +1516,18 @@ describe("ST 2110 validation", function()
         assert.is_nil(ok)
         assert.is_table(err)
         assert.matches("TP", err.message)
-        assert.equal("ST 2110-20 §7.2", err.spec_ref)
+        assert.equal("ST 2110-21:2022 §8.1", err.spec_ref)
       end)
 
-      it("absent TP is accepted (optional parameter)", function()
-        local doc, err = sdp.parse(video20_sdp(BASE), "st2110")
-        assert.is_nil(err)
-        assert.is_table(doc)
+      -- ST 2110-20:2022 §6.1.1 requires every raw video stream to conform to
+      -- ST 2110-21 (Type N/NL/W); ST 2110-21:2022 §8.1 makes TP a Required
+      -- Parameter for all conforming video streams. So absence is rejected.
+      it("rejects fmtp without TP (ST 2110-21:2022 §8.1 Required Parameter)", function()
+        local without_tp = (BASE:gsub("; TP=2110TPN", ""))
+        local doc = sdp.parse(video20_sdp(without_tp))
+        local ok, err = doc:validate("st2110")
+        assert.is_nil(ok)
+        assert.matches("TP", err.message)
       end)
     end)
 
@@ -1938,7 +1947,7 @@ describe("ST 2110 validation", function()
   -- ── rtpmap / fmtp payload type consistency ────────────────────────────────────
 
   describe("rtpmap and fmtp payload type consistency (ST 2110-10 §7)", function()
-    local VALID_FMTP = "sampling=YCbCr-4:2:2; width=1920; height=1080; exactframerate=25; depth=10; TCS=SDR; colorimetry=BT709; PM=2110GPM; SSN=ST2110-20:2022"
+    local VALID_FMTP = "sampling=YCbCr-4:2:2; width=1920; height=1080; exactframerate=25; depth=10; TCS=SDR; colorimetry=BT709; PM=2110GPM; SSN=ST2110-20:2022; TP=2110TPN"
 
     local function video_with_pts(rtpmap_pt, fmtp_pt)
       return table.concat({
@@ -2199,7 +2208,7 @@ describe("ST 2110 validation", function()
         "m=video 5000 RTP/AVP 96",
         "c=IN IP4 239.100.0.1/64",
         "a=rtpmap:96 raw/90000",
-        "a=fmtp:96 sampling=YCbCr-4:2:2; width=1920; height=1080; exactframerate=25; depth=10; TCS=SDR; colorimetry=BT709; PM=2110GPM; SSN=ST2110-20:2022",
+        "a=fmtp:96 sampling=YCbCr-4:2:2; width=1920; height=1080; exactframerate=25; depth=10; TCS=SDR; colorimetry=BT709; PM=2110GPM; SSN=ST2110-20:2022; TP=2110TPN",
         "a=mediaclk:direct=0",
         "a=ts-refclk:ptp=IEEE1588-2008:" .. gmid,
       }, "\r\n") .. "\r\n"
@@ -2236,7 +2245,7 @@ describe("ST 2110 validation", function()
         "m=video 5000 RTP/AVP 96",
         "c=IN IP4 239.100.0.1/64",
         "a=rtpmap:96 raw/90000",
-        "a=fmtp:96 sampling=YCbCr-4:2:2; width=1920; height=1080; exactframerate=25; depth=10; TCS=SDR; colorimetry=BT709; PM=2110GPM; SSN=ST2110-20:2022",
+        "a=fmtp:96 sampling=YCbCr-4:2:2; width=1920; height=1080; exactframerate=25; depth=10; TCS=SDR; colorimetry=BT709; PM=2110GPM; SSN=ST2110-20:2022; TP=2110TPN",
         "a=mediaclk:direct=0",
         "a=ts-refclk:ntp=" .. addr,
       }, "\r\n") .. "\r\n"
@@ -3116,7 +3125,7 @@ describe("ST 2110 validation", function()
         "a=ts-refclk:ptp=IEEE1588-2008:00-11-22-FF-FE-33-44-55:0",
         "m=video 5000 RTP/AVP 96",
         "a=rtpmap:96 raw/90000",
-        "a=fmtp:96 sampling=YCbCr-4:2:2; width=1920; height=1080; exactframerate=25; depth=10; TCS=SDR; colorimetry=BT709; PM=2110GPM; SSN=ST2110-20:2022",
+        "a=fmtp:96 sampling=YCbCr-4:2:2; width=1920; height=1080; exactframerate=25; depth=10; TCS=SDR; colorimetry=BT709; PM=2110GPM; SSN=ST2110-20:2022; TP=2110TPN",
         "a=mediaclk:direct=0",
         "a=ts-refclk:ptp=IEEE1588-2008:00-11-22-FF-FE-33-44-55:0",
       }
@@ -3153,7 +3162,7 @@ describe("ST 2110 validation", function()
   -- ── M23: Missing c= detection (ST 2110-10 §6.3) ──────────────────────────────
 
   describe("missing connection address c= detection (ST 2110-10 §6.3)", function()
-    local FMTP = "sampling=YCbCr-4:2:2; width=1920; height=1080; exactframerate=25; depth=10; TCS=SDR; colorimetry=BT709; PM=2110GPM; SSN=ST2110-20:2022"
+    local FMTP = "sampling=YCbCr-4:2:2; width=1920; height=1080; exactframerate=25; depth=10; TCS=SDR; colorimetry=BT709; PM=2110GPM; SSN=ST2110-20:2022; TP=2110TPN"
 
     it("rejects SDP with no session c= and no media c=", function()
       local text = table.concat({
@@ -3211,7 +3220,7 @@ describe("ST 2110 validation", function()
   -- ── M23: All ts-refclk entries validated (ST 2110-10 §8.2) ───────────────────
 
   describe("all ts-refclk entries validated (ST 2110-10 §8.2)", function()
-    local FMTP = "sampling=YCbCr-4:2:2; width=1920; height=1080; exactframerate=25; depth=10; TCS=SDR; colorimetry=BT709; PM=2110GPM; SSN=ST2110-20:2022"
+    local FMTP = "sampling=YCbCr-4:2:2; width=1920; height=1080; exactframerate=25; depth=10; TCS=SDR; colorimetry=BT709; PM=2110GPM; SSN=ST2110-20:2022; TP=2110TPN"
 
     local function video_with_tsrefclks(lines_before_media, lines_after_rtpmap)
       local base = {
@@ -3327,10 +3336,10 @@ describe("ST 2110 validation", function()
     end)
   end)
 
-  -- ── M24: TROFF/CMAX require TP (ST 2110-21 §8) ───────────────────────────────
-
-  describe("TROFF/CMAX cross-field require TP", function()
-    local FMTP_BASE = "sampling=YCbCr-4:2:2; width=1920; height=1080; exactframerate=25; depth=10; TCS=SDR; colorimetry=BT709; PM=2110GPM; SSN=ST2110-20:2022"
+  -- TROFF and CMAX may accompany TP (now always required for raw video
+  -- per ST 2110-21:2022 §8.1).
+  describe("TROFF/CMAX accepted with TP", function()
+    local FMTP_BASE = "sampling=YCbCr-4:2:2; width=1920; height=1080; exactframerate=25; depth=10; TCS=SDR; colorimetry=BT709; PM=2110GPM; SSN=ST2110-20:2022; TP=2110TPN"
     local function video20_sdp(fmtp_extra)
       return table.concat({
         "v=0",
@@ -3346,24 +3355,8 @@ describe("ST 2110 validation", function()
       }, "\r\n") .. "\r\n"
     end
 
-    it("rejects TROFF without TP", function()
-      local doc = sdp.parse(video20_sdp("; TROFF=0"))
-      assert.is_table(doc)
-      local ok, err = doc:validate("st2110")
-      assert.is_nil(ok)
-      assert.matches("TP", err.message)
-    end)
-
-    it("rejects CMAX without TP", function()
-      local doc = sdp.parse(video20_sdp("; CMAX=3"))
-      assert.is_table(doc)
-      local ok, err = doc:validate("st2110")
-      assert.is_nil(ok)
-      assert.matches("TP", err.message)
-    end)
-
     it("accepts TROFF and CMAX with TP present", function()
-      local doc, err = sdp.parse(video20_sdp("; TP=2110TPN; TROFF=4500; CMAX=3"), "st2110")
+      local doc, err = sdp.parse(video20_sdp("; TROFF=4500; CMAX=3"), "st2110")
       assert.is_nil(err)
       assert.is_table(doc)
     end)
@@ -4308,7 +4301,7 @@ describe("ST 2110 validation", function()
   -- required a positive integer, so depth=14 / depth=24 passed despite being
   -- explicitly outside the enumeration.
   describe("M30 G1: ST 2110-20 depth enumeration (§7.4.2)", function()
-    local BASE = "sampling=YCbCr-4:2:2; width=1920; height=1080; exactframerate=25; TCS=SDR; colorimetry=BT709; PM=2110GPM; SSN=ST2110-20:2022"
+    local BASE = "sampling=YCbCr-4:2:2; width=1920; height=1080; exactframerate=25; TCS=SDR; colorimetry=BT709; PM=2110GPM; SSN=ST2110-20:2022; TP=2110TPN"
 
     local function video20_sdp(fmtp_str)
       return table.concat({
@@ -4349,7 +4342,7 @@ describe("ST 2110 validation", function()
   -- ── M30 G1b: ST 2110-20 §7.2 width/height range 1..32767 ───────────────────
   -- "Permitted values are integers between 1 and 32767 inclusive."
   describe("M30 G1b: ST 2110-20 width/height upper bound (§7.2)", function()
-    local BASE = "sampling=YCbCr-4:2:2; exactframerate=25; depth=10; TCS=SDR; colorimetry=BT709; PM=2110GPM; SSN=ST2110-20:2022"
+    local BASE = "sampling=YCbCr-4:2:2; exactframerate=25; depth=10; TCS=SDR; colorimetry=BT709; PM=2110GPM; SSN=ST2110-20:2022; TP=2110TPN"
 
     local function video20_sdp(fmtp_str)
       return table.concat({
@@ -4405,7 +4398,7 @@ describe("ST 2110 validation", function()
   -- the parameter name (no value form). interlace=anything is not covered by
   -- the spec; treat as malformed under §7.3.
   describe("M30 G4: interlace/segmented flag-only (§7.3)", function()
-    local BASE = "sampling=YCbCr-4:2:2; width=1920; height=1080; exactframerate=25; depth=10; TCS=SDR; colorimetry=BT709; PM=2110GPM; SSN=ST2110-20:2022"
+    local BASE = "sampling=YCbCr-4:2:2; width=1920; height=1080; exactframerate=25; depth=10; TCS=SDR; colorimetry=BT709; PM=2110GPM; SSN=ST2110-20:2022; TP=2110TPN"
 
     local function video20_sdp(fmtp_str)
       return table.concat({
@@ -4481,8 +4474,8 @@ describe("ST 2110 validation", function()
       }, "\r\n") .. "\r\n"
     end
 
-    local GPM_BASE = "sampling=YCbCr-4:2:2; width=1920; height=1080; exactframerate=25; depth=10; TCS=SDR; colorimetry=BT709; PM=2110GPM; SSN=ST2110-20:2022"
-    local BPM_BASE = "sampling=YCbCr-4:2:2; width=1920; height=1080; exactframerate=25; depth=10; TCS=SDR; colorimetry=BT709; PM=2110BPM; SSN=ST2110-20:2022"
+    local GPM_BASE = "sampling=YCbCr-4:2:2; width=1920; height=1080; exactframerate=25; depth=10; TCS=SDR; colorimetry=BT709; PM=2110GPM; SSN=ST2110-20:2022; TP=2110TPN"
+    local BPM_BASE = "sampling=YCbCr-4:2:2; width=1920; height=1080; exactframerate=25; depth=10; TCS=SDR; colorimetry=BT709; PM=2110BPM; SSN=ST2110-20:2022; TP=2110TPN"
 
     it("rejects MAXUDP=8960 with PM=2110BPM", function()
       local doc = sdp.parse(video20_sdp(BPM_BASE .. "; MAXUDP=8960"))

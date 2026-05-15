@@ -81,6 +81,19 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ### Fixed
 
+- **ST 2110-21:2022 §8.1 TP required at ST 2110 tier for raw video (audit
+  N1).** ST 2110-20:2022 §6.1.1: *"Traffic shaping and transmission timing
+  of the RTP stream shall be in accordance with the Network Compatibility
+  Model compliance definitions specified in SMPTE ST 2110-21 for Narrow
+  Senders (Type N), Narrow Linear Senders (Type NL), or Wide Senders
+  (Type W)."* ST 2110-21:2022 §8.1: *"Senders shall include the following
+  additional payload-format-specific Media Type parameters in the a=fmtp
+  clause of the SDP for all video RTP streams conforming to this
+  standard."* — TP. The chain makes TP a Required Parameter on every raw
+  video SDP. Moved TP from `video_opt_checks` to `video_checks`. The
+  obsolete cross-field "TROFF/CMAX require TP" check is dropped (TP is
+  now always present, so it's subsumed). Existing fixtures and tests
+  carrying TP continue to pass; tests that omitted TP were updated.
 - **ST 2110-10 §6.2 fixed-PT carve-out for L16/44100 (audit F11).** §6.2:
   *"All RTP streams shall use dynamic payload types chosen in the range
   of 96 through 127 … unless a fixed payload type designation exists for

@@ -1655,6 +1655,11 @@ function st2110.validate(doc)
       -- optional — §7.6: "If the TCS value is not specified, receivers shall
       -- assume the value SDR…" Optional TCS validation lives in
       -- video_opt_checks below.
+      -- TP is also required: ST 2110-20:2022 §6.1.1 requires every raw video
+      -- stream to conform to ST 2110-21 (Type N/NL/W); ST 2110-21:2022 §8.1
+      -- (Required Parameters): "Senders shall include the following additional
+      -- payload-format-specific Media Type parameters in the a=fmtp clause of
+      -- the SDP for all video RTP streams conforming to this standard." → TP.
       -- Each entry: { key, validator, spec_ref (optional override of §7.2) }.
       local video_checks = {
         { "sampling",       function(v) return valid_enum(v, VALID_SAMPLING,    "sampling")    end },
@@ -1668,6 +1673,8 @@ function st2110.validate(doc)
             if _ssn20_pat:match(v) then return true end
             return nil, "invalid SSN value (expected ST2110-20:YYYY, e.g. ST2110-20:2022)"
           end },
+        { "TP",             function(v) return valid_enum(v, VALID_TP, "TP") end,
+                            "ST 2110-21:2022 §8.1" },
       }
       for _, ck in ipairs(video_checks) do
         local key, fn, ref = ck[1], ck[2], ck[3] or "ST 2110-20 §7.2"
@@ -1710,12 +1717,9 @@ function st2110.validate(doc)
           return attr_err(vmsg, mpath, "fmtp", "ST 2110-20 §7.2", "INVALID_VALUE")
         end
       end
-      -- TROFF and CMAX semantics are defined by ST 2110-21 only in the context
-      -- of a transport profile (TP). Presence without TP is meaningless.
-      if (params["TROFF"] or params["CMAX"]) and not params["TP"] then
-        return attr_err("TROFF/CMAX require TP to also be present (ST 2110-21 §8)",
-          mpath, "fmtp", "ST 2110-21 §8")
-      end
+      -- (TP is now required for all raw video streams — see video_checks
+      -- above — so the historical "TROFF/CMAX require TP" cross-field check
+      -- is subsumed.)
       -- M30 G4: ST 2110-20 §7.3 defines interlace/segmented purely by parameter
       -- name presence (no <value> form). Bare flag → fmtp_params stores `true`;
       -- a `name=value` form stores a string. Reject the latter.
@@ -1748,7 +1752,6 @@ function st2110.validate(doc)
         -- default values"; §7.6 enumerates the permitted values. Validate
         -- value when present; absence is accepted (receivers assume SDR).
         { "TCS",     function(v) return valid_enum(v, VALID_TCS, "TCS") end, "ST 2110-20:2022 §7.6" },
-        { "TP",      function(v) return valid_enum(v, VALID_TP, "TP") end },
         { "MAXUDP",  valid_maxudp },
         { "PAR",     valid_par },
         -- ST 2110-21:2022 §8.2 — TROFF "is expressed as a positive integer

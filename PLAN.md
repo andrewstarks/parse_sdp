@@ -79,6 +79,9 @@ fixture findings, or user reports.
 - F11 — ST 2110-10 §6.2 fixed-PT carve-out implemented: PT 10 (L16/44100/2)
   and PT 11 (L16/44100/1) accepted per RFC 3551 §6 statics; all other
   PTs outside 96-127 still rejected.
+- N1 — TP is required for raw video at the ST 2110 tier per ST 2110-20:2022
+  §6.1.1 → ST 2110-21:2022 §8.1 chain. Cross-field "TROFF/CMAX require TP"
+  check dropped (subsumed by the always-required TP).
 
 These findings came out of a multi-spec audit that read every SDP-relevant
 SHALL / SHALL-NOT / defined-value clause across RFC 4566, RFC 8866,
@@ -108,42 +111,6 @@ SDPs; blockers for 1.0). N = false negatives (parser accepts non-conformant
 SDPs; should-fix). D = documentation/citation cleanups.
 
 ---
-
----
-
-### N1 — TP not required for raw ST 2110-20 video at the ST 2110 tier
-
-**Parser behavior:** [parse_sdp.lua:1584-1602](parse_sdp.lua#L1584) puts
-`TP` in `video_opt_checks` (optional). A raw video SDP without `TP=` passes
-at the ST 2110 tier. (IPMX tier separately requires TP via TR-10-TP-1
-§13.2 — that path is unchanged.)
-
-**Spec basis:**
-- ST 2110-20:2022 §6.1.1: *"Traffic shaping and transmission timing of the
-  RTP stream shall be in accordance with the Network Compatibility Model
-  compliance definitions specified in SMPTE ST 2110-21 for Narrow Senders
-  (Type N), Narrow Linear Senders (Type NL), or Wide Senders (Type W)."*
-- ST 2110-21:2022 §8.1 "Required Parameters": *"Senders shall include the
-  following additional payload-format-specific Media Type parameters in the
-  a=fmtp clause of the SDP for all video RTP streams conforming to this
-  standard."* Listed parameter: `TP`.
-- ST 2110-21:2022 §7.1.2/§7.1.3/§7.1.4: each Type SHALL signal
-  `TP=2110TPN`/`TPNL`/`TPW` respectively.
-
-Chain: every ST 2110-20 raw video stream SHALL conform to ST 2110-21 (one
-of N/NL/W), and each Type SHALL signal TP. Therefore TP is required on
-every raw video SDP.
-
-**Verify before acting:** Re-read ST 2110-20 §6.1.1 and ST 2110-21 §8.1.
-Confirm both SHALLs are still present and the chain holds.
-
-**Fix direction:** Move `TP` from `video_opt_checks` to `video_checks`
-(required list). Enum (`VALID_TP`) is already correct.
-
-**Doc sync:** GUIDE.md raw-video required-params table adds TP. Note this
-applies to ST 2110 tier (was already required at IPMX tier).
-
-**Tests:** raw video SDP without TP at ST 2110 tier rejects (was accepting).
 
 ### N2 — ST 2110-31 AM824 nchan even-number constraint not enforced
 
