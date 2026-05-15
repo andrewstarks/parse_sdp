@@ -41,7 +41,7 @@ runs them through the parser. See [spec_conformance/README.md](spec_conformance/
 
 ## Current State
 
-708 tests passing (hermetic) · 10/10 upstream conformance · allowlist empty.
+711 tests passing (hermetic) · 10/10 upstream conformance · allowlist empty.
 Every validation check is grounded in explicit spec text. No known check is
 opinion-only.
 
@@ -58,8 +58,6 @@ Remaining open work falls into two buckets:
 **Own milestones (broad scope):**
 
 - VSF TR-10-1 compatibility audit (AMWA Issue #36).
-- Full ST 2110-21 traffic-shaping bounds audit (AMWA Issue #20: `TROFF`,
-  `TSDELAY`, `CMAX` against the :2022 revision).
 - JT-NM Tested updates for the ST 2110 revision (AMWA Issue #11).
 - Full RFC 9134 jxsv parameter audit beyond what PR #21 covered
   (AMWA Issue #39 — `RANGE`, `interlace`, `segmented` per-jxsv form audit).
@@ -85,6 +83,20 @@ development unless new spec evidence emerges.
 - **ST 2110-31 AES3 fmtp** — AM824 audio currently uses the ST 2110-30 path
   (encoding name, channel-order, packet-fit checks). Revisit if new
   AES3-specific normative text emerges.
+- **ST 2110-21 §7.1 CMAX upper bound** — the type-specific formula
+  `MAX(4, INT(NPACKETS/(43200 × R_ACTIVE × T_FRAME)))` (and the Type W
+  variant with `16` and `21600`) is an upper bound on `CINST` per the
+  Network Compatibility Model in §6.6.1, not a lower bound on the SDP
+  CMAX value. Enforcing the upper bound requires NPACKETS / MAXUDP /
+  width × height × depth × sampling × frame-rate context; not added.
+- **ST 2110-21 §6.2 vs §8.2 TROFF zero handling** — §6.2 explicitly
+  permits TROFFSET to be zero (and requires it be signaled when it
+  differs from TRODEFAULT), while §8.2 says the SDP value is "expressed
+  as a positive integer." The parser follows the §8.2 value-form SHALL
+  and rejects `TROFF=0`. Revisit only if SMPTE issues an erratum.
+- **ST 2110-10:2022 §8.7 vs Annex B TSDELAY zero** — §8.7 says
+  "decimal positive integer"; Annex B (Informative) example shows
+  `TSDELAY=0`. The §8.7 SHALL governs; parser rejects `TSDELAY=0`.
 - **`o=` unicast_address literal-IP requirement** — RFC 4566 §5.7 ABNF allows
   FQDNs in the origin address; no ST 2110 clause explicitly forbids them there.
 - **NMOS, RTCP Info Blocks, and capability subsetting** — out of SDP scope by

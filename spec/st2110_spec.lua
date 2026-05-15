@@ -1478,14 +1478,40 @@ describe("ST 2110 validation", function()
 
     describe("CMAX (max consecutive packets)", function()
       local BASE_TP = BASE .. "; TP=2110TPN"
-      it("accepts a valid positive integer", function()
+      -- ST 2110-21:2022 §8.2: "CMAX ... is expressed as an integer number."
+      -- (No "positive" qualifier — 2017 and 2022 both use plain "integer.")
+      -- §7.1 formula bounds are upper bounds on CINST (per §6.6.1), not lower
+      -- bounds on the SDP-signaled value, and require NPACKETS/MAXUDP context
+      -- to compute. Value form is therefore "any integer."
+      it("accepts a positive integer", function()
         local doc, err = sdp.parse(video20_sdp(BASE_TP .. "; CMAX=3"), "st2110")
+        assert.is_nil(err)
+        assert.is_table(doc)
+      end)
+
+      it("accepts CMAX=0 (§8.2 — 'an integer number')", function()
+        local doc, err = sdp.parse(video20_sdp(BASE_TP .. "; CMAX=0"), "st2110")
+        assert.is_nil(err)
+        assert.is_table(doc)
+      end)
+
+      it("accepts a negative integer CMAX (§8.2 has no sign restriction)", function()
+        local doc, err = sdp.parse(video20_sdp(BASE_TP .. "; CMAX=-1"), "st2110")
         assert.is_nil(err)
         assert.is_table(doc)
       end)
 
       it("rejects non-integer CMAX", function()
         local doc = sdp.parse(video20_sdp(BASE_TP .. "; CMAX=notanumber"))
+        assert.is_table(doc)
+        local ok, err = doc:validate("st2110")
+        assert.is_nil(ok)
+        assert.is_table(err)
+        assert.matches("CMAX", err.message)
+      end)
+
+      it("rejects fractional CMAX", function()
+        local doc = sdp.parse(video20_sdp(BASE_TP .. "; CMAX=3.14"))
         assert.is_table(doc)
         local ok, err = doc:validate("st2110")
         assert.is_nil(ok)
@@ -1921,13 +1947,15 @@ describe("ST 2110 validation", function()
     end)
   end)
 
-  -- ── ST 2110-20 CMAX=0 rejection ───────────────────────────────────────────────
+  -- ── ST 2110-20 CMAX rejects fractional value ─────────────────────────────────
 
-  describe("ST 2110-20 CMAX=0 rejection", function()
-    -- TP required since M24 (CMAX implies a transport profile per ST 2110-21).
+  describe("ST 2110-20 CMAX integer-only value form", function()
+    -- ST 2110-21:2022 §8.2: "CMAX ... is expressed as an integer number."
+    -- The integer requirement is the only value-form SHALL on the SDP CMAX
+    -- parameter; sign and zero are not constrained at the SDP level.
     local BASE = "sampling=YCbCr-4:2:2; width=1920; height=1080; exactframerate=25; depth=10; TCS=SDR; colorimetry=BT709; PM=2110GPM; SSN=ST2110-20:2022; TP=2110TPN"
 
-    it("rejects CMAX=0 (positive integer required)", function()
+    it("rejects fractional CMAX (not an integer per §8.2)", function()
       local text = table.concat({
         "v=0",
         "o=- 1234567890 1 IN IP4 192.168.1.1",
@@ -1937,7 +1965,7 @@ describe("ST 2110 validation", function()
         "m=video 5000 RTP/AVP 96",
         "c=IN IP4 239.100.0.1/64",
         "a=rtpmap:96 raw/90000",
-        "a=fmtp:96 " .. BASE .. "; CMAX=0",
+        "a=fmtp:96 " .. BASE .. "; CMAX=3.14",
         "a=mediaclk:direct=0",
       }, "\r\n") .. "\r\n"
       local doc = sdp.parse(text)
@@ -1946,7 +1974,7 @@ describe("ST 2110 validation", function()
       assert.is_nil(ok)
       assert.is_table(err)
       assert.matches("CMAX", err.message)
-      assert.equal("ST 2110-20 §7.2", err.spec_ref)
+      assert.equal("ST 2110-21:2022 §8.2", err.spec_ref)
     end)
   end)
 

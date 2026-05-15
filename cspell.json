@@ -6,6 +6,7 @@
     "addr",
     "atype",
     "bwtype",
+    "CINST",
     "CMAC",
     "dkjson",
     "ECDH",
@@ -49,6 +50,7 @@
     "smpte",
     "SMPTE",
     "timecode",
+    "TROFFSET",
     "unicast",
     "YCbCr"
   ]

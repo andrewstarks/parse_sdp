@@ -634,6 +634,7 @@ end
 -- LPEG patterns for structural validation of ST 2110-20 §7.2 fmtp values.
 local _digit_seq   = R("09")^1
 local _pos_int_pat = _digit_seq * P(-1)
+local _signed_int_pat = (P("-") + P("+"))^-1 * _digit_seq * P(-1)
 local _efr_pat     = (_digit_seq * P("/") * _digit_seq + _digit_seq) * P(-1)
 local _par_pat     = _digit_seq * P(":") * _digit_seq * P(-1)
 
@@ -833,6 +834,14 @@ end
 local function valid_pos_int(value)
   if not _pos_int_pat:match(value) then return nil, "expected positive integer" end
   if tonumber(value) <= 0 then return nil, "value must be positive" end
+  return true
+end
+
+-- Returns true for any signed integer (optional leading sign + one or more digits).
+-- Used where the spec says only "an integer number" without a sign or zero
+-- restriction — most notably ST 2110-21:2022 §8.2 CMAX.
+local function valid_integer(value)
+  if not _signed_int_pat:match(value) then return nil, "expected an integer" end
   return true
 end
 
@@ -1411,7 +1420,9 @@ function st2110.validate(doc)
           return attr_err(vmsg, mpath, "fmtp", "ST 2110-22 §7", "INVALID_VALUE")
         end
       end
-      -- Optional: MAXUDP (1..8960 per ST 2110-10 §6.4), CMAX (positive integer).
+      -- Optional: MAXUDP (1..8960 per ST 2110-10 §6.4), CMAX (any integer per
+      -- ST 2110-21:2022 §8.2 "expressed as an integer number" — referenced by
+      -- ST 2110-22:2022 §7.2 Table 2).
       local maxudp_v = params["MAXUDP"]
       if maxudp_v ~= nil and maxudp_v ~= true then
         local vok, vmsg = valid_maxudp(tostring(maxudp_v))
@@ -1421,9 +1432,9 @@ function st2110.validate(doc)
       end
       local cmax_v = params["CMAX"]
       if cmax_v ~= nil and cmax_v ~= true then
-        local vok, vmsg = valid_pos_int(tostring(cmax_v))
+        local vok, vmsg = valid_integer(tostring(cmax_v))
         if not vok then
-          return attr_err("CMAX: " .. vmsg, mpath, "fmtp", "ST 2110-22 §7", "INVALID_VALUE")
+          return attr_err("CMAX: " .. vmsg, mpath, "fmtp", "ST 2110-21:2022 §8.2", "INVALID_VALUE")
         end
       end
       -- Optional: fbblevel (positive integer, TR-10-11 §12).
@@ -1518,24 +1529,33 @@ function st2110.validate(doc)
       end
       -- Optional ST 2110-20 fmtp params that have defined value formats.
       -- TSMODE / TSDELAY are from ST 2110-10 §8.7 (RTP timestamp generation).
+      -- Each entry: { key, validator, spec_ref (optional override of §7.2) }.
       local video_opt_checks = {
         { "TP",      function(v) return valid_enum(v, VALID_TP, "TP") end },
         { "MAXUDP",  valid_maxudp },
         { "PAR",     valid_par },
-        -- M30 G8: ST 2110-21 §8 — TROFF is a "decimal positive integer".
-        { "TROFF",   valid_pos_int },
-        { "CMAX",    valid_pos_int },
-        { "TSMODE",  function(v) return valid_enum(v, VALID_TSMODE, "TSMODE") end },
-        -- M29 G5: ST 2110-10 §8.7 — TSDELAY is a "decimal positive integer".
-        { "TSDELAY", valid_pos_int },
+        -- ST 2110-21:2022 §8.2 — TROFF "is expressed as a positive integer
+        -- number of microseconds". (§6.2 separately permits the underlying
+        -- TROFFSET to be zero; the SDP value-form §8.2 SHALL says positive.)
+        { "TROFF",   valid_pos_int,  "ST 2110-21:2022 §8.2" },
+        -- ST 2110-21:2022 §8.2 — CMAX "is expressed as an integer number"
+        -- (no sign or zero restriction). §7.1 formula bounds CINST (§6.6.1)
+        -- and is therefore an upper bound, not a lower bound on the
+        -- SDP-signaled value, and requires NPACKETS context to compute.
+        { "CMAX",    valid_integer,  "ST 2110-21:2022 §8.2" },
+        { "TSMODE",  function(v) return valid_enum(v, VALID_TSMODE, "TSMODE") end, "ST 2110-10 §8.7" },
+        -- ST 2110-10:2022 §8.7 — TSDELAY "is represented as a decimal positive
+        -- integer number of microseconds". (Annex B Informative SDP example
+        -- shows TSDELAY=0; non-normative — §8.7 SHALL governs.)
+        { "TSDELAY", valid_pos_int,  "ST 2110-10 §8.7" },
       }
       for _, ck in ipairs(video_opt_checks) do
-        local key, fn = ck[1], ck[2]
+        local key, fn, ref = ck[1], ck[2], ck[3] or "ST 2110-20 §7.2"
         local val = params[key]
         if val ~= nil and val ~= true then
           local vok, vmsg = fn(tostring(val))
           if not vok then
-            return attr_err(key .. ": " .. vmsg, mpath, "fmtp", "ST 2110-20 §7.2", "INVALID_VALUE")
+            return attr_err(key .. ": " .. vmsg, mpath, "fmtp", ref, "INVALID_VALUE")
           end
         end
       end

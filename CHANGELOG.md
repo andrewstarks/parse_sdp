@@ -47,6 +47,17 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ### Fixed
 
+- **ST 2110-21:2022 §8.2 CMAX value form relaxed to "an integer number."**
+  The §8.2 SDP value-form clause is "expressed as an integer number" — no sign
+  or zero restriction. (Same wording in :2017.) Previously the parser used
+  `valid_pos_int`, rejecting `CMAX=0` and negative integers under a misquoted
+  cite of "§8 — positive integer." The §7.1 type-specific formula
+  (`MAX(4, INT(...))` for Type N/NL, `MAX(16, INT(...))` for Type W) is an
+  *upper* bound on `CINST` per the Network Compatibility Model in §6.6.1, not
+  a lower bound on the SDP-signaled value, so no minimum check is added.
+  CMAX-related errors now cite `ST 2110-21:2022 §8.2`. TROFF and TSDELAY
+  retain their existing positive-integer enforcement (per ST 2110-21:2022
+  §8.2 and ST 2110-10:2022 §8.7 respectively); cites refined accordingly.
 - **jxsv mandatory fmtp params reduced to spec.** Required set is now
   `{width, height, TP, packetmode}` per ST 2110-22:2022 §7.2 Table 1 and
   RFC 9134 §7.1. `sampling`, `depth`, `exactframerate`, `TCS`, `colorimetry`
