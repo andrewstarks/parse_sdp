@@ -3726,6 +3726,60 @@ describe("ST 2110 validation", function()
     end)
   end)
 
+  -- ST 2110-10 §6.2: dynamic PT 96-127 "unless a fixed payload type
+  -- designation exists for that RTP Stream within the IETF standard which
+  -- specifies it." RFC 3551 §6 Table 4 statics that match ST 2110-30
+  -- audio essences: PT 10 = L16/44100/2, PT 11 = L16/44100/1.
+  describe("static PT carve-out (ST 2110-10 §6.2 / RFC 3551 §6)", function()
+    local PTP = "a=ts-refclk:ptp=IEEE1588-2008:00-11-22-FF-FE-33-44-55:0"
+    local function audio_static_pt(pt, enc, rate, ch)
+      return table.concat({
+        "v=0",
+        "o=- 1234567890 1 IN IP4 192.168.1.1",
+        "s=ST2110 Audio static PT",
+        "t=0 0", PTP,
+        string.format("m=audio 5004 RTP/AVP %d", pt),
+        "c=IN IP4 239.100.0.1/64",
+        string.format("a=rtpmap:%d %s/%d/%d", pt, enc, rate, ch),
+        "a=ptime:1",
+        "a=mediaclk:direct=0", PTP,
+      }, "\r\n") .. "\r\n"
+    end
+
+    it("accepts PT 10 with L16/44100/2 (RFC 3551 §6 static)", function()
+      local doc, err = sdp.parse(audio_static_pt(10, "L16", 44100, 2), "st2110")
+      assert.is_nil(err)
+      assert.is_table(doc)
+    end)
+
+    it("accepts PT 11 with L16/44100/1 (RFC 3551 §6 static)", function()
+      local doc, err = sdp.parse(audio_static_pt(11, "L16", 44100, 1), "st2110")
+      assert.is_nil(err)
+      assert.is_table(doc)
+    end)
+
+    it("rejects PT 10 with L16/48000/2 (PT 10 is rate-fixed at 44100)", function()
+      local doc = sdp.parse(audio_static_pt(10, "L16", 48000, 2))
+      local ok, err = doc:validate("st2110")
+      assert.is_nil(ok)
+      assert.matches("payload type", err.message)
+    end)
+
+    it("rejects PT 10 with L24/44100/2 (no L24 static at PT 10)", function()
+      local doc = sdp.parse(audio_static_pt(10, "L24", 44100, 2))
+      local ok, err = doc:validate("st2110")
+      assert.is_nil(ok)
+      assert.matches("payload type", err.message)
+    end)
+
+    it("rejects PT 12 with L16/44100/1 (no static at PT 12)", function()
+      local doc = sdp.parse(audio_static_pt(12, "L16", 44100, 1))
+      local ok, err = doc:validate("st2110")
+      assert.is_nil(ok)
+      assert.matches("payload type", err.message)
+    end)
+  end)
+
   describe("M25 H4/M6: DUP leg distinctness and consistency (ST 2110-10 §8.5)", function()
     local PTP = "a=ts-refclk:ptp=IEEE1588-2008:00-11-22-FF-FE-33-44-55:0"
     local VFMTP = "a=fmtp:96 sampling=YCbCr-4:2:2; width=1920; height=1080; exactframerate=25; depth=10; TCS=SDR; colorimetry=BT709; PM=2110GPM; SSN=ST2110-20:2022; TP=2110TPN"

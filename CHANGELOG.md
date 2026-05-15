@@ -81,6 +81,14 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ### Fixed
 
+- **ST 2110-10 §6.2 fixed-PT carve-out for L16/44100 (audit F11).** §6.2:
+  *"All RTP streams shall use dynamic payload types chosen in the range
+  of 96 through 127 … unless a fixed payload type designation exists for
+  that RTP Stream within the IETF standard which specifies it."* RFC 3551
+  §6 Table 4 statics that match ST 2110-30 essences: PT 10 = L16/44100/2
+  and PT 11 = L16/44100/1. Previously rejected; now accepted. PT outside
+  96-127 with any other encoding/rate/channel triple still rejected.
+  PT > 127 rejected with an RFC 3550 §5.1 cite (7-bit field).
 - **RFC 8866 §9 IPv4 layered multicast `<addr>/<ttl>/<numaddr>` accepted
   (audit F9).** §9 ABNF: `IP4-multicast = m1 3("." decimal-uchar) "/" ttl
   [ "/" numaddr ]`. Spec example `c=IN IP4 233.252.0.1/127/3` was

@@ -1313,17 +1313,35 @@ function st2110.validate(doc)
           mpath, "fmtp", "RFC 4566 §6", "INVALID_VALUE")
       end
     end
-    -- ST 2110-10 §6.2: dynamic payload types SHALL be in 96..127.
-    -- ST 2110 essence formats (raw, smpte291, L16/L24/AM824, jxsv, ST2110-41)
-    -- have no IANA-static assignment, so the range is always required here.
-    local pt_n = tonumber(rtp_pt)
-    if not pt_n or pt_n < 96 or pt_n > 127 then
-      return attr_err(
-        string.format("RTP payload type %s out of dynamic range (must be 96-127)", tostring(rtp_pt)),
-        mpath, "rtpmap", "ST 2110-10 §6.2", "INVALID_VALUE")
-    end
-
     local enc, clock_rate = rtpmap_parse(rtpmap.value or "")
+
+    -- ST 2110-10 §6.2: "All RTP streams shall use dynamic payload types
+    -- chosen in the range of 96 through 127, signaled as specified in
+    -- section 6 of IETF RFC 4566, unless a fixed payload type designation
+    -- exists for that RTP Stream within the IETF standard which specifies
+    -- it." RFC 3551 §6 Table 4 statics that match ST 2110-30 essences:
+    --   PT 10  L16/44100/2     PT 11  L16/44100/1
+    -- (No other ST 2110 encoding has an RFC 3551 / RFC 4855 static PT.)
+    local pt_n = tonumber(rtp_pt)
+    if not pt_n or pt_n < 0 or pt_n > 127 then
+      return attr_err(
+        string.format("RTP payload type %s out of valid range 0-127", tostring(rtp_pt)),
+        mpath, "rtpmap", "RFC 3550 §5.1", "INVALID_VALUE")
+    end
+    if pt_n < 96 then
+      local ch_s = (rtpmap.value or ""):match("^%d+%s+%S+/%d+/(%d+)$")
+      local ch = ch_s and tonumber(ch_s) or nil
+      local static_ok =
+        (pt_n == 10 and enc == "L16" and clock_rate == 44100 and ch == 2) or
+        (pt_n == 11 and enc == "L16" and clock_rate == 44100 and ch == 1)
+      if not static_ok then
+        return attr_err(
+          string.format(
+            "RTP payload type %s is outside the dynamic range 96-127 and does not match an RFC 3551 §6 static designation for this encoding (ST 2110-10 §6.2)",
+            tostring(rtp_pt)),
+          mpath, "rtpmap", "ST 2110-10 §6.2", "INVALID_VALUE")
+      end
+    end
 
     local params = {}
     if fmtp then

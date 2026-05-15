@@ -76,6 +76,9 @@ fixture findings, or user reports.
 - F10 — IPv4 multicast TTL=0 accepted per RFC 8866 §5.7 (range 0-255) / §9 ABNF.
 - F8 — RFC 4566 §5 `r=`, `z=`, session/media `k=`, and multiple `t=` blocks
   parsed, validated, and round-tripped through `to_sdp()`.
+- F11 — ST 2110-10 §6.2 fixed-PT carve-out implemented: PT 10 (L16/44100/2)
+  and PT 11 (L16/44100/1) accepted per RFC 3551 §6 statics; all other
+  PTs outside 96-127 still rejected.
 
 These findings came out of a multi-spec audit that read every SDP-relevant
 SHALL / SHALL-NOT / defined-value clause across RFC 4566, RFC 8866,
@@ -105,43 +108,6 @@ SDPs; blockers for 1.0). N = false negatives (parser accepts non-conformant
 SDPs; should-fix). D = documentation/citation cleanups.
 
 ---
-
-### F11 — RTP payload type < 96 rejected, but ST 2110-10 §6.2 has a fixed-PT exception
-
-**Parser behavior:** [parse_sdp.lua:1182-1186](parse_sdp.lua#L1182) rejects
-any PT < 96 with a hard error citing ST 2110-10 §6.2.
-
-**Spec basis:** ST 2110-10:2022 §6.2: *"All RTP streams shall use dynamic
-payload types chosen in the range of 96 through 127, signaled as specified
-in section 6 of IETF RFC 4566, **unless a fixed payload type designation
-exists for that RTP Stream within the IETF standard which specifies it.**"*
-RFC 3551 §6 statics: PT 10 = L16/44100/2, PT 11 = L16/44100/1. ST 2110-30
-§6.1 permits 44.1 kHz operation. A sender using PT 10 for L16/44100/2 is
-spec-conformant under the §6.2 carve-out.
-
-**Verify before acting:** Confirm §6.2 still includes the "unless" clause.
-Search RFC 3551 §6 / RFC 4855 for L16/L24/AM824/raw/jxsv/ST2110-41/smpte291
-static-PT assignments. (As of the audit: only L16 at 44100 with 1 or 2
-channels has a static PT — 11 and 10 respectively. No other ST 2110 essence
-encoding has a static PT.)
-
-**Fix direction:** When the rtpmap encoding is L16, the clock rate is 44100,
-and the channel count is 1 or 2, allow PT 11 or 10 respectively. For all
-other encodings, the 96–127 check stands. This is a narrow exception
-matching the §6.2 wording exactly.
-
-**Caution:** This is an edge case. ST 2110 senders almost never use static
-PTs even at 44.1 kHz. The fix is technically correct per the spec but might
-introduce more code than it's worth. Consider documenting as a "Known
-Deferred Item" if the next thread decides the corner case isn't worth the
-code complexity. Either decision is defensible; do not silently leave the
-parser stricter than the spec — pick one path.
-
-**Doc sync:** If fixed, GUIDE.md "ST 2110-10 §6.2" reference should note
-the static-PT exception.
-
-**Tests:** PT 10 with L16/44100/2 accepts (if fixed); PT 11 with L16/44100/1
-accepts; PT 12 with L16/44100/1 still rejects (no static for that combo).
 
 ---
 
