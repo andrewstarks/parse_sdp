@@ -1,5 +1,7 @@
 # parse_sdp
 
+[![Tests](https://github.com/andrewstarks/parse_sdp/actions/workflows/test.yml/badge.svg)](https://github.com/andrewstarks/parse_sdp/actions/workflows/test.yml)
+
 A Lua 5.5 library for parsing, validating, and serializing SDP (Session Description Protocol) files, with support for SMPTE ST 2110 and IPMX extensions.
 
 Built with [LPEG](https://www.inf.puc-rio.br/~roberto/lpeg/) for precise, composable parsing and structured error reporting.
