@@ -89,6 +89,9 @@ fixture findings, or user reports.
   `m=video`; §7.2 forbids trailing `;` on fmtp; §7.3 requires `b=AS:<kbps>`
   at the ST 2110 tier; §7.4 requires frame-rate signaling via either
   `a=framerate` or fmtp `exactframerate`.
+- N10 — ST 2110-40:2023 §7 FID prohibition. At ST 2110 tier, scoped to
+  SDPs with at least one smpte291 block (the §7 SHALL is in -40);
+  IPMX-tier broader prohibition (TR-10-1 §10) unchanged.
 
 These findings came out of a multi-spec audit that read every SDP-relevant
 SHALL / SHALL-NOT / defined-value clause across RFC 4566, RFC 8866,
@@ -118,37 +121,6 @@ SDPs; blockers for 1.0). N = false negatives (parser accepts non-conformant
 SDPs; should-fix). D = documentation/citation cleanups.
 
 ---
-
-### N10 — ST 2110-40 FID prohibition not enforced at the ST 2110 tier
-
-**Parser behavior:** [parse_sdp.lua:2065-2074](parse_sdp.lua#L2065) rejects
-`a=group:FID` only inside `ipmx.validate`. ST 2110 mode allows FID even on
-smpte291 streams.
-
-**Spec basis:** ST 2110-40:2023 §7: *"Section 4.1 of IETF RFC 8331 permits
-the use of Flow Identification ('FID') semantics to group streams within
-the SDP; such use is inconsistent with the 'one SDP object per RTP Stream'
-provision of SMPTE ST 2110-10 and therefore Flow Identification ('FID')
-semantics shall not be used under this standard."*
-
-**Verify before acting:** Confirm §7's FID prohibition. Decide whether to
-limit the rejection to smpte291-bearing SDPs (strict reading: the SHALL
-is in -40, which governs smpte291) or to broaden it to all ST 2110 SDPs
-(arguable from ST 2110-10 §8.1's "one SDP per RTP stream" but not an
-explicit FID SHALL in -10).
-
-**Fix direction:** Conservative: in `st2110.validate`, after iterating
-media blocks, if any block carries rtpmap encoding `smpte291`, reject any
-session-level `a=group:FID`. Cite ST 2110-40:2023 §7.
-
-**Caution:** Broader rejection (all ST 2110 streams, regardless of essence)
-is arguable but not directly grounded in a single SHALL. Strict reading
-recommended.
-
-**Doc sync:** GUIDE.md ST 2110-40 / smpte291 section — note FID prohibition.
-
-**Tests:** ST 2110 mode SDP with smpte291 and `a=group:FID` rejects;
-without smpte291, FID is still accepted at ST 2110 tier.
 
 ### N11 — MAXUDP > Standard limit on smpte291 / ST 2110-41 / ST 2110-30 not enforced
 

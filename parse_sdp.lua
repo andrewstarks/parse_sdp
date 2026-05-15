@@ -2075,6 +2075,35 @@ function st2110.validate(doc)
   end)
   if not dup_ok then return nil, dup_err end
 
+  -- ST 2110-40:2023 §7 (audit N10): "Section 4.1 of IETF RFC 8331 permits
+  -- the use of Flow Identification ('FID') semantics to group streams
+  -- within the SDP; such use is inconsistent with the 'one SDP object per
+  -- RTP Stream' provision of SMPTE ST 2110-10 and therefore Flow
+  -- Identification ('FID') semantics shall not be used under this
+  -- standard." The §7 SHALL is in -40, which governs smpte291 streams,
+  -- so reject only when at least one block carries smpte291.
+  do
+    local has_smpte291 = false
+    for _, m in ipairs(doc.media) do
+      local rm = find_attr(m.attributes or {}, "rtpmap")
+      local enc = rm and rtpmap_parse(rm.value or "")
+      if enc == "smpte291" then has_smpte291 = true; break end
+    end
+    if has_smpte291 then
+      for _, attr in ipairs(doc.session.attributes or {}) do
+        if attr.name == "group" then
+          local sem = (attr.value or ""):match("^(%S+)")
+          if sem == "FID" then
+            return nil, errors.new(
+              "a=group:FID is not permitted with smpte291 streams (ST 2110-40:2023 §7)",
+              { field_path = "session.attributes[group]",
+                spec_ref = "ST 2110-40:2023 §7", code = "INVALID_VALUE" })
+          end
+        end
+      end
+    end
+  end
+
   return true
 end
 

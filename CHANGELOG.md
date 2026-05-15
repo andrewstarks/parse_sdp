@@ -81,6 +81,12 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ### Fixed
 
+- **ST 2110-40:2023 §7 FID prohibition at the ST 2110 tier (audit N10).**
+  §7: *"Flow Identification ('FID') semantics shall not be used under this
+  standard."* The SHALL is in -40, which governs smpte291, so the
+  ST 2110-tier check fires only when at least one media block carries
+  smpte291. (The IPMX-tier check at TR-10-1 §10 remains broader: it
+  rejects any `a=group:FID`, regardless of essence.)
 - **ST 2110-22:2022 jxsv SHALLs enforced (audit N6 + N7 + N8 + N9).**
   - **N6 (§7.4 Table 4)** — Frame-rate signaling SHALL be present, via
     either `a=framerate:<rate>` (RFC 4566 §6) or fmtp `exactframerate=<rate>`.

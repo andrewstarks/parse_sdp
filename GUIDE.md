@@ -728,6 +728,8 @@ Optional parameters validated when present:
 
 `SSN=ST2110-40:2021` is not accepted from senders. Per ST 2110-40:2023 §7, receivers shall treat that value as equivalent to `ST2110-40:2023`, but senders shall signal `ST2110-40:2023` itself. Validating an SDP authored by a sender, this parser holds senders to the strict form.
 
+ST 2110-40:2023 §7 also forbids `a=group:FID` semantics: *"Flow Identification ('FID') semantics shall not be used under this standard."* At the ST 2110 tier, the parser rejects session-level `a=group:FID` whenever any media block carries an `smpte291` rtpmap. (At the IPMX tier, TR-10-1 §10 broadens the prohibition: any `a=group:FID` is rejected regardless of essence.)
+
 ### ST 2110-41 (fast metadata) `fmtp` parameters
 
 Fast metadata flows use rtpmap encoding name `ST2110-41`. The clock rate is

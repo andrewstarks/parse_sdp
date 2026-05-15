@@ -546,6 +546,31 @@ describe("ST 2110 validation", function()
       assert.is_table(doc)
     end)
 
+    -- N10 (audit): ST 2110-40:2023 §7 — "Flow Identification ('FID')
+    -- semantics shall not be used under this standard." The SHALL is in
+    -- -40, which governs smpte291, so reject only when smpte291 is present.
+    it("rejects a=group:FID when smpte291 stream is present (ST 2110-40:2023 §7)", function()
+      local text = table.concat({
+        "v=0",
+        "o=- 1234567890 1 IN IP4 192.168.1.1",
+        "s=ST2110 ANC + FID", "t=0 0",
+        "a=group:FID anc",
+        "a=ts-refclk:ptp=IEEE1588-2008:00-11-22-FF-FE-33-44-55:0",
+        "m=video 5020 RTP/AVP 96",
+        "c=IN IP4 239.100.0.3/64",
+        "a=mid:anc",
+        "a=rtpmap:96 smpte291/90000",
+        "a=fmtp:96 " .. DEFAULT_REQUIRED,
+        "a=mediaclk:direct=0",
+        "a=ts-refclk:ptp=IEEE1588-2008:00-11-22-FF-FE-33-44-55:0",
+      }, "\r\n") .. "\r\n"
+      local doc = sdp.parse(text)
+      local ok, err = doc:validate("st2110")
+      assert.is_nil(ok)
+      assert.matches("FID", err.message)
+      assert.matches("smpte291", err.message)
+    end)
+
     -- RFC 8331 §4: media type for smpte291 is "video"; m=audio … smpte291 is
     -- not a valid combination. ST 2110-40:2023 §7 defers SDP to RFC 8331.
     it("rejects m=audio with smpte291 rtpmap (RFC 8331 §4)", function()
