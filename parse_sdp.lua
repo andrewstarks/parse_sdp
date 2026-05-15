@@ -1456,6 +1456,15 @@ function st2110.validate(doc)
           return attr_err("TROFF: " .. tmsg, mpath, "fmtp", "ST 2110-40:2023 §7 / ST 2110-21", "INVALID_VALUE")
         end
       end
+      -- N11 (audit): ST 2110-40:2023 §6.1.4 — "The UDP size of each RTP
+      -- packet shall not exceed the Standard UDP Size Limit as specified
+      -- in SMPTE ST 2110-10." MAXUDP signals exceeding the Standard limit
+      -- (ST 2110-10:2022 §6.4 / §8.6), so its presence is non-conformant.
+      if params["MAXUDP"] ~= nil then
+        return attr_err(
+          "MAXUDP must not be signaled on smpte291 streams (§6.1.4 limits UDP size to the Standard UDP Size Limit)",
+          mpath, "fmtp", "ST 2110-40:2023 §6.1.4", "INVALID_VALUE")
+      end
 
     elseif enc == "ST2110-41" then
       -- ST 2110-41:2024 §5.3: "The RTP Clock rate and RTP Timestamp
@@ -1482,6 +1491,16 @@ function st2110.validate(doc)
             "invalid DIT value (expected comma-separated uppercase hex tokens, no '0x' prefix, no whitespace — e.g. DIT=100,2000A1,1013FC)",
             mpath, "fmtp", "ST 2110-41:2024 §6", "INVALID_VALUE")
         end
+      end
+      -- N11 (audit): ST 2110-41:2024 §5.4 — "The total length of the UDP
+      -- packet that encompasses each RTP Packet shall be less than or
+      -- equal to the Standard UDP Size Limit defined in SMPTE ST 2110-10."
+      -- ST 2110-10:2022 §6.4 defines MAXUDP as the signaling that a sender
+      -- exceeds the Standard limit, so any presence here is non-conformant.
+      if params["MAXUDP"] ~= nil then
+        return attr_err(
+          "MAXUDP must not be signaled on ST2110-41 streams (§5.4 limits UDP size to the Standard UDP Size Limit)",
+          mpath, "fmtp", "ST 2110-41:2024 §5.4", "INVALID_VALUE")
       end
 
     elseif enc == "jxsv" then
@@ -1943,6 +1962,17 @@ function st2110.validate(doc)
               mpath, "fmtp", "ST 2110-10 §6.4", "INVALID_VALUE")
           end
         end
+      end
+      -- N11 (audit): ST 2110-30:2025 §6.2.1 — "The Standard UDP Datagram
+      -- Size Limit as defined in SMPTE ST 2110-10 shall be used." This
+      -- governs L16/L24; ST 2110-31 §5.x inherits the same UDP-size
+      -- constraint for AM824. MAXUDP signals exceeding the Standard limit
+      -- (ST 2110-10:2022 §6.4 / §8.6), so its presence is non-conformant
+      -- on any audio essence.
+      if params["MAXUDP"] ~= nil then
+        return attr_err(
+          "MAXUDP must not be signaled on audio streams (ST 2110-30:2025 §6.2.1 / ST 2110-31 limit UDP size to the Standard UDP Size Limit)",
+          mpath, "fmtp", "ST 2110-30:2025 §6.2.1", "INVALID_VALUE")
       end
       -- ST 2110-30:2017 §6.2.2: "If channel order is signaled in the SDP, the
       -- syntax of IETF RFC 3190 for the parameter channel-order shall be used."

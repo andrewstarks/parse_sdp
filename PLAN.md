@@ -92,6 +92,10 @@ fixture findings, or user reports.
 - N10 — ST 2110-40:2023 §7 FID prohibition. At ST 2110 tier, scoped to
   SDPs with at least one smpte291 block (the §7 SHALL is in -40);
   IPMX-tier broader prohibition (TR-10-1 §10) unchanged.
+- N11 — MAXUDP forbidden on smpte291 / ST2110-41 / audio per
+  ST 2110-40:2023 §6.1.4, ST 2110-41:2024 §5.4, ST 2110-30:2025 §6.2.1
+  (each constrains UDP size to the Standard limit; ST 2110-10 §6.4 / §8.6
+  define MAXUDP as the signal that the sender exceeds the Standard limit).
 
 These findings came out of a multi-spec audit that read every SDP-relevant
 SHALL / SHALL-NOT / defined-value clause across RFC 4566, RFC 8866,
@@ -121,42 +125,6 @@ SDPs; blockers for 1.0). N = false negatives (parser accepts non-conformant
 SDPs; should-fix). D = documentation/citation cleanups.
 
 ---
-
-### N11 — MAXUDP > Standard limit on smpte291 / ST 2110-41 / ST 2110-30 not enforced
-
-**Parser behavior:** No MAXUDP-vs-encoding constraint exists. A sender that
-signals `MAXUDP=8000` on smpte291, ST2110-41, or L16/L24/AM824 passes.
-
-**Spec basis:** Three distinct SHALLs:
-- **ST 2110-40:2023 §6.1.4** (RTP Payload Format section): *"The UDP size of
-  each RTP packet shall not exceed the Standard UDP Size Limit as specified
-  in SMPTE ST 2110-10."* MAXUDP > 1460 on smpte291 violates this.
-- **ST 2110-41:2024 §5.4**: *"The total length of the UDP packet that
-  encompasses each RTP Packet shall be less than or equal to the Standard
-  UDP Size Limit defined in SMPTE ST 2110-10."*
-- **ST 2110-30:2025 §6.2.1**: *"The Standard UDP Datagram Size Limit as
-  defined in SMPTE ST 2110-10 shall be used."* For PCM L16/L24.
-
-Note ST 2110-10:2022 §6.4 defines MAXUDP as the signaling that a sender
-*exceeds* the Standard limit (1460). So *any* MAXUDP presence on a
-Standard-only-permitted encoding is non-conformant (not just MAXUDP > 1460).
-
-**Verify before acting:** Re-read each of the three clauses. Confirm
-"Standard UDP Size Limit" is 1460 (ST 2110-10 §6.3). Confirm MAXUDP's
-semantics in ST 2110-10 §6.4 / §8.6 — that its mere presence signals
-exceeding the Standard limit.
-
-**Fix direction:** In each of the three branches (smpte291, ST2110-41,
-audio), reject any presence of `MAXUDP` in fmtp. (For audio, this applies
-to L16/L24/AM824 — though AM824 inherits from -31 which uses Standard limit
-per the chain from §5.x.)
-
-**Doc sync:** GUIDE.md sections for ST 2110-30, ST 2110-31, ST 2110-40,
-ST 2110-41 — note MAXUDP is forbidden.
-
-**Tests:** smpte291 with MAXUDP rejects; ST2110-41 with MAXUDP rejects;
-L16 with MAXUDP rejects; raw video with MAXUDP (and PM=2110GPM) still
-accepts.
 
 ### N12 — ST 2110-20 §7.4.1 KEY-sampling SHALLs not enforced
 

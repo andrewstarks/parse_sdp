@@ -546,6 +546,15 @@ describe("ST 2110 validation", function()
       assert.is_table(doc)
     end)
 
+    -- N11 (audit): ST 2110-40:2023 §6.1.4 forbids MAXUDP on smpte291
+    -- (UDP size shall not exceed the Standard limit).
+    it("rejects MAXUDP on smpte291 (ST 2110-40:2023 §6.1.4)", function()
+      local doc = sdp.parse(ancillary_sdp(DEFAULT_REQUIRED .. "; MAXUDP=8960"))
+      local ok, err = doc:validate("st2110")
+      assert.is_nil(ok)
+      assert.matches("MAXUDP", err.message)
+    end)
+
     -- N10 (audit): ST 2110-40:2023 §7 — "Flow Identification ('FID')
     -- semantics shall not be used under this standard." The SHALL is in
     -- -40, which governs smpte291, so reject only when smpte291 is present.
@@ -2047,6 +2056,15 @@ describe("ST 2110 validation", function()
       assert.is_nil(ok)
       assert.matches("DIT", err.message)
     end)
+
+    -- N11 (audit): ST 2110-41:2024 §5.4 forbids MAXUDP on ST2110-41
+    -- (UDP size shall be ≤ Standard limit).
+    it("rejects MAXUDP on ST2110-41 (§5.4)", function()
+      local doc = sdp.parse(meta_sdp("SSN=ST2110-41:2024; DIT=100; MAXUDP=8960"))
+      local ok, err = doc:validate("st2110")
+      assert.is_nil(ok)
+      assert.matches("MAXUDP", err.message)
+    end)
   end)
 
   -- ── rtpmap / fmtp payload type consistency ────────────────────────────────────
@@ -2248,14 +2266,16 @@ describe("ST 2110 validation", function()
       assert.is_table(doc)
     end)
 
-    it("accepts L24/48000/16 ch at ptime=1 when MAXUDP raised", function()
-      -- MAXUDP signals Extended UDP Size Limit; 2304 < 8960 - 12 RTP overhead.
-      local doc, err = sdp.parse(audio_pkt(
+    -- N11 (audit): ST 2110-30:2025 §6.2.1 forbids signaling MAXUDP on
+    -- audio streams (the Standard UDP Size Limit shall be used).
+    it("rejects MAXUDP on audio (ST 2110-30:2025 §6.2.1)", function()
+      local doc = sdp.parse(audio_pkt(
         "a=rtpmap:97 L24/48000/16",
         "a=fmtp:97 channel-order=SMPTE2110.(U01,U02,U03,U04,U05,U06,U07,U08,U09,U10,U11,U12,U13,U14,U15,U16); MAXUDP=8960",
-        "1"), "st2110")
-      assert.is_nil(err)
-      assert.is_table(doc)
+        "1"))
+      local ok, err = doc:validate("st2110")
+      assert.is_nil(ok)
+      assert.matches("MAXUDP", err.message)
     end)
 
     it("rejects L16/96000/8 ch at ptime=1 (1536 B exceeds 1448)", function()

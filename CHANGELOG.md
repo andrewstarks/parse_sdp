@@ -81,6 +81,20 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ### Fixed
 
+- **MAXUDP forbidden on smpte291 / ST2110-41 / audio (audit N11).** Three
+  SHALLs in the per-essence specs constrain UDP size to the Standard
+  Limit (1460 octets, ST 2110-10:2022 §6.3). MAXUDP is the signal that
+  a sender *exceeds* that limit (ST 2110-10:2022 §6.4 / §8.6), so its
+  presence on these encodings is non-conformant:
+  - **ST 2110-40:2023 §6.1.4** — *"The UDP size of each RTP packet shall
+    not exceed the Standard UDP Size Limit."* Reject MAXUDP on smpte291.
+  - **ST 2110-41:2024 §5.4** — *"The total length of the UDP packet that
+    encompasses each RTP Packet shall be less than or equal to the
+    Standard UDP Size Limit defined in SMPTE ST 2110-10."* Reject MAXUDP
+    on ST2110-41.
+  - **ST 2110-30:2025 §6.2.1** — *"The Standard UDP Datagram Size Limit
+    as defined in SMPTE ST 2110-10 shall be used."* Reject MAXUDP on
+    L16/L24/AM824.
 - **ST 2110-40:2023 §7 FID prohibition at the ST 2110 tier (audit N10).**
   §7: *"Flow Identification ('FID') semantics shall not be used under this
   standard."* The SHALL is in -40, which governs smpte291, so the
