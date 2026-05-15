@@ -5,6 +5,6 @@ t=0 0
 m=video 5020 RTP/AVP 96
 c=IN IP4 239.100.0.3/64
 a=rtpmap:96 smpte291/90000
-a=fmtp:96 DID_SDID={0x61,0x02}
+a=fmtp:96 SSN=ST2110-40:2018; exactframerate=25; DID_SDID={0x61,0x02}
 a=mediaclk:direct=0
 a=ts-refclk:ptp=IEEE1588-2008:AA-BB-CC-DD-EE-FF-00-11:0

@@ -629,36 +629,24 @@ Default MAXUDP is the Standard UDP Size Limit of 1460 octets per ST 2110-10 §6.
 
 ### ST 2110-22 (JPEG-XS / jxsv) `fmtp` parameters
 
-Per ST 2110-22:2022 §7.2 Table 1, the mandatory fmtp parameters are `width`,
-`height`, and `TP`. Per IANA `video/jxsv` (RFC 9134), `packetmode` is also
-required. All other fmtp parameters defined by the spec are optional at this
-tier and validated only when present.
+Compressed video flows use rtpmap encoding name `jxsv` at clock rate 90000
+(ST 2110-22 / TR-10-11). `PM` is **not** an ST 2110-22 parameter — that is a
+ST 2110-20 (uncompressed video) packing-mode marker; the analogous control
+for jxsv is `packetmode` (IANA `video/jxsv` / RFC 9134 §4.3).
 
-`PM` is **not** an ST 2110-22 parameter — that is a ST 2110-20 (uncompressed
-video) packing-mode marker. `SSN` is optional per ST 2110-22:2022 §7.2 Table 2
-(and was not defined in ST 2110-22:2019 at all). `TP` permits all three values
-`2110TPN`, `2110TPNL`, `2110TPW` per the 2022 revision.
+ST 2110-22:2022 §7.2 Table 1 lists only `width`, `height`, and `TP` as
+mandatory format-specific parameters. Per IANA `video/jxsv` (RFC 9134),
+`packetmode` is also required. Beyond these, the parser additionally requires
+`sampling`, `exactframerate`, `depth`, `TCS`, and `colorimetry` (the
+ST 2110-20 baseline video-format parameters that ST 2110-22 inherits). All
+other parameters defined by the spec are optional at every tier and
+validated only when present — including `profile`, `level`, `sublevel`, and
+`transmode`. The IPMX JPEG-XS Video Profile §6.1.4 references those four
+fields for the RTCP **JPEG-XS Media Info Block** (type 0x0003), not SDP
+fmtp, and Media Info Blocks are out of scope for this validator.
 
-The parser currently still requires `profile`, `level`, `sublevel` at the
-ST 2110 tier — no normative source in SDP supports this. The IPMX JPEG-XS
-Video Profile §6.1.4 references those parameters for the RTCP **Media Info
-Block** (out of validator scope), not SDP fmtp. See [PLAN.md](PLAN.md) for
-the planned correction.
-
-### ST 2110-40 (smpte291 ancillary data) `fmtp` parameters
-
-Ancillary data flows use rtpmap encoding name `smpte291` at clock rate 90000 (RFC 8331).
-
-| Parameter | Example | Validated |
-| --- | --- | --- |
-| `DID_SDID` | `{0x61,0x02}` | yes — required; each octet must be exactly two hex digits |
-| `VPID_Code` | `133` | yes — optional; must be a non-negative integer when present |
-
-Multiple `DID_SDID` entries are allowed in the SDP; at least one must be present. All entries are validated — any entry with a malformed value is rejected.
-
-### ST 2110-22 (JPEG-XS compressed video) `fmtp` parameters
-
-Compressed video flows use rtpmap encoding name `jxsv` at clock rate 90000 (ST 2110-22 / TR-10-11). `TP` is restricted to `2110TPNL` or `2110TPW` — the uncompressed `2110TPN` packing is not valid for compressed video.
+`TP` permits all three values `2110TPN`, `2110TPNL`, `2110TPW` per the 2022
+revision (`2110TPN` was added in ST 2110-22:2022 §7.2 Table 1).
 
 Required parameters (all must be present):
 
@@ -671,25 +659,46 @@ Required parameters (all must be present):
 | `depth` | `10` | positive integer |
 | `TCS` | `SDR` | same set as ST 2110-20 |
 | `colorimetry` | `BT709` | same set as ST 2110-20 |
-| `PM` | `2110GPM` | `2110GPM`, `2110BPM` |
-| `SSN` | `ST2110-22:2019` | must be `ST2110-22:YYYY` (4-digit year) |
-| `profile` | `High444.12` | enum (TR-10-15 §8 / TR-08 §8.1.1): `Unrestricted`, `Light422.10`, `Light444.12`, `LightSubline422.10`, `LightSubline444.12`, `Main422.10`, `Main444.12`, `High444.12`, `MLS.12`, `LightBayer`, `MainBayer`, `HighBayer`, `MLSBayer` |
-| `level` | `2k-1` | enum (TR-10-15 §9 / ISO/IEC 21122-2): `Unrestricted`, `1k-1`, `2k-1`, `4k-1`, `4k-2`, `4k-3`, `8k-1`, `8k-2`, `8k-3`, `16k-1`, `16k-2`, `16k-3` |
-| `sublevel` | `Sublev3bpp` | enum (TR-10-15 §7.1 / ISO/IEC 21122-2): `Unrestricted`, `Full`, `Sublev12bpp`, `Sublev9bpp`, `Sublev6bpp`, `Sublev4bpp`, `Sublev3bpp`, `Sublev2bpp` |
-| `transmode` | `0` or `1` | 1-bit value (RFC 9134 / TR-10-15 §9) |
-| `packetmode` | `0` or `1` | 1-bit value (RFC 9134 / TR-10-15 §9) |
+| `TP` | `2110TPN` | `2110TPN`, `2110TPNL`, `2110TPW` (per ST 2110-22:2022 §7.2 Table 1) |
+| `packetmode` | `0` or `1` | 1-bit value (IANA `video/jxsv` / RFC 9134 §4.3) |
 
 Optional parameters validated when present:
 
 | Parameter | Valid values | Spec ref |
 | --- | --- | --- |
+| `SSN` | `ST2110-22:YYYY` (4-digit year) | ST 2110-22:2022 §7.2 Table 2 (not defined in 2019) |
+| `profile` | enum (TR-10-15 §8 / TR-08 §8.1.1): `Unrestricted`, `Light422.10`, `Light444.12`, `LightSubline422.10`, `LightSubline444.12`, `Main422.10`, `Main444.12`, `High444.12`, `MLS.12`, `LightBayer`, `MainBayer`, `HighBayer`, `MLSBayer` | ST 2110-22:2022 §7.2 |
+| `level` | enum (TR-10-15 §9 / ISO/IEC 21122-2): `Unrestricted`, `1k-1`, `2k-1`, `4k-1`, `4k-2`, `4k-3`, `8k-1`, `8k-2`, `8k-3`, `16k-1`, `16k-2`, `16k-3` | ST 2110-22:2022 §7.2 |
+| `sublevel` | enum (TR-10-15 §7.1 / ISO/IEC 21122-2): `Unrestricted`, `Full`, `Sublev12bpp`, `Sublev9bpp`, `Sublev6bpp`, `Sublev4bpp`, `Sublev3bpp`, `Sublev2bpp` | ST 2110-22:2022 §7.2 |
+| `transmode` | `0` or `1` (1-bit value) | IANA `video/jxsv` / TR-10-15 §9 |
 | `RANGE` | `NARROW`, `FULLPROTECT`, `FULL` | ST 2110-22 §7 |
-| `TP` | `2110TPNL`, `2110TPW` | ST 2110-22 §7 (2110TPN is **not** valid) |
 | `MAXUDP` | positive integer ≤ 8960 (Extended UDP Size Limit) | ST 2110-10 §6.4 |
 | `CMAX` | positive integer | ST 2110-22 §7 |
 | `fbblevel` | positive integer | TR-10-11 §12 |
 
 A `b=AS:<positive integer>` bandwidth line is **required** on every `jxsv` media block (TR-10-7 §11 / ST 2110-22 §7.3).
+
+### ST 2110-40 (smpte291 ancillary data) `fmtp` parameters
+
+Ancillary data flows use rtpmap encoding name `smpte291` at clock rate 90000 (RFC 8331). ST 2110-40:2023 §7 adds explicit SDP requirements on top of RFC 8331; the parser enforces the 2023 revision.
+
+Required parameters (all must be present):
+
+| Parameter | Example | Valid values |
+| --- | --- | --- |
+| `SSN` | `ST2110-40:2018` | `ST2110-40:2018` when `TM` is absent; `ST2110-40:2023` when `TM` is signaled (ST 2110-40:2023 §7) |
+| `exactframerate` | `25` | positive integer or `n/d` fraction (ST 2110-20:2022 §7.2 form, per ST 2110-40:2023 §7) |
+
+Optional parameters validated when present:
+
+| Parameter | Valid values | Spec ref |
+| --- | --- | --- |
+| `TM` | `LLTM` or `CTM` | ST 2110-40:2023 §7 (LLTM required if sender implements the Low-Latency Transmission Model; CTM may be signaled; if absent, receivers default to CTM) |
+| `TROFF` | positive integer (µs), per ST 2110-21 §8 form | ST 2110-40:2023 §7 (presence required only when the sender's TR_OFFSETANC differs from the prevailing video format's TRO_DEFAULT — a runtime property not observable from SDP, so only value form is validated here) |
+| `DID_SDID` | `{0xHH,0xHH}` (two hex octets) | RFC 8331 §4 — optional; may appear multiple times; every entry is validated |
+| `VPID_Code` | non-negative integer | ST 2110-40 §7.2 — optional |
+
+`SSN=ST2110-40:2021` is not accepted from senders. Per ST 2110-40:2023 §7, receivers shall treat that value as equivalent to `ST2110-40:2023`, but senders shall signal `ST2110-40:2023` itself. Validating an SDP authored by a sender, this parser holds senders to the strict form.
 
 ### ST 2110-41 (fast metadata) `fmtp` parameters
 

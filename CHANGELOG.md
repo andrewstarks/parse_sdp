@@ -11,6 +11,16 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ### Fixed
 
+- **Made `profile`, `level`, `sublevel` optional for jxsv at every tier.**
+  ST 2110-22:2022 §7.2 Table 1 lists only `width`, `height`, and `TP` as
+  mandatory format-specific parameters. Per IANA `video/jxsv` (RFC 9134),
+  only `packetmode` is additionally required. The IPMX JPEG-XS Video Profile
+  §6.1.4 references `profile` / `level` / `sublevel` / `transmode` /
+  `fbblevel` for the RTCP **JPEG-XS Media Info Block** (type 0x0003), not
+  SDP fmtp; Media Info Blocks are out of scope for this SDP validator.
+  TR-10-11 §10 defers SDP construction to ST 2110-22 §7. No normative source
+  requires these parameters in SDP at any tier. Validate value format when
+  present.
 - **Removed spec-unsupported "a=fmtp universally required" check.** The check
   at the ST 2110 media-block level cited "ST 2110-10 §7" but §7 of the 2022
   revision is the System Timing Model, not SDP. §8 (Session Description
@@ -49,18 +59,26 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
   payload-type match check previously cited `ST 2110-10 §7`. The actual
   authority is RFC 4566 §6.
 
-### Known follow-ups (parser still slightly over-strict at ST 2110 tier)
-
-- jxsv `profile`, `level`, `sublevel` are currently required at the ST 2110
-  tier. Per ST 2110-22:2022 §7.2 (only width/height/TP mandatory) and IANA
-  `video/jxsv` (only `packetmode` required besides rate), these are optional
-  at the SDP level. The IPMX JPEG-XS Video Profile §6.1.4 references them
-  for the RTCP Media Info Block (out of validator scope), not SDP fmtp. No
-  normative source requires them in SDP. Make optional at every tier.
-  Deferred to keep the current change focused.
-
 ### Added
 
+- **Enforce ST 2110-40:2023 §7 SHALL clauses on smpte291 fmtp.** The 2023
+  revision added explicit SDP-level requirements not present in :2018. The
+  parser now requires:
+  - `SSN`, with value `ST2110-40:2018` when `TM` is absent and
+    `ST2110-40:2023` when `TM` is signaled. Senders signaling
+    `ST2110-40:2021` are rejected (per §7 the 2021 value is a receiver-side
+    equivalence tolerance only; senders SHALL signal 2023).
+  - `exactframerate`, validated against the ST 2110-20:2022 §7.2 form.
+  - `TM`, when present, must be `LLTM` or `CTM` (§7 defines no other
+    values). Presence is required only for senders implementing LLTM —
+    enforced as a value-form check when present.
+  - `TROFF`, when present, must be a positive integer per ST 2110-21 §8.
+    The conditional SHALL ("if TR_OFFSETANC differs from TRO_DEFAULT") is
+    not observable from SDP alone, so only value form is validated here.
+
+  The `nmos-testing` `data.sdp` fixture (which predates :2023 and carries
+  no fmtp) is run in the conformance suite as a negative test asserting
+  rejection citing ST 2110-40:2023 §7.
 - **Opt-in conformance test suite** at `spec_conformance/`, driven against
   upstream SDP fixtures from `AMWA-TV/nmos-testing` and `AMWA-TV/bcp-006-01`,
   pinned to specific commit SHAs. Fixtures are fetched on demand into a
@@ -72,14 +90,13 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 - **Expected-failure semantics in the conformance suite.** Manifest entries
   may set `expect = "fail"` with `expect_spec_ref` to declare that an upstream
   fixture is known non-conformant and our parser must reject it for the
-  specified clause. Used for the `nmos-testing` 2022-7 fixture, which renders
-  both redundant legs with identical addressing — explicitly forbidden by
-  ST 2110-10:2022 §8.5.
+  specified clause. Used for the `nmos-testing` 2022-7 fixture (identical
+  addressing across both legs, forbidden by ST 2110-10:2022 §8.5) and the
+  `data.sdp` fixture (missing fmtp parameters required by ST 2110-40:2023 §7).
 - **Allowlist** in `spec_conformance/allowlist.lua` for divergences that are
-  open questions (parser may be over-strict, but unconfirmed against the
-  primary SMPTE PDF). Two clusters remain: `PM` for jxsv (3 entries) and
-  `DID_SDID` for smpte291 (1 entry). Both are suspected parser over-strictness
-  based on IANA registrations + AMWA reference SDPs.
+  open questions where primary spec text hasn't been consulted yet. Currently
+  empty — all previously suspected over-strictness has been resolved against
+  primary spec PDFs.
 
 ### Docs
 

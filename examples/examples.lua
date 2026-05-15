@@ -251,8 +251,8 @@ sweep({
   "examples/st2110/invalid/03_missing_fmtp.sdp",
   "examples/st2110/invalid/04_bad_tsrefclk_gmid.sdp",
   "examples/st2110/invalid/05_missing_sampling.sdp",
-  "examples/st2110/invalid/06_missing_channel_order.sdp",
-  "examples/st2110/invalid/07_missing_did_sdid.sdp",
+  "examples/st2110/invalid/06_bad_channel_order.sdp",
+  "examples/st2110/invalid/07_missing_smpte291_ssn.sdp",
   "examples/st2110/invalid/08_missing_ssn.sdp",
 }, "st2110", false)
 

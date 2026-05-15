@@ -1,10 +1,10 @@
 v=0
 o=- 1005 1 IN IP4 192.168.1.1
-s=ST2110 Audio fmtp Missing channel-order Parameter
+s=ST2110 Audio fmtp Bad channel-order Value
 t=0 0
 m=audio 5004 RTP/AVP 96
 c=IN IP4 239.100.0.2/64
 a=rtpmap:96 L24/48000/8
-a=fmtp:96 min-time=1ms
+a=fmtp:96 channel-order=NotARealGroup
 a=mediaclk:direct=0
 a=ts-refclk:ptp=IEEE1588-2008:AA-BB-CC-DD-EE-FF-00-11:0

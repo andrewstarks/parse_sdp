@@ -46,12 +46,18 @@ return {
     },
 
     -- ── nmos-testing: ST 2110-40 ancillary data ──
+    -- The upstream fixture predates ST 2110-40:2023 and carries no fmtp at
+    -- all on its smpte291 block. ST 2110-40:2023 §7 imposes new SHALLs
+    -- (SSN, exactframerate; conditional TM/TROFF) that the fixture cannot
+    -- satisfy. We run it as a negative test asserting rejection citing §7.
     {
       id = "nmos-testing:data.sdp",
       source = "nmos_testing",
       path = "test_data/sdp/data.sdp",
       mode = "st2110",
       vars = { src_ip = "192.0.2.1", dst_ip = "239.0.0.1", dst_port = "5004" },
+      expect = "fail",
+      expect_spec_ref = "ST 2110-40:2023 §7",
     },
 
     -- ── nmos-testing: ST 2022-6 mux (parses as RFC 4566 only) ──

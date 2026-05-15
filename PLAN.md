@@ -79,6 +79,19 @@ The conformance suite (`busted spec_conformance/`) currently passes
   SDP fmtp.
 - ✅ **Made DID_SDID optional for smpte291.** ST 2110-40:2023 §7 does not
   mention DID_SDID; RFC 8331 marks it explicitly optional.
+- ✅ **Made jxsv `profile` / `level` / `sublevel` optional at every tier.**
+  ST 2110-22:2022 §7.2 Table 1 lists only width/height/TP as mandatory;
+  IANA `video/jxsv` requires only `packetmode` beyond rate. The IPMX
+  JPEG-XS Video Profile §6.1.4 references those fields for the RTCP
+  JPEG-XS Media Info Block (out of validator scope), not SDP fmtp.
+  TR-10-11 §10 defers SDP construction to ST 2110-22 §7. Validate value
+  format when present.
+- ✅ **Enforced ST 2110-40:2023 §7 SHALL clauses on smpte291 fmtp.** SSN
+  (value gated by `TM` presence) and `exactframerate` are now required;
+  `TM` (`LLTM`/`CTM`) and `TROFF` (positive integer per ST 2110-21) are
+  validated when present. The pre-2023 `nmos-testing:data.sdp` fixture
+  carries no fmtp; it now runs in the conformance suite as a negative
+  test with `expect_spec_ref = "ST 2110-40:2023 §7"`.
 
 ### Confirmed correct (no change)
 
@@ -91,22 +104,9 @@ The conformance suite (`busted spec_conformance/`) currently passes
 
 ### Open follow-ups (not on the critical path)
 
-- **Make jxsv `profile` / `level` / `sublevel` optional (at every tier).**
-  Per ST 2110-22:2022 §7.2 (only width/height/TP mandatory) and IANA
-  `video/jxsv` (only `packetmode` required besides rate), these are SDP-fmtp
-  optional at the ST 2110 tier. The IPMX JPEG-XS Video Profile §6.1.4
-  requires them in the RTCP Media Info Block (out of validator scope per
-  CLAUDE.md), not in SDP fmtp. TR-10-11 §10 defers to ST 2110-22. **No
-  normative source requires them in SDP at any tier.** Validate format
-  when present; do not require presence. Conformance suite already passes
-  because every upstream fixture happens to include them; this is a
-  strictness-principle correction, not a behavior-driven fix.
-- **Enforce ST 2110-40:2023 §7 requirements not currently checked.** The
-  2023 revision added explicit "shall" requirements: senders shall signal
-  `SSN`; senders shall signal `exactframerate`; senders implementing LLTM
-  shall signal `TM=LLTM`; non-default `TROFFSETANC` requires `TROFF`. The
-  parser does not currently enforce any of these. Add as new strictness
-  checks with spec citations.
+None at this time. Next strictness-principle work should come from the
+SDPoker cross-reference backlog below, or from new fixtures added to the
+conformance suite.
 
 ## SDPoker Cross-Reference Backlog
 

@@ -1129,7 +1129,7 @@ function st2110.validate(doc)
     end
 
     if enc == "smpte291" then
-      -- ST 2110-40: ancillary data (RFC 8331 / SMPTE ST 2110-40)
+      -- ST 2110-40: ancillary data (RFC 8331 / SMPTE ST 2110-40:2023)
       if clock_rate ~= 90000 then
         return attr_err(
           string.format("rtpmap clock rate must be 90000 for smpte291 (got %s)", tostring(clock_rate)),
@@ -1156,6 +1156,63 @@ function st2110.validate(doc)
         if not n or n < 0 or n ~= math.floor(n) then
           return attr_err("invalid VPID_Code value (must be a non-negative integer)",
             mpath, "fmtp", "ST 2110-40 §7.2", "INVALID_VALUE")
+        end
+      end
+      -- ST 2110-40:2023 §7: TM (Transmission Model) is OPTIONAL with two
+      -- defined values. "Senders implementing the Low-Latency Transmission
+      -- Model shall signal a Format Specific Parameter TM with the value
+      -- LLTM in the SDP." "Senders implementing the Compatible Transmission
+      -- Model may signal a Format Specific Parameter TM with the value CTM
+      -- in the SDP." Receivers default to CTM when absent.
+      local tm = params["TM"]
+      if tm ~= nil and tm ~= true then
+        local tm_str = tostring(tm)
+        if tm_str ~= "LLTM" and tm_str ~= "CTM" then
+          return attr_err("invalid TM value '" .. tm_str .. "' (must be 'LLTM' or 'CTM')",
+            mpath, "fmtp", "ST 2110-40:2023 §7", "INVALID_VALUE")
+        end
+      end
+      -- ST 2110-40:2023 §7: SSN is REQUIRED. "Senders implementing this
+      -- standard shall signal a Format Specific Parameter SSN with the
+      -- value ST2110-40:2018 unless they are signaling Format Specific
+      -- Parameter TM, in which case they shall signal the value
+      -- ST2110-40:2023." Value is tied to TM presence.
+      local ssn = params["SSN"]
+      if ssn == nil or ssn == true then
+        return attr_err("fmtp missing required 'SSN' parameter for smpte291",
+          mpath, "fmtp", "ST 2110-40:2023 §7")
+      end
+      local ssn_str = tostring(ssn)
+      local expected_ssn = (tm and tm ~= true) and "ST2110-40:2023" or "ST2110-40:2018"
+      if ssn_str ~= expected_ssn then
+        return attr_err(string.format(
+          "invalid SSN value '%s' (expected '%s' %s)", ssn_str, expected_ssn,
+          (tm and tm ~= true) and "when TM is signaled" or "when TM is absent"),
+          mpath, "fmtp", "ST 2110-40:2023 §7", "INVALID_VALUE")
+      end
+      -- ST 2110-40:2023 §7: exactframerate is REQUIRED. "All Senders shall
+      -- signal the Format Specific Parameter exactframerate as defined in
+      -- SMPTE ST 2110-20:2022 Clause 7.2 to indicate the frame rate related
+      -- to the ANC data in the stream."
+      local efr = params["exactframerate"]
+      if efr == nil or efr == true then
+        return attr_err("fmtp missing required 'exactframerate' parameter for smpte291",
+          mpath, "fmtp", "ST 2110-40:2023 §7")
+      end
+      local efrok, efrmsg = valid_exactframerate(tostring(efr))
+      if not efrok then
+        return attr_err("exactframerate: " .. efrmsg, mpath, "fmtp", "ST 2110-40:2023 §7", "INVALID_VALUE")
+      end
+      -- ST 2110-40:2023 §7: TROFF, when signaled, uses ST 2110-21's
+      -- definition. Presence is conditional on TR_OFFSETANC differing from
+      -- TRO_DEFAULT for the prevailing video format — a runtime property
+      -- not observable from SDP alone — so only validate the value form
+      -- when present (positive integer per ST 2110-21 §8).
+      local troff = params["TROFF"]
+      if troff ~= nil and troff ~= true then
+        local tok, tmsg = valid_pos_int(tostring(troff))
+        if not tok then
+          return attr_err("TROFF: " .. tmsg, mpath, "fmtp", "ST 2110-40:2023 §7 / ST 2110-21", "INVALID_VALUE")
         end
       end
 
@@ -1201,24 +1258,46 @@ function st2110.validate(doc)
         { "depth",          valid_pos_int },
         { "TCS",            function(v) return valid_enum(v, VALID_TCS,         "TCS")         end },
         { "colorimetry",    function(v) return valid_enum(v, VALID_COLORIMETRY, "colorimetry") end },
-        -- JPEG-XS codec params required by TR-10-11 / IPMX JPEG-XS Profile §6.1.4.
-        -- Value enums per TR-10-15-Part1 §8/§9 + TR-08 §8.1.1 / ISO/IEC 21122-2.
-        { "profile",    function(v) return valid_enum(v, VALID_JXS_PROFILE,  "profile")    end },
-        { "level",      function(v) return valid_enum(v, VALID_JXS_LEVEL,    "level")      end },
-        { "sublevel",   function(v) return valid_enum(v, VALID_JXS_SUBLEVEL, "sublevel")   end },
+        -- packetmode is the only JPEG-XS codec param mandatory at the SDP level
+        -- (IANA video/jxsv registration / RFC 9134 §4.3). The other codec
+        -- params (profile, level, sublevel, transmode, fbblevel) are validated
+        -- when present but not required — see optional blocks below.
         { "packetmode", function(v) return valid_enum(v, VALID_JXS_BIT,      "packetmode") end },
       }
-      -- transmode is OPTIONAL at the ST 2110 tier. ST 2110-22:2022 §7.2 does
-      -- not list transmode; the IANA video/jxsv registration marks it
-      -- optional. IPMX-JPEG-XS-Video-Profile §6.1.4 makes it mandatory for
-      -- IPMX senders — that belongs in the IPMX validator (follow-up: also
-      -- move profile/level/sublevel there). When present at this tier,
-      -- validate the value format only.
+      -- profile, level, sublevel, and transmode are OPTIONAL in SDP at every
+      -- tier. ST 2110-22:2022 §7.2 Table 1 (mandatory) lists only
+      -- width/height/TP. IANA video/jxsv requires only `packetmode` besides
+      -- rate. IPMX JPEG-XS Video Profile §6.1.4 lists these fields for the
+      -- RTCP JPEG-XS Media Info Block (type 0x0003) — Media Info Blocks are
+      -- out of scope for this SDP validator (see CLAUDE.md). TR-10-11 §10
+      -- defers SDP construction to ST 2110-22 §7. Validate value formats
+      -- when present; do not require presence.
       local transmode_v = params["transmode"]
       if transmode_v ~= nil and transmode_v ~= true then
         local vok, vmsg = valid_enum(tostring(transmode_v), VALID_JXS_BIT, "transmode")
         if not vok then
           return attr_err("transmode: " .. vmsg, mpath, "fmtp", "ST 2110-22 §7.2", "INVALID_VALUE")
+        end
+      end
+      local profile_v = params["profile"]
+      if profile_v ~= nil and profile_v ~= true then
+        local vok, vmsg = valid_enum(tostring(profile_v), VALID_JXS_PROFILE, "profile")
+        if not vok then
+          return attr_err("profile: " .. vmsg, mpath, "fmtp", "ST 2110-22 §7.2", "INVALID_VALUE")
+        end
+      end
+      local level_v = params["level"]
+      if level_v ~= nil and level_v ~= true then
+        local vok, vmsg = valid_enum(tostring(level_v), VALID_JXS_LEVEL, "level")
+        if not vok then
+          return attr_err("level: " .. vmsg, mpath, "fmtp", "ST 2110-22 §7.2", "INVALID_VALUE")
+        end
+      end
+      local sublevel_v = params["sublevel"]
+      if sublevel_v ~= nil and sublevel_v ~= true then
+        local vok, vmsg = valid_enum(tostring(sublevel_v), VALID_JXS_SUBLEVEL, "sublevel")
+        if not vok then
+          return attr_err("sublevel: " .. vmsg, mpath, "fmtp", "ST 2110-22 §7.2", "INVALID_VALUE")
         end
       end
       -- PM (Packing Mode) is NOT a ST 2110-22 parameter. ST 2110-22:2019 §7.2

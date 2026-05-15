@@ -61,5 +61,5 @@ i=ANC — CEA-708 captions
 c=IN IP4 239.201.12.1/64
 a=source-filter: incl IN IP4 239.201.12.1 10.50.0.1
 a=rtpmap:101 smpte291/90000
-a=fmtp:101 DID_SDID={0x61,0x01}; VPID_Code=148; IPMX
+a=fmtp:101 SSN=ST2110-40:2018; exactframerate=50; DID_SDID={0x61,0x01}; VPID_Code=148; IPMX
 a=mediaclk:direct=0

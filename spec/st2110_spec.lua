@@ -493,6 +493,10 @@ describe("ST 2110 validation", function()
   -- ── ST 2110-40: ancillary data (smpte291) ──────────────────────────────────
 
   describe("ST 2110-40 ancillary data (smpte291)", function()
+    -- ST 2110-40:2023 §7 requires SSN and exactframerate on every smpte291
+    -- fmtp; the builder defaults these so individual cases can append or
+    -- override specific fields under test.
+    local DEFAULT_REQUIRED = "SSN=ST2110-40:2018; exactframerate=25"
     local function ancillary_sdp(fmtp_str)
       return table.concat({
         "v=0",
@@ -510,7 +514,7 @@ describe("ST 2110 validation", function()
     end
 
     it("accepts valid smpte291 SDP with DID_SDID", function()
-      local doc, err = sdp.parse(ancillary_sdp("DID_SDID={0x61,0x02}"), "st2110")
+      local doc, err = sdp.parse(ancillary_sdp(DEFAULT_REQUIRED .. "; DID_SDID={0x61,0x02}"), "st2110")
       assert.is_nil(err)
       assert.is_table(doc)
     end)
@@ -519,13 +523,13 @@ describe("ST 2110 validation", function()
       -- ST 2110-40:2023 §7 imposes no DID_SDID requirement. RFC 8331's
       -- media-type registration marks DID_SDID optional and notes that its
       -- absence signals receivers to determine DID/SDID by inspecting packets.
-      local doc, err = sdp.parse(ancillary_sdp("VPID_Code=133"), "st2110")
+      local doc, err = sdp.parse(ancillary_sdp(DEFAULT_REQUIRED .. "; VPID_Code=133"), "st2110")
       assert.is_nil(err)
       assert.is_table(doc)
     end)
 
     it("errors when DID_SDID has a non-hex octet", function()
-      local doc = sdp.parse(ancillary_sdp("DID_SDID={0xGG,0x02}"))
+      local doc = sdp.parse(ancillary_sdp(DEFAULT_REQUIRED .. "; DID_SDID={0xGG,0x02}"))
       assert.is_table(doc)
       local ok, err = doc:validate("st2110")
       assert.is_nil(ok)
@@ -534,18 +538,111 @@ describe("ST 2110 validation", function()
     end)
 
     it("accepts multiple valid DID_SDID entries", function()
-      local doc, err = sdp.parse(ancillary_sdp("DID_SDID={0x61,0x02}; DID_SDID={0x00,0x01}"), "st2110")
+      local doc, err = sdp.parse(ancillary_sdp(DEFAULT_REQUIRED .. "; DID_SDID={0x61,0x02}; DID_SDID={0x00,0x01}"), "st2110")
       assert.is_nil(err)
       assert.is_table(doc)
     end)
 
     it("errors when any DID_SDID entry is invalid", function()
-      local doc = sdp.parse(ancillary_sdp("DID_SDID={0x61,0x02}; DID_SDID={0xGG,0x01}"))
+      local doc = sdp.parse(ancillary_sdp(DEFAULT_REQUIRED .. "; DID_SDID={0x61,0x02}; DID_SDID={0xGG,0x01}"))
       assert.is_table(doc)
       local ok, err = doc:validate("st2110")
       assert.is_nil(ok)
       assert.is_table(err)
       assert.matches("DID_SDID", err.message)
+    end)
+
+    -- ── ST 2110-40:2023 §7 SHALL clauses ──────────────────────────────────
+    -- "Senders implementing this standard shall signal a Format Specific
+    -- Parameter SSN with the value ST2110-40:2018 unless they are signaling
+    -- Format Specific Parameter TM, in which case they shall signal the
+    -- value ST2110-40:2023."
+    -- "All Senders shall signal the Format Specific Parameter exactframerate
+    -- as defined in SMPTE ST 2110-20:2022 Clause 7.2..."
+    -- "Senders implementing the Low-Latency Transmission Model shall signal
+    -- a Format Specific Parameter TM with the value LLTM in the SDP."
+
+    it("rejects smpte291 fmtp missing SSN", function()
+      local doc = sdp.parse(ancillary_sdp("exactframerate=25; DID_SDID={0x61,0x02}"))
+      assert.is_table(doc)
+      local ok, err = doc:validate("st2110")
+      assert.is_nil(ok)
+      assert.is_table(err)
+      assert.matches("SSN", err.message)
+      assert.matches("ST 2110%-40:2023", err.spec_ref)
+    end)
+
+    it("rejects smpte291 fmtp missing exactframerate", function()
+      local doc = sdp.parse(ancillary_sdp("SSN=ST2110-40:2018; DID_SDID={0x61,0x02}"))
+      assert.is_table(doc)
+      local ok, err = doc:validate("st2110")
+      assert.is_nil(ok)
+      assert.is_table(err)
+      assert.matches("exactframerate", err.message)
+      assert.matches("ST 2110%-40:2023", err.spec_ref)
+    end)
+
+    it("rejects SSN=ST2110-40:2023 when TM is absent", function()
+      local doc = sdp.parse(ancillary_sdp("SSN=ST2110-40:2023; exactframerate=25"))
+      assert.is_table(doc)
+      local ok, err = doc:validate("st2110")
+      assert.is_nil(ok)
+      assert.is_table(err)
+      assert.matches("SSN", err.message)
+    end)
+
+    it("rejects SSN=ST2110-40:2018 when TM is signaled", function()
+      local doc = sdp.parse(ancillary_sdp("SSN=ST2110-40:2018; TM=LLTM; exactframerate=25"))
+      assert.is_table(doc)
+      local ok, err = doc:validate("st2110")
+      assert.is_nil(ok)
+      assert.is_table(err)
+      assert.matches("SSN", err.message)
+    end)
+
+    it("accepts SSN=ST2110-40:2023 paired with TM=LLTM", function()
+      local doc, err = sdp.parse(ancillary_sdp("SSN=ST2110-40:2023; TM=LLTM; exactframerate=25"), "st2110")
+      assert.is_nil(err)
+      assert.is_table(doc)
+    end)
+
+    it("accepts SSN=ST2110-40:2023 paired with TM=CTM", function()
+      local doc, err = sdp.parse(ancillary_sdp("SSN=ST2110-40:2023; TM=CTM; exactframerate=25"), "st2110")
+      assert.is_nil(err)
+      assert.is_table(doc)
+    end)
+
+    it("rejects unrecognized TM value", function()
+      local doc = sdp.parse(ancillary_sdp("SSN=ST2110-40:2023; TM=XYZ; exactframerate=25"))
+      assert.is_table(doc)
+      local ok, err = doc:validate("st2110")
+      assert.is_nil(ok)
+      assert.is_table(err)
+      assert.matches("TM", err.message)
+    end)
+
+    it("rejects ill-formed exactframerate", function()
+      local doc = sdp.parse(ancillary_sdp("SSN=ST2110-40:2018; exactframerate=not-a-rate"))
+      assert.is_table(doc)
+      local ok, err = doc:validate("st2110")
+      assert.is_nil(ok)
+      assert.is_table(err)
+      assert.matches("exactframerate", err.message)
+    end)
+
+    it("accepts optional TROFF as a positive integer when present", function()
+      local doc, err = sdp.parse(ancillary_sdp(DEFAULT_REQUIRED .. "; TROFF=1000"), "st2110")
+      assert.is_nil(err)
+      assert.is_table(doc)
+    end)
+
+    it("rejects TROFF=0 (must be a positive integer per ST 2110-21 §8)", function()
+      local doc = sdp.parse(ancillary_sdp(DEFAULT_REQUIRED .. "; TROFF=0"))
+      assert.is_table(doc)
+      local ok, err = doc:validate("st2110")
+      assert.is_nil(ok)
+      assert.is_table(err)
+      assert.matches("TROFF", err.message)
     end)
   end)
 
@@ -1365,6 +1462,7 @@ describe("ST 2110 validation", function()
   -- ── ST 2110-40: VPID_Code optional fmtp param ─────────────────────────────────
 
   describe("ST 2110-40 VPID_Code optional fmtp param (§7.2)", function()
+    local DEFAULT_REQUIRED = "SSN=ST2110-40:2018; exactframerate=25"
     local function anc_sdp(fmtp_str)
       return table.concat({
         "v=0",
@@ -1381,19 +1479,19 @@ describe("ST 2110 validation", function()
     end
 
     it("accepts a valid integer VPID_Code", function()
-      local doc, err = sdp.parse(anc_sdp("DID_SDID={0x61,0x02}; VPID_Code=133"), "st2110")
+      local doc, err = sdp.parse(anc_sdp(DEFAULT_REQUIRED .. "; DID_SDID={0x61,0x02}; VPID_Code=133"), "st2110")
       assert.is_nil(err)
       assert.is_table(doc)
     end)
 
     it("accepts VPID_Code=0", function()
-      local doc, err = sdp.parse(anc_sdp("DID_SDID={0x61,0x02}; VPID_Code=0"), "st2110")
+      local doc, err = sdp.parse(anc_sdp(DEFAULT_REQUIRED .. "; DID_SDID={0x61,0x02}; VPID_Code=0"), "st2110")
       assert.is_nil(err)
       assert.is_table(doc)
     end)
 
     it("rejects non-integer VPID_Code", function()
-      local doc = sdp.parse(anc_sdp("DID_SDID={0x61,0x02}; VPID_Code=notanumber"))
+      local doc = sdp.parse(anc_sdp(DEFAULT_REQUIRED .. "; DID_SDID={0x61,0x02}; VPID_Code=notanumber"))
       assert.is_table(doc)
       local ok, err = doc:validate("st2110")
       assert.is_nil(ok)
@@ -1403,7 +1501,7 @@ describe("ST 2110 validation", function()
     end)
 
     it("rejects negative VPID_Code", function()
-      local doc = sdp.parse(anc_sdp("DID_SDID={0x61,0x02}; VPID_Code=-1"))
+      local doc = sdp.parse(anc_sdp(DEFAULT_REQUIRED .. "; DID_SDID={0x61,0x02}; VPID_Code=-1"))
       assert.is_table(doc)
       local ok, err = doc:validate("st2110")
       assert.is_nil(ok)
@@ -1412,7 +1510,7 @@ describe("ST 2110 validation", function()
     end)
 
     it("absent VPID_Code is accepted (optional)", function()
-      local doc, err = sdp.parse(anc_sdp("DID_SDID={0x61,0x02}"), "st2110")
+      local doc, err = sdp.parse(anc_sdp(DEFAULT_REQUIRED .. "; DID_SDID={0x61,0x02}"), "st2110")
       assert.is_nil(err)
       assert.is_table(doc)
     end)
@@ -2320,8 +2418,20 @@ describe("ST 2110 validation", function()
       assert.is_table(doc)
     end)
 
-    it("rejects missing profile", function()
+    -- profile / level / sublevel are OPTIONAL at every tier. ST 2110-22:2022
+    -- §7.2 Table 1 (mandatory) lists only width/height/TP. IANA video/jxsv
+    -- requires only `packetmode` besides rate. IPMX JPEG-XS Video Profile
+    -- §6.1.4 references these for the RTCP JPEG-XS Media Info Block, not SDP
+    -- fmtp. TR-10-11 §10 defers SDP construction to ST 2110-22 §7.
+    it("accepts missing profile (optional per ST 2110-22 §7.2)", function()
       local fmtp = VALID_JXSV_FMTP:gsub("; profile=High444.12", "")
+      local doc, err = sdp.parse(jxsv_sdp(fmtp), "st2110")
+      assert.is_nil(err)
+      assert.is_table(doc)
+    end)
+
+    it("rejects invalid profile value when present", function()
+      local fmtp = VALID_JXSV_FMTP:gsub("profile=High444%.12", "profile=NotAProfile")
       local doc = sdp.parse(jxsv_sdp(fmtp))
       assert.is_table(doc)
       local ok, err = doc:validate("st2110")
@@ -2330,8 +2440,15 @@ describe("ST 2110 validation", function()
       assert.matches("profile", err.message)
     end)
 
-    it("rejects missing level", function()
+    it("accepts missing level (optional per ST 2110-22 §7.2)", function()
       local fmtp = VALID_JXSV_FMTP:gsub("; level=1k%-1", "")
+      local doc, err = sdp.parse(jxsv_sdp(fmtp), "st2110")
+      assert.is_nil(err)
+      assert.is_table(doc)
+    end)
+
+    it("rejects invalid level value when present", function()
+      local fmtp = VALID_JXSV_FMTP:gsub("level=1k%-1", "level=ZZZ")
       local doc = sdp.parse(jxsv_sdp(fmtp))
       assert.is_table(doc)
       local ok, err = doc:validate("st2110")
@@ -2340,8 +2457,15 @@ describe("ST 2110 validation", function()
       assert.matches("level", err.message)
     end)
 
-    it("rejects missing sublevel", function()
+    it("accepts missing sublevel (optional per ST 2110-22 §7.2)", function()
       local fmtp = VALID_JXSV_FMTP:gsub("; sublevel=Sublev3bpp", "")
+      local doc, err = sdp.parse(jxsv_sdp(fmtp), "st2110")
+      assert.is_nil(err)
+      assert.is_table(doc)
+    end)
+
+    it("rejects invalid sublevel value when present", function()
+      local fmtp = VALID_JXSV_FMTP:gsub("sublevel=Sublev3bpp", "sublevel=Bogus")
       local doc = sdp.parse(jxsv_sdp(fmtp))
       assert.is_table(doc)
       local ok, err = doc:validate("st2110")
