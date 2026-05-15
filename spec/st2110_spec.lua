@@ -2741,6 +2741,75 @@ describe("ST 2110 validation", function()
       assert.is_table(err)
       assert.matches("fbblevel", err.message)
     end)
+
+    -- RFC 9134 §7.1 — interlace and segmented are bare-flag parameters
+    -- (presence indicates the property; no value form). segmented without
+    -- interlace is explicitly forbidden: "Signaling of this parameter without
+    -- the interlace parameter is forbidden."
+    describe("interlace / segmented (RFC 9134 §7.1)", function()
+      it("accepts interlace as a bare flag", function()
+        local doc, err = sdp.parse(jxsv_sdp(VALID_JXSV_FMTP .. "; interlace"), "st2110")
+        assert.is_nil(err)
+        assert.is_table(doc)
+      end)
+
+      it("accepts interlace + segmented together as bare flags", function()
+        local doc, err = sdp.parse(jxsv_sdp(VALID_JXSV_FMTP .. "; interlace; segmented"), "st2110")
+        assert.is_nil(err)
+        assert.is_table(doc)
+      end)
+
+      it("rejects interlace=1 (must be bare flag, not name=value)", function()
+        local doc = sdp.parse(jxsv_sdp(VALID_JXSV_FMTP .. "; interlace=1"))
+        assert.is_table(doc)
+        local ok, err = doc:validate("st2110")
+        assert.is_nil(ok)
+        assert.is_table(err)
+        assert.matches("interlace", err.message)
+        assert.equal("RFC 9134 §7.1", err.spec_ref)
+      end)
+
+      it("rejects segmented=yes (must be bare flag, not name=value)", function()
+        local doc = sdp.parse(jxsv_sdp(VALID_JXSV_FMTP .. "; interlace; segmented=yes"))
+        assert.is_table(doc)
+        local ok, err = doc:validate("st2110")
+        assert.is_nil(ok)
+        assert.is_table(err)
+        assert.matches("segmented", err.message)
+        assert.equal("RFC 9134 §7.1", err.spec_ref)
+      end)
+
+      it("rejects segmented without interlace", function()
+        local doc = sdp.parse(jxsv_sdp(VALID_JXSV_FMTP .. "; segmented"))
+        assert.is_table(doc)
+        local ok, err = doc:validate("st2110")
+        assert.is_nil(ok)
+        assert.is_table(err)
+        assert.matches("segmented", err.message)
+        assert.matches("interlace", err.message)
+        assert.equal("RFC 9134 §7.1", err.spec_ref)
+      end)
+    end)
+
+    -- RFC 9134 §7.1 — RANGE enum {NARROW, FULLPROTECT, FULL}. Value form is
+    -- defined by RFC 9134 (the IANA video/jxsv registration), not ST 2110-22.
+    describe("RANGE (RFC 9134 §7.1)", function()
+      it("accepts RANGE=NARROW", function()
+        local doc, err = sdp.parse(jxsv_sdp(VALID_JXSV_FMTP .. "; RANGE=NARROW"), "st2110")
+        assert.is_nil(err)
+        assert.is_table(doc)
+      end)
+
+      it("rejects RANGE=PARTIAL with RFC 9134 §7.1 cite", function()
+        local doc = sdp.parse(jxsv_sdp(VALID_JXSV_FMTP .. "; RANGE=PARTIAL"))
+        assert.is_table(doc)
+        local ok, err = doc:validate("st2110")
+        assert.is_nil(ok)
+        assert.is_table(err)
+        assert.matches("RANGE", err.message)
+        assert.equal("RFC 9134 §7.1", err.spec_ref)
+      end)
+    end)
   end)
 
   -- ── M22: a=extmap ID upper bound = 255 (RFC 5285) ────────────────────────────

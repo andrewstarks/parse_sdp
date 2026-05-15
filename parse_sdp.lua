@@ -1412,13 +1412,31 @@ function st2110.validate(doc)
           end
         end
       end
-      -- Optional: RANGE (same enum as ST 2110-20).
+      -- RFC 9134 §7.1 (IANA video/jxsv registration) — RANGE optional with
+      -- enum {NARROW, FULLPROTECT, FULL}. ST 2110-22 does not redefine RANGE,
+      -- so the IANA registration is the value-form authority here.
       local range_val = params["RANGE"]
       if range_val ~= nil then
         local vok, vmsg = valid_enum(tostring(range_val), VALID_RANGE, "RANGE")
         if not vok then
-          return attr_err(vmsg, mpath, "fmtp", "ST 2110-22 §7", "INVALID_VALUE")
+          return attr_err(vmsg, mpath, "fmtp", "RFC 9134 §7.1", "INVALID_VALUE")
         end
+      end
+      -- RFC 9134 §7.1 — interlace and segmented are bare-flag parameters
+      -- ("If this parameter name is present, it indicates..."). A name=value
+      -- form is not defined. Reject `interlace=anything` / `segmented=anything`.
+      for _, flag in ipairs({ "interlace", "segmented" }) do
+        if params[flag] ~= nil and params[flag] ~= true then
+          return attr_err(flag .. " must be a bare flag, not name=value (RFC 9134 §7.1)",
+            mpath, "fmtp", "RFC 9134 §7.1", "INVALID_VALUE")
+        end
+      end
+      -- RFC 9134 §7.1 — "Signaling of [segmented] without the interlace
+      -- parameter is forbidden." (Same prohibition as ST 2110-20 §7.3 in the
+      -- raw-video path; jxsv inherits this from the IANA registration.)
+      if params["segmented"] and not params["interlace"] then
+        return attr_err("segmented requires interlace to also be present (RFC 9134 §7.1)",
+          mpath, "fmtp", "RFC 9134 §7.1")
       end
       -- Optional: MAXUDP (1..8960 per ST 2110-10 §6.4), CMAX (any integer per
       -- ST 2110-21:2022 §8.2 "expressed as an integer number" — referenced by

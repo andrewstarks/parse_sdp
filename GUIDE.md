@@ -670,10 +670,12 @@ Optional parameters validated when present:
 | `level` | enum (TR-10-15 §9 / ISO/IEC 21122-2): `Unrestricted`, `1k-1`, `2k-1`, `4k-1`, `4k-2`, `4k-3`, `8k-1`, `8k-2`, `8k-3`, `16k-1`, `16k-2`, `16k-3` | ST 2110-22:2022 §7.2 |
 | `sublevel` | enum (TR-10-15 §7.1 / ISO/IEC 21122-2): `Unrestricted`, `Full`, `Sublev12bpp`, `Sublev9bpp`, `Sublev6bpp`, `Sublev4bpp`, `Sublev3bpp`, `Sublev2bpp` | ST 2110-22:2022 §7.2 |
 | `transmode` | `0` or `1` (1-bit value) | IANA `video/jxsv` / TR-10-15 §9 |
-| `RANGE` | `NARROW`, `FULLPROTECT`, `FULL` | ST 2110-22 §7 |
+| `RANGE` | `NARROW`, `FULLPROTECT`, `FULL` | RFC 9134 §7.1 |
 | `MAXUDP` | positive integer ≤ 8960 (Extended UDP Size Limit) | ST 2110-10 §6.4 |
-| `CMAX` | positive integer | ST 2110-22 §7 |
+| `CMAX` | any integer (per ST 2110-21:2022 §8.2 — see uncompressed-video table above for the §7.1 upper-bound caveat) | ST 2110-21:2022 §8.2 (referenced by ST 2110-22:2022 §7.2 Table 2) |
 | `fbblevel` | positive integer | TR-10-11 §12 |
+
+Bare-flag parameters `interlace` and `segmented` are accepted on jxsv flows under the same rules as raw video (RFC 9134 §7.1 — same wording as ST 2110-20 §7.3): both are flag-only (`interlace=anything` / `segmented=anything` are rejected), and `segmented` SHALL only appear together with `interlace` (RFC 9134 §7.1: *"Signaling of this parameter without the interlace parameter is forbidden."*).
 
 A `b=AS:<positive integer>` bandwidth line is **required** on every `jxsv` media block (TR-10-7 §11 / ST 2110-22 §7.3).
 

@@ -44,9 +44,19 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
   `expect_spec_ref` for fixtures that are known non-conformant. Runs
   separately via `busted spec_conformance/`; the default `busted spec/` stays
   hermetic.
+- **RFC 9134 §7.1 `interlace`/`segmented` enforcement on jxsv.** The jxsv
+  branch now enforces the bare-flag form of these parameters and rejects
+  `segmented` without `interlace`. RFC 9134 §7.1: *"Signaling of this
+  parameter without the interlace parameter is forbidden."* Previously
+  these were unconstrained in the jxsv path (they were enforced only in
+  the raw-video / ST 2110-20 branch).
 
 ### Fixed
 
+- **jxsv `RANGE` cite refined to RFC 9134 §7.1.** ST 2110-22 does not
+  define `RANGE`; the value-form authority for the IANA `video/jxsv`
+  registration is RFC 9134 §7.1. The enum `{NARROW, FULLPROTECT, FULL}`
+  is unchanged; only the `spec_ref` cite moved.
 - **ST 2110-21:2022 §8.2 CMAX value form relaxed to "an integer number."**
   The §8.2 SDP value-form clause is "expressed as an integer number" — no sign
   or zero restriction. (Same wording in :2017.) Previously the parser used

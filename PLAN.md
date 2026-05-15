@@ -41,7 +41,7 @@ runs them through the parser. See [spec_conformance/README.md](spec_conformance/
 
 ## Current State
 
-711 tests passing (hermetic) · 10/10 upstream conformance · allowlist empty.
+718 tests passing (hermetic) · 10/10 upstream conformance · allowlist empty.
 Every validation check is grounded in explicit spec text. No known check is
 opinion-only.
 
@@ -59,8 +59,6 @@ Remaining open work falls into two buckets:
 
 - VSF TR-10-1 compatibility audit (AMWA Issue #36).
 - JT-NM Tested updates for the ST 2110 revision (AMWA Issue #11).
-- Full RFC 9134 jxsv parameter audit beyond what PR #21 covered
-  (AMWA Issue #39 — `RANGE`, `interlace`, `segmented` per-jxsv form audit).
 
 **Smaller open items:**
 
