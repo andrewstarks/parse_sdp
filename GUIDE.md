@@ -561,8 +561,8 @@ When a `c=` line is present (at either session or media level), the address is v
 | `a=mediaclk` | Required, **media-level only**. Accepted: `direct=0` (offset SHALL be zero per ST 2110-10 §8.3), `direct=0 rate=<int>/<int>` (RFC 7273 §5.4 pull-down form), or `sender`. Session-level `a=mediaclk` is rejected (ST 2110-10 §8.3) |
 | `a=mid` | Optional. When present, value must be unique within the session (RFC 5888 §8.1). RFC 5888 imposes no position requirement on `a=mid` within a media block |
 | `a=source-filter` | At ST 2110 tier: optional. At IPMX tier: **required** on every RTP block, either media-level or session-level (TR-10-TP-1 §13.2). Format follows RFC 4570 §3: `<incl\|excl> IN <addrtype> <dest> <src>+` where `addrtype` is `IP4`, `IP6`, or `*` (the last per RFC 4570 §3 ABNF — `*` mode expects FQDN dest/src). For `IP4` / `IP6` the dest and every src must be a literal address of the declared family — malformed addresses are rejected (ST 2110-10 §6.5 / RFC 4570). |
-| `a=rtpmap` | Required. RTP payload type must be in the dynamic range 96–127 (ST 2110-10 §6.2). Clock rate validated: must be 90000 for video, `smpte291`, and `ST2110-41`; audio clock rate accepted for any positive integer (ST 2110-30 §6.1 puts non-{44.1, 48, 96} kHz "out of scope" but does not forbid). Audio encoding name validated: must be `L16`, `L24`, or `AM824`. Payload type must match the payload type in `a=fmtp` |
-| `a=fmtp` | Required for encodings whose spec mandates fmtp parameters (`raw` per ST 2110-20 §7.2, `jxsv` per ST 2110-22 §7, `ST2110-41` per ST 2110-41 §7.2). **Not** required for audio (`L16`/`L24`/`AM824`) or `smpte291` ancillary — ST 2110-10:2022 §8 imposes no universal fmtp requirement, and the per-encoding IANA registrations leave fmtp optional for these. Key=value pairs are validated per sub-standard when present. Payload type must match the payload type in `a=rtpmap` (RFC 4566 §6) |
+| `a=rtpmap` | Required. RTP payload type must be in the dynamic range 96–127 (ST 2110-10 §6.2). Clock rate validated: must be 90000 for video and `smpte291`. For `ST2110-41`, the rate is Data-Item-defined per §5.3 — the parser checks only that it is a positive integer. Audio clock rate accepted for any positive integer (ST 2110-30 §6.1 puts non-{44.1, 48, 96} kHz "out of scope" but does not forbid). Audio encoding name validated: must be `L16`, `L24`, or `AM824`. Payload type must match the payload type in `a=fmtp` |
+| `a=fmtp` | Required for encodings whose spec mandates fmtp parameters (`raw` per ST 2110-20 §7.2, `jxsv` per ST 2110-22 §7, `ST2110-41` per ST 2110-41:2024 §6 — `SSN` required, `DIT` optional). **Not** required for audio (`L16`/`L24`/`AM824`) or `smpte291` ancillary — ST 2110-10:2022 §8 imposes no universal fmtp requirement, and the per-encoding IANA registrations leave fmtp optional for these. Key=value pairs are validated per sub-standard when present. Payload type must match the payload type in `a=rtpmap` (RFC 4566 §6) |
 
 ### ST 2110-20 (video) `fmtp` parameters
 
@@ -705,12 +705,16 @@ Optional parameters validated when present:
 
 ### ST 2110-41 (fast metadata) `fmtp` parameters
 
-Fast metadata flows use rtpmap encoding name `ST2110-41` at clock rate 90000. The clock rate is validated and must be exactly 90000.
+Fast metadata flows use rtpmap encoding name `ST2110-41`. The clock rate is
+Data-Item-defined per ST 2110-41:2024 §5.3 (*"The RTP Clock rate and RTP
+Timestamp requirements of each Data Item are defined in the document that
+specifies the Data Item Package Contents"*), so the parser validates only
+that the rate is a positive integer — it is **not** fixed at 90 kHz.
 
 | Parameter | Example | Validated |
 | --- | --- | --- |
-| `SSN` | `ST2110-41:2024` | yes — required; must be `ST2110-41:YYYY` (4-digit year) |
-| `DIT` | `100` | yes — required; must be a non-negative integer |
+| `SSN` | `ST2110-41:2024` | yes — required per ST 2110-41:2024 §6; must be `ST2110-41:YYYY` (4-digit year) |
+| `DIT` | `100,2000A1,1013FC,3FFF00` | optional (SHOULD per §6; Optional Parameter per §9.2.3). When present: comma-separated uppercase hex tokens; no `0x` prefix; no whitespace |
 
 ---
 

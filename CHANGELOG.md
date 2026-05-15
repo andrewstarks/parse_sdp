@@ -70,6 +70,21 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ### Fixed
 
+- **ST 2110-41:2024 §6 DIT is optional, comma-separated uppercase hex
+  (audit F3).** Previously the parser required `DIT` and validated it as
+  a single non-negative decimal integer, which rejected the literal §6
+  example `DIT=100,2000A1,1013FC,3FFF00`. §6 makes DIT a SHOULD; §9.2.3
+  lists it under Optional Parameters. When present: comma-separated
+  uppercase hex tokens; no leading `0x`; no whitespace
+  (all SHALLs from §6). Reject lowercase hex, `0x` prefix, whitespace.
+- **ST 2110-41:2024 §5.3 clock rate is Data-Item-defined, not fixed
+  at 90 kHz (audit F4).** Previously the parser rejected any `ST2110-41`
+  rtpmap whose clock rate was not 90000. §5.3: *"The RTP Clock rate
+  and RTP Timestamp requirements of each Data Item are defined in the
+  document that specifies the Data Item Package Contents."* §9.2.2
+  references rate "as specified in Clause 5.3." Removed the 90 kHz
+  equality check; rate is still validated as a positive integer by
+  `rtpmap` parsing.
 - **TR-10-5 §17 `a=hkep` permitted at media level (audit F2 + D4).**
   Previously the parser rejected any media-level `a=hkep`, citing the
   §10 "shall contain at least one 'hkep' session attribute" wording as

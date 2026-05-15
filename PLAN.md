@@ -63,6 +63,8 @@ fixture findings, or user reports.
 
 - F1 + D3 — TCS optional per §7.3 + GUIDE doc sync.
 - F2 + D4 — `a=hkep` permitted at media level per TR-10-5 §17 + GUIDE doc sync.
+- F3 — ST 2110-41 DIT is optional + comma-separated uppercase hex per §6.
+- F4 — ST 2110-41 clock rate is Data-Item-defined per §5.3 (not fixed at 90 kHz).
 
 These findings came out of a multi-spec audit that read every SDP-relevant
 SHALL / SHALL-NOT / defined-value clause across RFC 4566, RFC 8866,
@@ -92,71 +94,6 @@ SDPs; blockers for 1.0). N = false negatives (parser accepts non-conformant
 SDPs; should-fix). D = documentation/citation cleanups.
 
 ---
-
-### F3 — ST 2110-41 `DIT` is a comma-separated hex list, not a single integer
-
-**Parser behavior:** [parse_sdp.lua:1311-1318](parse_sdp.lua#L1311) requires
-`DIT` to be present and validates with `dit_val:match("^%d+$")` — a single
-non-negative decimal integer. The literal example from the spec
-(`DIT=100,2000A1,1013FC,3FFF00`) is rejected.
-
-**Spec basis:** ST 2110-41:2024 §6: *"Senders **should** signal the Format
-Specific Parameter DIT with a value containing a comma-separated list of
-hexadecimal values of the Data Item Types that might appear in the stream.
-The hexadecimal values shall not include the leading '0x' and any alphabetic
-characters shall be uppercase. Whitespace characters shall not appear in the
-comma-separated list of values."* Spec example: `a=fmtp:117 SSN=ST2110-41:2024;
-DIT=100,2000A1,1013FC,3FFF00`.
-
-**Verify before acting:** Re-read §6 to confirm SHOULD (not SHALL) for
-presence and the comma-separated-hex-list format. Confirm §9.2.3 lists DIT
-under Optional Parameters.
-
-**Fix direction:**
-- DIT becomes optional (presence not required).
-- When present, validate format: `^[0-9A-F]+(,[0-9A-F]+)*$`. Each token must
-  be uppercase hex, no `0x` prefix, no whitespace.
-- Reject lowercase hex letters (the SHALL: "shall be uppercase").
-- Reject whitespace within or around tokens.
-
-**Doc sync:**
-- GUIDE.md `DIT` row: change "required; must be a non-negative integer" to
-  "optional; comma-separated uppercase hex list (no `0x` prefix, no whitespace)".
-
-**Tests:**
-- Accept `DIT=100`, `DIT=100,2000A1,1013FC,3FFF00`, no DIT at all.
-- Reject `DIT=0x100`, `DIT=100, 200` (whitespace), `DIT=abc` (lowercase),
-  `DIT=` (empty after presence).
-
-### F4 — ST 2110-41 clock rate is not fixed at 90 kHz
-
-**Parser behavior:** [parse_sdp.lua:1298-1302](parse_sdp.lua#L1298) rejects
-any `ST2110-41` rtpmap whose clock rate is not exactly 90000, citing
-"ST 2110-41 §7.2".
-
-**Spec basis:** ST 2110-41:2024 §5.3: *"The RTP Clock rate and RTP Timestamp
-requirements of each Data Item are defined in the document that specifies
-the Data Item Package Contents. In all cases, the RTP Clock rate shall be
-signaled in the SDP as specified in IETF RFC 4566."* The rate is
-**Data-Item-defined**, not fixed by ST 2110-41. (TR-10-10 InfoFrame happens
-to use 90 kHz; other Data Items may not.)
-
-**Verify before acting:** Re-read §5.3 in full. Check §9.2.2 (Required
-Parameters) — `rate` is referenced "as specified in Clause 5.3 of this
-document", confirming the rate is per-Data-Item.
-
-**Fix direction:** Remove the clock-rate equality check for `ST2110-41`.
-Validate only that the rate is a positive integer (parsed by `rtpmap_parse`
-already). Per-Data-Item rate enforcement is out of scope (we don't know the
-Data Item from the SDP alone).
-
-**Doc sync:**
-- GUIDE.md "ST 2110-41 fast metadata" section: remove "at clock rate 90000"
-  and "clock rate is validated and must be exactly 90000". State that
-  clock rate is Data-Item-defined per §5.3.
-
-**Tests:** ST 2110-41 with `rate=48000` accepts; with `rate=90000` still
-accepts; with `rate=0` or non-numeric rejects.
 
 ### F5 — `channel-order` convention is SHOULD, not SHALL, be `SMPTE2110`
 

@@ -645,6 +645,13 @@ local _ssn20_pat = P("ST2110-20:") * _ssn_year * P(-1)  -- ST 2110-20 §7.2
 local _ssn22_pat = P("ST2110-22:") * _ssn_year * P(-1)  -- ST 2110-22 §7 (JPEG-XS)
 local _ssn41_pat = P("ST2110-41:") * _ssn_year * P(-1)  -- ST 2110-41 §7.2
 
+-- ST 2110-41:2024 §6 DIT value: comma-separated uppercase hex tokens.
+-- "The hexadecimal values shall not include the leading '0x' and any
+-- alphabetic characters shall be uppercase. Whitespace characters shall
+-- not appear in the comma-separated list of values."
+local _hex_upper = R("09", "AF")^1
+local _dit_pat   = _hex_upper * (P(",") * _hex_upper)^0 * P(-1)
+
 -- Allowed values for ST 2110-20 §7.2 enumerated fmtp fields.
 local VALID_SAMPLING = {
   ["YCbCr-4:4:4"]=true, ["YCbCr-4:2:2"]=true, ["YCbCr-4:2:0"]=true,
@@ -1294,27 +1301,30 @@ function st2110.validate(doc)
       end
 
     elseif enc == "ST2110-41" then
-      -- ST 2110-41: fast metadata
-      if clock_rate ~= 90000 then
-        return attr_err(
-          string.format("rtpmap clock rate must be 90000 for ST2110-41 (got %s)", tostring(clock_rate)),
-          mpath, "rtpmap", "ST 2110-41 §7.2", "INVALID_VALUE")
-      end
+      -- ST 2110-41:2024 §5.3: "The RTP Clock rate and RTP Timestamp
+      -- requirements of each Data Item are defined in the document that
+      -- specifies the Data Item Package Contents." The rate is Data-Item-
+      -- defined, not fixed at 90 kHz. rtpmap_parse already validated that
+      -- clock_rate is a positive integer; no further constraint applies.
       local ssn = params["SSN"]
       if not ssn then
-        return attr_err("fmtp missing required 'SSN' parameter for ST 2110-41", mpath, "fmtp", "ST 2110-41 §7.2")
+        return attr_err("fmtp missing required 'SSN' parameter for ST 2110-41",
+          mpath, "fmtp", "ST 2110-41:2024 §6")
       end
       if not _ssn41_pat:match(ssn) then
         return attr_err("invalid SSN value (expected ST2110-41:YYYY, e.g. ST2110-41:2024)",
-          mpath, "fmtp", "ST 2110-41 §7.2", "INVALID_VALUE")
+          mpath, "fmtp", "ST 2110-41:2024 §6", "INVALID_VALUE")
       end
-      if not params["DIT"] then
-        return attr_err("fmtp missing required 'DIT' parameter for ST 2110-41", mpath, "fmtp", "ST 2110-41 §7.2")
-      end
-      local dit_val = tostring(params["DIT"])
-      if not dit_val:match("^%d+$") then
-        return attr_err("invalid DIT value (must be a non-negative integer)",
-          mpath, "fmtp", "ST 2110-41 §7.2", "INVALID_VALUE")
+      -- ST 2110-41:2024 §6: DIT is SHOULD (optional). §9.2.3 lists it under
+      -- Optional Parameters. When present, value form is constrained by §6:
+      -- comma-separated uppercase hex tokens; no leading "0x"; no whitespace.
+      local dit_val = params["DIT"]
+      if dit_val ~= nil and dit_val ~= true then
+        if not _dit_pat:match(tostring(dit_val)) then
+          return attr_err(
+            "invalid DIT value (expected comma-separated uppercase hex tokens, no '0x' prefix, no whitespace — e.g. DIT=100,2000A1,1013FC)",
+            mpath, "fmtp", "ST 2110-41:2024 §6", "INVALID_VALUE")
+        end
       end
 
     elseif enc == "jxsv" then

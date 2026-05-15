@@ -733,17 +733,19 @@ describe("ST 2110 validation", function()
       assert.matches("SSN", err.message)
     end)
 
-    it("errors when fmtp is missing DIT", function()
-      local doc = sdp.parse(metadata_sdp("SSN=ST2110-41:2024"))
+    -- ST 2110-41:2024 §6 makes DIT a SHOULD (§9.2.3 lists it under Optional
+    -- Parameters). Absence is conformant.
+    it("accepts ST2110-41 SDP without DIT (§6 SHOULD; §9.2.3 optional)", function()
+      local doc, err = sdp.parse(metadata_sdp("SSN=ST2110-41:2024"), "st2110")
+      assert.is_nil(err)
       assert.is_table(doc)
-      local ok, err = doc:validate("st2110")
-      assert.is_nil(ok)
-      assert.is_table(err)
-      assert.matches("DIT", err.message)
     end)
 
-    it("errors when ST2110-41 clock rate is not 90000", function()
-      local bad_sdp = table.concat({
+    -- ST 2110-41:2024 §5.3: "The RTP Clock rate … shall be signaled in the
+    -- SDP as specified in IETF RFC 4566." Rate is Data-Item-defined; not
+    -- fixed at 90 kHz.
+    it("accepts ST2110-41 with non-90000 clock rate (§5.3 Data-Item-defined)", function()
+      local sdp_text = table.concat({
         "v=0",
         "o=- 1234567890 1 IN IP4 192.168.1.1",
         "s=ST2110 Metadata",
@@ -752,16 +754,13 @@ describe("ST 2110 validation", function()
         "m=video 5030 RTP/AVP 96",
         "c=IN IP4 239.100.0.4/64",
         "a=rtpmap:96 ST2110-41/48000",
-        "a=fmtp:96 SSN=ST2110-41:2024; DIT=100",
+        "a=fmtp:96 SSN=ST2110-41:2024",
         "a=mediaclk:direct=0",
         "a=ts-refclk:ptp=IEEE1588-2008:00-11-22-FF-FE-33-44-55:0",
       }, "\r\n") .. "\r\n"
-      local doc = sdp.parse(bad_sdp)
+      local doc, err = sdp.parse(sdp_text, "st2110")
+      assert.is_nil(err)
       assert.is_table(doc)
-      local ok, err = doc:validate("st2110")
-      assert.is_nil(ok)
-      assert.is_table(err)
-      assert.matches("90000", err.message)
     end)
 
     it("errors when SSN value has wrong format", function()
@@ -1812,7 +1811,7 @@ describe("ST 2110 validation", function()
 
   -- ── ST 2110-41: DIT value format ───────────────────────────────────────────────
 
-  describe("ST 2110-41 DIT value format (§7.2)", function()
+  describe("ST 2110-41 DIT value format (§6 / §9.2.3)", function()
     local function meta_sdp(fmtp_str)
       return table.concat({
         "v=0",
@@ -1828,34 +1827,39 @@ describe("ST 2110 validation", function()
       }, "\r\n") .. "\r\n"
     end
 
-    it("accepts DIT=0", function()
-      local doc, err = sdp.parse(meta_sdp("SSN=ST2110-41:2024; DIT=0"), "st2110")
-      assert.is_nil(err)
-      assert.is_table(doc)
-    end)
-
-    it("accepts DIT=100", function()
+    it("accepts single hex token DIT=100", function()
       local doc, err = sdp.parse(meta_sdp("SSN=ST2110-41:2024; DIT=100"), "st2110")
       assert.is_nil(err)
       assert.is_table(doc)
     end)
 
-    it("rejects non-integer DIT", function()
-      local doc = sdp.parse(meta_sdp("SSN=ST2110-41:2024; DIT=notanumber"))
+    it("accepts spec example DIT=100,2000A1,1013FC,3FFF00 (§6 example)", function()
+      local doc, err = sdp.parse(meta_sdp("SSN=ST2110-41:2024; DIT=100,2000A1,1013FC,3FFF00"), "st2110")
+      assert.is_nil(err)
       assert.is_table(doc)
-      local ok, err = doc:validate("st2110")
-      assert.is_nil(ok)
-      assert.is_table(err)
-      assert.matches("DIT", err.message)
-      assert.equal("ST 2110-41 §7.2", err.spec_ref)
     end)
 
-    it("rejects DIT with decimal point", function()
-      local doc = sdp.parse(meta_sdp("SSN=ST2110-41:2024; DIT=1.5"))
+    it("rejects lowercase hex (§6 SHALL: 'alphabetic characters shall be uppercase')", function()
+      local doc = sdp.parse(meta_sdp("SSN=ST2110-41:2024; DIT=abc"))
       assert.is_table(doc)
       local ok, err = doc:validate("st2110")
       assert.is_nil(ok)
-      assert.is_table(err)
+      assert.matches("DIT", err.message)
+    end)
+
+    it("rejects leading 0x prefix (§6 SHALL: 'shall not include the leading 0x')", function()
+      local doc = sdp.parse(meta_sdp("SSN=ST2110-41:2024; DIT=0x100"))
+      assert.is_table(doc)
+      local ok, err = doc:validate("st2110")
+      assert.is_nil(ok)
+      assert.matches("DIT", err.message)
+    end)
+
+    it("rejects whitespace in DIT list (§6 SHALL: 'Whitespace characters shall not appear')", function()
+      local doc = sdp.parse(meta_sdp("SSN=ST2110-41:2024; DIT=100, 200"))
+      assert.is_table(doc)
+      local ok, err = doc:validate("st2110")
+      assert.is_nil(ok)
       assert.matches("DIT", err.message)
     end)
 
@@ -1864,7 +1868,6 @@ describe("ST 2110 validation", function()
       assert.is_table(doc)
       local ok, err = doc:validate("st2110")
       assert.is_nil(ok)
-      assert.is_table(err)
       assert.matches("DIT", err.message)
     end)
   end)
