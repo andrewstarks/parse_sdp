@@ -903,15 +903,24 @@ s=
 [p=]*
 [c=]
 [b=]*
-t=
+(t= [r=]*)+
+[z=]
+[k=]
 [a=]*
 [m=
   [i=]
   [c=]
   [b=]*
+  [k=]
   [a=]*
 ]*
 ```
 
 Line endings are `\r\n`. The serializer never emits optional fields that are `nil`.
 Output is always a valid, strictly conformant SDP document.
+
+`session.time_descriptions` is a list of `{ start, stop, repeats=[…] }` entries
+covering all `(t=, r=*)` blocks. `session.timing` mirrors the first entry's
+`{start, stop}` for back-compat. `session.time_zones` is a list of
+`{adjustment_time, offset}` pairs. `session.key` and `m.key` carry
+`{method, value?}` per RFC 4566 §5.12.

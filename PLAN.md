@@ -74,6 +74,8 @@ fixture findings, or user reports.
   behavior unchanged; messages/comments now use the correct ABNF term.
 - F9 — IPv4 layered multicast `<addr>/<ttl>/<numaddr>` accepted per RFC 8866 §9 IP4-multicast ABNF.
 - F10 — IPv4 multicast TTL=0 accepted per RFC 8866 §5.7 (range 0-255) / §9 ABNF.
+- F8 — RFC 4566 §5 `r=`, `z=`, session/media `k=`, and multiple `t=` blocks
+  parsed, validated, and round-tripped through `to_sdp()`.
 
 These findings came out of a multi-spec audit that read every SDP-relevant
 SHALL / SHALL-NOT / defined-value clause across RFC 4566, RFC 8866,
@@ -103,42 +105,6 @@ SDPs; blockers for 1.0). N = false negatives (parser accepts non-conformant
 SDPs; should-fix). D = documentation/citation cleanups.
 
 ---
-
-### F8 — Parser rejects valid RFC 4566 fields `r=`, `z=`, `k=`, and multiple `t=`
-
-**Parser behavior:** [parse_sdp.lua:2683-2696](parse_sdp.lua#L2683) consumes
-exactly one `t=` and goes straight to `a=` / `m=`. Any SDP with `r=` (repeat
-times), `z=` (time zones), `k=` (encryption keys, session or media level),
-or additional `t=` lines fails with "unexpected content" or "wrong order".
-GUIDE.md line 37 claims "Any well-formed SDP" is accepted — that's incorrect.
-
-**Spec basis:** RFC 4566 §5.5 (`r=`), §5.10 (`z=`), §5.11 (`k=` session-level),
-§5.9 (multiple `t=`), and §5.14 (media-level `k=`). All OPTIONAL but defined.
-
-**Verify before acting:** Re-read RFC 4566 §5 in full to confirm the field
-ordering and that all four are valid SDP constructs. Decide whether to
-support them or to scope-down the GUIDE.md claim.
-
-**Fix direction (two options):**
-- (a) **Add parser support.** Extend `parser.parse` to accept zero-or-more
-  `r=` lines after each `t=`, accept multiple `t=`/`r=` blocks, accept
-  optional `z=` after timing, accept optional session-level and media-level
-  `k=`. Add grammar rules for each. Store in doc table (e.g.
-  `session.repeat_times`, `session.time_zones`, `session.key`, `m.key`).
-  Add serializer support. This is the spec-faithful path.
-- (b) **Scope the GUIDE.md claim.** State that the parser accepts RFC 4566
-  SDPs *as commonly used by ST 2110 / IPMX / generic streaming workflows*,
-  which never use these fields. Document the unsupported fields explicitly.
-
-Recommend (a) for 1.0 — these are RFC 4566 SHALLs at the parser level and
-omitting them violates the project's "Any well-formed SDP" claim. (b) would
-be an explicit narrowing of scope and should be discussed before adoption.
-
-**Doc sync:** GUIDE.md table at the top documenting accepted SDP. README
-"Any RFC 4566 SDP" claim.
-
-**Tests:** SDPs with each of `r=`, `z=`, `k=`, multiple `t=` parse and
-round-trip through `to_sdp()`.
 
 ### F11 — RTP payload type < 96 rejected, but ST 2110-10 §6.2 has a fixed-PT exception
 

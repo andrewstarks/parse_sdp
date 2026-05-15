@@ -193,6 +193,60 @@ function grammar.parse_bandwidth(s)
   return nil, 1
 end
 
+-- RFC 4566 §5.10 typed-time: integer optionally followed by d/h/m/s suffix
+-- (e.g. "7d", "1h", "0", "25h"). Used by r= and z= value forms.
+local _typed_time_pat = digit ^ 1 * S("dhms") ^ -1 * -P(1)
+local _typed_time_signed = (P("-") + P("+")) ^ -1 * digit ^ 1 * S("dhms") ^ -1 * -P(1)
+
+--- Parse an r= field value into a repeat table per RFC 4566 §5.10.
+-- Form: <repeat interval> <active duration> <offsets from start-time>...
+-- Each token is "typed-time" (decimal integer with optional d/h/m/s suffix).
+-- At least three tokens required.
+function grammar.parse_repeat(s)
+  local tokens = {}
+  for tok in s:gmatch("%S+") do tokens[#tokens + 1] = tok end
+  if #tokens < 3 then return nil, 1 end
+  for _, tok in ipairs(tokens) do
+    if not _typed_time_pat:match(tok) then return nil, 1 end
+  end
+  local offsets = {}
+  for i = 3, #tokens do offsets[#offsets + 1] = tokens[i] end
+  return { interval = tokens[1], duration = tokens[2], offsets = offsets }
+end
+
+--- Parse a z= field value per RFC 4566 §5.11.
+-- Form: <adjustment time> <offset> <adjustment time> <offset>...
+-- Adjustment times are NTP integers (no suffix); offsets are typed-time
+-- with optional sign. At least one pair required; even token count.
+function grammar.parse_timezone(s)
+  local tokens = {}
+  for tok in s:gmatch("%S+") do tokens[#tokens + 1] = tok end
+  if #tokens < 2 or (#tokens % 2) ~= 0 then return nil, 1 end
+  local pairs_out = {}
+  for i = 1, #tokens, 2 do
+    local adj, off = tokens[i], tokens[i + 1]
+    if not adj:match("^%d+$") then return nil, 1 end
+    if not _typed_time_signed:match(off) then return nil, 1 end
+    pairs_out[#pairs_out + 1] = { adjustment_time = adj, offset = off }
+  end
+  return pairs_out
+end
+
+--- Parse a k= field value per RFC 4566 §5.12.
+-- Form: <method> | <method>:<encryption key>. Methods include "prompt",
+-- "clear", "base64", "uri" (per RFC 4566); other tokens accepted
+-- structurally (the spec lists these but does not strictly forbid others).
+local _key_method = (P(1) - P(":") - SP - line_end) ^ 1
+local _key_method_only = C(_key_method) * -P(1)
+local _key_method_kv   = C(_key_method) * P(":") * C(P(1) ^ 0) * -P(1)
+function grammar.parse_key(s)
+  local m, v = _key_method_kv:match(s)
+  if m then return { method = m, value = v } end
+  local m2 = _key_method_only:match(s)
+  if m2 then return { method = m2 } end
+  return nil, 1
+end
+
 local att_field   = (P(1) - P(":") - SP - line_end) ^ 1
 local attr_kv_pat = C(att_field) * P(":") * C(value_char ^ 1) * -P(1)
 local attr_k_pat  = C(att_field) * -P(1)
@@ -331,6 +385,26 @@ local function ser_attribute(a)
   return ln("a", a.name)
 end
 
+local function ser_repeat(r)
+  local body = r.interval .. " " .. r.duration
+  for _, off in ipairs(r.offsets or {}) do body = body .. " " .. off end
+  return ln("r", body)
+end
+
+local function ser_timezone(pairs_list)
+  local toks = {}
+  for _, pr in ipairs(pairs_list or {}) do
+    toks[#toks + 1] = pr.adjustment_time
+    toks[#toks + 1] = pr.offset
+  end
+  return ln("z", table.concat(toks, " "))
+end
+
+local function ser_key(k)
+  if k.value then return ln("k", k.method .. ":" .. k.value) end
+  return ln("k", k.method)
+end
+
 local function ser_media_block(m)
   local port_field = tostring(m.port)
   if m.port_count then port_field = port_field .. "/" .. tostring(m.port_count) end
@@ -340,6 +414,7 @@ local function ser_media_block(m)
   if m.info       then parts[#parts + 1] = ln("i", m.info) end
   if m.connection then parts[#parts + 1] = ser_connection(m.connection) end
   for _, b in ipairs(m.bandwidths or {}) do parts[#parts + 1] = ser_bandwidth(b) end
+  if m.key        then parts[#parts + 1] = ser_key(m.key) end
   for _, a in ipairs(m.attributes or {}) do parts[#parts + 1] = ser_attribute(a) end
   return table.concat(parts)
 end
@@ -367,7 +442,18 @@ function serialize.to_sdp(doc)
   for _, p in ipairs(s.phones     or {}) do add(ln("p", p)) end
   if s.connection then add(ser_connection(s.connection)) end
   for _, b in ipairs(s.bandwidths or {}) do add(ser_bandwidth(b)) end
-  add(ln("t", tostring(s.timing.start) .. " " .. tostring(s.timing.stop)))
+  -- Time descriptions: emit each (t, r*) block. Fall back to s.timing for
+  -- documents constructed via sdp.new() without time_descriptions.
+  if s.time_descriptions and #s.time_descriptions > 0 then
+    for _, td in ipairs(s.time_descriptions) do
+      add(ln("t", tostring(td.start) .. " " .. tostring(td.stop)))
+      for _, r in ipairs(td.repeats or {}) do add(ser_repeat(r)) end
+    end
+  else
+    add(ln("t", tostring(s.timing.start) .. " " .. tostring(s.timing.stop)))
+  end
+  if s.time_zones then add(ser_timezone(s.time_zones)) end
+  if s.key        then add(ser_key(s.key)) end
   for _, a in ipairs(s.attributes or {}) do add(ser_attribute(a)) end
   for _, m in ipairs(doc.media    or {}) do add(ser_media_block(m)) end
   return table.concat(parts)
@@ -2749,10 +2835,60 @@ function parser.parse(text, mode)
     pos = pos + 1
   end
 
-  local timing
-  timing, e = parse_required(lines, pos, "t", grammar.parse_timing)
-  if not timing then return nil, e end
-  pos = pos + 1
+  -- RFC 4566 §5: "One or more time descriptions ('t=' and 'r=' lines)".
+  -- Each time description = one t= followed by zero or more r= lines.
+  -- Multiple time descriptions are permitted.
+  local time_descriptions = {}
+  do
+    local t_first
+    t_first, e = parse_required(lines, pos, "t", grammar.parse_timing)
+    if not t_first then return nil, e end
+    pos = pos + 1
+    local current = { start = t_first.start, stop = t_first.stop, repeats = {} }
+    while pos <= n and peek_type(lines, pos) == "r" do
+      local rv
+      rv, e = parse_required(lines, pos, "r", grammar.parse_repeat)
+      if not rv then return nil, e end
+      current.repeats[#current.repeats + 1] = rv
+      pos = pos + 1
+    end
+    time_descriptions[#time_descriptions + 1] = current
+    while pos <= n and peek_type(lines, pos) == "t" do
+      local t_next
+      t_next, e = parse_required(lines, pos, "t", grammar.parse_timing)
+      if not t_next then return nil, e end
+      pos = pos + 1
+      local td = { start = t_next.start, stop = t_next.stop, repeats = {} }
+      while pos <= n and peek_type(lines, pos) == "r" do
+        local rv
+        rv, e = parse_required(lines, pos, "r", grammar.parse_repeat)
+        if not rv then return nil, e end
+        td.repeats[#td.repeats + 1] = rv
+        pos = pos + 1
+      end
+      time_descriptions[#time_descriptions + 1] = td
+    end
+  end
+  local timing = {
+    start = time_descriptions[1].start,
+    stop  = time_descriptions[1].stop,
+  }
+
+  -- RFC 4566 §5.11: optional z= (time zones), at most one line.
+  local time_zones
+  if pos <= n and peek_type(lines, pos) == "z" then
+    time_zones, e = parse_required(lines, pos, "z", grammar.parse_timezone)
+    if not time_zones then return nil, e end
+    pos = pos + 1
+  end
+
+  -- RFC 4566 §5.12: optional session-level k= (encryption key), at most one.
+  local session_key
+  if pos <= n and peek_type(lines, pos) == "k" then
+    session_key, e = parse_required(lines, pos, "k", grammar.parse_key)
+    if not session_key then return nil, e end
+    pos = pos + 1
+  end
 
   local attributes = {}
   while pos <= n and peek_type(lines, pos) == "a" do
@@ -2791,6 +2927,13 @@ function parser.parse(text, mode)
       pos = pos + 1
     end
 
+    -- RFC 4566 §5.14 / §5: optional media-level k= (encryption key).
+    if pos <= n and peek_type(lines, pos) == "k" then
+      m.key, e = parse_required(lines, pos, "k", grammar.parse_key)
+      if not m.key then return nil, e end
+      pos = pos + 1
+    end
+
     m.attributes = {}
     while pos <= n and peek_type(lines, pos) == "a" do
       local v
@@ -2823,15 +2966,18 @@ function parser.parse(text, mode)
     version = version,
     origin  = origin,
     session = {
-      name        = session_name,
-      info        = info,
-      uri         = uri,
-      emails      = emails,
-      phones      = phones,
-      connection  = connection,
-      bandwidths  = bandwidths,
-      timing      = timing,
-      attributes  = attributes,
+      name              = session_name,
+      info              = info,
+      uri               = uri,
+      emails            = emails,
+      phones            = phones,
+      connection        = connection,
+      bandwidths        = bandwidths,
+      timing            = timing,
+      time_descriptions = time_descriptions,
+      time_zones        = time_zones,
+      key               = session_key,
+      attributes        = attributes,
     },
     media = media,
   }

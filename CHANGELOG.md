@@ -11,6 +11,17 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ### Added
 
+- **RFC 4566 §5 `r=`, `z=`, `k=`, and multiple `t=` support (audit F8).**
+  The parser now accepts the full RFC 4566 §5 session structure:
+  one-or-more time descriptions (each `t=` followed by zero or more
+  `r=` lines), an optional `z=` line, an optional session-level `k=`,
+  and an optional media-level `k=` per media block. New grammar entry
+  points: `grammar.parse_repeat`, `grammar.parse_timezone`,
+  `grammar.parse_key`. New doc-table fields: `session.time_descriptions`
+  (list of `{start, stop, repeats}`), `session.time_zones`,
+  `session.key`, `m.key`. `session.timing` is preserved as the first
+  time description's `{start, stop}` for back-compat. `to_sdp()`
+  round-trips all new fields.
 - **RFC 4566 §5 / §9 ABNF trailing newline.** Reject input not terminated by
   `\n` (LF or CRLF both accepted). Blank lines between records were already
   rejected.

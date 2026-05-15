@@ -350,7 +350,7 @@ describe("sdp.parse — required session fields", function()
   end)
 
   it("rejects unrecognized field type after all SDP fields", function()
-    local doc, err = sdp.parse(minimal .. "z=garbage\r\n")
+    local doc, err = sdp.parse(minimal .. "x=garbage\r\n")
     assert.is_nil(doc)
     assert.is_table(err)
     assert.equal("WRONG_ORDER", err.code)
@@ -361,6 +361,128 @@ describe("sdp.parse — required session fields", function()
     assert.is_nil(doc)
     assert.is_table(err)
     assert.is_string(err.message)
+  end)
+end)
+
+-- RFC 4566 §5: support for r= (repeat times), z= (time zones),
+-- k= (encryption keys, session and media level), and multiple t= blocks.
+describe("sdp.parse — RFC 4566 §5 r=/z=/k=/multiple t= (audit F8)", function()
+  local sdp = require("parse_sdp")
+
+  local function make(extra_lines)
+    local lines = { "v=0", "o=- 1 1 IN IP4 127.0.0.1", "s=Test" }
+    for _, l in ipairs(extra_lines or {}) do lines[#lines + 1] = l end
+    return table.concat(lines, "\r\n") .. "\r\n"
+  end
+
+  it("accepts t= followed by r= (RFC 4566 §5.10)", function()
+    local doc, err = sdp.parse(make({ "t=2873397496 2873404696", "r=604800 3600 0 90000" }))
+    assert.is_nil(err)
+    assert.is_table(doc)
+    assert.equal(1, #doc.session.time_descriptions)
+    assert.equal("604800", doc.session.time_descriptions[1].repeats[1].interval)
+  end)
+
+  it("accepts t= followed by r= with typed-time tokens (7d 1h 0 25h)", function()
+    local doc, err = sdp.parse(make({ "t=2873397496 2873404696", "r=7d 1h 0 25h" }))
+    assert.is_nil(err)
+    assert.is_table(doc)
+    local r = doc.session.time_descriptions[1].repeats[1]
+    assert.equal("7d", r.interval)
+    assert.equal("1h", r.duration)
+    assert.same({ "0", "25h" }, r.offsets)
+  end)
+
+  it("accepts multiple time descriptions (RFC 4566 §5)", function()
+    local doc, err = sdp.parse(make({
+      "t=2873397496 2873404696", "r=604800 3600 0 90000",
+      "t=2880000000 2880003600",
+    }))
+    assert.is_nil(err)
+    assert.is_table(doc)
+    assert.equal(2, #doc.session.time_descriptions)
+    assert.equal(2873397496, doc.session.time_descriptions[1].start)
+    assert.equal(2880000000, doc.session.time_descriptions[2].start)
+    assert.equal(0, #doc.session.time_descriptions[2].repeats)
+    -- Back-compat: session.timing reflects the first description.
+    assert.equal(2873397496, doc.session.timing.start)
+  end)
+
+  it("accepts z= time zones (RFC 4566 §5.11)", function()
+    local doc, err = sdp.parse(make({
+      "t=2873397496 2873404696",
+      "z=2882844526 -1h 2898848070 0",
+    }))
+    assert.is_nil(err)
+    assert.is_table(doc)
+    assert.equal(2, #doc.session.time_zones)
+    assert.equal("-1h", doc.session.time_zones[1].offset)
+  end)
+
+  it("accepts session-level k= (RFC 4566 §5.12)", function()
+    local doc, err = sdp.parse(make({ "t=0 0", "k=clear:secret" }))
+    assert.is_nil(err)
+    assert.is_table(doc)
+    assert.equal("clear", doc.session.key.method)
+    assert.equal("secret", doc.session.key.value)
+  end)
+
+  it("accepts session-level k= method-only form", function()
+    local doc, err = sdp.parse(make({ "t=0 0", "k=prompt" }))
+    assert.is_nil(err)
+    assert.equal("prompt", doc.session.key.method)
+    assert.is_nil(doc.session.key.value)
+  end)
+
+  it("accepts media-level k= (RFC 4566 §5.14)", function()
+    local doc, err = sdp.parse(make({
+      "t=0 0",
+      "m=audio 49170 RTP/AVP 0",
+      "k=base64:Zm9vYmFy",
+    }))
+    assert.is_nil(err)
+    assert.is_table(doc)
+    assert.equal("base64", doc.media[1].key.method)
+  end)
+
+  it("round-trips a fully-loaded SDP through to_sdp()", function()
+    local text = make({
+      "c=IN IP4 224.2.17.12/127",
+      "t=2873397496 2873404696",
+      "r=7d 1h 0 25h",
+      "t=2880000000 2880003600",
+      "z=2882844526 -1h 2898848070 0",
+      "k=clear:secret",
+      "a=recvonly",
+      "m=audio 49170 RTP/AVP 0",
+      "k=base64:Zm9vYmFy",
+    })
+    local doc, err = sdp.parse(text)
+    assert.is_nil(err)
+    local out = doc:to_sdp()
+    -- Re-parse the serialized output and confirm it round-trips equivalently.
+    local doc2, err2 = sdp.parse(out)
+    assert.is_nil(err2)
+    assert.equal(2, #doc2.session.time_descriptions)
+    assert.equal("clear", doc2.session.key.method)
+    assert.equal("base64", doc2.media[1].key.method)
+  end)
+
+  it("rejects z= without preceding t=", function()
+    -- z= requires t=. parser already requires t= first; this exercises ordering.
+    local text = make({ "z=2882844526 -1h" })
+    local _, err = sdp.parse(text)
+    assert.is_table(err)
+  end)
+
+  it("rejects malformed r= (less than three tokens)", function()
+    local _, err = sdp.parse(make({ "t=0 0", "r=604800 3600" }))
+    assert.is_table(err)
+  end)
+
+  it("rejects malformed z= (odd token count)", function()
+    local _, err = sdp.parse(make({ "t=0 0", "z=2882844526 -1h 2898848070" }))
+    assert.is_table(err)
   end)
 end)
 
