@@ -57,6 +57,839 @@ The AMWA / Streampunk SDPoker backlog is fully walked. No tracked items
 remain open. Future work is driven by new spec releases, new conformance-
 fixture findings, or user reports.
 
+## Pre-1.0 Conformance Audit (open findings, 2026-05-15)
+
+These findings came out of a multi-spec audit that read every SDP-relevant
+SHALL / SHALL-NOT / defined-value clause across RFC 4566, RFC 8866,
+ST 2110-10/-20/-21/-22/-30/-31/-40/-41, ST 2022-7, RFC 7104, RFC 9134, and
+VSF TR-10-1, -2, -3, -5 v2, -7, -10, -11, -13 v2, -14, -15, -TP-1, then
+cross-referenced against the parser and tests.
+
+**Working principle for the next thread.** Each item below names a clause and
+quotes the diagnostic fragment. The audit was systematic, but the conformance
+principle (CLAUDE.md) requires every check to be grounded in actual spec
+text — not a paraphrase of it. Before changing parser behavior:
+
+1. Open the cited spec (PDFs in `~/Library/CloudStorage/Dropbox/Personal/
+   Claude/Macnica/Standards Related/smpte_standards_internal/`; TR-10 markdown
+   in `…/TR-10 Markdowned Versions/`) and re-read the named clause in full
+   context. The fragment quoted below may be qualified by surrounding text.
+2. If the wording does not unambiguously support the finding, **stop and
+   flag for discussion** — do not land a parser change pending confirmation.
+   A finding that doesn't survive careful re-reading is, by definition,
+   opinion-based and excluded by the strictness principle.
+3. If the finding holds, land the parser change + new tests covering both
+   passing and failing paths + GUIDE.md / README.md / CHANGELOG.md sync in
+   one commit. The CHANGELOG entry should cite the same clause.
+
+Items are grouped by severity. F = false positives (parser rejects compliant
+SDPs; blockers for 1.0). N = false negatives (parser accepts non-conformant
+SDPs; should-fix). D = documentation/citation cleanups.
+
+---
+
+### F1 — TCS optional for raw ST 2110-20 video (defaults to SDR)
+
+**Parser behavior:** `video_checks` in [parse_sdp.lua:1496-1509](parse_sdp.lua#L1496)
+lists `TCS` as a mandatory raw-video fmtp parameter. A raw video SDP without
+`TCS=` is rejected at the ST 2110 tier.
+
+**Spec basis:** ST 2110-20:2022 §7.3 heading is *"Media Type Parameters with
+default values"* and the opening sentence reads *"Senders shall include the
+following payload-format-specific Media Type parameters in the a=fmtp clause
+of the SDP for any streams conforming to this standard where the default
+values are not correct for the contents of the stream."* §7.6: *"If the TCS
+value is not specified, receivers shall assume the value SDR, unless the
+sampling keyword indicates the signal is a KEY signal, in which case the
+TCS value is not meaningful."* TCS is therefore optional when the stream is
+SDR (or KEY).
+
+**Verify before acting:** Confirm TCS is listed under §7.3, not §7.2. Confirm
+§7.6 still carries the "default SDR" language. If TCS appears in §7.2, the
+finding is wrong.
+
+**Fix direction:** Move TCS out of `video_checks` and into `video_opt_checks`
+(value enum stays the same — VALID_TCS — but only runs when present).
+
+**Doc sync:**
+- GUIDE.md "ST 2110-20 §7.2 requires nine `fmtp` parameters" → "eight required."
+- Move the TCS row from the Required Parameters table to the Optional table
+  (note "defaults to SDR when absent").
+
+**Tests:** raw video SDP without TCS parses cleanly at ST 2110 tier; raw video
+SDP with TCS=BT2100… still works; existing 100+ test fixtures continue to pass.
+
+### F2 — `a=hkep` allowed at media level (not session-only)
+
+**Parser behavior:** [parse_sdp.lua:2398-2404](parse_sdp.lua#L2398) rejects
+any media-level `a=hkep`.
+
+**Spec basis:** TR-10-5 (2026-02-17 v2) §17 (IANA Registration), explicitly:
+*"its Usage Level is 'session, media', meaning that a session-level hkep
+attribute represents the default value for each media-level hkep attribute
+unless an explicit media-level hkep attribute is provided for the corresponding
+'m=' section. Accordingly, an SDP transport file may convey HKEP information
+at the session level, at the media level, or at both levels."* Plus: *"the
+use of the expression 'hkep session attribute' does not define the usage
+level of the hkep attribute but simply refers to it at its most generic
+level, which is the session level."*
+
+The §10 wording ("at least one 'hkep' session attribute when … HDCP Content")
+is the source of the misinterpretation: it requires *at least one* at session
+level when applicable, but does not forbid media-level placement.
+
+**Verify before acting:** Confirm TR-10-5 §17 is still present in the current
+revision (file: `VSF_TR-10-5_2026-02-17_v2.md`). If §17 is removed or reworded
+to say "session only", the finding is wrong.
+
+**Fix direction:** Remove the media-level rejection at L2398-2404. Validate
+every `a=hkep` (session or media) with `valid_hkep`. Implement session→media
+inheritance for the value when comparing across DUP legs (mirror the privacy
+inheritance pattern at L2420-2426).
+
+**Doc sync:**
+- GUIDE.md: rewrite the `a=hkep` section to state "session-level or
+  media-level; session-level acts as default per TR-10-5 §17".
+- CHANGELOG.md: note the cite-correction (the §10 reading was wrong).
+
+**Tests:** media-level `a=hkep` parses; combined session+media coexists;
+the existing rejection test is replaced with an acceptance test.
+
+### F3 — ST 2110-41 `DIT` is a comma-separated hex list, not a single integer
+
+**Parser behavior:** [parse_sdp.lua:1311-1318](parse_sdp.lua#L1311) requires
+`DIT` to be present and validates with `dit_val:match("^%d+$")` — a single
+non-negative decimal integer. The literal example from the spec
+(`DIT=100,2000A1,1013FC,3FFF00`) is rejected.
+
+**Spec basis:** ST 2110-41:2024 §6: *"Senders **should** signal the Format
+Specific Parameter DIT with a value containing a comma-separated list of
+hexadecimal values of the Data Item Types that might appear in the stream.
+The hexadecimal values shall not include the leading '0x' and any alphabetic
+characters shall be uppercase. Whitespace characters shall not appear in the
+comma-separated list of values."* Spec example: `a=fmtp:117 SSN=ST2110-41:2024;
+DIT=100,2000A1,1013FC,3FFF00`.
+
+**Verify before acting:** Re-read §6 to confirm SHOULD (not SHALL) for
+presence and the comma-separated-hex-list format. Confirm §9.2.3 lists DIT
+under Optional Parameters.
+
+**Fix direction:**
+- DIT becomes optional (presence not required).
+- When present, validate format: `^[0-9A-F]+(,[0-9A-F]+)*$`. Each token must
+  be uppercase hex, no `0x` prefix, no whitespace.
+- Reject lowercase hex letters (the SHALL: "shall be uppercase").
+- Reject whitespace within or around tokens.
+
+**Doc sync:**
+- GUIDE.md `DIT` row: change "required; must be a non-negative integer" to
+  "optional; comma-separated uppercase hex list (no `0x` prefix, no whitespace)".
+
+**Tests:**
+- Accept `DIT=100`, `DIT=100,2000A1,1013FC,3FFF00`, no DIT at all.
+- Reject `DIT=0x100`, `DIT=100, 200` (whitespace), `DIT=abc` (lowercase),
+  `DIT=` (empty after presence).
+
+### F4 — ST 2110-41 clock rate is not fixed at 90 kHz
+
+**Parser behavior:** [parse_sdp.lua:1298-1302](parse_sdp.lua#L1298) rejects
+any `ST2110-41` rtpmap whose clock rate is not exactly 90000, citing
+"ST 2110-41 §7.2".
+
+**Spec basis:** ST 2110-41:2024 §5.3: *"The RTP Clock rate and RTP Timestamp
+requirements of each Data Item are defined in the document that specifies
+the Data Item Package Contents. In all cases, the RTP Clock rate shall be
+signaled in the SDP as specified in IETF RFC 4566."* The rate is
+**Data-Item-defined**, not fixed by ST 2110-41. (TR-10-10 InfoFrame happens
+to use 90 kHz; other Data Items may not.)
+
+**Verify before acting:** Re-read §5.3 in full. Check §9.2.2 (Required
+Parameters) — `rate` is referenced "as specified in Clause 5.3 of this
+document", confirming the rate is per-Data-Item.
+
+**Fix direction:** Remove the clock-rate equality check for `ST2110-41`.
+Validate only that the rate is a positive integer (parsed by `rtpmap_parse`
+already). Per-Data-Item rate enforcement is out of scope (we don't know the
+Data Item from the SDP alone).
+
+**Doc sync:**
+- GUIDE.md "ST 2110-41 fast metadata" section: remove "at clock rate 90000"
+  and "clock rate is validated and must be exactly 90000". State that
+  clock rate is Data-Item-defined per §5.3.
+
+**Tests:** ST 2110-41 with `rate=48000` accepts; with `rate=90000` still
+accepts; with `rate=0` or non-numeric rejects.
+
+### F5 — `channel-order` convention is SHOULD, not SHALL, be `SMPTE2110`
+
+**Parser behavior:** [parse_sdp.lua:953-957](parse_sdp.lua#L953)
+`valid_channel_order` requires the value to match `^SMPTE2110%.%((.+)%)$`.
+
+**Spec basis:** ST 2110-30:2025 §6.2.2: *"If channel order is signaled in
+the SDP, the syntax of IETF RFC 3190 for the parameter channel-order shall
+be used. **The <convention> of the channel-order should be SMPTE2110.**"*
+SHOULD, not SHALL — other convention tokens are permitted by the spec.
+
+**Verify before acting:** Confirm §6.2.2 still uses "should" (not "shall")
+for the convention name. ST 2110-30:2017 §6.2.2 used identical language.
+
+**Fix direction:** Relax the validator to accept any `<convention>.(…)`
+form where `<convention>` is a non-empty token (RFC 3190 grammar) and the
+group list inside the parentheses is well-formed. When the convention is
+`SMPTE2110` (the common case), validate the group symbols against
+`VALID_CHAN_GROUPS` ∪ {Unnn}. For other conventions, accept the structural
+form only (the spec only defines symbols for the SMPTE2110 convention).
+
+**Doc sync:**
+- GUIDE.md `channel-order` row: note that non-SMPTE2110 conventions are
+  accepted structurally; SMPTE2110 group symbols are validated against the
+  Table 1 enum (plus AES3 — see F6).
+
+**Tests:** `channel-order=AES.(M,M)` accepts (non-SMPTE2110 convention);
+`channel-order=SMPTE2110.(BOGUS)` rejects (SMPTE2110 convention with bad
+group); existing SMPTE2110 tests still pass.
+
+### F6 — ST 2110-31 adds `AES3` as a channel-grouping symbol
+
+**Parser behavior:** [parse_sdp.lua:946-949](parse_sdp.lua#L946)
+`VALID_CHAN_GROUPS` does not include `AES3`. An AM824 SDP with
+`channel-order=SMPTE2110.(AES3,AES3)` is rejected.
+
+**Spec basis:** ST 2110-31:2022 §6.2 Table 2: *"For AES3 Subframes containing
+PCM audio, Senders may signal the channel order in the SDP using the Channel
+Order Convention specified in SMPTE ST 2110-30. Because this standard can
+also transport non-PCM audio signals, the additional Channel Grouping Symbol
+listed in Table 2 may be used in addition to those specified in ST 2110-30."*
+Table 2 defines `AES3` (2 AES3 Subframe sequences).
+
+**Verify before acting:** Confirm Table 2 in ST 2110-31:2022 §6.2 still
+defines `AES3`. The symbol applies only to AM824 streams.
+
+**Fix direction:** Two paths to consider:
+- (a) Always accept `AES3` in `VALID_CHAN_GROUPS` (simpler but technically
+  permits `AES3` on L16/L24 — minor over-permissiveness).
+- (b) Pass the encoding name into `valid_channel_order` and accept `AES3`
+  only when encoding == `AM824` (strict).
+
+Recommend (b) for spec fidelity; (a) acceptable given the strictness
+principle's stance against opinion-based rejection of unusual but legal
+combinations.
+
+**Doc sync:**
+- GUIDE.md `channel-order` row: list `AES3` as valid for AM824.
+
+**Tests:** AM824 SDP with `channel-order=SMPTE2110.(AES3)` accepts; if
+(b) is chosen, L16 SDP with `AES3` rejects.
+
+### F7 — IPv6 multicast `c=` `/N` suffix should be rejected, not accepted
+
+**Parser behavior:** [parse_sdp.lua:724-740](parse_sdp.lua#L724) accepts
+`c=IN IP6 ff02::1/64` (treats `/N` as a positive-integer scope). GUIDE.md
+line 550 documents this as a feature.
+
+**Spec basis:** RFC 8866 §5.7 (and the identical RFC 4566 wording): *"'IP6'
+multicast does not use TTL scoping, and hence the TTL value MUST NOT be
+present for 'IP6' multicast."* RFC 8866 defines no `/scope` form for IPv6.
+
+**Verify before acting:** Re-read RFC 8866 §5.7 in full
+(`https://www.rfc-editor.org/rfc/rfc8866#section-5.7`). Check whether any
+errata or later RFC introduces an IPv6 scope-suffix form. Search the
+existing fixtures for IPv6 multicast addresses with `/N` — if many real-
+world IPMX SDPs use this, flag for discussion before rejecting (might
+warrant a deferred-items entry rather than a fix).
+
+**Fix direction:** If verification confirms the prohibition, reject any
+suffix after an IPv6 multicast address in `valid_connection_address`.
+
+**Doc sync:**
+- GUIDE.md line 550 ("IPv6 multicast addresses may carry an optional
+  `/<positive-integer>` scope suffix") → "IPv6 multicast addresses MUST NOT
+  carry any `/` suffix (RFC 8866 §5.7)".
+
+**Tests:** `c=IN IP6 ff02::1` accepts; `c=IN IP6 ff02::1/64` rejects.
+
+### F8 — Parser rejects valid RFC 4566 fields `r=`, `z=`, `k=`, and multiple `t=`
+
+**Parser behavior:** [parse_sdp.lua:2683-2696](parse_sdp.lua#L2683) consumes
+exactly one `t=` and goes straight to `a=` / `m=`. Any SDP with `r=` (repeat
+times), `z=` (time zones), `k=` (encryption keys, session or media level),
+or additional `t=` lines fails with "unexpected content" or "wrong order".
+GUIDE.md line 37 claims "Any well-formed SDP" is accepted — that's incorrect.
+
+**Spec basis:** RFC 4566 §5.5 (`r=`), §5.10 (`z=`), §5.11 (`k=` session-level),
+§5.9 (multiple `t=`), and §5.14 (media-level `k=`). All OPTIONAL but defined.
+
+**Verify before acting:** Re-read RFC 4566 §5 in full to confirm the field
+ordering and that all four are valid SDP constructs. Decide whether to
+support them or to scope-down the GUIDE.md claim.
+
+**Fix direction (two options):**
+- (a) **Add parser support.** Extend `parser.parse` to accept zero-or-more
+  `r=` lines after each `t=`, accept multiple `t=`/`r=` blocks, accept
+  optional `z=` after timing, accept optional session-level and media-level
+  `k=`. Add grammar rules for each. Store in doc table (e.g.
+  `session.repeat_times`, `session.time_zones`, `session.key`, `m.key`).
+  Add serializer support. This is the spec-faithful path.
+- (b) **Scope the GUIDE.md claim.** State that the parser accepts RFC 4566
+  SDPs *as commonly used by ST 2110 / IPMX / generic streaming workflows*,
+  which never use these fields. Document the unsupported fields explicitly.
+
+Recommend (a) for 1.0 — these are RFC 4566 SHALLs at the parser level and
+omitting them violates the project's "Any well-formed SDP" claim. (b) would
+be an explicit narrowing of scope and should be discussed before adoption.
+
+**Doc sync:** GUIDE.md table at the top documenting accepted SDP. README
+"Any RFC 4566 SDP" claim.
+
+**Tests:** SDPs with each of `r=`, `z=`, `k=`, multiple `t=` parse and
+round-trip through `to_sdp()`.
+
+### F9 — IPv4 layered multicast `c=address/ttl/count` not accepted
+
+**Parser behavior:** [parse_sdp.lua:753](parse_sdp.lua#L753) matches only
+`^/(%d+)$` (single TTL) — a second slash fails validation.
+
+**Spec basis:** RFC 8866 §5.7: *"Hierarchical or layered encoding schemes
+…"* defines the form `<base multicast address>[/<ttl>]/<number of addresses>`
+with example `c=IN IP4 233.252.0.1/127/3`.
+
+**Verify before acting:** Re-read RFC 8866 §5.7 for the layered multicast
+example. Confirm RFC 4566 §5.7 has identical language (it does, but verify).
+Decide whether the parser needs to represent the count field in the doc
+table (probably yes — round-trip).
+
+**Fix direction:** Extend `valid_connection_address` IP4 branch to accept
+`/ttl[/count]` where count is a positive integer. Extend `parse_connection`
+or the connection table representation to carry the count. Update serializer.
+
+**Doc sync:** GUIDE.md "IPv4 multicast" section.
+
+**Tests:** `c=IN IP4 233.252.0.1/127/3` parses and round-trips.
+
+### F10 — IPv4 multicast TTL=0 rejected; spec allows 0–255
+
+**Parser behavior:** [parse_sdp.lua:758](parse_sdp.lua#L758) requires
+`ttl >= 1`.
+
+**Spec basis:** RFC 8866 §5.7 (and RFC 4566 §5.7) say *"TTL values MUST be
+in the range 0-255."* — explicitly includes 0.
+
+**Verify before acting:** Re-read RFC 8866 §5.7 TTL range statement. ST
+2110-10 §6.5 references RFC 5771 for multicast-group restrictions but doesn't
+constrain TTL to ≥ 1 (verify).
+
+**Fix direction:** Change the check at L758 to `ttl < 0 or ttl > 255`.
+
+**Doc sync:** GUIDE.md "IPv4 TTL must be an integer in the range 1–255" →
+"0–255".
+
+**Tests:** TTL=0 accepts; TTL=255 still accepts; TTL=256 rejects.
+
+### F11 — RTP payload type < 96 rejected, but ST 2110-10 §6.2 has a fixed-PT exception
+
+**Parser behavior:** [parse_sdp.lua:1182-1186](parse_sdp.lua#L1182) rejects
+any PT < 96 with a hard error citing ST 2110-10 §6.2.
+
+**Spec basis:** ST 2110-10:2022 §6.2: *"All RTP streams shall use dynamic
+payload types chosen in the range of 96 through 127, signaled as specified
+in section 6 of IETF RFC 4566, **unless a fixed payload type designation
+exists for that RTP Stream within the IETF standard which specifies it.**"*
+RFC 3551 §6 statics: PT 10 = L16/44100/2, PT 11 = L16/44100/1. ST 2110-30
+§6.1 permits 44.1 kHz operation. A sender using PT 10 for L16/44100/2 is
+spec-conformant under the §6.2 carve-out.
+
+**Verify before acting:** Confirm §6.2 still includes the "unless" clause.
+Search RFC 3551 §6 / RFC 4855 for L16/L24/AM824/raw/jxsv/ST2110-41/smpte291
+static-PT assignments. (As of the audit: only L16 at 44100 with 1 or 2
+channels has a static PT — 11 and 10 respectively. No other ST 2110 essence
+encoding has a static PT.)
+
+**Fix direction:** When the rtpmap encoding is L16, the clock rate is 44100,
+and the channel count is 1 or 2, allow PT 11 or 10 respectively. For all
+other encodings, the 96–127 check stands. This is a narrow exception
+matching the §6.2 wording exactly.
+
+**Caution:** This is an edge case. ST 2110 senders almost never use static
+PTs even at 44.1 kHz. The fix is technically correct per the spec but might
+introduce more code than it's worth. Consider documenting as a "Known
+Deferred Item" if the next thread decides the corner case isn't worth the
+code complexity. Either decision is defensible; do not silently leave the
+parser stricter than the spec — pick one path.
+
+**Doc sync:** If fixed, GUIDE.md "ST 2110-10 §6.2" reference should note
+the static-PT exception.
+
+**Tests:** PT 10 with L16/44100/2 accepts (if fixed); PT 11 with L16/44100/1
+accepts; PT 12 with L16/44100/1 still rejects (no static for that combo).
+
+---
+
+### N1 — TP not required for raw ST 2110-20 video at the ST 2110 tier
+
+**Parser behavior:** [parse_sdp.lua:1584-1602](parse_sdp.lua#L1584) puts
+`TP` in `video_opt_checks` (optional). A raw video SDP without `TP=` passes
+at the ST 2110 tier. (IPMX tier separately requires TP via TR-10-TP-1
+§13.2 — that path is unchanged.)
+
+**Spec basis:**
+- ST 2110-20:2022 §6.1.1: *"Traffic shaping and transmission timing of the
+  RTP stream shall be in accordance with the Network Compatibility Model
+  compliance definitions specified in SMPTE ST 2110-21 for Narrow Senders
+  (Type N), Narrow Linear Senders (Type NL), or Wide Senders (Type W)."*
+- ST 2110-21:2022 §8.1 "Required Parameters": *"Senders shall include the
+  following additional payload-format-specific Media Type parameters in the
+  a=fmtp clause of the SDP for all video RTP streams conforming to this
+  standard."* Listed parameter: `TP`.
+- ST 2110-21:2022 §7.1.2/§7.1.3/§7.1.4: each Type SHALL signal
+  `TP=2110TPN`/`TPNL`/`TPW` respectively.
+
+Chain: every ST 2110-20 raw video stream SHALL conform to ST 2110-21 (one
+of N/NL/W), and each Type SHALL signal TP. Therefore TP is required on
+every raw video SDP.
+
+**Verify before acting:** Re-read ST 2110-20 §6.1.1 and ST 2110-21 §8.1.
+Confirm both SHALLs are still present and the chain holds.
+
+**Fix direction:** Move `TP` from `video_opt_checks` to `video_checks`
+(required list). Enum (`VALID_TP`) is already correct.
+
+**Doc sync:** GUIDE.md raw-video required-params table adds TP. Note this
+applies to ST 2110 tier (was already required at IPMX tier).
+
+**Tests:** raw video SDP without TP at ST 2110 tier rejects (was accepting).
+
+### N2 — ST 2110-31 AM824 nchan even-number constraint not enforced
+
+**Parser behavior:** Audio branch [parse_sdp.lua:1614-1683](parse_sdp.lua#L1614)
+accepts any positive integer channel count for AM824.
+
+**Spec basis:** ST 2110-31:2022 §6.1: *"Since this standard transports AES3
+signals, and each AES3 signal contains two sequences of AES3 Subframes, the
+number of AES3 Subframe sequences <nchan> expressed in the SDP object shall
+always be an even number."*
+
+**Verify before acting:** Re-read §6.1 to confirm the "always be an even
+number" SHALL. Confirm it applies only to AM824 (encoding name), not to
+L16/L24.
+
+**Fix direction:** When the rtpmap encoding is `AM824`, reject odd `<nchan>`
+values. Add to the audio branch alongside the existing channel-count check.
+
+**Doc sync:** GUIDE.md "ST 2110-31 (AM824)" section (currently inherits from
+the §6.2.2 deferred item) — add the even-nchan SHALL.
+
+**Tests:** `a=rtpmap:96 AM824/48000/8` accepts; `a=rtpmap:96 AM824/48000/7`
+rejects.
+
+### N3 — ST 2110-31 AM824 clock rate enum not enforced
+
+**Parser behavior:** Audio branch accepts any positive rate for AM824. The
+code comment at L1623-1626 references ST 2110-30 "out of scope" rationale —
+that rationale doesn't transfer to ST 2110-31.
+
+**Spec basis:** ST 2110-31:2022 §5.5: *"AES3 streams in scope of this standard
+shall have a sampling frequency of 44.1 kHz, 48 kHz, or 96 kHz."* And §6.1:
+*"The <clock-rate> parameter shall take one of the values 44100, 48000, or
+96000."*
+
+**Verify before acting:** Re-read §5.5 and §6.1. Note this is an explicit
+enum SHALL, distinct from ST 2110-30's "other rates are out of scope" phrasing.
+
+**Fix direction:** When the rtpmap encoding is `AM824`, validate clock_rate ∈
+{44100, 48000, 96000}. Reject otherwise. L16/L24 behavior unchanged.
+
+**Doc sync:** GUIDE.md AM824 rtpmap section — state the {44.1, 48, 96} kHz enum.
+
+**Tests:** AM824 at 48000 accepts; at 32000 rejects.
+
+### N4 — ST 2110-31 AM824 `a=ptime` not required at ST 2110 tier
+
+**Parser behavior:** ST 2110 tier audio path [parse_sdp.lua:1642-1650](parse_sdp.lua#L1642)
+validates ptime *when present* but does not require it. (IPMX tier requires
+it at L2374-2380 with misattributed cite — see D1.)
+
+**Spec basis:** ST 2110-31:2022 §6.1: *"Senders under this standard shall
+signal a ptime attribute in the SDP, as defined in IETF RFC 4566."* Table 1
+enumerates valid `<packet-time>` values per clock rate.
+
+**Verify before acting:** Confirm §6.1's "shall signal a ptime attribute"
+language. Decide whether to also enforce Table 1 enum values for AM824 (see
+N5 — they're paired).
+
+**Fix direction:** When the rtpmap encoding is `AM824`, require `a=ptime`
+to be present. (Do not extend this requirement to L16/L24 unless N5/N4 are
+reframed via AES67 — see "open question" below.)
+
+**Open question to investigate:** Is `a=ptime` also a SHALL for L16/L24
+PCM audio? ST 2110-30:2025 §6.2.1 says "Audio senders and receivers shall
+comply with the provisions of AES67 Clause 7.1." AES67 may make ptime a
+SHALL. Verify by reading AES67-2018 (or current revision) §6/§7/§8 SDP
+clauses. If AES67 makes ptime SHALL, extend this fix to all audio encodings
+and update D1 accordingly.
+
+**Doc sync:** GUIDE.md ST 2110-31 / AM824 section: state ptime is required.
+
+**Tests:** AM824 SDP without ptime rejects; with valid ptime accepts.
+
+### N5 — ST 2110-31 AM824 ptime value not constrained to Table 1
+
+**Parser behavior:** Audio branch [parse_sdp.lua:1645-1649](parse_sdp.lua#L1645)
+validates `ptime > 0` only — accepts any positive number.
+
+**Spec basis:** ST 2110-31:2022 §6.1: *"The <packet-time> parameter shall
+take one of the values from the Table 1, based on the prevailing sampling
+rate and the desired number of AES3 Subframe sequences interleaved together
+within the RTP stream."* Table 1 enumerates: at 48k → {1, 0.12, 0.08} ms;
+at 96k → {1, 0.12, 0.08} ms; at 44.1k → {1.09, 0.14, 0.09} ms.
+
+**Verify before acting:** Re-read §6.1 and Table 1. Confirm the SHALL on
+"shall take one of the values from the Table 1". Note that Table 1 values
+are decimal fractions; the parser already handles `tonumber` of decimal
+strings.
+
+**Fix direction:** When encoding is `AM824`, look up the valid ptime set
+by clock_rate and reject any other value. (Allow small floating-point
+tolerance — e.g., ±0.001 ms — to avoid rejecting strings like "0.080" that
+round identically.)
+
+**Caution:** L16/L24 may have similar AES67-derived constraints; this fix
+should not silently extend to non-AM824 encodings.
+
+**Doc sync:** GUIDE.md AM824 section — list Table 1 values.
+
+**Tests:** AM824 at 48k with ptime=1 accepts; ptime=0.5 rejects; ptime=0.12
+accepts.
+
+### N6 — ST 2110-22 frame rate signaling not required
+
+**Parser behavior:** jxsv branch [parse_sdp.lua:1320-1476](parse_sdp.lua#L1320)
+lists `exactframerate` as an *optional* jxs param. No check on `a=framerate`.
+
+**Spec basis:** ST 2110-22:2022 §7.4: *"The SDP object shall include an
+indication of frame rate via one of the mechanisms listed in Table 4."*
+Table 4 lists two mechanisms: `a=framerate:<frame rate>` attribute OR
+`exactframerate=<frame rate>` fmtp parameter. At least one is REQUIRED.
+
+**Verify before acting:** Re-read §7.4 and Table 4. Confirm the "shall include"
+opens the SHALL. Both mechanisms are alternates — having either satisfies the
+requirement.
+
+**Fix direction:** In the jxsv branch, after fmtp validation, check whether
+`exactframerate` is in `params` OR `a=framerate` is in `m.attributes`. If
+neither, reject with cite `ST 2110-22 §7.4`. Validate `a=framerate` value
+form per RFC 4566 §6 (decimal `<integer>.<fraction>` or integer).
+
+**Doc sync:** GUIDE.md ST 2110-22 section — state that one of
+`a=framerate` or `exactframerate` is required (currently lists exactframerate
+under "optional" only).
+
+**Tests:** jxsv with exactframerate accepts; jxsv with a=framerate accepts;
+jxsv with neither rejects.
+
+### N7 — ST 2110-22 b=AS not required at the ST 2110 tier
+
+**Parser behavior:** [parse_sdp.lua:2194-2199](parse_sdp.lua#L2194) requires
+b=AS on jxsv *only* inside `ipmx.validate`. ST 2110 mode accepts a jxsv
+stream without b=AS.
+
+**Spec basis:** ST 2110-22:2022 §7.3: *"The media-level section of the SDP
+object shall include the attribute listed in Table 3."* Table 3 row: `b=<brtype>:<brvalue>`
+with `<brtype>` = `AS`, `<brvalue>` an integer kbps.
+
+**Verify before acting:** Re-read §7.3 to confirm the "shall include" SHALL
+and that it applies to all ST 2110-22 streams (not just IPMX-tagged ones).
+
+**Fix direction:** Move (or duplicate) the b=AS-required check into the
+jxsv branch of `st2110.validate`. The value-form check (positive integer)
+can stay shared.
+
+**Doc sync:** GUIDE.md `b=AS` row currently cites "TR-10-7 §11" — add the
+ST 2110-22 §7.3 cite for the ST 2110-tier requirement.
+
+**Tests:** ST 2110 mode jxsv SDP without b=AS rejects (was accepting).
+
+### N8 — ST 2110-22 fmtp "no trailing semicolon" not enforced on jxsv
+
+**Parser behavior:** `valid_st2110_20_fmtp_format` at [parse_sdp.lua:1005-1023](parse_sdp.lua#L1005)
+is only called for raw video at L1488. jxsv fmtp like
+`width=1920;height=1080;TP=2110TPN;packetmode=0;IPMX;` (trailing semicolon)
+is accepted.
+
+**Spec basis:** ST 2110-22:2022 §7.2: *"The <format specific parameters>
+section shall consist of a sequence of parameter entries separated by a
+semicolon (';') character, with the semicolon optionally followed by a space
+character. **There is no semicolon character after the last item.**"*
+
+Note: §7.2 differs from ST 2110-20:2022 §7.1 in one aspect — ST 2110-22
+makes the post-semicolon space *optional* (vs. mandatory in -20). So the
+trailing-semicolon SHALL transfers but the post-semicolon-whitespace SHALL
+does not (-20-only).
+
+**Verify before acting:** Re-read both §7.1 (in -20) and §7.2 (in -22).
+Confirm the trailing-semicolon prohibition in -22 §7.2 and confirm that the
+post-`;`-whitespace requirement is only in -20 §7.1.
+
+**Fix direction:** Factor the trailing-semicolon check out of
+`valid_st2110_20_fmtp_format` into a small `no_trailing_semicolon` helper.
+Call it from both the raw branch (existing) and the jxsv branch (new).
+The post-`;`-whitespace check stays only in the raw branch.
+
+**Doc sync:** GUIDE.md jxsv section — note the no-trailing-semicolon rule.
+
+**Tests:** jxsv fmtp ending in `;` rejects; jxsv fmtp without trailing `;`
+accepts; raw video still subject to both rules.
+
+### N9 — ST 2110-22 requires m=video for jxsv; parser doesn't enforce
+
+**Parser behavior:** jxsv branch [parse_sdp.lua:1320](parse_sdp.lua#L1320)
+is reached whenever `enc == "jxsv"`, regardless of `m.media`. The smpte291
+branch (L1204) has an analogous check; the jxsv branch does not.
+
+**Spec basis:** ST 2110-22:2022 §6.2: *"The media type name shall be 'video'.
+The subtype name shall be the name registered for the payload format."* (For
+JPEG-XS, the subtype is `jxsv` per RFC 9134.)
+
+**Verify before acting:** Re-read §6.2. Confirm "shall be 'video'" for the
+media type name (i.e., the `m=` field).
+
+**Fix direction:** At the start of the jxsv branch, reject if `m.media ~= "video"`.
+Mirror the smpte291 pattern at L1204.
+
+**Doc sync:** Add to GUIDE.md jxsv section.
+
+**Tests:** `m=application 5004 RTP/AVP 96` with `a=rtpmap:96 jxsv/90000`
+rejects (was accepting).
+
+### N10 — ST 2110-40 FID prohibition not enforced at the ST 2110 tier
+
+**Parser behavior:** [parse_sdp.lua:2065-2074](parse_sdp.lua#L2065) rejects
+`a=group:FID` only inside `ipmx.validate`. ST 2110 mode allows FID even on
+smpte291 streams.
+
+**Spec basis:** ST 2110-40:2023 §7: *"Section 4.1 of IETF RFC 8331 permits
+the use of Flow Identification ('FID') semantics to group streams within
+the SDP; such use is inconsistent with the 'one SDP object per RTP Stream'
+provision of SMPTE ST 2110-10 and therefore Flow Identification ('FID')
+semantics shall not be used under this standard."*
+
+**Verify before acting:** Confirm §7's FID prohibition. Decide whether to
+limit the rejection to smpte291-bearing SDPs (strict reading: the SHALL
+is in -40, which governs smpte291) or to broaden it to all ST 2110 SDPs
+(arguable from ST 2110-10 §8.1's "one SDP per RTP stream" but not an
+explicit FID SHALL in -10).
+
+**Fix direction:** Conservative: in `st2110.validate`, after iterating
+media blocks, if any block carries rtpmap encoding `smpte291`, reject any
+session-level `a=group:FID`. Cite ST 2110-40:2023 §7.
+
+**Caution:** Broader rejection (all ST 2110 streams, regardless of essence)
+is arguable but not directly grounded in a single SHALL. Strict reading
+recommended.
+
+**Doc sync:** GUIDE.md ST 2110-40 / smpte291 section — note FID prohibition.
+
+**Tests:** ST 2110 mode SDP with smpte291 and `a=group:FID` rejects;
+without smpte291, FID is still accepted at ST 2110 tier.
+
+### N11 — MAXUDP > Standard limit on smpte291 / ST 2110-41 / ST 2110-30 not enforced
+
+**Parser behavior:** No MAXUDP-vs-encoding constraint exists. A sender that
+signals `MAXUDP=8000` on smpte291, ST2110-41, or L16/L24/AM824 passes.
+
+**Spec basis:** Three distinct SHALLs:
+- **ST 2110-40:2023 §6.1.4** (RTP Payload Format section): *"The UDP size of
+  each RTP packet shall not exceed the Standard UDP Size Limit as specified
+  in SMPTE ST 2110-10."* MAXUDP > 1460 on smpte291 violates this.
+- **ST 2110-41:2024 §5.4**: *"The total length of the UDP packet that
+  encompasses each RTP Packet shall be less than or equal to the Standard
+  UDP Size Limit defined in SMPTE ST 2110-10."*
+- **ST 2110-30:2025 §6.2.1**: *"The Standard UDP Datagram Size Limit as
+  defined in SMPTE ST 2110-10 shall be used."* For PCM L16/L24.
+
+Note ST 2110-10:2022 §6.4 defines MAXUDP as the signaling that a sender
+*exceeds* the Standard limit (1460). So *any* MAXUDP presence on a
+Standard-only-permitted encoding is non-conformant (not just MAXUDP > 1460).
+
+**Verify before acting:** Re-read each of the three clauses. Confirm
+"Standard UDP Size Limit" is 1460 (ST 2110-10 §6.3). Confirm MAXUDP's
+semantics in ST 2110-10 §6.4 / §8.6 — that its mere presence signals
+exceeding the Standard limit.
+
+**Fix direction:** In each of the three branches (smpte291, ST2110-41,
+audio), reject any presence of `MAXUDP` in fmtp. (For audio, this applies
+to L16/L24/AM824 — though AM824 inherits from -31 which uses Standard limit
+per the chain from §5.x.)
+
+**Doc sync:** GUIDE.md sections for ST 2110-30, ST 2110-31, ST 2110-40,
+ST 2110-41 — note MAXUDP is forbidden.
+
+**Tests:** smpte291 with MAXUDP rejects; ST2110-41 with MAXUDP rejects;
+L16 with MAXUDP rejects; raw video with MAXUDP (and PM=2110GPM) still
+accepts.
+
+### N12 — ST 2110-20 §7.4.1 KEY-sampling SHALLs not enforced
+
+**Parser behavior:** Raw video branch [parse_sdp.lua:1478-1612](parse_sdp.lua#L1478)
+accepts any colorimetry with `sampling=KEY` and requires TCS even for KEY
+streams.
+
+**Spec basis:** ST 2110-20:2022 §7.4.1 (last paragraph): *"Key signals are
+used in relationship to 'fill' signals of video content. The Key signal does
+not have a specific TCS or Colorimetry value itself; the Key stream shall
+signal the colorimetry value 'ALPHA', and shall not signal a TCS value."*
+
+Two distinct SHALLs:
+1. `sampling=KEY` → `colorimetry=ALPHA` (positive).
+2. `sampling=KEY` → TCS absent (prohibitive).
+
+**Scope question — jxsv inheritance.** RFC 9134 §7.1 (IANA `video/jxsv`
+registration) defines jxsv's `sampling` parameter as inheriting from
+ST 2110-20 ("the same as for video/raw [RFC4175], as updated by SMPTE ST
+2110-20"). This brings the *value set* over (so `sampling=KEY` is a legal
+jxsv value). But it does **not** explicitly carry the KEY-specific cross-
+parameter constraints from §7.4.1.
+
+Per the strictness principle ("silence is not a reason to reject"), the
+**raw-video** SHALLs are unambiguous and should be enforced; the
+**jxsv** application is debatable and should *not* be enforced unless
+RFC 9134 or ST 2110-22 explicitly cites §7.4.1 — which they don't.
+
+**Verify before acting:**
+- Re-read ST 2110-20:2022 §7.4.1 final paragraph for the raw-video SHALLs.
+- Re-read RFC 9134 §7.1 entries for `sampling`, `TCS`, `colorimetry`.
+  Confirm none of them explicitly carries the KEY constraints over.
+- If RFC 9134 or ST 2110-22 explicitly references §7.4.1, expand to jxsv.
+
+**Fix direction:** In the raw-video branch only (the `elseif m.media ==
+"video"` block, NOT the `elseif enc == "jxsv"` block):
+- If `params["sampling"] == "KEY"` and `params["colorimetry"] ~= "ALPHA"`,
+  reject (cite §7.4.1).
+- If `params["sampling"] == "KEY"` and `params["TCS"]` is set, reject
+  (cite §7.4.1). NOTE: this interacts with F1 — once TCS is moved to
+  `video_opt_checks`, "TCS is set" means the sender explicitly signaled it
+  on a KEY stream, which is what §7.4.1 forbids.
+
+**Doc sync:** GUIDE.md ST 2110-20 KEY-signal section. **Whichever scope is
+chosen (raw-only vs. raw+jxsv), document the decision and the reasoning
+behind it explicitly in GUIDE.md** — e.g., "We enforce §7.4.1 on raw video
+only; RFC 9134 §7.1 carries the sampling value set over to jxsv but does
+not reference §7.4.1's cross-parameter constraints, so by the strictness
+principle they don't transfer." Future readers (and a future auditor) need
+to see both *what* the parser does and *why* the spec supports that choice.
+Mirror the note in CLAUDE.md's "What we do reject" / "What we do not
+reject" lists if applicable.
+
+**Tests:** raw video with `sampling=KEY; colorimetry=ALPHA` (no TCS)
+accepts; with `sampling=KEY; colorimetry=BT709` rejects; with `sampling=KEY;
+colorimetry=ALPHA; TCS=SDR` rejects.
+
+### N13 — ST 2110-20 §6.2.5 4:2:0-progressive-only SHALL not enforced
+
+**Parser behavior:** Raw video branch accepts any `sampling=*-4:2:0` with
+the `interlace` or `segmented` bare flag.
+
+**Spec basis:** ST 2110-20:2022 §6.2.5 (opening sentence): *"The 4:2:0
+sampling system shall only be applied to progressive scan images transmitted
+in a progressive manner. This sampling system does not apply to PsF or
+interlaced video essence."*
+
+Affected sampling values: `YCbCr-4:2:0`, `CLYCbCr-4:2:0`, `ICtCp-4:2:0`.
+
+**Scope question — jxsv inheritance:** §6.2.5 is in the RTP-payload section
+of ST 2110-20, defining how 4:2:0 pgroups are constructed for raw video.
+Whether this constraint transfers to JPEG-XS (which doesn't use ST 2110-20's
+pgroup layout) is unclear. Same caveat as N12: enforce on raw video only;
+flag for discussion before extending to jxsv.
+
+**Verify before acting:**
+- Re-read §6.2.5 to confirm the SHALL on "shall only be applied to
+  progressive scan images."
+- Re-read §7.3 to confirm `interlace` and `segmented` are progressive/PsF
+  markers (already enforced separately).
+- For jxsv: don't enforce unless RFC 9134 or ST 2110-22 explicitly says so.
+
+**Fix direction:** In the raw-video branch only:
+- If `params["sampling"]` matches `^(YCbCr|CLYCbCr|ICtCp)-4:2:0$` and
+  `params["interlace"]` is set, reject (cite §6.2.5).
+- The "no `segmented` without `interlace`" rule already covers PsF
+  transitively (segmented requires interlace, and 4:2:0 forbids both).
+
+**Doc sync:** GUIDE.md ST 2110-20 §6.2.5 / sampling section. **As with N12,
+the scope decision (raw-only vs. raw+jxsv) and its reasoning must be
+documented in GUIDE.md regardless of which way it goes.** §6.2.5 sits in
+the RTP-payload (pgroup-construction) chapter of ST 2110-20, which jxsv
+does not use. RFC 9134's `sampling` inheritance carries the value set, not
+the §6 RTP packaging constraints. Note this in GUIDE.md so readers see the
+explicit reasoning, and mirror to CLAUDE.md if applicable.
+
+**Tests:** `sampling=YCbCr-4:2:0` with `interlace` flag rejects;
+`sampling=YCbCr-4:2:0` without flag (progressive) accepts;
+`sampling=YCbCr-4:2:2` with `interlace` still accepts.
+
+---
+
+### D1 — `spec_ref = "TR-10-3 §8"` for IPMX audio a=ptime requirement is wrong
+
+**Parser cite:** [parse_sdp.lua:2378](parse_sdp.lua#L2378).
+
+**Actual spec basis:** TR-10-3 §8 is titled *"Payload Formats and Sample
+Rates"* and contains no SDP/ptime SHALL. The actual basis is either:
+- AES67 SDP requirements (transitively required by TR-10-3 §7 line 149:
+  *"Audio PCM IPMX Sender's digital audio streams shall conform to AES67"*).
+  Verify AES67 §6/§7/§8 for the SDP `a=ptime` SHALL — citation should
+  resolve to that AES67 clause.
+- ST 2110-31:2022 §6.1 — for AM824 specifically (see N4).
+
+**Fix direction:** After resolving N4, update the `spec_ref` to cite the
+correct underlying SHALL. If ptime is required for all audio (via AES67),
+cite AES67. If only for AM824 (via ST 2110-31 §6.1), branch the check.
+
+### D2 — `spec_ref = "TR-10-11 §12"` for fmtp `fbblevel` is wrong
+
+**Parser cite:** [parse_sdp.lua:1470-1476](parse_sdp.lua#L1470).
+
+**Actual spec basis:** TR-10-11 §12 is *"IPMX Info Block for Constant
+Bit-Rate Compressed Video"* — describes RTCP Media Info Block fields, not
+SDP fmtp. `fbblevel` is defined for the RTCP MIB (in TR-10-15-Part1 §12),
+not for SDP fmtp. **No spec defines `fbblevel` as an SDP fmtp parameter.**
+
+**Fix direction:** Two options:
+- (a) Remove the `fbblevel` check entirely. The conformance principle
+  forbids spec-ungrounded checks; an SDP `fbblevel` parameter is not
+  defined anywhere.
+- (b) Keep the check (since it only validates value form when present, and
+  is permissive — accepts any positive integer) but mark the cite as
+  "(no SDP spec — RTCP MIB defined in TR-10-15-Part1 §12; SDP form not
+  standardized)" so future readers don't follow a misleading cite.
+
+Recommend (a): remove. The check is technically opinion-based per the
+strictness principle.
+
+### D3 — GUIDE.md "ST 2110-20 §7.2 requires nine fmtp parameters"
+
+**Location:** GUIDE.md line 568.
+
+**Issue:** §7.2 lists 8 (sampling, depth, width, height, exactframerate,
+colorimetry, PM, SSN). TCS is in §7.3 ("with default values" — optional in
+practice per F1).
+
+**Fix:** After F1 lands, update GUIDE.md to "eight required parameters per
+§7.2 (TCS in §7.3 is optional, defaults to SDR)." Renumber the Required
+Parameters table.
+
+### D4 — GUIDE.md / CLAUDE.md describe `a=hkep` as session-only
+
+**Location:** GUIDE.md line 758 ("`a=hkep` is a **session-level** attribute
+(TR-10-5 §10); media-level placement is rejected"); CLAUDE.md may carry the
+same claim — search both.
+
+**Fix:** After F2 lands, update both files to state that `a=hkep` may
+appear at session level, media level, or both (TR-10-5 §17). Session-level
+acts as default for media legs lacking an explicit `a=hkep` (mirroring the
+privacy inheritance pattern).
+
+---
+
 ## Known Deferred Items
 
 These were explicitly evaluated and set aside. Do not re-raise them in routine
