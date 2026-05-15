@@ -11,6 +11,14 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ---
 
+## [0.1.1] — 2026-05-14
+
+- Fix Docker CLI example in README (`parse` → `to_json`).
+- Correct README stderr description (human-readable, not JSON).
+- Update rockspec to `0.1.1-1` with corrected CLI subcommand names in description.
+
+---
+
 ## [0.1.0] — 2026-05-14
 
 Initial release.

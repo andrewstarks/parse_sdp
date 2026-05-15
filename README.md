@@ -27,7 +27,7 @@ luarocks install parse_sdp
 
 ```sh
 docker build -t parse_sdp .
-docker run --rm -v "$(pwd):/data" parse_sdp parse /data/session.sdp
+docker run --rm -v "$(pwd):/data" parse_sdp to_json /data/session.sdp
 ```
 
 ## API Example
@@ -77,7 +77,7 @@ cat session.sdp | parse_sdp to_json --mode ipmx
 parse_sdp to_sdp doc.json > out.sdp
 ```
 
-Exit code `0` on success, `1` on error (detail on stderr as JSON).
+Exit code `0` on success, `1` on error (human-readable detail on stderr).
 
 ## Project Layout
 
@@ -99,7 +99,7 @@ parse_sdp/
 ├── Dockerfile
 ├── docker-compose.yml
 ├── GUIDE.md             # full documentation
-├── PLAN.md              # implementation plan and milestones
+├── PLAN.md              # guiding principles and known deferred items
 └── CHANGELOG.md
 ```
 
