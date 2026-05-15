@@ -3,8 +3,10 @@
 ## Guiding Principles
 
 - **Test first.** Every feature begins with failing tests.
-- **Strict by spec.** Every validation check must cite an explicit "shall not" or
-  well-formedness clause. Spec silence is not a reason to reject.
+- **Strict by spec.** Every validation check must cite explicit normative spec
+  text — a positive "shall" / "MUST", a prohibitive "shall not" / "MUST NOT" /
+  "is forbidden", or a defined value form / value set for an optional field.
+  Spec silence is not a reason to reject.
 - **Layered.** Each tier (RFC 4566 → ST 2110 → IPMX) extends the previous; it
   never replaces it.
 - **Tight.** If a file is growing, stop and refactor before continuing. Prefer

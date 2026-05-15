@@ -423,8 +423,9 @@ Error at line 4, col 1: missing required field 't='
 Strictness here is grounded in spec text, not opinion. The rule:
 
 > A check belongs in this library only if the relevant standard explicitly
-> forbids the input (*shall not*, *is forbidden*, *MUST NOT*) — or if the input
-> would be malformed at the RFC 4566 / RFC 3550 / RFC 3551 level. Anything else
+> **requires** something (*shall*, *MUST*), explicitly **forbids** something
+> (*shall not*, *MUST NOT*, *is forbidden*), or **defines the form** an
+> optional value must take when present. Anything the spec leaves silent
 > passes.
 
 This boundary is intentional. The library's job is **conformance** — not "is
@@ -434,11 +435,17 @@ library a liability rather than a guard.
 
 ### What we do reject
 
-- Anything malformed at the RFC 4566 / 3550 / 3551 grammar or internal-coherence
-  level — e.g. `a=fmtp`'s payload type must match the corresponding `a=rtpmap`'s
-  payload type; dynamic PTs in 96–127 must have an `a=rtpmap` to give them
-  meaning.
-- Anything an ST 2110 part explicitly forbids. Examples:
+- **Required fields that are missing or malformed.** Examples:
+  - RFC 4566 §5 required lines (`v=`, `o=`, `s=`, `t=`, `m=`) missing or in the
+    wrong order.
+  - ST 2110-20 video `a=fmtp` missing `sampling`, `depth`, `width`, `height`,
+    `exactframerate`, `colorimetry`, `TCS`, or `PM` — every one of these is a
+    "shall be signaled" parameter.
+  - Audio `a=rtpmap` missing the channel count field (RFC 4566 §6 — channels
+    are required for audio).
+  - Dynamic payload types (96–127) without a corresponding `a=rtpmap` to give
+    them meaning (RFC 3551 §6).
+- **Explicit prohibitions.** Examples:
   - `depth=14` (ST 2110-20 §7.4.2 enumerates `{8, 10, 12, 16, 16f}`).
   - `width=40000` (ST 2110-20 §7.2 — "integers between 1 and 32767 inclusive").
   - `segmented` without `interlace` (ST 2110-20 §7.3 — "is forbidden").
@@ -446,12 +453,19 @@ library a liability rather than a guard.
     Block Packing Mode").
   - `mediaclk:direct=10` (ST 2110-10 §7.3 — direct offset SHALL be zero).
   - `TROFF=0` (ST 2110-21 §8 — "decimal positive integer").
-- Anything the applicable TR-10 / IPMX profile explicitly forbids — e.g.
-  IPMX `a=rtcp-mux` (RTCP must be on port+1), IPMX `m=` ports must be even and
-  greater than 1024 (TR-10-12 §7).
-- Cross-stream consistency that ST 2022-7 / RFC 7104 requires for `a=group:DUP`
-  legs — identical essence parameters, identical payload type number, distinct
-  addresses on at least one axis.
+  - IPMX `a=rtcp-mux` (TR-10-1 §8.7 — RTCP must be on port+1).
+  - IPMX `m=` ports that are odd or ≤ 1024 (TR-10-12 §7).
+- **Optional fields whose values are ill-formed when present.** Optional
+  parameters that the spec defines a value form or value set for are validated
+  when present — absence is fine, malformed presence is not. Examples:
+  - `a=mediaclk:direct=N` where N ≠ 0 (mediaclk is optional in RFC 4566; ST
+    2110-10 §7.3 constrains the value when used).
+  - Unrecognized `a=fmtp` flags that overlap a defined name — e.g.
+    `interlace=anything` and `segmented=anything` are rejected because ST
+    2110-20 §7.1/§7.3 define these as flag-only.
+- **Cross-stream consistency** that ST 2022-7 / RFC 7104 requires for
+  `a=group:DUP` legs — identical essence parameters, identical payload type
+  number, distinct addresses on at least one axis.
 
 ### What we do not reject
 
@@ -488,11 +502,14 @@ library a liability rather than a guard.
 ### A practical test
 
 When considering whether to add a check, you should be able to point to a
-specific clause in a spec PDF or RFC and quote the prohibitive language. If
-the case for the check is *"but obviously a device that sends X is broken"*,
-that's an indicator the check is opinion, not conformance — and it doesn't
-belong here. If the case is *"the spec says SHALL NOT X"*, quote it in the
-code comment and as the `spec_ref` field on the error.
+specific clause in a spec PDF or RFC and quote normative language — either a
+positive *"shall"* / *"MUST"*, a prohibitive *"shall not"* / *"MUST NOT"* /
+*"is forbidden"*, or a defined value form / value set for an optional
+parameter. If the case for the check is *"but obviously a device that sends X
+is broken"*, that's an indicator the check is opinion, not conformance — and
+it doesn't belong here. If the case is *"the spec says SHALL X"*, *"the spec
+says SHALL NOT X"*, or *"the spec defines the legal values for X as {…}"*,
+quote it in the code comment and as the `spec_ref` field on the error.
 
 ---
 

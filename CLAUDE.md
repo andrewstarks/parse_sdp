@@ -81,14 +81,27 @@ doc.media[1].port
 ## Validation Strictness Principle
 
 Every validation check in `parse_sdp.lua` must be grounded in **explicit
-prohibitive spec text** (*"shall not"*, *"MUST NOT"*, *"is forbidden"*) or in
-**RFC 4566 / 3550 / 3551 well-formedness**. Silence in the spec is not a reason
-to reject. *"Out of scope of spec X"* is not the same as *"forbidden by spec X."*
+normative spec text**. Three polarities of normative text count:
+
+1. **Positive requirements** (*"shall"*, *"MUST"*, *"is required"*) — if the
+   spec says a field must be present or take a specific form, the validator
+   rejects input that omits it or violates the form.
+2. **Prohibitions** (*"shall not"*, *"MUST NOT"*, *"is forbidden"*) — if the
+   spec forbids a value, combination, or construction, the validator rejects it.
+3. **Optional features with defined values** — if a field is optional but the
+   spec defines its syntax or legal value set (e.g. *"MAY appear; if present,
+   value shall be one of {A, B, C}"*), the validator rejects ill-formed
+   instances when the field is present. Absence is accepted; a present but
+   malformed instance is rejected.
+
+Silence is not a reason to reject. If the spec defines no value form, no
+constraint, and no legal value set for something, the validator does not invent
+one. *"Out of scope of spec X"* is not the same as *"forbidden by spec X."*
 
 When adding or auditing a check:
 
-- Quote the SHALL / SHALL-NOT clause (or RFC well-formedness clause) in the
-  code comment and as the `spec_ref` field on the error.
+- Quote the SHALL / SHALL-NOT / defined-value clause in the code comment and as
+  the `spec_ref` field on the error.
 - If you can't find one, don't add the check.
 - *"Physically silly but not forbidden"* — a configuration that probably can't
   work in practice — is **not** in scope. The validator tests for conformance,
@@ -96,13 +109,16 @@ When adding or auditing a check:
 
 **In scope for validation:**
 
-- RFC 4566 grammar, field order, and field semantics.
+- RFC 4566 grammar, field order, required fields, and defined value forms for
+  every field (required or optional).
 - RFC 3550 / 3551 internal coherence (dynamic PT requires `a=rtpmap`; `a=fmtp`
   PT must match `a=rtpmap` PT; audio rtpmap requires the channels field; etc.).
-- Every explicit "shall not" / "is forbidden" in ST 2110-10 / -20 / -21 / -22 /
-  -30 / -31 / -40 / -41.
-- Every explicit "shall not" / "is forbidden" in the applicable VSF TR-10 /
-  IPMX profile (with the per-clause TR-10 cite, not a blanket "IPMX").
+- Every explicit "shall" / "shall not" / "is forbidden" in ST 2110-10 / -20 /
+  -21 / -22 / -30 / -31 / -40 / -41, plus defined value sets for optional
+  parameters when those parameters are present.
+- Every explicit "shall" / "shall not" / "is forbidden" in the applicable VSF
+  TR-10 / IPMX profile (with the per-clause TR-10 cite, not a blanket "IPMX"),
+  plus defined value sets for optional parameters when present.
 - Cross-stream consistency required by ST 2022-7 / RFC 7104 for `a=group:DUP`.
 
 **Out of scope (never validate from SDP):**

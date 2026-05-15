@@ -9,6 +9,15 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 
+### Docs
+
+- Clarify the validation strictness principle in CLAUDE.md, GUIDE.md, and
+  PLAN.md. The principle now explicitly covers all three polarities of
+  normative spec text — positive "shall" / "MUST" requirements, prohibitive
+  "shall not" / "MUST NOT" / "is forbidden" clauses, and defined value forms /
+  value sets for optional fields when present. Prior wording mentioned only
+  prohibitions and well-formedness; behavior is unchanged.
+
 ---
 
 ## [0.1.1] — 2026-05-14
