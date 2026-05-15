@@ -1004,8 +1004,17 @@ describe("ST 2110 validation", function()
 
     local VALID = "sampling=YCbCr-4:2:2; width=1920; height=1080; exactframerate=25; depth=10; TCS=SDR; colorimetry=BT709; PM=2110GPM; SSN=ST2110-20:2022"
 
-    it("accepts all nine required fmtp parameters", function()
+    it("accepts all eight required fmtp parameters plus optional TCS", function()
       local doc, err = sdp.parse(video20_sdp(VALID), "st2110")
+      assert.is_nil(err)
+      assert.is_table(doc)
+    end)
+
+    -- ST 2110-20:2022 §7.3 lists TCS under "Media Type Parameters with default
+    -- values"; §7.6 says receivers assume SDR when TCS is not signaled.
+    it("accepts raw video fmtp without TCS (§7.3 — optional; §7.6 default SDR)", function()
+      local fmtp = "sampling=YCbCr-4:2:2; width=1920; height=1080; exactframerate=25; depth=10; colorimetry=BT709; PM=2110GPM; SSN=ST2110-20:2022"
+      local doc, err = sdp.parse(video20_sdp(fmtp), "st2110")
       assert.is_nil(err)
       assert.is_table(doc)
     end)
@@ -1024,7 +1033,6 @@ describe("ST 2110 validation", function()
       { "height",         "sampling=YCbCr-4:2:2; width=1920; exactframerate=25; depth=10; TCS=SDR; colorimetry=BT709; PM=2110GPM; SSN=ST2110-20:2022" },
       { "exactframerate", "sampling=YCbCr-4:2:2; width=1920; height=1080; depth=10; TCS=SDR; colorimetry=BT709; PM=2110GPM; SSN=ST2110-20:2022" },
       { "depth",          "sampling=YCbCr-4:2:2; width=1920; height=1080; exactframerate=25; TCS=SDR; colorimetry=BT709; PM=2110GPM; SSN=ST2110-20:2022" },
-      { "TCS",            "sampling=YCbCr-4:2:2; width=1920; height=1080; exactframerate=25; depth=10; colorimetry=BT709; PM=2110GPM; SSN=ST2110-20:2022" },
       { "colorimetry",    "sampling=YCbCr-4:2:2; width=1920; height=1080; exactframerate=25; depth=10; TCS=SDR; PM=2110GPM; SSN=ST2110-20:2022" },
       { "PM",             "sampling=YCbCr-4:2:2; width=1920; height=1080; exactframerate=25; depth=10; TCS=SDR; colorimetry=BT709; SSN=ST2110-20:2022" },
       { "SSN",            "sampling=YCbCr-4:2:2; width=1920; height=1080; exactframerate=25; depth=10; TCS=SDR; colorimetry=BT709; PM=2110GPM" },

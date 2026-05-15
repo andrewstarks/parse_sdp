@@ -70,6 +70,14 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ### Fixed
 
+- **ST 2110-20:2022 §7.3 TCS is optional, not required (audit F1 + D3).**
+  Raw-video `TCS` is listed in §7.3 "Media Type Parameters with default values",
+  not in §7.2 ("Required Media Type Parameters"). §7.6: *"If the TCS value is
+  not specified, receivers shall assume the value SDR, unless the sampling
+  keyword indicates the signal is a KEY signal, in which case the TCS value
+  is not meaningful."* Moved TCS from the raw-video required-fmtp list to the
+  optional-when-present list (value enum unchanged — full §7.6 set). Updates
+  GUIDE.md to "eight required parameters" and reclassifies the TCS row.
 - **jxsv `RANGE` cite refined to RFC 9134 §7.1.** ST 2110-22 does not
   define `RANGE`; the value-form authority for the IANA `video/jxsv`
   registration is RFC 9134 §7.1. The enum `{NARROW, FULLPROTECT, FULL}`

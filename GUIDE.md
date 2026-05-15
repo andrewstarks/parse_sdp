@@ -439,8 +439,9 @@ library a liability rather than a guard.
   - RFC 4566 §5 required lines (`v=`, `o=`, `s=`, `t=`, `m=`) missing or in the
     wrong order.
   - ST 2110-20 video `a=fmtp` missing `sampling`, `depth`, `width`, `height`,
-    `exactframerate`, `colorimetry`, `TCS`, or `PM` — every one of these is a
-    "shall be signaled" parameter.
+    `exactframerate`, `colorimetry`, `PM`, or `SSN` — every one of these is a
+    "shall be signaled" parameter under §7.2. (TCS lives in §7.3 and is
+    optional; receivers assume `SDR` when absent per §7.6.)
   - Audio `a=rtpmap` missing the channel count field (RFC 4566 §6 — channels
     are required for audio).
   - Dynamic payload types (96–127) without a corresponding `a=rtpmap` to give
@@ -565,8 +566,9 @@ When a `c=` line is present (at either session or media level), the address is v
 
 ### ST 2110-20 (video) `fmtp` parameters
 
-ST 2110-20 §7.2 requires nine `fmtp` parameters. All nine are validated for both presence
-and value format.
+ST 2110-20 §7.2 requires eight `fmtp` parameters. All eight are validated for both presence
+and value format. TCS lives in §7.3 ("Media Type Parameters with default values") and is
+optional — §7.6 says receivers assume `SDR` when TCS is not signaled.
 
 | Parameter | Example | Valid values |
 | --- | --- | --- |
@@ -575,7 +577,6 @@ and value format.
 | `height` | `1080` | integer between 1 and 32767 inclusive (ST 2110-20 §7.2) |
 | `exactframerate` | `30000/1001` | positive integer or `n/d` fraction (both parts positive, **in lowest terms** — `60000/2002` is rejected because ST 2110-20:2022 §7.2 requires "the numerically smallest numerator value possible") |
 | `depth` | `10` | one of `8`, `10`, `12`, `16`, `16f` (ST 2110-20 §7.4.2) |
-| `TCS` | `SDR` | `SDR`, `PQ`, `HLG`, `LINEAR`, `BT2100LINPQ`, `BT2100LINHLG`, `ST2065-1`, `ST428-1`, `DENSITY`, `ST2115LOGS3`, `UNSPECIFIED` (the full 11-value enum per ST 2110-20:2022 §7.6; `ST2115LOGS3` was added in :2022) |
 | `colorimetry` | `BT709` | `BT601`, `BT709`, `BT2020`, `BT2100`, `ST2065-1`, `ST2065-3`, `UNSPECIFIED`, `ALPHA`, `XYZ` |
 | `PM` | `2110GPM` | `2110GPM`, `2110BPM` |
 | `SSN` | `ST2110-20:2022` | must be `ST2110-20:YYYY` where YYYY is a 4-digit year. Per ST 2110-20:2022 §7.2, `SSN=ST2110-20:2022` is **required** whenever `TCS=ST2115LOGS3` or `colorimetry=ALPHA` is signaled (those values aren't defined in :2017). The reverse direction ("default to :2017 unless a :2022-only value is used") is not enforced — see PLAN.md "Known Deferred Items". |
@@ -584,6 +585,7 @@ Optional parameters validated when present:
 
 | Parameter | Valid values | Spec ref |
 | --- | --- | --- |
+| `TCS` | `SDR`, `PQ`, `HLG`, `LINEAR`, `BT2100LINPQ`, `BT2100LINHLG`, `ST2065-1`, `ST428-1`, `DENSITY`, `ST2115LOGS3`, `UNSPECIFIED` (the full 11-value enum per ST 2110-20:2022 §7.6; `ST2115LOGS3` was added in :2022). Absent → receivers assume `SDR` per §7.6. | ST 2110-20:2022 §7.3 / §7.6 |
 | `RANGE` | `NARROW`, `FULLPROTECT`, `FULL` | ST 2110-20 §7.2 |
 | `TP` | `2110TPN`, `2110TPNL`, `2110TPW` | ST 2110-21 |
 | `MAXUDP` | positive integer ≤ 8960 (Extended UDP Size Limit). Must **not** be signaled when `PM=2110BPM` — ST 2110-20 §6.3.3 forbids the Extended UDP size in Block Packing Mode. | ST 2110-10 §6.4, ST 2110-20 §6.3.3 |

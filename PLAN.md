@@ -59,6 +59,9 @@ fixture findings, or user reports.
 
 ## Pre-1.0 Conformance Audit (open findings, 2026-05-15)
 
+**Resolved since audit opened:** F1 + D3 (TCS optional per §7.3, doc sync) —
+2026-05-15.
+
 These findings came out of a multi-spec audit that read every SDP-relevant
 SHALL / SHALL-NOT / defined-value clause across RFC 4566, RFC 8866,
 ST 2110-10/-20/-21/-22/-30/-31/-40/-41, ST 2022-7, RFC 7104, RFC 9134, and
@@ -87,37 +90,6 @@ SDPs; blockers for 1.0). N = false negatives (parser accepts non-conformant
 SDPs; should-fix). D = documentation/citation cleanups.
 
 ---
-
-### F1 — TCS optional for raw ST 2110-20 video (defaults to SDR)
-
-**Parser behavior:** `video_checks` in [parse_sdp.lua:1496-1509](parse_sdp.lua#L1496)
-lists `TCS` as a mandatory raw-video fmtp parameter. A raw video SDP without
-`TCS=` is rejected at the ST 2110 tier.
-
-**Spec basis:** ST 2110-20:2022 §7.3 heading is *"Media Type Parameters with
-default values"* and the opening sentence reads *"Senders shall include the
-following payload-format-specific Media Type parameters in the a=fmtp clause
-of the SDP for any streams conforming to this standard where the default
-values are not correct for the contents of the stream."* §7.6: *"If the TCS
-value is not specified, receivers shall assume the value SDR, unless the
-sampling keyword indicates the signal is a KEY signal, in which case the
-TCS value is not meaningful."* TCS is therefore optional when the stream is
-SDR (or KEY).
-
-**Verify before acting:** Confirm TCS is listed under §7.3, not §7.2. Confirm
-§7.6 still carries the "default SDR" language. If TCS appears in §7.2, the
-finding is wrong.
-
-**Fix direction:** Move TCS out of `video_checks` and into `video_opt_checks`
-(value enum stays the same — VALID_TCS — but only runs when present).
-
-**Doc sync:**
-- GUIDE.md "ST 2110-20 §7.2 requires nine `fmtp` parameters" → "eight required."
-- Move the TCS row from the Required Parameters table to the Optional table
-  (note "defaults to SDR when absent").
-
-**Tests:** raw video SDP without TCS parses cleanly at ST 2110 tier; raw video
-SDP with TCS=BT2100… still works; existing 100+ test fixtures continue to pass.
 
 ### F2 — `a=hkep` allowed at media level (not session-only)
 
@@ -781,9 +753,9 @@ case. Enforce on raw-video only; do not extend to jxsv.
 - If `params["sampling"] == "KEY"` and `params["colorimetry"] ~= "ALPHA"`,
   reject (cite §7.4.1).
 - If `params["sampling"] == "KEY"` and `params["TCS"]` is set, reject
-  (cite §7.4.1). NOTE: this interacts with F1 — once TCS is moved to
-  `video_opt_checks`, "TCS is set" means the sender explicitly signaled it
-  on a KEY stream, which is what §7.4.1 forbids.
+  (cite §7.4.1). With TCS now in `video_opt_checks` (resolved F1, 2026-05-15),
+  "TCS is set" means the sender explicitly signaled it on a KEY stream,
+  which is what §7.4.1 forbids.
 
 **Doc sync:** GUIDE.md ST 2110-20 KEY-signal section. **Whichever scope is
 chosen (raw-only vs. raw+jxsv), document the decision and the reasoning
@@ -892,18 +864,6 @@ not for SDP fmtp. **No spec defines `fbblevel` as an SDP fmtp parameter.**
 
 Recommend (a): remove. The check is technically opinion-based per the
 strictness principle.
-
-### D3 — GUIDE.md "ST 2110-20 §7.2 requires nine fmtp parameters"
-
-**Location:** GUIDE.md line 568.
-
-**Issue:** §7.2 lists 8 (sampling, depth, width, height, exactframerate,
-colorimetry, PM, SSN). TCS is in §7.3 ("with default values" — optional in
-practice per F1).
-
-**Fix:** After F1 lands, update GUIDE.md to "eight required parameters per
-§7.2 (TCS in §7.3 is optional, defaults to SDR)." Renumber the Required
-Parameters table.
 
 ### D4 — GUIDE.md / CLAUDE.md describe `a=hkep` as session-only
 

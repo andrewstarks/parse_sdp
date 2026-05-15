@@ -1491,7 +1491,12 @@ function st2110.validate(doc)
           return attr_err(sfmsg, mpath, "fmtp", "ST 2110-20:2022 §7.1", "INVALID_VALUE")
         end
       end
-      -- All nine required fmtp parameters (ST 2110-20 §7.2): presence then value.
+      -- ST 2110-20:2022 §7.2 lists eight required fmtp parameters: sampling,
+      -- depth, width, height, exactframerate, colorimetry, PM, SSN. TCS lives
+      -- in §7.3 ("Media Type Parameters with default values") and is therefore
+      -- optional — §7.6: "If the TCS value is not specified, receivers shall
+      -- assume the value SDR…" Optional TCS validation lives in
+      -- video_opt_checks below.
       -- Each entry: { key, validator, spec_ref (optional override of §7.2) }.
       local video_checks = {
         { "sampling",       function(v) return valid_enum(v, VALID_SAMPLING,    "sampling")    end },
@@ -1499,7 +1504,6 @@ function st2110.validate(doc)
         { "height",         valid_height },  -- §7.2: integer 1..32767
         { "exactframerate", valid_exactframerate },
         { "depth",          valid_depth, "ST 2110-20 §7.4.2" },  -- M30 G1: enum {8,10,12,16,16f}
-        { "TCS",            function(v) return valid_enum(v, VALID_TCS,         "TCS")         end },
         { "colorimetry",    function(v) return valid_enum(v, VALID_COLORIMETRY, "colorimetry") end },
         { "PM",             function(v) return valid_enum(v, VALID_PM,          "PM")          end },
         { "SSN",            function(v)
@@ -1582,6 +1586,10 @@ function st2110.validate(doc)
       -- TSMODE / TSDELAY are from ST 2110-10 §8.7 (RTP timestamp generation).
       -- Each entry: { key, validator, spec_ref (optional override of §7.2) }.
       local video_opt_checks = {
+        -- ST 2110-20:2022 §7.3 lists TCS under "Media Type Parameters with
+        -- default values"; §7.6 enumerates the permitted values. Validate
+        -- value when present; absence is accepted (receivers assume SDR).
+        { "TCS",     function(v) return valid_enum(v, VALID_TCS, "TCS") end, "ST 2110-20:2022 §7.6" },
         { "TP",      function(v) return valid_enum(v, VALID_TP, "TP") end },
         { "MAXUDP",  valid_maxudp },
         { "PAR",     valid_par },
