@@ -2668,9 +2668,9 @@ describe("ST 2110 validation", function()
     end)
   end)
 
-  -- ── M22: TTL range validation (1-255) ────────────────────────────────────────
+  -- ── multicast TTL + layered/numaddr (RFC 8866 §5.7 / §9) ─────────────────────
 
-  describe("multicast TTL range validation (M22)", function()
+  describe("multicast TTL range validation (RFC 8866 §5.7 / §9)", function()
     local PTP = "a=ts-refclk:ptp=IEEE1588-2008:00-11-22-FF-FE-33-44-55:0"
     local VFMTP = "a=fmtp:96 sampling=YCbCr-4:2:2; width=1920; height=1080; exactframerate=25; depth=10; TCS=SDR; colorimetry=BT709; PM=2110GPM; SSN=ST2110-20:2022; TP=2110TPN"
     local function with_ttl(ttl)
@@ -2707,22 +2707,64 @@ describe("ST 2110 validation", function()
       assert.is_table(doc)
     end)
 
-    it("rejects TTL=0", function()
-      local doc = sdp.parse(with_ttl(0))
+    -- RFC 8866 §9 ABNF: ttl = (POS-DIGIT *2DIGIT) / "0". The "0"
+    -- alternative is explicit; §5.7: "TTL values MUST be in the range 0-255."
+    it("accepts TTL=0 (RFC 8866 §9 ABNF; §5.7 range 0-255)", function()
+      local doc, err = sdp.parse(with_ttl(0), "st2110")
+      assert.is_nil(err)
       assert.is_table(doc)
-      local ok, err = doc:validate("st2110")
-      assert.is_nil(ok)
-      assert.is_table(err)
-      assert.matches("TTL", err.message)
     end)
 
     it("rejects TTL=256", function()
       local doc = sdp.parse(with_ttl(256))
-      assert.is_table(doc)
       local ok, err = doc:validate("st2110")
       assert.is_nil(ok)
-      assert.is_table(err)
       assert.matches("TTL", err.message)
+    end)
+  end)
+
+  -- RFC 8866 §9 ABNF: IP4-multicast = m1 3("." decimal-uchar) "/" ttl
+  -- [ "/" numaddr ]. Layered/hierarchical multicast attaches an optional
+  -- numaddr after ttl. Spec example: c=IN IP4 233.252.0.1/127/3.
+  describe("IPv4 layered multicast numaddr (RFC 8866 §9 IP4-multicast)", function()
+    local PTP = "a=ts-refclk:ptp=IEEE1588-2008:00-11-22-FF-FE-33-44-55:0"
+    local VFMTP = "a=fmtp:96 sampling=YCbCr-4:2:2; width=1920; height=1080; exactframerate=25; depth=10; TCS=SDR; colorimetry=BT709; PM=2110GPM; SSN=ST2110-20:2022; TP=2110TPN"
+    local function with_c(c_line)
+      return table.concat({
+        "v=0",
+        "o=- 1234567890 1 IN IP4 192.168.1.1",
+        "s=ST2110 Video", "t=0 0", PTP,
+        "m=video 5000 RTP/AVP 96",
+        c_line,
+        "a=rtpmap:96 raw/90000",
+        VFMTP,
+        "a=mediaclk:direct=0", PTP,
+      }, "\r\n") .. "\r\n"
+    end
+
+    it("accepts spec example c=IN IP4 233.252.0.1/127/3", function()
+      local doc, err = sdp.parse(with_c("c=IN IP4 233.252.0.1/127/3"), "st2110")
+      assert.is_nil(err)
+      assert.is_table(doc)
+    end)
+
+    it("accepts /ttl/numaddr with TTL=0", function()
+      local doc, err = sdp.parse(with_c("c=IN IP4 233.252.0.1/0/3"), "st2110")
+      assert.is_nil(err)
+      assert.is_table(doc)
+    end)
+
+    it("still accepts plain /ttl form", function()
+      local doc, err = sdp.parse(with_c("c=IN IP4 239.100.0.1/64"), "st2110")
+      assert.is_nil(err)
+      assert.is_table(doc)
+    end)
+
+    it("rejects /ttl/numaddr with numaddr=0", function()
+      local doc = sdp.parse(with_c("c=IN IP4 233.252.0.1/127/0"))
+      local ok, err = doc:validate("st2110")
+      assert.is_nil(ok)
+      assert.matches("numaddr", err.message)
     end)
   end)
 
@@ -3970,12 +4012,12 @@ describe("ST 2110 validation", function()
     end)
   end)
 
-  describe("M26 L2: IPv6 c= multicast scope (ST 2110-10 §6.5 / RFC 4566 §5.7)", function()
+  describe("c= IPv6 multicast numaddr suffix (RFC 8866 §9 IP6-multicast)", function()
     local function st2110_with_c(c_line)
       return table.concat({
         "v=0",
         "o=- 1234567890 1 IN IP6 2001:db8::1",
-        "s=ST 2110 M26 L2",
+        "s=ST 2110 IPv6 c=",
         "t=0 0",
         "a=ts-refclk:localmac=AA-BB-CC-DD-EE-FF",
         "m=video 5000 RTP/AVP 96",
@@ -3986,7 +4028,10 @@ describe("ST 2110 validation", function()
       }, "\r\n") .. "\r\n"
     end
 
-    it("accepts IPv6 multicast with /scope suffix (ff02::1/64)", function()
+    -- RFC 8866 §9 ABNF: IP6-multicast = IP6-address [ "/" numaddr ]. The
+    -- suffix is a layered-multicast count, not a TTL. §5.7 prohibits TTL
+    -- on IPv6 multicast; the bracketed numaddr remains permitted.
+    it("accepts IPv6 multicast with /numaddr suffix (ff02::1/64)", function()
       local doc, err = sdp.parse(st2110_with_c("c=IN IP6 ff02::1/64"), "st2110")
       assert.is_nil(err)
       assert.is_table(doc)
@@ -3998,26 +4043,23 @@ describe("ST 2110 validation", function()
       assert.is_table(doc)
     end)
 
-    it("rejects IPv6 unicast with /scope suffix", function()
+    it("rejects IPv6 unicast with /suffix (no slash form for unicast)", function()
       local doc = sdp.parse(st2110_with_c("c=IN IP6 2001:db8::1/64"))
-      assert.is_table(doc)
       local ok, err = doc:validate("st2110")
       assert.is_nil(ok)
-      assert.is_table(err)
       assert.matches("unicast", err.message)
     end)
 
-    it("rejects IPv6 multicast with non-numeric /scope suffix", function()
+    it("rejects IPv6 multicast with non-numeric /numaddr", function()
       local doc = sdp.parse(st2110_with_c("c=IN IP6 ff02::1/abc"))
-      assert.is_table(doc)
       local ok, err = doc:validate("st2110")
       assert.is_nil(ok)
       assert.is_table(err)
     end)
 
-    it("rejects IPv6 multicast with /scope=0", function()
+    -- RFC 8866 §9: numaddr = integer = POS-DIGIT *DIGIT (no leading zero).
+    it("rejects IPv6 multicast with /numaddr=0", function()
       local doc = sdp.parse(st2110_with_c("c=IN IP6 ff02::1/0"))
-      assert.is_table(doc)
       local ok, err = doc:validate("st2110")
       assert.is_nil(ok)
       assert.is_table(err)

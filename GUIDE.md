@@ -543,12 +543,13 @@ A connection address is required at either session level or media-block level (S
 
 When a `c=` line is present (at either session or media level), the address is validated (ST 2110-10 §6.5 / RFC 4566 §5.7):
 
-- The address (before any `/<ttl>` or `/<scope>` suffix) must parse as a literal IPv4 (RFC 791) or IPv6 (RFC 2460) address, depending on the declared `addr_type`. FQDNs and malformed addresses (e.g. `c=IN IP4 1.2.3`, `c=IN IP4 999.0.0.0`, `c=IN IP6 not-an-ipv6`) are rejected.
-- IPv4 multicast addresses (224.0.0.0–239.255.255.255) must include a TTL suffix (e.g. `239.100.0.1/64`).
-- IPv4 TTL must be an integer in the range 1–255.
+- The address (before any `/<ttl>` or `/<numaddr>` suffix) must parse as a literal IPv4 (RFC 791) or IPv6 (RFC 2460) address, depending on the declared `addr_type`. FQDNs and malformed addresses (e.g. `c=IN IP4 1.2.3`, `c=IN IP4 999.0.0.0`, `c=IN IP6 not-an-ipv6`) are rejected.
+- IPv4 multicast addresses (224.0.0.0–239.255.255.255) must include a TTL suffix (e.g. `239.100.0.1/64`). Per RFC 8866 §9 ABNF (`IP4-multicast = m1 3("." decimal-uchar) "/" ttl [ "/" numaddr ]`) the layered/hierarchical-multicast form `<addr>/<ttl>/<numaddr>` is also accepted (spec example `c=IN IP4 233.252.0.1/127/3`).
+- IPv4 TTL must be an integer in the range 0–255 (RFC 8866 §5.7: *"TTL values MUST be in the range 0-255"*; §9 ABNF explicitly admits `"0"`).
+- IPv4 layered `<numaddr>` must be a positive integer (RFC 8866 §9: `numaddr = integer = POS-DIGIT *DIGIT`).
 - The Local Network Control Block (`224.0.0.0/24`) and Internetwork Control Block (`224.0.1.0/24`) are forbidden per RFC 5771.
 - IPv4 unicast addresses must not carry a TTL suffix.
-- IPv6 multicast addresses (`ff` prefix) may carry an optional `/<positive-integer>` scope suffix (e.g. `ff02::1/64`).
+- IPv6 multicast addresses (`ff` prefix) may carry an optional `/<numaddr>` suffix (e.g. `ff02::1/64`) per RFC 8866 §9 ABNF (`IP6-multicast = IP6-address [ "/" numaddr ]`). Note: this is a layered-address count, **not** a TTL — RFC 8866 §5.7 prohibits TTL on IPv6 multicast.
 - IPv6 unicast addresses must not include any `/` suffix.
 
 ### Per media block

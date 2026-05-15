@@ -716,11 +716,20 @@ local function valid_source_filter(value)
   return true
 end
 
--- Validate the address field of a c= line for ST 2110 media blocks (RFC 4566 +
--- ST 2110-10 §6.5). IPv4 multicast requires a TTL and must not fall within the
--- Local Network Control Block (224.0.0.0/24) or Internetwork Control Block
--- (224.0.1.0/24) forbidden ranges defined in RFC 5771. M29 G1: the address
--- portion (before any /suffix) must parse as a literal IPv4 or IPv6 address.
+-- Validate the address field of a c= line per RFC 8866 §9 ABNF and §5.7
+-- prose, with the ST 2110-10 §6.5 / RFC 5771 forbidden multicast ranges.
+--
+-- ABNF (§9):
+--   IP4-multicast = m1 3("." decimal-uchar) "/" ttl [ "/" numaddr ]
+--   IP6-multicast = IP6-address [ "/" numaddr ]
+--   ttl           = (POS-DIGIT *2DIGIT) / "0"   ; 0..255 (§5.7 prose)
+--   numaddr       = integer                     ; ≥ 1 (POS-DIGIT *DIGIT)
+--
+-- IPv4 multicast: TTL is mandatory; layered/hierarchical count is optional.
+-- IPv6 multicast: no TTL slot (§5.7: "TTL value MUST NOT be present for 'IP6'
+--   multicast"); the bracketed `/numaddr` is the layered-address count form.
+-- Unicast (either family): no slash-suffix form is defined.
+-- M29 G1: the address portion (before any /suffix) must parse as a literal.
 local function valid_connection_address(addr_type, addr)
   if addr_type == "IP6" then
     local ip6, rest6 = addr:match("^([^/]+)(.*)")
@@ -733,11 +742,11 @@ local function valid_connection_address(addr_type, addr)
       if rest6 == "" then return true end
       local n_str = rest6:match("^/(%d+)$")
       if not n_str then
-        return nil, "IPv6 multicast c= suffix must be '/<integer>' (RFC 4566 §5.7)"
+        return nil, "IPv6 multicast c= suffix must be '/<numaddr>' per RFC 8866 §9 IP6-multicast ABNF"
       end
       local n = tonumber(n_str)
       if not n or n < 1 then
-        return nil, "IPv6 multicast c= suffix must be a positive integer"
+        return nil, "IPv6 multicast numaddr must be a positive integer (RFC 8866 §9)"
       end
       return true
     end
@@ -757,13 +766,25 @@ local function valid_connection_address(addr_type, addr)
   local o1 = tonumber(ip:match("^(%d+)%."))
   local is_mc = o1 and o1 >= 224 and o1 <= 239
   if is_mc then
-    local ttl_str = rest:match("^/(%d+)$")
+    -- Try /ttl/numaddr first, then plain /ttl. RFC 8866 §9: numaddr is OPTIONAL,
+    -- ttl is REQUIRED. RFC 8866 §5.7: TTL range is 0-255 (ABNF: "0" alternative
+    -- explicitly permits zero).
+    local ttl_str, num_str = rest:match("^/(%d+)/(%d+)$")
     if not ttl_str then
-      return nil, "IPv4 multicast address requires a TTL suffix (e.g. 239.x.x.x/64)"
+      ttl_str = rest:match("^/(%d+)$")
+    end
+    if not ttl_str then
+      return nil, "IPv4 multicast address requires a TTL suffix (e.g. 239.x.x.x/64) per RFC 8866 §9 IP4-multicast"
     end
     local ttl = tonumber(ttl_str)
-    if not ttl or ttl < 1 or ttl > 255 then
-      return nil, string.format("IPv4 multicast TTL must be 1-255 (got %s)", ttl_str)
+    if not ttl or ttl < 0 or ttl > 255 then
+      return nil, string.format("IPv4 multicast TTL must be 0-255 per RFC 8866 §5.7 (got %s)", ttl_str)
+    end
+    if num_str then
+      local num = tonumber(num_str)
+      if not num or num < 1 then
+        return nil, string.format("IPv4 layered-multicast numaddr must be a positive integer per RFC 8866 §9 (got %s)", num_str)
+      end
     end
     local o2 = tonumber(ip:match("^%d+%.(%d+)%."))
     local o3 = tonumber(ip:match("^%d+%.%d+%.(%d+)%."))

@@ -67,6 +67,13 @@ fixture findings, or user reports.
 - F4 — ST 2110-41 clock rate is Data-Item-defined per §5.3 (not fixed at 90 kHz).
 - F5 — `channel-order` convention is SHOULD per ST 2110-30:2025 §6.2.2; non-`SMPTE2110` accepted structurally.
 - F6 — `AES3` channel-grouping symbol added for AM824 per ST 2110-31:2022 §6.2 Table 2.
+- F7 — Reframed (cite cleanup, no parser change). RFC 8866 §9 ABNF has
+  `IP6-multicast = IP6-address [ "/" numaddr ]` — the IPv6 `/N` suffix is a
+  layered-address count, not a TTL; the audit's recommendation to reject
+  it conflated §5.7's TTL prohibition with §9's `numaddr` permit. Parser
+  behavior unchanged; messages/comments now use the correct ABNF term.
+- F9 — IPv4 layered multicast `<addr>/<ttl>/<numaddr>` accepted per RFC 8866 §9 IP4-multicast ABNF.
+- F10 — IPv4 multicast TTL=0 accepted per RFC 8866 §5.7 (range 0-255) / §9 ABNF.
 
 These findings came out of a multi-spec audit that read every SDP-relevant
 SHALL / SHALL-NOT / defined-value clause across RFC 4566, RFC 8866,
@@ -96,33 +103,6 @@ SDPs; blockers for 1.0). N = false negatives (parser accepts non-conformant
 SDPs; should-fix). D = documentation/citation cleanups.
 
 ---
-
-### F7 — IPv6 multicast `c=` `/N` suffix should be rejected, not accepted
-
-**Parser behavior:** [parse_sdp.lua:724-740](parse_sdp.lua#L724) accepts
-`c=IN IP6 ff02::1/64` (treats `/N` as a positive-integer scope). GUIDE.md
-line 550 documents this as a feature.
-
-**Spec basis:** RFC 8866 §5.7 (and the identical RFC 4566 wording): *"'IP6'
-multicast does not use TTL scoping, and hence the TTL value MUST NOT be
-present for 'IP6' multicast."* RFC 8866 defines no `/scope` form for IPv6.
-
-**Verify before acting:** Re-read RFC 8866 §5.7 in full
-(`https://www.rfc-editor.org/rfc/rfc8866#section-5.7`). Check whether any
-errata or later RFC introduces an IPv6 scope-suffix form. Search the
-existing fixtures for IPv6 multicast addresses with `/N` — if many real-
-world IPMX SDPs use this, flag for discussion before rejecting (might
-warrant a deferred-items entry rather than a fix).
-
-**Fix direction:** If verification confirms the prohibition, reject any
-suffix after an IPv6 multicast address in `valid_connection_address`.
-
-**Doc sync:**
-- GUIDE.md line 550 ("IPv6 multicast addresses may carry an optional
-  `/<positive-integer>` scope suffix") → "IPv6 multicast addresses MUST NOT
-  carry any `/` suffix (RFC 8866 §5.7)".
-
-**Tests:** `c=IN IP6 ff02::1` accepts; `c=IN IP6 ff02::1/64` rejects.
 
 ### F8 — Parser rejects valid RFC 4566 fields `r=`, `z=`, `k=`, and multiple `t=`
 
@@ -159,47 +139,6 @@ be an explicit narrowing of scope and should be discussed before adoption.
 
 **Tests:** SDPs with each of `r=`, `z=`, `k=`, multiple `t=` parse and
 round-trip through `to_sdp()`.
-
-### F9 — IPv4 layered multicast `c=address/ttl/count` not accepted
-
-**Parser behavior:** [parse_sdp.lua:753](parse_sdp.lua#L753) matches only
-`^/(%d+)$` (single TTL) — a second slash fails validation.
-
-**Spec basis:** RFC 8866 §5.7: *"Hierarchical or layered encoding schemes
-…"* defines the form `<base multicast address>[/<ttl>]/<number of addresses>`
-with example `c=IN IP4 233.252.0.1/127/3`.
-
-**Verify before acting:** Re-read RFC 8866 §5.7 for the layered multicast
-example. Confirm RFC 4566 §5.7 has identical language (it does, but verify).
-Decide whether the parser needs to represent the count field in the doc
-table (probably yes — round-trip).
-
-**Fix direction:** Extend `valid_connection_address` IP4 branch to accept
-`/ttl[/count]` where count is a positive integer. Extend `parse_connection`
-or the connection table representation to carry the count. Update serializer.
-
-**Doc sync:** GUIDE.md "IPv4 multicast" section.
-
-**Tests:** `c=IN IP4 233.252.0.1/127/3` parses and round-trips.
-
-### F10 — IPv4 multicast TTL=0 rejected; spec allows 0–255
-
-**Parser behavior:** [parse_sdp.lua:758](parse_sdp.lua#L758) requires
-`ttl >= 1`.
-
-**Spec basis:** RFC 8866 §5.7 (and RFC 4566 §5.7) say *"TTL values MUST be
-in the range 0-255."* — explicitly includes 0.
-
-**Verify before acting:** Re-read RFC 8866 §5.7 TTL range statement. ST
-2110-10 §6.5 references RFC 5771 for multicast-group restrictions but doesn't
-constrain TTL to ≥ 1 (verify).
-
-**Fix direction:** Change the check at L758 to `ttl < 0 or ttl > 255`.
-
-**Doc sync:** GUIDE.md "IPv4 TTL must be an integer in the range 1–255" →
-"0–255".
-
-**Tests:** TTL=0 accepts; TTL=255 still accepts; TTL=256 rejects.
 
 ### F11 — RTP payload type < 96 rejected, but ST 2110-10 §6.2 has a fixed-PT exception
 

@@ -70,6 +70,25 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ### Fixed
 
+- **RFC 8866 §9 IPv4 layered multicast `<addr>/<ttl>/<numaddr>` accepted
+  (audit F9).** §9 ABNF: `IP4-multicast = m1 3("." decimal-uchar) "/" ttl
+  [ "/" numaddr ]`. Spec example `c=IN IP4 233.252.0.1/127/3` was
+  previously rejected. Now accepted; numaddr must be a positive integer
+  (`numaddr = integer = POS-DIGIT *DIGIT`).
+- **RFC 8866 §5.7 / §9 IPv4 multicast TTL=0 accepted (audit F10).**
+  §5.7 prose: *"TTL values MUST be in the range 0-255."* §9 ABNF
+  explicitly admits `"0"` (`ttl = (POS-DIGIT *2DIGIT) / "0"`). Previously
+  the parser required `ttl >= 1`.
+- **RFC 8866 §9 IPv6 multicast `/numaddr` cite cleanup (audit F7,
+  reframed).** The audit suggested rejecting any `/N` suffix on IPv6
+  multicast based on §5.7's "TTL MUST NOT be present for 'IP6' multicast"
+  prose. Verification against §9 ABNF
+  (`IP6-multicast = IP6-address [ "/" numaddr ]`) shows the suffix is a
+  layered-address count (`numaddr`), **not** a TTL — both prohibitions
+  hold (no IPv6 TTL slot exists, per the ABNF). Parser behavior unchanged
+  (still accepts `ff02::1/64`); error messages and comments updated to
+  call the suffix `numaddr` instead of `scope`. F7 closed without a
+  parser change.
 - **ST 2110-30:2025 §6.2.2 `channel-order` convention is SHOULD, not SHALL
   (audit F5).** §6.2.2: *"The `<convention>` of the channel-order should be
   SMPTE2110."* The parser previously hard-required the `SMPTE2110.` prefix
