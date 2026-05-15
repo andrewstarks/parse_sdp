@@ -20,7 +20,7 @@ describe("IPMX validation", function()
     "a=mediaclk:direct=0",
     "a=ts-refclk:localmac=AA-BB-CC-DD-EE-FF",
     "a=extmap:1 urn:ietf:params:rtp-hdrext:smpte-tc",
-  }, "\r\n")
+  }, "\r\n") .. "\r\n"
 
   -- Valid ST 2110 SDP that lacks a=extmap (not IPMX).
   local ST2110_ONLY_SDP = table.concat({
@@ -36,7 +36,7 @@ describe("IPMX validation", function()
     "a=fmtp:96 sampling=YCbCr-4:2:2; width=1920; height=1080; exactframerate=25; depth=10; TCS=SDR; colorimetry=BT709; PM=2110GPM; SSN=ST2110-20:2022; TP=2110TPN; measuredpixclk=148500000; vtotal=1125; htotal=2200",
     "a=mediaclk:direct=0",
     "a=ts-refclk:ptp=IEEE1588-2008:00-11-22-FF-FE-33-44-55:0",
-  }, "\r\n")
+  }, "\r\n") .. "\r\n"
 
   -- Generic RFC 4566 SDP (no media blocks, no ST 2110 attributes).
   local GENERIC_SDP = table.concat({
@@ -44,7 +44,7 @@ describe("IPMX validation", function()
     "o=- 1 1 IN IP4 127.0.0.1",
     "s=Plain SDP",
     "t=0 0",
-  }, "\r\n")
+  }, "\r\n") .. "\r\n"
 
   -- Build a minimal valid IPMX video SDP with optional extra attributes and fmtp override.
   local function base_ipmx_sdp(extra_session_attrs, extra_media_attrs, video_fmtp_override)
@@ -67,7 +67,7 @@ describe("IPMX validation", function()
     lines[#lines + 1] = "a=mediaclk:direct=0"
     lines[#lines + 1] = "a=ts-refclk:localmac=AA-BB-CC-DD-EE-FF"
     for _, a in ipairs(extra_media_attrs or {}) do lines[#lines + 1] = a end
-    return table.concat(lines, "\r\n")
+    return table.concat(lines, "\r\n") .. "\r\n"
   end
 
   -- ── Original test suites (updated fixtures) ──────────────────────────────────
@@ -154,7 +154,7 @@ describe("IPMX validation", function()
         "a=fmtp:96 sampling=YCbCr-4:2:2; width=1920; height=1080; exactframerate=25; depth=10; TCS=SDR; colorimetry=BT709; PM=2110GPM; SSN=ST2110-20:2022; TP=2110TPN; measuredpixclk=148500000; vtotal=1125; htotal=2200; IPMX",
         "a=mediaclk:direct=0",
         "a=ts-refclk:localmac=AA-BB-CC-DD-EE-FF",
-      }, "\r\n")
+      }, "\r\n") .. "\r\n"
     end
 
     it("accepts IPMX SDP without any a=extmap (session or media)", function()
@@ -461,7 +461,7 @@ describe("IPMX validation", function()
         "c=IN IP4 192.168.1.200",
         "a=setup:passive",
       }
-      local doc = sdp.parse(table.concat(lines, "\r\n"))
+      local doc = sdp.parse(table.concat(lines, "\r\n") .. "\r\n")
       assert.is_table(doc)
       local ok, err = doc:validate("ipmx")
       assert.is_nil(err)
@@ -488,7 +488,7 @@ describe("IPMX validation", function()
         "a=setup:passive",
         "a=privacy: protocol=USB_KV; mode=AES-128-CTR_CMAC-64-AAD; iv=0102030405060708; key_generator=aabbccddeeff00112233445566778899; key_version=01020304; key_id=deadbeefcafebabe",
       }
-      local doc = sdp.parse(table.concat(lines, "\r\n"))
+      local doc = sdp.parse(table.concat(lines, "\r\n") .. "\r\n")
       assert.is_table(doc)
       local ok, err = doc:validate("ipmx")
       assert.is_nil(err)
@@ -516,7 +516,7 @@ describe("IPMX validation", function()
         -- AES-128-CTR is valid for RTP but NOT for USB (USB requires AAD variants)
         "a=privacy: protocol=USB_KV; mode=AES-128-CTR; iv=0102030405060708; key_generator=aabbccddeeff00112233445566778899; key_version=01020304; key_id=deadbeefcafebabe",
       }
-      local doc = sdp.parse(table.concat(lines, "\r\n"))
+      local doc = sdp.parse(table.concat(lines, "\r\n") .. "\r\n")
       assert.is_table(doc)
       local ok, err = doc:validate("ipmx")
       assert.is_nil(ok)
@@ -549,7 +549,7 @@ describe("IPMX validation", function()
         "a=setup:passive",
       }
       lines[#lines + 1] = extra_usb_attr
-      return table.concat(lines, "\r\n")
+      return table.concat(lines, "\r\n") .. "\r\n"
     end
 
     it("rejects a=rtpmap on a USB block", function()
@@ -610,7 +610,7 @@ describe("IPMX validation", function()
         "a=setup:passive",
         "a=privacy: protocol=USB_KV; mode=AES-256-CTR; iv=0102030405060708; key_generator=aabbccddeeff00112233445566778899; key_version=01020304; key_id=deadbeefcafebabe",
       }
-      local doc = sdp.parse(table.concat(lines, "\r\n"))
+      local doc = sdp.parse(table.concat(lines, "\r\n") .. "\r\n")
       local ok, err = doc:validate("ipmx")
       assert.is_nil(ok)
       assert.matches("TR%-10%-14", err.spec_ref)
@@ -749,7 +749,7 @@ describe("IPMX validation", function()
       lines[#lines+1] = MAC
       if extmap2 then lines[#lines+1] = extmap2 end
       if privacy2 then lines[#lines+1] = privacy2 end
-      return table.concat(lines, "\r\n")
+      return table.concat(lines, "\r\n") .. "\r\n"
     end
 
     it("accepts DUP grouping with no privacy on either leg", function()
@@ -821,7 +821,7 @@ describe("IPMX validation", function()
         "a=mediaclk:direct=0",
         MAC,
         "a=extmap:1 urn:ietf:params:rtp-hdrext:smpte-tc",
-      }, "\r\n")
+      }, "\r\n") .. "\r\n"
       local doc = sdp.parse(text)
       assert.is_table(doc)
       local ok, err = doc:validate("ipmx")
@@ -935,7 +935,7 @@ describe("IPMX validation", function()
         "a=ts-refclk:ptp=IEEE1588-2008:00-11-22-FF-FE-33-44-55:0",
         "a=rtcp-mux",
       }
-      local doc, err = sdp.parse(table.concat(lines, "\r\n"), "st2110")
+      local doc, err = sdp.parse(table.concat(lines, "\r\n") .. "\r\n", "st2110")
       assert.is_nil(err)
       assert.is_table(doc)
     end)
@@ -1084,7 +1084,7 @@ describe("IPMX validation", function()
         "a=fmtp:96 sampling=YCbCr-4:2:2; width=1920; height=1080; exactframerate=25; depth=10; TCS=SDR; colorimetry=BT709; PM=2110GPM; SSN=ST2110-20:2022; TP=2110TPN; measuredpixclk=148500000; vtotal=1125; htotal=2200; IPMX",
         "a=mediaclk:direct=0",
         "a=ts-refclk:localmac=AA-BB-CC-DD-EE-FF",
-      }, "\r\n")
+      }, "\r\n") .. "\r\n"
     end
 
     it("rejects non-RTP/AVP protocol on RTP media block", function()
@@ -1113,7 +1113,7 @@ describe("IPMX validation", function()
         "a=ts-refclk:localmac=AA-BB-CC-DD-EE-FF",
         "m=application 9 TCP/MSRP *",
         "c=IN IP4 192.168.1.1",
-      }, "\r\n")
+      }, "\r\n") .. "\r\n"
       local doc, err = sdp.parse(text, "ipmx")
       assert.is_nil(err)
       assert.is_table(doc)
@@ -1138,7 +1138,7 @@ describe("IPMX validation", function()
         "a=fmtp:96 sampling=YCbCr-4:2:2; width=1920; height=1080; exactframerate=25; depth=10; TCS=SDR; colorimetry=BT709; PM=2110GPM; SSN=ST2110-20:2022; TP=2110TPN; measuredpixclk=148500000; vtotal=1125; htotal=2200; IPMX",
         "a=mediaclk:direct=0",
         "a=ts-refclk:localmac=AA-BB-CC-DD-EE-FF",
-      }, "\r\n")
+      }, "\r\n") .. "\r\n"
     end
 
     it("accepts standard urn: URI", function()
@@ -1233,7 +1233,7 @@ describe("IPMX validation", function()
         "a=mediaclk:direct=0",
         "a=ts-refclk:localmac=AA-BB-CC-DD-EE-FF",
         "a=extmap:2 bad-value-no-scheme",
-      }, "\r\n")
+      }, "\r\n") .. "\r\n"
       local doc = sdp.parse(text)
       assert.is_table(doc)
       local ok, err = doc:validate("ipmx")
@@ -1262,7 +1262,7 @@ describe("IPMX validation", function()
         "a=fmtp:96 sampling=YCbCr-4:2:2; width=1920; height=1080; exactframerate=25; depth=10; TCS=SDR; colorimetry=BT709; PM=2110GPM; SSN=ST2110-20:2022; TP=2110TPN; measuredpixclk=148500000; vtotal=1125; htotal=2200; IPMX",
         "a=mediaclk:direct=0",
         "a=ts-refclk:localmac=AA-BB-CC-DD-EE-FF",
-      }, "\r\n")
+      }, "\r\n") .. "\r\n"
     end
 
     it("accepts even port > 1024", function()
@@ -1327,7 +1327,7 @@ describe("IPMX validation", function()
         "a=ts-refclk:localmac=AA-BB-CC-DD-EE-FF",
         "m=application 9 TCP/MSRP *",
         "c=IN IP4 192.168.1.1",
-      }, "\r\n")
+      }, "\r\n") .. "\r\n"
       local doc, err = sdp.parse(text, "ipmx")
       assert.is_nil(err)
       assert.is_table(doc)
@@ -1358,7 +1358,7 @@ describe("IPMX validation", function()
         "a=ts-refclk:localmac=AA-BB-CC-DD-EE-FF",
       }
       if ptime then lines[#lines + 1] = ptime end
-      return table.concat(lines, "\r\n")
+      return table.concat(lines, "\r\n") .. "\r\n"
     end
 
     it("accepts L24 audio with ptime", function()
@@ -1461,7 +1461,7 @@ describe("IPMX validation", function()
         "a=mediaclk:direct=0",
         "a=ts-refclk:localmac=AA-BB-CC-DD-EE-FF",
         "a=ptime:1",
-      }, "\r\n")
+      }, "\r\n") .. "\r\n"
     end
 
     it("accepts video with valid measuredpixclk", function()
@@ -1575,7 +1575,7 @@ describe("IPMX validation", function()
         "a=fmtp:96 sampling=YCbCr-4:2:2; width=1920; height=1080; exactframerate=25; depth=10; TCS=SDR; colorimetry=BT709; PM=2110GPM; SSN=ST2110-20:2022",
         "a=mediaclk:direct=0",
         "a=ts-refclk:ptp=IEEE1588-2008:00-11-22-FF-FE-33-44-55:0",
-      }, "\r\n")
+      }, "\r\n") .. "\r\n"
       local doc = sdp.parse(text)
       assert.is_table(doc)
       local ok, err = doc:validate("st2110")
@@ -1632,7 +1632,7 @@ describe("IPMX validation", function()
         "a=ts-refclk:localmac=AA-BB-CC-DD-EE-FF",
       }
       if ptime_line then lines[#lines + 1] = ptime_line end
-      return table.concat(lines, "\r\n")
+      return table.concat(lines, "\r\n") .. "\r\n"
     end
 
     it("rejects a=ptime:0 (non-positive value rejected at ST 2110 tier)", function()
@@ -1679,7 +1679,7 @@ describe("IPMX validation", function()
         setup_line or "a=setup:passive",
       }
       if privacy_line then lines[#lines + 1] = privacy_line end
-      return table.concat(lines, "\r\n")
+      return table.concat(lines, "\r\n") .. "\r\n"
     end
     local USB_AAD = "AES-128-CTR_CMAC-64-AAD"
     local HEX = "iv=0102030405060708; key_generator=aabbccddeeff00112233445566778899; key_version=01020304; key_id=deadbeefcafebabe"
@@ -1732,7 +1732,7 @@ describe("IPMX validation", function()
         "c=IN IP4 192.168.1.200",
       }
       if setup_line then lines[#lines + 1] = setup_line end
-      return table.concat(lines, "\r\n")
+      return table.concat(lines, "\r\n") .. "\r\n"
     end
 
     it("accepts USB block with a=setup:passive", function()
@@ -1854,7 +1854,7 @@ describe("IPMX validation", function()
       lines[#lines + 1] = "a=fmtp:96 sampling=YCbCr-4:2:2; width=1920; height=1080; exactframerate=25; depth=10; TCS=SDR; colorimetry=BT709; PM=2110GPM; SSN=ST2110-20:2022; TP=2110TPN; measuredpixclk=148500000; vtotal=1125; htotal=2200; IPMX"
       lines[#lines + 1] = "a=mediaclk:direct=0"
       lines[#lines + 1] = "a=ts-refclk:localmac=AA-BB-CC-DD-EE-FF"
-      return table.concat(lines, "\r\n")
+      return table.concat(lines, "\r\n") .. "\r\n"
     end
 
     it("accepts b=AS:<positive integer>", function()
@@ -1971,7 +1971,7 @@ describe("IPMX validation", function()
         "a=setup:" .. usb_setup,
       }
       if usb_connection then lines[#lines+1] = "a=connection:" .. usb_connection end
-      return table.concat(lines, "\r\n")
+      return table.concat(lines, "\r\n") .. "\r\n"
     end
 
     it("accepts a=setup:passive on USB block (already required)", function()
@@ -2070,7 +2070,7 @@ describe("IPMX validation", function()
         "a=mediaclk:direct=0",
         "a=ts-refclk:localmac=AA-BB-CC-DD-EE-FF",
         "a=ptime:1",
-      }, "\r\n")
+      }, "\r\n") .. "\r\n"
       local doc = sdp.parse(text)
       local ok, err = doc:validate("ipmx")
       assert.is_nil(ok)
@@ -2108,7 +2108,7 @@ describe("IPMX validation", function()
       lines[#lines+1] = "a=fmtp:96 sampling=YCbCr-4:2:2; width=1920; height=1080; exactframerate=25; depth=10; TCS=SDR; colorimetry=BT709; PM=2110GPM; SSN=ST2110-22:2019; TP=2110TPNL; profile=High444.12; level=2k-1; sublevel=Sublev3bpp; transmode=1; packetmode=0; measuredpixclk=148500000; vtotal=1125; htotal=2200; IPMX"
       lines[#lines+1] = "a=mediaclk:direct=0"
       lines[#lines+1] = PTP
-      return table.concat(lines, "\r\n")
+      return table.concat(lines, "\r\n") .. "\r\n"
     end
 
     it("accepts jxsv with b=AS:50000", function()
@@ -2145,7 +2145,7 @@ describe("IPMX validation", function()
         fmtp,
         "a=mediaclk:direct=0",
         PTP,
-      }, "\r\n")
+      }, "\r\n") .. "\r\n"
     end
 
     -- M1
@@ -2367,7 +2367,7 @@ describe("IPMX validation", function()
         "a=setup:passive",
         "a=privacy: " .. privacy_value,
       }
-      return table.concat(lines, "\r\n")
+      return table.concat(lines, "\r\n") .. "\r\n"
     end
 
     it("rejects ECDH_AES-128-CTR_CMAC-64 on USB (non-AAD ECDH variant not allowed)", function()
@@ -2412,7 +2412,7 @@ describe("IPMX validation", function()
         "m=application 5100 TCP usb",
         "c=IN IP4 192.168.1.200",
         "a=setup:passive",
-      }, "\r\n")
+      }, "\r\n") .. "\r\n"
       local doc, err = sdp.parse(text, "ipmx")
       assert.is_nil(err)
       assert.is_table(doc)
@@ -2436,7 +2436,7 @@ describe("IPMX validation", function()
         "a=fmtp:96 sampling=YCbCr-4:2:2; width=1920; height=1080; exactframerate=25; depth=10; TCS=SDR; colorimetry=BT709; PM=2110GPM; SSN=ST2110-22:2019; TP=2110TPNL; profile=High444.12; level=2k-1; sublevel=Sublev3bpp; transmode=1; packetmode=0; measuredpixclk=148500000; vtotal=1125; htotal=2200; IPMX",
         "a=mediaclk:direct=0",
         "a=ts-refclk:ptp=IEEE1588-2008:00-11-22-FF-FE-33-44-55:0",
-      }, "\r\n")
+      }, "\r\n") .. "\r\n"
       local doc, err = sdp.parse(text, "ipmx")
       assert.is_nil(err)
       assert.is_table(doc)
@@ -2477,7 +2477,7 @@ describe("IPMX validation", function()
         "a=fmtp:96 sampling=YCbCr-4:2:2; width=1920; height=1080; exactframerate=25; depth=10; TCS=SDR; colorimetry=BT709; PM=2110GPM; SSN=ST2110-20:2022; TP=2110TPN; measuredpixclk=148500000; vtotal=1125; htotal=2200; IPMX",
         "a=mediaclk:direct=0",
         "a=ts-refclk:localmac=AA-BB-CC-DD-EE-FF",
-      }, "\r\n")
+      }, "\r\n") .. "\r\n"
       local doc = sdp.parse(text)
       local ok, err = doc:validate("ipmx")
       assert.is_nil(ok)
@@ -2502,7 +2502,7 @@ describe("IPMX validation", function()
         "a=fmtp:96 sampling=YCbCr-4:2:2; width=1920; height=1080; exactframerate=25; depth=10; TCS=SDR; colorimetry=BT709; PM=2110GPM; SSN=ST2110-20:2022; TP=2110TPN; measuredpixclk=148500000; vtotal=1125; htotal=2200; IPMX",
         "a=mediaclk:direct=0",
         "a=ts-refclk:localmac=AA-BB-CC-DD-EE-FF",
-      }, "\r\n")
+      }, "\r\n") .. "\r\n"
       local doc, err = sdp.parse(text, "ipmx")
       assert.is_nil(err)
       assert.is_table(doc)
@@ -2549,7 +2549,7 @@ describe("IPMX validation", function()
       lines[#lines+1] = "a=mediaclk:direct=0"
       lines[#lines+1] = MAC
       if opts.privacy2 then lines[#lines+1] = opts.privacy2 end
-      return table.concat(lines, "\r\n")
+      return table.concat(lines, "\r\n") .. "\r\n"
     end
 
     it("accepts DUP legs where session has a=privacy and both legs inherit", function()
@@ -2608,7 +2608,7 @@ describe("IPMX validation", function()
         "a=fmtp:96 sampling=YCbCr-4:2:2; width=1920; height=1080; exactframerate=25; depth=10; TCS=SDR; colorimetry=BT709; PM=2110GPM; SSN=ST2110-20:2022; TP=2110TPN; measuredpixclk=148500000; vtotal=1125; htotal=2200; IPMX",
         "a=mediaclk:direct=0",
         "a=ts-refclk:" .. ts_value,
-      }, "\r\n")
+      }, "\r\n") .. "\r\n"
     end
 
     it("accepts ptp=IEEE1588-2008:<gmid>:<domain>", function()
@@ -2696,7 +2696,7 @@ describe("IPMX validation", function()
         "a=fmtp:96 sampling=YCbCr-4:2:2; width=1920; height=1080; exactframerate=25; depth=10; TCS=SDR; colorimetry=BT709; PM=2110GPM; SSN=ST2110-20:2022; TP=2110TPN; measuredpixclk=148500000; vtotal=1125; htotal=2200; IPMX",
         "a=mediaclk:direct=0",
         "a=ts-refclk:localmac=AA-BB-CC-DD-EE-FF",
-      }, "\r\n")
+      }, "\r\n") .. "\r\n"
     end
 
     it("rejects IPMX SDP missing a=source-filter on the RTP block", function()

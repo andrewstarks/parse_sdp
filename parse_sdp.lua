@@ -590,9 +590,12 @@ local function valid_tsrefclk(value)
   end
   local ptp_rest = value:match("^ptp=(.+)$")
   if ptp_rest then
-    -- version:gmid[:domain] — version must be IEEE1588-2008 (ST 2110-10:2022 §8.2);
-    -- GMID is either "traceable" or 8 HH-separated hex octets (EUI-64);
-    -- optional domain is an integer 0–127 (IEEE 1588-2008 §7.1).
+    -- ST 2110-10:2022 §8.2: "Devices which are referenced to IEEE Std
+    -- 1588-2008 shall use the ts-refclk:ptp form, signaling EITHER the
+    -- grandmaster clockIdentity AND domain number, OR signaling that the
+    -- PTP is traceable." Form is version:gmid[:domain]; gmid is either
+    -- "traceable" (no domain) or 8 hex octets in EUI-64 form (domain
+    -- required, integer 0–127 per IEEE 1588-2008 §7.1).
     local version, gmid = ptp_rest:match("^([^:]+):([^:]+)")
     if not gmid then return nil, "invalid ts-refclk ptp value" end
     if version ~= "IEEE1588-2008" then
@@ -612,6 +615,8 @@ local function valid_tsrefclk(value)
       if not d or d ~= math.floor(d) or d < 0 or d > 127 then
         return nil, "invalid ts-refclk ptp domain (must be 0-127)"
       end
+    elseif gmid ~= "traceable" then
+      return nil, "ts-refclk ptp domain is required when not using the 'traceable' form (ST 2110-10:2022 §8.2)"
     end
     return true
   end
@@ -646,12 +651,14 @@ local VALID_SAMPLING = {
   ["ICtCp-4:4:4"]=true, ["ICtCp-4:2:2"]=true, ["ICtCp-4:2:0"]=true,
   ["RGB"]=true, ["XYZ"]=true, ["KEY"]=true,
 }
--- ST 2110-20:2017 §7.6: 10 TCS values (UNSPECIFIED added; was missing).
+-- ST 2110-20:2022 §7.6: 11 permitted TCS values. ST2115LOGS3 was added in
+-- the 2022 revision (§7.6 final entry; §7.2 forces SSN=ST2110-20:2022 when
+-- this value is used or when colorimetry=ALPHA).
 local VALID_TCS = {
   ["SDR"]=true, ["PQ"]=true, ["HLG"]=true, ["LINEAR"]=true,
   ["BT2100LINPQ"]=true, ["BT2100LINHLG"]=true,
   ["ST2065-1"]=true, ["ST428-1"]=true, ["DENSITY"]=true,
-  ["UNSPECIFIED"]=true,
+  ["ST2115LOGS3"]=true, ["UNSPECIFIED"]=true,
 }
 -- ST 2110-20:2017 §7.5: XYZ added (was missing); ALPHA retained (present in 2022 ed).
 local VALID_COLORIMETRY = {
@@ -664,7 +671,9 @@ local VALID_RANGE = { ["NARROW"]=true, ["FULLPROTECT"]=true, ["FULL"]=true }
 -- Valid m= transport protocols for ST 2110 RTP media blocks (ST 2110-10 §8.1).
 local VALID_ST2110_PROTO = { ["RTP/AVP"] = true }
 
--- RFC 4570 a=source-filter: <filter> SP <nettype> SP <addrtype> SP <dest> SP <src>+
+-- RFC 4570 §3 a=source-filter: <filter> SP <nettype> SP <addrtype> SP <dest> SP <src>+
+-- address-types = "*" / addrtype; addrtype = "IP4" / "IP6" / token.
+-- When addrtype is "*", dest-address and src-list are FQDNs (no literal-IP check).
 -- Some senders include a leading space after the ":" — accept it.
 local _sf_filter   = P("incl") + P("excl")
 local _sf_token    = (P(1) - P(" "))^1
@@ -672,7 +681,7 @@ local VALID_SOURCE_FILTER_PAT =
   P(" ")^-1
   * _sf_filter * P(" ")
   * P("IN") * P(" ")
-  * (P("IP4") + P("IP6")) * P(" ")
+  * (P("IP4") + P("IP6") + P("*")) * P(" ")
   * _sf_token                       -- destination address
   * (P(" ") * _sf_token)^1          -- one or more source addresses
   * P(-1)
@@ -942,15 +951,55 @@ local function valid_channel_order(value)
   return true
 end
 
--- Validate the value of a mediaclk attribute per ST 2110-10 §7.3 and TR-10-1 §10.5.
--- Permitted forms: "sender" (async) or "direct=0" (offset SHALL be zero).
+-- Validate the value of a mediaclk attribute per ST 2110-10 §8.3 (which defers
+-- to IETF RFC 7273 §5) and TR-10-1 §10.5. Permitted forms:
+--   "sender"                              (async; RFC 7273 §5.2)
+--   "direct=<offset>"                     (RFC 7273 §5.4; offset SHALL be 0
+--                                          at ST 2110 tier per §8.3)
+--   "direct=<offset> rate=<int>/<int>"    (RFC 7273 §5.4 rate option, used
+--                                          for pull-down e.g. 1000/1001)
 -- Returns true on success, or nil + error message string on failure.
+local _mc_pos_int  = R("09")^1
+local _mc_rate_pat = P("rate=") * _mc_pos_int * P("/") * _mc_pos_int * P(-1)
 local function valid_mediaclk(value)
-  if value == "sender" or value == "direct=0" then return true end
-  if value:match("^direct=%-?%d+$") then
-    return nil, "mediaclk direct offset must be 0 (ST 2110-10 §7.3)"
+  if value == "sender" then return true end
+  local offset, rest = value:match("^direct=(%-?%d+)(.*)$")
+  if not offset then return nil, "unrecognized mediaclk value" end
+  if offset ~= "0" then
+    return nil, "mediaclk direct offset must be 0 (ST 2110-10 §8.3)"
   end
-  return nil, "unrecognized mediaclk value"
+  if rest == "" then return true end
+  local rate_str = rest:match("^ (rate=.+)$")
+  if not rate_str or not _mc_rate_pat:match(rate_str) then
+    return nil, "invalid mediaclk rate (expected ' rate=<int>/<int>' per RFC 7273 §5.4)"
+  end
+  return true
+end
+
+-- ST 2110-20:2022 §7.1 fmtp formatting (strict): parameter entries SHALL be
+-- separated by ";" followed by whitespace, AND there SHALL be no semicolon
+-- after the last item. This is stricter than RFC 4566 §6 (which is silent on
+-- inter-parameter spacing) and stricter than ST 2110-22:2022 §7.2 (which
+-- explicitly makes the trailing space optional). Apply at the -20 branch only.
+-- Returns true on conformance, or nil + error message string.
+local function valid_st2110_20_fmtp_format(value)
+  local params_str = value:match("^%d+%s+(.+)$")
+  if not params_str then return true end  -- no params to check
+  -- Forbid trailing semicolon (possibly followed by whitespace).
+  if params_str:match("^.*;%s*$") then
+    return nil, "no semicolon character after the last item (ST 2110-20:2022 §7.1)"
+  end
+  -- Every ';' SHALL be followed by whitespace (space or tab).
+  local i = 1
+  while true do
+    local s = params_str:find(";", i, true)
+    if not s then return true end
+    local next_char = params_str:sub(s + 1, s + 1)
+    if next_char ~= " " and next_char ~= "\t" then
+      return nil, "fmtp ';' must be followed by whitespace (ST 2110-20:2022 §7.1)"
+    end
+    i = s + 1
+  end
 end
 
 -- Parse semicolon-separated key=value pairs from an fmtp attribute value.
@@ -1129,6 +1178,14 @@ function st2110.validate(doc)
     end
 
     if enc == "smpte291" then
+      -- ST 2110-40:2023 §7 defers SDP construction to RFC 8331; the IANA
+      -- registration is `video/smpte291`, so the m= media name SHALL be
+      -- "video" (RFC 8331 §4 / RFC 4855 §1).
+      if m.media ~= "video" then
+        return attr_err(
+          string.format("smpte291 requires m=video (got m=%s) per RFC 8331 §4", tostring(m.media)),
+          mpath, "rtpmap", "RFC 8331 §4", "INVALID_VALUE")
+      end
       -- ST 2110-40: ancillary data (RFC 8331 / SMPTE ST 2110-40:2023)
       if clock_rate ~= 90000 then
         return attr_err(
@@ -1249,20 +1306,27 @@ function st2110.validate(doc)
           string.format("rtpmap clock rate must be 90000 for jxsv (got %s)", tostring(clock_rate)),
           mpath, "rtpmap", "ST 2110-22 §7", "INVALID_VALUE")
       end
-      -- Standard video fmtp params (same set as ST 2110-20 except SSN uses _ssn22_pat).
+      -- Mandatory jxsv fmtp parameters at the ST 2110-22 tier:
+      --   - width, height, TP  per ST 2110-22:2022 §7.2 Table 1 ("shall include")
+      --                        + §5.3 SHALL for TP=2110TPN/2110TPNL/2110TPW
+      --   - packetmode         per IANA video/jxsv registration (RFC 9134 §7.1)
+      -- All other parameters listed in RFC 9134 §7.1 (sampling, depth,
+      -- exactframerate, TCS, colorimetry, RANGE, interlace, segmented,
+      -- transmode, profile, level, sublevel, etc.) are OPTIONAL. Format is
+      -- validated when present; absence is accepted.
       local jxs_req = {
+        { "width",      valid_pos_int },
+        { "height",     valid_pos_int },
+        { "TP",         function(v) return valid_enum(v, VALID_TP_22,   "TP")         end },
+        { "packetmode", function(v) return valid_enum(v, VALID_JXS_BIT, "packetmode") end },
+      }
+      -- Optional jxsv fmtp parameters, validated when present (RFC 9134 §7.1).
+      local jxs_opt = {
         { "sampling",       function(v) return valid_enum(v, VALID_SAMPLING,    "sampling")    end },
-        { "width",          valid_pos_int },
-        { "height",         valid_pos_int },
         { "exactframerate", valid_exactframerate },
         { "depth",          valid_pos_int },
         { "TCS",            function(v) return valid_enum(v, VALID_TCS,         "TCS")         end },
         { "colorimetry",    function(v) return valid_enum(v, VALID_COLORIMETRY, "colorimetry") end },
-        -- packetmode is the only JPEG-XS codec param mandatory at the SDP level
-        -- (IANA video/jxsv registration / RFC 9134 §4.3). The other codec
-        -- params (profile, level, sublevel, transmode, fbblevel) are validated
-        -- when present but not required — see optional blocks below.
-        { "packetmode", function(v) return valid_enum(v, VALID_JXS_BIT,      "packetmode") end },
       }
       -- profile, level, sublevel, and transmode are OPTIONAL in SDP at every
       -- tier. ST 2110-22:2022 §7.2 Table 1 (mandatory) lists only
@@ -1322,11 +1386,21 @@ function st2110.validate(doc)
         local val = params[key]
         if val == nil then
           return attr_err("fmtp missing required '" .. key .. "' parameter for jxsv",
-            mpath, "fmtp", "ST 2110-22 §7")
+            mpath, "fmtp", "ST 2110-22 §7.2")
         end
         local vok, vmsg = fn(tostring(val))
         if not vok then
-          return attr_err(key .. ": " .. vmsg, mpath, "fmtp", "ST 2110-22 §7", "INVALID_VALUE")
+          return attr_err(key .. ": " .. vmsg, mpath, "fmtp", "ST 2110-22 §7.2", "INVALID_VALUE")
+        end
+      end
+      for _, ck in ipairs(jxs_opt) do
+        local key, fn = ck[1], ck[2]
+        local val = params[key]
+        if val ~= nil and val ~= true then
+          local vok, vmsg = fn(tostring(val))
+          if not vok then
+            return attr_err(key .. ": " .. vmsg, mpath, "fmtp", "ST 2110-22 §7 / RFC 9134 §7.1", "INVALID_VALUE")
+          end
         end
       end
       -- Optional: RANGE (same enum as ST 2110-20).
@@ -1335,15 +1409,6 @@ function st2110.validate(doc)
         local vok, vmsg = valid_enum(tostring(range_val), VALID_RANGE, "RANGE")
         if not vok then
           return attr_err(vmsg, mpath, "fmtp", "ST 2110-22 §7", "INVALID_VALUE")
-        end
-      end
-      -- TP per ST 2110-22:2022 §7.2 Table 1 — mandatory; values 2110TPN,
-      -- 2110TPNL, or 2110TPW (ST 2110-22:2019 omitted 2110TPN).
-      local tp_val = params["TP"]
-      if tp_val ~= nil and tp_val ~= true then
-        local vok, vmsg = valid_enum(tostring(tp_val), VALID_TP_22, "TP")
-        if not vok then
-          return attr_err("TP: " .. vmsg, mpath, "fmtp", "ST 2110-22 §7.2", "INVALID_VALUE")
         end
       end
       -- Optional: MAXUDP (1..8960 per ST 2110-10 §6.4), CMAX (positive integer).
@@ -1376,6 +1441,15 @@ function st2110.validate(doc)
         return attr_err(
           string.format("rtpmap clock rate must be 90000 for video (got %s)", tostring(clock_rate)),
           mpath, "rtpmap", "ST 2110-20 §7.2", "INVALID_VALUE")
+      end
+      -- ST 2110-20:2022 §7.1: separator SHALL be ";" followed by whitespace,
+      -- with no semicolon after the last item. Validate the raw fmtp string
+      -- (per the strict 2022 wording — see Streampunk sdpoker Issue #33).
+      if fmtp then
+        local sfok, sfmsg = valid_st2110_20_fmtp_format(fmtp.value or "")
+        if not sfok then
+          return attr_err(sfmsg, mpath, "fmtp", "ST 2110-20:2022 §7.1", "INVALID_VALUE")
+        end
       end
       -- All nine required fmtp parameters (ST 2110-20 §7.2): presence then value.
       -- Each entry: { key, validator, spec_ref (optional override of §7.2) }.
@@ -2459,6 +2533,14 @@ end
 -- @return table  Raw SDP document table on success.
 -- @return nil, err  on parse or validation failure.
 function parser.parse(text, mode)
+  -- RFC 4566 §9 ABNF: every record (including the last) ends with CRLF.
+  -- §5 permits LF tolerance, but a terminator must be present.
+  if #text > 0 and text:sub(-1) ~= "\n" then
+    return nil, errors.new(
+      "SDP must end with a newline (RFC 4566 §5 / §9 ABNF)",
+      { line = 1, col = #text, context = "", code = "MALFORMED_LINE",
+        spec_ref = "RFC 4566 §5" })
+  end
   local lines = split_lines(text)
   local n     = #lines
   local pos   = 1

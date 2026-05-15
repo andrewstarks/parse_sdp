@@ -14,7 +14,7 @@ describe("ST 2110 validation", function()
     "a=fmtp:96 sampling=YCbCr-4:2:2; width=1920; height=1080; exactframerate=25; depth=10; TCS=SDR; colorimetry=BT709; PM=2110GPM; SSN=ST2110-20:2022; TP=2110TPN",
     "a=mediaclk:direct=0",
     "a=ts-refclk:ptp=IEEE1588-2008:00-11-22-FF-FE-33-44-55:0",
-  }, "\r\n")
+  }, "\r\n") .. "\r\n"
 
   local AUDIO_SDP = table.concat({
     "v=0",
@@ -28,14 +28,14 @@ describe("ST 2110 validation", function()
     "a=fmtp:97 channel-order=SMPTE2110.(ST)",
     "a=mediaclk:direct=0",
     "a=ts-refclk:ptp=IEEE1588-2008:00-11-22-FF-FE-33-44-55:0",
-  }, "\r\n")
+  }, "\r\n") .. "\r\n"
 
   local GENERIC_SDP = table.concat({
     "v=0",
     "o=- 1 1 IN IP4 127.0.0.1",
     "s=Plain SDP",
     "t=0 0",
-  }, "\r\n")
+  }, "\r\n") .. "\r\n"
 
   describe("sdp.parse with 'st2110' mode", function()
     it("returns a doc for valid ST 2110-20 (video) SDP", function()
@@ -68,7 +68,7 @@ describe("ST 2110 validation", function()
         "a=rtpmap:96 raw/90000",
         "a=fmtp:96 sampling=YCbCr-4:2:2; width=1920; height=1080; exactframerate=25; depth=10; TCS=SDR; colorimetry=BT709; PM=2110GPM; SSN=ST2110-20:2022; TP=2110TPN",
         "a=mediaclk:direct=0",
-      }, "\r\n")
+      }, "\r\n") .. "\r\n"
       local doc, err = sdp.parse(text, "st2110")
       assert.is_nil(doc)
       assert.is_table(err)
@@ -113,7 +113,7 @@ describe("ST 2110 validation", function()
         "a=rtpmap:96 raw/90000",
         "a=fmtp:96 sampling=YCbCr-4:2:2; width=1920; height=1080; exactframerate=25; depth=10; TCS=SDR; colorimetry=BT709; PM=2110GPM; SSN=ST2110-20:2022; TP=2110TPN",
         "a=mediaclk:direct=0",
-      }, "\r\n")
+      }, "\r\n") .. "\r\n"
       local doc = sdp.parse(text)
       assert.is_table(doc)
       local ok, err = doc:validate("st2110")
@@ -136,7 +136,7 @@ describe("ST 2110 validation", function()
         "a=rtpmap:96 raw/90000",
         "a=fmtp:96 sampling=YCbCr-4:2:2; width=1920; height=1080; exactframerate=25; depth=10; TCS=SDR; colorimetry=BT709; PM=2110GPM; SSN=ST2110-20:2022; TP=2110TPN",
         "a=ts-refclk:ptp=IEEE1588-2008:00-11-22-FF-FE-33-44-55:0",
-      }, "\r\n")
+      }, "\r\n") .. "\r\n"
       local doc = sdp.parse(text)
       assert.is_table(doc)
       local ok, err = doc:validate("st2110")
@@ -158,7 +158,7 @@ describe("ST 2110 validation", function()
         "a=fmtp:96 width=1920; height=1080",
         "a=mediaclk:direct=0",
         "a=ts-refclk:ptp=IEEE1588-2008:00-11-22-FF-FE-33-44-55:0",
-      }, "\r\n")
+      }, "\r\n") .. "\r\n"
       local doc = sdp.parse(text)
       assert.is_table(doc)
       local ok, err = doc:validate("st2110")
@@ -180,7 +180,7 @@ describe("ST 2110 validation", function()
         "a=fmtp:96 sampling=YCbCr-4:2:2; width=1920; height=1080; exactframerate=25; depth=10; TCS=SDR; colorimetry=BT709; PM=2110GPM; SSN=ST2110-20:2022; TP=2110TPN",
         "a=mediaclk:direct=0",
         "a=ts-refclk:ptp=IEEE1588-2008:00-11-22-FF-FE-33-44-55:0",
-      }, "\r\n")
+      }, "\r\n") .. "\r\n"
       local doc = sdp.parse(text)
       assert.is_table(doc)
       local ok, err = doc:validate("st2110")
@@ -201,7 +201,7 @@ describe("ST 2110 validation", function()
         "a=fmtp:96 sampling=YCbCr-4:2:2; width=1920; height=1080; exactframerate=25; depth=10; TCS=SDR; colorimetry=BT709; PM=2110GPM; SSN=ST2110-20:2022; TP=2110TPN",
         "a=mediaclk:direct=0",
         "a=ts-refclk:ptp=IEEE1588-2008:00-11-22-FF-FE-33-44-55:0",
-      }, "\r\n")
+      }, "\r\n") .. "\r\n"
       local doc = sdp.parse(text)
       local ok, err = doc:validate("st2110")
       assert.is_nil(ok)
@@ -221,7 +221,7 @@ describe("ST 2110 validation", function()
         "a=rtpmap:96 raw/90000",
         "a=mediaclk:direct=0",
         "a=ts-refclk:ptp=IEEE1588-2008:00-11-22-FF-FE-33-44-55:0",
-      }, "\r\n")
+      }, "\r\n") .. "\r\n"
       local doc = sdp.parse(text)
       local ok, err = doc:validate("st2110")
       assert.is_nil(ok)
@@ -246,7 +246,7 @@ describe("ST 2110 validation", function()
         "a=rtpmap:97 L24/48000/8",
         "a=mediaclk:direct=0",
         "a=ts-refclk:ptp=IEEE1588-2008:00-11-22-FF-FE-33-44-55:0",
-      }, "\r\n")
+      }, "\r\n") .. "\r\n"
       local doc = sdp.parse(text)
       local ok, err = doc:validate("st2110")
       assert.is_true(ok, err and err.message)
@@ -265,7 +265,7 @@ describe("ST 2110 validation", function()
         "a=fmtp:97 channel-order=NotAConvention.(ST)",
         "a=mediaclk:direct=0",
         "a=ts-refclk:ptp=IEEE1588-2008:00-11-22-FF-FE-33-44-55:0",
-      }, "\r\n")
+      }, "\r\n") .. "\r\n"
       local doc = sdp.parse(text)
       local ok, err = doc:validate("st2110")
       assert.is_nil(ok)
@@ -286,7 +286,7 @@ describe("ST 2110 validation", function()
         "a=fmtp:96 noequalssign",
         "a=mediaclk:direct=0",
         "a=ts-refclk:ptp=IEEE1588-2008:00-11-22-FF-FE-33-44-55:0",
-      }, "\r\n")
+      }, "\r\n") .. "\r\n"
       local doc = sdp.parse(text)
       assert.is_table(doc)
       local ok, err = doc:validate("st2110")
@@ -327,7 +327,7 @@ describe("ST 2110 validation", function()
         "a=fmtp:96 sampling=YCbCr-4:2:2; width=1920; height=1080; exactframerate=25; depth=10; TCS=SDR; colorimetry=BT709; PM=2110GPM; SSN=ST2110-20:2022; TP=2110TPN",
         "a=mediaclk:direct=0",
         "a=ts-refclk:localmac=AA-BB-CC-DD-EE-FF",
-      }, "\r\n")
+      }, "\r\n") .. "\r\n"
       local doc = sdp.parse(text)
       assert.is_table(doc)
       assert.equal(true, doc and doc:is_st2110())
@@ -350,7 +350,7 @@ describe("ST 2110 validation", function()
         "a=fmtp:96 sampling=YCbCr-4:2:2; width=1920; height=1080; exactframerate=25; depth=10; TCS=SDR; colorimetry=BT709; PM=2110GPM; SSN=ST2110-20:2022; TP=2110TPN",
         "a=mediaclk:direct=0",
         "a=ts-refclk:" .. value,
-      }, "\r\n")
+      }, "\r\n") .. "\r\n"
     end
 
     it("accepts ptp= with version, GMID, and domain", function()
@@ -446,12 +446,17 @@ describe("ST 2110 validation", function()
       assert.matches("ts%-refclk", err.message)
     end)
 
-    it("accepts ptp= with version and GMID but no domain", function()
+    -- ST 2110-10:2022 §8.2 (per Streampunk sdpoker Issue #25): when not using
+    -- the 'traceable' form, the SHALL is "shall use the ts-refclk:ptp form,
+    -- signaling either the grandmaster clockIdentity AND domain number, or
+    -- signaling that the PTP is traceable." Domain is required.
+    it("rejects ptp= with version and GMID but no domain (ST 2110-10:2022 §8.2)", function()
       local doc = sdp.parse(with_tsrefclk("ptp=IEEE1588-2008:00-11-22-33-44-55-66-77"))
       assert.is_table(doc)
       local ok, err = doc:validate("st2110")
-      assert.is_nil(err)
-      assert.equal(true, ok)
+      assert.is_nil(ok)
+      assert.is_table(err)
+      assert.matches("domain", err.message)
     end)
 
     it("accepts ptp=IEEE1588-2008:traceable form (ST 2110-10 §8.2)", function()
@@ -471,6 +476,28 @@ describe("ST 2110 validation", function()
       assert.matches("ts%-refclk", err.message)
     end)
 
+    -- RFC 5234 §2.3: ABNF literal strings (the HEXDIG rule uses literals "A"/.../"F",
+    -- not %x41-46) are case-insensitive unless explicitly marked sensitive. EUI-64
+    -- hex in RFC 7273 §4.8 follows that rule, so lowercase hex is conformant.
+    it("accepts ptp= GMID with lowercase hex digits (RFC 7273 §4.8 + RFC 5234 §2.3)", function()
+      local doc = sdp.parse(with_tsrefclk("ptp=IEEE1588-2008:aa-bb-cc-ff-fe-dd-ee-ff:0"))
+      assert.is_table(doc)
+      local ok, err = doc:validate("st2110")
+      assert.is_nil(err)
+      assert.equal(true, ok)
+    end)
+
+    -- Per RFC 7273 errata 4450: the pre-errata "domain-nmbr=" prefix is not part
+    -- of the corrected ABNF — domain is just the bare integer.
+    it("rejects pre-errata 'domain-nmbr=' prefix form (RFC 7273 errata 4450)", function()
+      local doc = sdp.parse(with_tsrefclk("ptp=IEEE1588-2008:00-11-22-FF-FE-33-44-55:domain-nmbr=37"))
+      assert.is_table(doc)
+      local ok, err = doc:validate("st2110")
+      assert.is_nil(ok)
+      assert.is_table(err)
+      assert.matches("domain", err.message)
+    end)
+
     it("session-level ts-refclk satisfies requirement with no per-media attribute", function()
       local text = table.concat({
         "v=0",
@@ -483,7 +510,7 @@ describe("ST 2110 validation", function()
         "a=rtpmap:96 raw/90000",
         "a=fmtp:96 sampling=YCbCr-4:2:2; width=1920; height=1080; exactframerate=25; depth=10; TCS=SDR; colorimetry=BT709; PM=2110GPM; SSN=ST2110-20:2022; TP=2110TPN",
         "a=mediaclk:direct=0",
-      }, "\r\n")
+      }, "\r\n") .. "\r\n"
       local doc, err = sdp.parse(text, "st2110")
       assert.is_nil(err)
       assert.is_table(doc)
@@ -510,13 +537,39 @@ describe("ST 2110 validation", function()
         "a=fmtp:96 " .. fmtp_str,
         "a=mediaclk:direct=0",
         "a=ts-refclk:ptp=IEEE1588-2008:00-11-22-FF-FE-33-44-55:0",
-      }, "\r\n")
+      }, "\r\n") .. "\r\n"
     end
 
     it("accepts valid smpte291 SDP with DID_SDID", function()
       local doc, err = sdp.parse(ancillary_sdp(DEFAULT_REQUIRED .. "; DID_SDID={0x61,0x02}"), "st2110")
       assert.is_nil(err)
       assert.is_table(doc)
+    end)
+
+    -- RFC 8331 §4: media type for smpte291 is "video"; m=audio … smpte291 is
+    -- not a valid combination. ST 2110-40:2023 §7 defers SDP to RFC 8331.
+    it("rejects m=audio with smpte291 rtpmap (RFC 8331 §4)", function()
+      local text = table.concat({
+        "v=0",
+        "o=- 1234567890 1 IN IP4 192.168.1.1",
+        "s=ST2110 Ancillary",
+        "t=0 0",
+        "a=ts-refclk:ptp=IEEE1588-2008:00-11-22-FF-FE-33-44-55:0",
+        "m=audio 5020 RTP/AVP 96",
+        "c=IN IP4 239.100.0.3/64",
+        "a=rtpmap:96 smpte291/90000",
+        "a=fmtp:96 " .. DEFAULT_REQUIRED,
+        "a=mediaclk:direct=0",
+        "a=ts-refclk:ptp=IEEE1588-2008:00-11-22-FF-FE-33-44-55:0",
+      }, "\r\n") .. "\r\n"
+      local doc = sdp.parse(text)
+      assert.is_table(doc)
+      local ok, err = doc:validate("st2110")
+      assert.is_nil(ok)
+      assert.is_table(err)
+      assert.matches("smpte291", err.message)
+      assert.matches("video", err.message)
+      assert.equal("RFC 8331 §4", err.spec_ref)
     end)
 
     it("accepts smpte291 SDP without DID_SDID (optional per RFC 8331 / ST 2110-40:2023 §7)", function()
@@ -662,7 +715,7 @@ describe("ST 2110 validation", function()
         "a=fmtp:96 " .. fmtp_str,
         "a=mediaclk:direct=0",
         "a=ts-refclk:ptp=IEEE1588-2008:00-11-22-FF-FE-33-44-55:0",
-      }, "\r\n")
+      }, "\r\n") .. "\r\n"
     end
 
     it("accepts valid ST2110-41 SDP with SSN and DIT", function()
@@ -702,7 +755,7 @@ describe("ST 2110 validation", function()
         "a=fmtp:96 SSN=ST2110-41:2024; DIT=100",
         "a=mediaclk:direct=0",
         "a=ts-refclk:ptp=IEEE1588-2008:00-11-22-FF-FE-33-44-55:0",
-      }, "\r\n")
+      }, "\r\n") .. "\r\n"
       local doc = sdp.parse(bad_sdp)
       assert.is_table(doc)
       local ok, err = doc:validate("st2110")
@@ -737,7 +790,7 @@ describe("ST 2110 validation", function()
         "a=fmtp:96 sampling=YCbCr-4:2:2; width=1920; height=1080; exactframerate=25; depth=10; TCS=SDR; colorimetry=BT709; PM=2110GPM; SSN=ST2110-20:2022; TP=2110TPN",
         "a=ts-refclk:ptp=IEEE1588-2008:00-11-22-FF-FE-33-44-55:0",
         "a=mediaclk:" .. value,
-      }, "\r\n")
+      }, "\r\n") .. "\r\n"
     end
 
     it("accepts 'direct=<integer>'", function()
@@ -754,6 +807,35 @@ describe("ST 2110 validation", function()
       local ok, err = doc:validate("st2110")
       assert.is_nil(err)
       assert.equal(true, ok)
+    end)
+
+    -- RFC 7273 §5.4 ABNF: direct = "direct" [ "=" 1*DIGIT ] [SP rate]
+    --                     rate   = "rate=" integer "/" integer
+    -- ST 2110-10:2022 §8.3 defers to RFC 7273 §5; only constrains offset=0.
+    -- The rate option is used for pull-down audio (e.g. 1000/1001).
+    it("accepts 'direct=0 rate=A/B' (RFC 7273 §5.4 pull-down form)", function()
+      local doc = sdp.parse(with_mediaclk("direct=0 rate=1000/1001"))
+      assert.is_table(doc)
+      local ok, err = doc:validate("st2110")
+      assert.is_nil(err)
+      assert.equal(true, ok)
+    end)
+
+    it("rejects 'direct=0 rate=' with malformed ratio", function()
+      local doc = sdp.parse(with_mediaclk("direct=0 rate=1000"))
+      assert.is_table(doc)
+      local ok, err = doc:validate("st2110")
+      assert.is_nil(ok)
+      assert.is_table(err)
+      assert.matches("rate", err.message)
+    end)
+
+    it("rejects garbage trailing content after 'direct=0'", function()
+      local doc = sdp.parse(with_mediaclk("direct=0 junk"))
+      assert.is_table(doc)
+      local ok, err = doc:validate("st2110")
+      assert.is_nil(ok)
+      assert.is_table(err)
     end)
 
     it("rejects unrecognized mediaclk value", function()
@@ -829,7 +911,7 @@ describe("ST 2110 validation", function()
       lines[#lines+1] = rtpmap2
       lines[#lines+1] = fmtp2
       lines[#lines+1] = "a=mediaclk:direct=0"
-      return table.concat(lines, "\r\n")
+      return table.concat(lines, "\r\n") .. "\r\n"
     end
 
     it("accepts valid DUP grouping with two video legs on different ports", function()
@@ -892,7 +974,7 @@ describe("ST 2110 validation", function()
         "a=rtpmap:96 raw/90000",
         VFMTP,
         "a=mediaclk:direct=0",
-      }, "\r\n")
+      }, "\r\n") .. "\r\n"
       local doc = sdp.parse(text)
       assert.is_table(doc)
       local ok, err = doc:validate("st2110")
@@ -917,7 +999,7 @@ describe("ST 2110 validation", function()
         "a=rtpmap:96 raw/90000",
         "a=fmtp:96 " .. fmtp_str,
         "a=mediaclk:direct=0",
-      }, "\r\n")
+      }, "\r\n") .. "\r\n"
     end
 
     local VALID = "sampling=YCbCr-4:2:2; width=1920; height=1080; exactframerate=25; depth=10; TCS=SDR; colorimetry=BT709; PM=2110GPM; SSN=ST2110-20:2022"
@@ -982,6 +1064,49 @@ describe("ST 2110 validation", function()
       end)
     end
 
+    -- AMWA sdpoker PR #38: ST 2110-20:2022 §7.6 added ST2115LOGS3 to the TCS
+    -- enum (alongside the 10 values from :2017). VALID_TCS now lists all 11.
+    it("accepts TCS=ST2115LOGS3 (ST 2110-20:2022 §7.6)", function()
+      local fmtp = VALID:gsub("TCS=SDR", "TCS=ST2115LOGS3")
+      local doc, err = sdp.parse(video20_sdp(fmtp), "st2110")
+      assert.is_nil(err)
+      assert.is_table(doc)
+    end)
+
+    -- AMWA sdpoker Issue #2 (CLOSED): early SDPoker rejected fmtp lines that
+    -- did not end with "; ". RFC 4566 §6 imposes no such requirement and
+    -- ST 2110-20:2022 §7.1 describes only inter-parameter separators. The
+    -- parser accepts both forms.
+    it("accepts fmtp with no trailing semicolon", function()
+      local doc, err = sdp.parse(video20_sdp(VALID .. "; TP=2110TPN"), "st2110")
+      assert.is_nil(err)
+      assert.is_table(doc)
+    end)
+
+    -- ST 2110-20:2022 §7.1: "There is no semicolon character after the last
+    -- item." Streampunk Issue #33 — strict per the 2022 wording.
+    it("rejects fmtp with trailing semicolon (ST 2110-20:2022 §7.1)", function()
+      local doc = sdp.parse(video20_sdp(VALID .. "; TP=2110TPN; "))
+      assert.is_table(doc)
+      local ok, err = doc:validate("st2110")
+      assert.is_nil(ok)
+      assert.is_table(err)
+      assert.matches("semicolon", err.message)
+      assert.equal("ST 2110-20:2022 §7.1", err.spec_ref)
+    end)
+
+    -- ST 2110-20:2022 §7.1: ";" must be followed by whitespace.
+    it("rejects fmtp with ';' not followed by whitespace (ST 2110-20:2022 §7.1)", function()
+      local fmtp_packed = VALID:gsub("; ", ";")  -- strip all the inter-param spaces
+      local doc = sdp.parse(video20_sdp(fmtp_packed))
+      assert.is_table(doc)
+      local ok, err = doc:validate("st2110")
+      assert.is_nil(ok)
+      assert.is_table(err)
+      assert.matches("whitespace", err.message)
+      assert.equal("ST 2110-20:2022 §7.1", err.spec_ref)
+    end)
+
     it("rejects exactframerate=0", function()
       local doc = sdp.parse(video20_sdp(VALID:gsub("exactframerate=25", "exactframerate=0")))
       assert.is_table(doc)
@@ -1034,7 +1159,7 @@ describe("ST 2110 validation", function()
         "a=rtpmap:97 L24/48000/8",
         "a=fmtp:97 channel-order=" .. co_value,
         "a=mediaclk:direct=0",
-      }, "\r\n")
+      }, "\r\n") .. "\r\n"
     end
 
     it("accepts SMPTE2110.(ST)", function()
@@ -1083,7 +1208,7 @@ describe("ST 2110 validation", function()
         "a=rtpmap:97 L24/" .. rate .. "/8",
         "a=fmtp:97 channel-order=SMPTE2110.(ST)",
         "a=mediaclk:direct=0",
-      }, "\r\n")
+      }, "\r\n") .. "\r\n"
     end
 
     -- ST 2110-30:2017 §6.1 mandates 48 kHz and permits 44.1/96 kHz, then says
@@ -1117,7 +1242,7 @@ describe("ST 2110 validation", function()
         "a=rtpmap:96 raw/90000",
         "a=fmtp:96 " .. fmtp_str,
         "a=mediaclk:direct=0",
-      }, "\r\n")
+      }, "\r\n") .. "\r\n"
     end
 
     describe("RANGE", function()
@@ -1418,7 +1543,7 @@ describe("ST 2110 validation", function()
         "a=rtpmap:97 " .. enc .. "/" .. rate .. "/8",
         "a=fmtp:97 channel-order=SMPTE2110.(ST)",
         "a=mediaclk:direct=0",
-      }, "\r\n")
+      }, "\r\n") .. "\r\n"
     end
 
     it("accepts L16 encoding", function()
@@ -1475,7 +1600,7 @@ describe("ST 2110 validation", function()
         "a=rtpmap:96 smpte291/90000",
         "a=fmtp:96 " .. fmtp_str,
         "a=mediaclk:direct=0",
-      }, "\r\n")
+      }, "\r\n") .. "\r\n"
     end
 
     it("accepts a valid integer VPID_Code", function()
@@ -1531,7 +1656,7 @@ describe("ST 2110 validation", function()
         "a=rtpmap:96 ST2110-41/90000",
         "a=fmtp:96 " .. fmtp_str,
         "a=mediaclk:direct=0",
-      }, "\r\n")
+      }, "\r\n") .. "\r\n"
     end
 
     it("accepts DIT=0", function()
@@ -1592,7 +1717,7 @@ describe("ST 2110 validation", function()
         "a=rtpmap:" .. rtpmap_pt .. " raw/90000",
         "a=fmtp:" .. fmtp_pt .. " " .. VALID_FMTP,
         "a=mediaclk:direct=0",
-      }, "\r\n")
+      }, "\r\n") .. "\r\n"
     end
 
     it("accepts matching payload types", function()
@@ -1628,7 +1753,7 @@ describe("ST 2110 validation", function()
         rtpmap,
         "a=fmtp:97 channel-order=SMPTE2110.(ST)",
         "a=mediaclk:direct=0",
-      }, "\r\n")
+      }, "\r\n") .. "\r\n"
     end
 
     -- ST 2110-30 §6.2.2 / Table 2 documents Conformance Levels with channel
@@ -1680,7 +1805,7 @@ describe("ST 2110 validation", function()
         "a=mediaclk:direct=0",
       }
       if ptime_val ~= nil then lines[#lines + 1] = "a=ptime:" .. ptime_val end
-      return table.concat(lines, "\r\n")
+      return table.concat(lines, "\r\n") .. "\r\n"
     end
 
     it("accepts absence of a=ptime (optional)", function()
@@ -1741,7 +1866,7 @@ describe("ST 2110 validation", function()
         fmtp,
         "a=mediaclk:direct=0",
         "a=ptime:" .. ptime,
-      }, "\r\n")
+      }, "\r\n") .. "\r\n"
     end
 
     it("accepts L24/48000/8 ch at ptime=1 (1152 B fits in 1448)", function()
@@ -1814,7 +1939,7 @@ describe("ST 2110 validation", function()
         "a=rtpmap:96 raw/90000",
         "a=fmtp:96 " .. BASE .. "; CMAX=0",
         "a=mediaclk:direct=0",
-      }, "\r\n")
+      }, "\r\n") .. "\r\n"
       local doc = sdp.parse(text)
       assert.is_table(doc)
       local ok, err = doc:validate("st2110")
@@ -1840,7 +1965,7 @@ describe("ST 2110 validation", function()
         "a=fmtp:96 sampling=YCbCr-4:2:2; width=1920; height=1080; exactframerate=25; depth=10; TCS=SDR; colorimetry=BT709; PM=2110GPM; SSN=ST2110-20:2022",
         "a=mediaclk:direct=0",
         "a=ts-refclk:ptp=IEEE1588-2008:" .. gmid,
-      }, "\r\n")
+      }, "\r\n") .. "\r\n"
     end
 
     it("rejects ptp= GMID with 6 octets instead of 8", function()
@@ -1877,7 +2002,7 @@ describe("ST 2110 validation", function()
         "a=fmtp:96 sampling=YCbCr-4:2:2; width=1920; height=1080; exactframerate=25; depth=10; TCS=SDR; colorimetry=BT709; PM=2110GPM; SSN=ST2110-20:2022",
         "a=mediaclk:direct=0",
         "a=ts-refclk:ntp=" .. addr,
-      }, "\r\n")
+      }, "\r\n") .. "\r\n"
     end
 
     it("accepts a valid IPv4 address", function()
@@ -1986,7 +2111,7 @@ describe("ST 2110 validation", function()
         "a=fmtp:96 sampling=YCbCr-4:2:2; width=1920; height=1080; exactframerate=25; depth=10; TCS=SDR; colorimetry=BT709; PM=2110GPM; SSN=ST2110-20:2022; TP=2110TPN",
         "a=mediaclk:direct=0",
         "a=ts-refclk:ptp=IEEE1588-2008:00-11-22-FF-FE-33-44-55:0",
-      }, "\r\n")
+      }, "\r\n") .. "\r\n"
     end
 
     it("accepts RTP/AVP protocol", function()
@@ -2042,7 +2167,7 @@ describe("ST 2110 validation", function()
         VFMTP,
         "a=mediaclk:direct=0",
         PTP,
-      }, "\r\n")
+      }, "\r\n") .. "\r\n"
     end
 
     it("accepts IPv4 multicast address with TTL", function()
@@ -2124,7 +2249,7 @@ describe("ST 2110 validation", function()
         "a=fmtp:96 " .. fmtp_tail,
         "a=mediaclk:direct=0",
         PTP,
-      }, "\r\n")
+      }, "\r\n") .. "\r\n"
     end
 
     local BASE = "sampling=YCbCr-4:2:2; width=1920; height=1080; exactframerate=25; depth=10; PM=2110GPM; SSN=ST2110-20:2022; TP=2110TPN"
@@ -2177,7 +2302,7 @@ describe("ST 2110 validation", function()
         "a=fmtp:96 sampling=YCbCr-4:2:2; width=1920; height=1080; exactframerate=25; depth=10; TCS=SDR; colorimetry=BT709; PM=2110GPM; SSN=" .. ssn .. "; TP=2110TPN",
         "a=mediaclk:direct=0",
         PTP,
-      }, "\r\n")
+      }, "\r\n") .. "\r\n"
     end
 
     it("accepts SSN=ST2110-20:2022", function()
@@ -2237,7 +2362,7 @@ describe("ST 2110 validation", function()
         "a=fmtp:97 channel-order=SMPTE2110.(" .. co .. ")",
         "a=mediaclk:direct=0",
         PTP,
-      }, "\r\n")
+      }, "\r\n") .. "\r\n"
     end
 
     it("accepts ST", function()
@@ -2324,7 +2449,7 @@ describe("ST 2110 validation", function()
         VFMTP,
         "a=mediaclk:direct=0",
         PTP,
-      }, "\r\n")
+      }, "\r\n") .. "\r\n"
     end
 
     it("accepts TTL=64", function()
@@ -2382,7 +2507,7 @@ describe("ST 2110 validation", function()
         "a=fmtp:96 " .. fmtp_tail,
         "a=mediaclk:direct=0",
         PTP,
-      }, "\r\n")
+      }, "\r\n") .. "\r\n"
     end
 
     it("accepts a valid JPEG-XS SDP", function()
@@ -2494,6 +2619,84 @@ describe("ST 2110 validation", function()
       assert.matches("packetmode", err.message)
     end)
 
+    -- ST 2110-22:2022 §7.2 Table 1: TP is mandatory (also §5.3 SHALL).
+    it("rejects missing TP (ST 2110-22:2022 §7.2 Table 1)", function()
+      local fmtp = VALID_JXSV_FMTP:gsub("; TP=2110TPNL", "")
+      local doc = sdp.parse(jxsv_sdp(fmtp))
+      assert.is_table(doc)
+      local ok, err = doc:validate("st2110")
+      assert.is_nil(ok)
+      assert.is_table(err)
+      assert.matches("TP", err.message)
+    end)
+
+    -- ST 2110-22 §7.2 Table 1 lists width/height/TP as the only mandatory
+    -- format-specific parameters; IANA video/jxsv (RFC 9134 §7.1) adds
+    -- packetmode and the rate. Everything else is optional and validated only
+    -- when present.
+    it("accepts jxsv with only the spec-mandatory params (width/height/TP/packetmode)", function()
+      local fmtp = "width=1920; height=1080; TP=2110TPNL; packetmode=0"
+      local doc, err = sdp.parse(jxsv_sdp(fmtp), "st2110")
+      assert.is_nil(err)
+      assert.is_table(doc)
+    end)
+
+    -- AMWA sdpoker PR #21 / BCP-006-01: RGB sampling is permitted for jxsv
+    -- (sampling references ST 2110-20 §7.4.1 which includes RGB / XYZ / KEY).
+    it("accepts RGB sampling for jxsv (BCP-006-01 / ST 2110-20 §7.4.1)", function()
+      local fmtp = VALID_JXSV_FMTP:gsub("sampling=YCbCr%-4:2:2", "sampling=RGB")
+      local doc, err = sdp.parse(jxsv_sdp(fmtp), "st2110")
+      assert.is_nil(err)
+      assert.is_table(doc)
+    end)
+
+    -- Per RFC 9134 §7.1, sampling/exactframerate/depth/TCS/colorimetry are all
+    -- optional. Validate format only when present.
+    it("accepts missing sampling (optional per RFC 9134 §7.1)", function()
+      local fmtp = VALID_JXSV_FMTP:gsub("sampling=YCbCr%-4:2:2; ", "")
+      local doc, err = sdp.parse(jxsv_sdp(fmtp), "st2110")
+      assert.is_nil(err)
+      assert.is_table(doc)
+    end)
+
+    it("rejects bad sampling value when present", function()
+      local fmtp = VALID_JXSV_FMTP:gsub("sampling=YCbCr%-4:2:2", "sampling=garbage")
+      local doc = sdp.parse(jxsv_sdp(fmtp))
+      assert.is_table(doc)
+      local ok, err = doc:validate("st2110")
+      assert.is_nil(ok)
+      assert.is_table(err)
+      assert.matches("sampling", err.message)
+    end)
+
+    it("accepts missing exactframerate (optional per RFC 9134 §7.1)", function()
+      local fmtp = VALID_JXSV_FMTP:gsub("; exactframerate=25", "")
+      local doc, err = sdp.parse(jxsv_sdp(fmtp), "st2110")
+      assert.is_nil(err)
+      assert.is_table(doc)
+    end)
+
+    it("accepts missing depth (optional per RFC 9134 §7.1)", function()
+      local fmtp = VALID_JXSV_FMTP:gsub("; depth=10", "")
+      local doc, err = sdp.parse(jxsv_sdp(fmtp), "st2110")
+      assert.is_nil(err)
+      assert.is_table(doc)
+    end)
+
+    it("accepts missing TCS (optional per RFC 9134 §7.1)", function()
+      local fmtp = VALID_JXSV_FMTP:gsub("; TCS=SDR", "")
+      local doc, err = sdp.parse(jxsv_sdp(fmtp), "st2110")
+      assert.is_nil(err)
+      assert.is_table(doc)
+    end)
+
+    it("accepts missing colorimetry (optional per RFC 9134 §7.1)", function()
+      local fmtp = VALID_JXSV_FMTP:gsub("; colorimetry=BT709", "")
+      local doc, err = sdp.parse(jxsv_sdp(fmtp), "st2110")
+      assert.is_nil(err)
+      assert.is_table(doc)
+    end)
+
     it("accepts optional fbblevel as positive integer", function()
       local fmtp = VALID_JXSV_FMTP .. "; fbblevel=3"
       local doc, err = sdp.parse(jxsv_sdp(fmtp), "st2110")
@@ -2530,7 +2733,7 @@ describe("ST 2110 validation", function()
         "a=fmtp:96 sampling=YCbCr-4:2:2; width=1920; height=1080; exactframerate=25; depth=10; TCS=SDR; colorimetry=BT709; PM=2110GPM; SSN=ST2110-20:2022; TP=2110TPN; measuredpixclk=148500000; vtotal=1125; htotal=2200; IPMX",
         "a=mediaclk:direct=0",
         "a=ts-refclk:localmac=AA-BB-CC-DD-EE-FF",
-      }, "\r\n")
+      }, "\r\n") .. "\r\n"
     end
 
     it("accepts extmap ID=255 (upper boundary)", function()
@@ -2569,7 +2772,7 @@ describe("ST 2110 validation", function()
         "a=mediaclk:direct=0",
         "a=ts-refclk:ptp=IEEE1588-2008:00-11-22-FF-FE-33-44-55:0",
       }
-      return table.concat(lines, "\r\n")
+      return table.concat(lines, "\r\n") .. "\r\n"
     end
 
     it("accepts session-level c= with valid multicast address", function()
@@ -2616,7 +2819,7 @@ describe("ST 2110 validation", function()
         "a=fmtp:96 " .. FMTP,
         "a=mediaclk:direct=0",
         "a=ts-refclk:ptp=IEEE1588-2008:00-11-22-FF-FE-33-44-55:0",
-      }, "\r\n")
+      }, "\r\n") .. "\r\n"
       local doc = sdp.parse(text)
       assert.is_table(doc)
       local ok, err = doc:validate("st2110")
@@ -2639,7 +2842,7 @@ describe("ST 2110 validation", function()
         "a=fmtp:96 " .. FMTP,
         "a=mediaclk:direct=0",
         "a=ts-refclk:ptp=IEEE1588-2008:00-11-22-FF-FE-33-44-55:0",
-      }, "\r\n")
+      }, "\r\n") .. "\r\n"
       local doc = sdp.parse(text)
       assert.is_table(doc)
       local ok, err = doc:validate("st2110")
@@ -2676,7 +2879,7 @@ describe("ST 2110 validation", function()
       base[#base + 1] = "a=fmtp:96 " .. FMTP
       base[#base + 1] = "a=mediaclk:direct=0"
       for _, l in ipairs(lines_after_rtpmap or {}) do base[#base + 1] = l end
-      return table.concat(base, "\r\n")
+      return table.concat(base, "\r\n") .. "\r\n"
     end
 
     it("accepts two valid ts-refclk at session level", function()
@@ -2745,7 +2948,7 @@ describe("ST 2110 validation", function()
         "a=rtpmap:96 raw/90000",
         "a=fmtp:96 sampling=YCbCr-4:2:2; width=1920; height=1080; exactframerate=25; depth=10; TCS=SDR; colorimetry=BT709; PM=2110GPM; SSN=ST2110-20:2022; TP=2110TPN",
         "a=mediaclk:direct=0",
-      }, "\r\n")
+      }, "\r\n") .. "\r\n"
     end
 
     it("accepts ptp= with domain=0 (lower boundary)", function()
@@ -2792,7 +2995,7 @@ describe("ST 2110 validation", function()
         "a=rtpmap:96 raw/90000",
         "a=fmtp:96 " .. FMTP_BASE .. fmtp_extra,
         "a=mediaclk:direct=0",
-      }, "\r\n")
+      }, "\r\n") .. "\r\n"
     end
 
     it("rejects TROFF without TP", function()
@@ -2841,7 +3044,7 @@ describe("ST 2110 validation", function()
         "a=mid:" .. mid2,
         "a=rtpmap:96 raw/90000", VFMTP,
         "a=mediaclk:direct=0",
-      }, "\r\n")
+      }, "\r\n") .. "\r\n"
     end
 
     it("rejects duplicate a=mid values across media blocks", function()
@@ -2854,6 +3057,31 @@ describe("ST 2110 validation", function()
 
     it("accepts distinct a=mid values", function()
       local doc, err = sdp.parse(two_video_blocks("leg1", "leg2"), "st2110")
+      assert.is_nil(err)
+      assert.is_table(doc)
+    end)
+
+    -- RFC 5888 §4/§8.1 imposes no position requirement on a=mid within a
+    -- media block. AMWA sdpoker PR #12 (open since 2022, never merged)
+    -- proposed requiring a=mid immediately before m= and as the SDP's last
+    -- line — neither constraint exists in RFC 5888. Accept a=mid anywhere
+    -- within the media block.
+    it("accepts a=mid in any position within the media block (RFC 5888 §4)", function()
+      local PTP_LOCAL = "a=ts-refclk:ptp=IEEE1588-2008:00-11-22-FF-FE-33-44-55:0"
+      local VFMTP_LOCAL = "a=fmtp:96 sampling=YCbCr-4:2:2; width=1920; height=1080; exactframerate=25; depth=10; TCS=SDR; colorimetry=BT709; PM=2110GPM; SSN=ST2110-20:2022; TP=2110TPN"
+      local text = table.concat({
+        "v=0",
+        "o=- 1234567890 1 IN IP4 192.168.1.1",
+        "s=Mid position",
+        "t=0 0",
+        PTP_LOCAL,
+        "m=video 5000 RTP/AVP 96",
+        "c=IN IP4 239.100.0.1/64",
+        "a=rtpmap:96 raw/90000", VFMTP_LOCAL,
+        "a=mediaclk:direct=0",
+        "a=mid:trailing-mid",  -- a=mid as the last attribute in the block
+      }, "\r\n") .. "\r\n"
+      local doc, err = sdp.parse(text, "st2110")
       assert.is_nil(err)
       assert.is_table(doc)
     end)
@@ -2875,7 +3103,7 @@ describe("ST 2110 validation", function()
         "a=mid:" .. mid_value,
         "a=rtpmap:96 raw/90000", VFMTP,
         "a=mediaclk:direct=0",
-      }, "\r\n")
+      }, "\r\n") .. "\r\n"
     end
 
     it("rejects a=mid containing a non-token char (parenthesis)", function()
@@ -2925,7 +3153,7 @@ describe("ST 2110 validation", function()
         "a=mid:leg2",
         "a=rtpmap:96 raw/90000", VFMTP,
         "a=mediaclk:direct=0",
-      }, "\r\n")
+      }, "\r\n") .. "\r\n"
     end
 
     it("rejects a=group with an invalid semantics token (contains parens)", function()
@@ -2977,7 +3205,7 @@ describe("ST 2110 validation", function()
         "a=rtpmap:96 raw/90000",
         "a=fmtp:96 " .. FMTP_BASE .. extra,
         "a=mediaclk:direct=0",
-      }, "\r\n")
+      }, "\r\n") .. "\r\n"
     end
 
     for _, m in ipairs({ "SAMP", "NEW", "PRES" }) do
@@ -3046,7 +3274,7 @@ describe("ST 2110 validation", function()
         "a=fmtp:96 sampling=YCbCr-4:2:2; width=1920; height=1080; exactframerate=25; depth=10; TCS=SDR; colorimetry=BT709; PM=2110GPM; SSN=ST2110-20:2022; TP=2110TPN",
         "a=mediaclk:direct=0",
       }
-      return table.concat(lines, "\r\n")
+      return table.concat(lines, "\r\n") .. "\r\n"
     end
 
     it("accepts 'incl IN IP4 <dest> <src>'", function()
@@ -3076,6 +3304,14 @@ describe("ST 2110 validation", function()
       assert.is_nil(ok)
     end)
 
+    -- RFC 4570 §3: address-types includes "*"; in that case dest/src are FQDNs
+    -- rather than literal IPs (which we therefore do not check when addrtype="*").
+    it("accepts addrtype '*' with FQDN destination and source (RFC 4570 §3)", function()
+      local doc, err = sdp.parse(video_sdp(" incl IN * stream.example.com sender.example.com"), "st2110")
+      assert.is_nil(err)
+      assert.is_table(doc)
+    end)
+
     it("rejects missing source address", function()
       local doc = sdp.parse(video_sdp(" incl IN IP4 239.100.0.1"))
       assert.is_table(doc)
@@ -3103,7 +3339,7 @@ describe("ST 2110 validation", function()
         string.format("a=rtpmap:%d raw/90000", pt),
         string.format("a=fmtp:%d %s", pt, VFMTP),
         "a=mediaclk:direct=0",
-      }, "\r\n")
+      }, "\r\n") .. "\r\n"
     end
 
     it("accepts payload type 96 (lower boundary)", function()
@@ -3181,7 +3417,7 @@ describe("ST 2110 validation", function()
       lines[#lines+1] = fmtp2
       lines[#lines+1] = "a=mediaclk:direct=0"
       if opts.sf2 then lines[#lines+1] = opts.sf2 end
-      return table.concat(lines, "\r\n")
+      return table.concat(lines, "\r\n") .. "\r\n"
     end
 
     it("accepts DUP legs with different destination addresses", function()
@@ -3227,7 +3463,7 @@ describe("ST 2110 validation", function()
     it("M6 rejects DUP video legs with different rtpmap encodings", function()
       local doc = sdp.parse(dup_sdp({
         rtpmap2 = "a=rtpmap:96 jxsv/90000",
-        fmtp2 = "a=fmtp:96 sampling=YCbCr-4:2:2; width=1920; height=1080; exactframerate=25; depth=10; TCS=SDR; colorimetry=BT709; PM=2110GPM; SSN=ST2110-22:2019; profile=High444.12; level=2k-1; sublevel=Sublev3bpp; transmode=1; packetmode=0",
+        fmtp2 = "a=fmtp:96 sampling=YCbCr-4:2:2; width=1920; height=1080; exactframerate=25; depth=10; TCS=SDR; colorimetry=BT709; PM=2110GPM; SSN=ST2110-22:2019; TP=2110TPNL; profile=High444.12; level=2k-1; sublevel=Sublev3bpp; transmode=1; packetmode=0",
       }))
       local ok, err = doc:validate("st2110")
       assert.is_nil(ok)
@@ -3246,6 +3482,22 @@ describe("ST 2110 validation", function()
       }))
       local ok, err = doc:validate("st2110")
       assert.is_nil(ok)
+    end)
+
+    -- Streampunk sdpoker PR #16 follow-up: ST 2110-40 ancillary (smpte291)
+    -- legs in a DUP group are validated like any other ST 2110-40 stream
+    -- (per-leg SSN + exactframerate per ST 2110-40:2023 §7) and consistency
+    -- between legs is enforced by the same ST 2022-7 / RFC 7104 rules.
+    it("accepts DUP group of two smpte291 legs (ST 2110-40 + ST 2022-7)", function()
+      local anc_fmtp = "a=fmtp:96 SSN=ST2110-40:2018; exactframerate=25"
+      local doc, err = sdp.parse(dup_sdp({
+        rtpmap1 = "a=rtpmap:96 smpte291/90000",
+        rtpmap2 = "a=rtpmap:96 smpte291/90000",
+        fmtp1   = anc_fmtp,
+        fmtp2   = anc_fmtp,
+      }), "st2110")
+      assert.is_nil(err)
+      assert.is_table(doc)
     end)
 
     -- ST 2022-7 §6 (referenced by ST 2110-10 §8.5): "Senders shall transmit
@@ -3297,7 +3549,7 @@ describe("ST 2110 validation", function()
         "a=rtpmap:96 raw/90000",
         "a=fmtp:96 sampling=YCbCr-4:2:2; width=1920; height=1080; exactframerate=25; depth=10; TCS=SDR; colorimetry=BT709; PM=2110GPM; SSN=ST2110-20:2022; TP=2110TPN; MAXUDP=" .. maxudp,
         "a=mediaclk:direct=0",
-      }, "\r\n")
+      }, "\r\n") .. "\r\n"
     end
 
     it("accepts MAXUDP=1460 (Standard UDP Size Limit lower-equal boundary)", function()
@@ -3342,7 +3594,7 @@ describe("ST 2110 validation", function()
         "a=rtpmap:96 raw/90000",
         "a=fmtp:96 sampling=YCbCr-4:2:2; width=1920; height=1080; exactframerate=25; depth=10; TCS=SDR; colorimetry=BT709; PM=2110GPM; SSN=ST2110-20:2022; TP=2110TPN",
         "a=mediaclk:direct=0",
-      }, "\r\n")
+      }, "\r\n") .. "\r\n"
       local doc = sdp.parse(text)
       local ok, err = doc:validate("st2110")
       assert.is_nil(ok)
@@ -3369,7 +3621,7 @@ describe("ST 2110 validation", function()
         "a=rtpmap:96 raw/90000",
         "a=fmtp:96 sampling=YCbCr-4:2:2; width=1920; height=1080; exactframerate=25; depth=10; TCS=SDR; colorimetry=BT709; PM=2110GPM; SSN=ST2110-20:2022; TP=2110TPN",
         "a=mediaclk:direct=0",
-      }, "\r\n")
+      }, "\r\n") .. "\r\n"
       local doc, err = sdp.parse(text, "st2110")
       assert.is_nil(err)
       assert.is_table(doc)
@@ -3392,7 +3644,7 @@ describe("ST 2110 validation", function()
         "a=fmtp:96 sampling=YCbCr-4:2:2; width=1920; height=1080; exactframerate=25; depth=10; TCS=SDR; colorimetry=BT709; PM=2110GPM; SSN=ST2110-20:2022; TP=2110TPN",
         "a=mediaclk:direct=0",
         "a=ts-refclk:" .. ts_value,
-      }, "\r\n")
+      }, "\r\n") .. "\r\n"
     end
 
     it("rejects ptp=IEEE1588-2019:<gmid> in ST 2110 mode", function()
@@ -3425,7 +3677,7 @@ describe("ST 2110 validation", function()
         "a=rtpmap:96 raw/90000",
         "a=fmtp:96 sampling=YCbCr-4:2:2; width=1920; height=1080; exactframerate=25; depth=10; TCS=SDR; colorimetry=BT709; PM=2110GPM; SSN=ST2110-20:2022; TP=2110TPN",
         "a=mediaclk:direct=0",
-      }, "\r\n")
+      }, "\r\n") .. "\r\n"
     end
 
     it("accepts IPv6 multicast with /scope suffix (ff02::1/64)", function()
@@ -3483,7 +3735,7 @@ describe("ST 2110 validation", function()
         "a=rtpmap:96 raw/90000",
         "a=fmtp:96 sampling=YCbCr-4:2:2; width=1920; height=1080; exactframerate=25; depth=10; TCS=SDR; colorimetry=BT709; PM=2110GPM; SSN=ST2110-20:2022; TP=2110TPN",
         "a=mediaclk:direct=0",
-      }, "\r\n")
+      }, "\r\n") .. "\r\n"
     end
 
     it("rejects IPv4 with only three octets (1.2.3)", function()
@@ -3564,7 +3816,7 @@ describe("ST 2110 validation", function()
         "a=fmtp:96 sampling=YCbCr-4:2:2; width=1920; height=1080; exactframerate=25; depth=10; TCS=SDR; colorimetry=BT709; PM=2110GPM; SSN=ST2110-20:2022; TP=2110TPN",
         "a=mediaclk:direct=0",
         sf_line,
-      }, "\r\n")
+      }, "\r\n") .. "\r\n"
     end
 
     it("rejects source-filter with non-IPv4 src token", function()
@@ -3642,7 +3894,7 @@ describe("ST 2110 validation", function()
         "a=rtpmap:96 raw/90000",
         "a=fmtp:96 sampling=YCbCr-4:2:2; width=1920; height=1080; exactframerate=25; depth=10; TCS=SDR; colorimetry=BT709; PM=2110GPM; SSN=ST2110-20:2022; TP=2110TPN",
         "a=mediaclk:direct=0",
-      }, "\r\n")
+      }, "\r\n") .. "\r\n"
       local doc, err = sdp.parse(text, "st2110")
       assert.is_nil(err)
       assert.is_table(doc)
@@ -3668,7 +3920,7 @@ describe("ST 2110 validation", function()
         "a=rtpmap:96 raw/90000",
         "a=fmtp:96 " .. fmtp_str,
         "a=mediaclk:direct=0",
-      }, "\r\n")
+      }, "\r\n") .. "\r\n"
     end
 
     for _, depth in ipairs({ "8", "10", "12", "16", "16f" }) do
@@ -3709,7 +3961,7 @@ describe("ST 2110 validation", function()
         "a=rtpmap:96 raw/90000",
         "a=fmtp:96 " .. fmtp_str,
         "a=mediaclk:direct=0",
-      }, "\r\n")
+      }, "\r\n") .. "\r\n"
     end
 
     it("accepts width=32767 height=32767 (upper bound)", function()
@@ -3765,7 +4017,7 @@ describe("ST 2110 validation", function()
         "a=rtpmap:96 raw/90000",
         "a=fmtp:96 " .. fmtp_str,
         "a=mediaclk:direct=0",
-      }, "\r\n")
+      }, "\r\n") .. "\r\n"
     end
 
     it("rejects interlace=1 (must be a bare flag, not name=value)", function()
@@ -3824,7 +4076,7 @@ describe("ST 2110 validation", function()
         "a=rtpmap:96 raw/90000",
         "a=fmtp:96 " .. fmtp_str,
         "a=mediaclk:direct=0",
-      }, "\r\n")
+      }, "\r\n") .. "\r\n"
     end
 
     local GPM_BASE = "sampling=YCbCr-4:2:2; width=1920; height=1080; exactframerate=25; depth=10; TCS=SDR; colorimetry=BT709; PM=2110GPM; SSN=ST2110-20:2022"

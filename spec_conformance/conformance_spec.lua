@@ -29,6 +29,11 @@ describe("AMWA upstream conformance", function()
       assert.is_not_nil(raw, ferr)
 
       local text = fixture.vars and render(raw, fixture.vars) or raw
+      -- Normalize trailing newline. Some upstream fixtures (e.g. nmos-testing
+      -- video-2022-7.sdp) ship without one. The conformance suite is concerned
+      -- with substantive ST 2110 content checks, not RFC 4566 §5 / §9 ABNF
+      -- file-format hygiene — the latter is verified by spec/sdp_spec.lua.
+      if text ~= "" and text:sub(-1) ~= "\n" then text = text .. "\r\n" end
       local doc, perr = sdp.parse(text, fixture.mode)
       local entry = allowlist[fixture.id]
 

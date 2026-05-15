@@ -9,103 +9,78 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 
-### Fixed
-
-- **Made `profile`, `level`, `sublevel` optional for jxsv at every tier.**
-  ST 2110-22:2022 §7.2 Table 1 lists only `width`, `height`, and `TP` as
-  mandatory format-specific parameters. Per IANA `video/jxsv` (RFC 9134),
-  only `packetmode` is additionally required. The IPMX JPEG-XS Video Profile
-  §6.1.4 references `profile` / `level` / `sublevel` / `transmode` /
-  `fbblevel` for the RTCP **JPEG-XS Media Info Block** (type 0x0003), not
-  SDP fmtp; Media Info Blocks are out of scope for this SDP validator.
-  TR-10-11 §10 defers SDP construction to ST 2110-22 §7. No normative source
-  requires these parameters in SDP at any tier. Validate value format when
-  present.
-- **Removed spec-unsupported "a=fmtp universally required" check.** The check
-  at the ST 2110 media-block level cited "ST 2110-10 §7" but §7 of the 2022
-  revision is the System Timing Model, not SDP. §8 (Session Description
-  Protocol) imposes no universal fmtp requirement either — fmtp presence is
-  driven by the per-encoding specs (-20 / -22 / -41 require fmtp params;
-  -30 / -31 / -40 do not). Per-encoding branches still enforce what they need.
-- **Made `channel-order` optional in ST 2110-30 audio fmtp.** ST 2110-30:2017
-  §6.2.2 explicitly defines the absent case ("If the channel-order parameter
-  is not present, the audio channels shall be treated as Undefined"), so the
-  parameter is optional. Format validation when present is preserved. The
-  citation has been corrected from `ST 2110-30 §7.2` to `ST 2110-30 §6.2.2`.
-- **Removed spec-unsupported `PM` requirement for jxsv.** ST 2110-22:2019
-  §7.2 Table 1 and ST 2110-22:2022 §7.2 Table 1 both list only `width`,
-  `height`, and `TP` as mandatory format-specific parameters. PM (`2110GPM` /
-  `2110BPM`) is the uncompressed-video packing-mode marker defined by
-  ST 2110-20; for jxsv the analogous control is `packetmode` (per IANA
-  `video/jxsv` registration / RFC 9134).
-- **Made `SSN` optional for jxsv.** ST 2110-22:2022 §7.2 Table 2 marks SSN
-  as optional (a new addition in the 2022 revision); ST 2110-22:2019 did not
-  define SSN at all. Validate format when present.
-- **Expanded `VALID_TP_22` to include `2110TPN`.** ST 2110-22:2022 §7.2
-  Table 1 expanded the TP enum from {`2110TPNL`, `2110TPW`} (2019) to add
-  `2110TPN`. The AMWA BCP-006-01 reference SDP uses `TP=2110TPN`.
-- **Made `transmode` optional for jxsv.** ST 2110-22:2022 §7.2 does not
-  list transmode in either the mandatory or optional fmtp tables. IANA
-  `video/jxsv` marks it optional. The IPMX JPEG-XS Video Profile §6.1.4
-  references for transmode/profile/level/sublevel/fbblevel apply to the
-  **RTCP Media Info Block** (type 0x0003), not SDP fmtp — and Media Info
-  Blocks are out of scope for this validator per CLAUDE.md.
-- **Made `DID_SDID` optional for smpte291.** ST 2110-40:2023 §7 (Session
-  Description Protocol) defers to RFC 8331 and does not mention DID_SDID at
-  all. RFC 8331's media-type registration marks DID_SDID optional and
-  explicitly defines absence as "receivers must determine DID/SDID by
-  inspecting packets." Validate format on every occurrence when present.
-- **Corrected `RFC 4566 §6` citation for fmtp PT-mismatch.** The rtpmap/fmtp
-  payload-type match check previously cited `ST 2110-10 §7`. The actual
-  authority is RFC 4566 §6.
-
 ### Added
 
-- **Enforce ST 2110-40:2023 §7 SHALL clauses on smpte291 fmtp.** The 2023
-  revision added explicit SDP-level requirements not present in :2018. The
-  parser now requires:
-  - `SSN`, with value `ST2110-40:2018` when `TM` is absent and
-    `ST2110-40:2023` when `TM` is signaled. Senders signaling
-    `ST2110-40:2021` are rejected (per §7 the 2021 value is a receiver-side
-    equivalence tolerance only; senders SHALL signal 2023).
-  - `exactframerate`, validated against the ST 2110-20:2022 §7.2 form.
-  - `TM`, when present, must be `LLTM` or `CTM` (§7 defines no other
-    values). Presence is required only for senders implementing LLTM —
-    enforced as a value-form check when present.
-  - `TROFF`, when present, must be a positive integer per ST 2110-21 §8.
-    The conditional SHALL ("if TR_OFFSETANC differs from TRO_DEFAULT") is
-    not observable from SDP alone, so only value form is validated here.
-
-  The `nmos-testing` `data.sdp` fixture (which predates :2023 and carries
-  no fmtp) is run in the conformance suite as a negative test asserting
-  rejection citing ST 2110-40:2023 §7.
+- **RFC 4566 §5 / §9 ABNF trailing newline.** Reject input not terminated by
+  `\n` (LF or CRLF both accepted). Blank lines between records were already
+  rejected.
+- **ST 2110-20:2022 §7.6 `ST2115LOGS3`** added to `VALID_TCS` (the 2022
+  revision's 11th value).
+- **ST 2110-20:2022 §7.1 fmtp separator strictness** at the raw-video branch:
+  `;` must be followed by whitespace, and there is no semicolon after the
+  last parameter. ST 2110-22 §7.2 keeps the whitespace optional, so this
+  strict rule applies only to ST 2110-20 (raw video).
+- **RFC 8331 §4 `smpte291` requires `m=video`.** Reject mismatched
+  media-type / encoding combinations.
+- **RFC 4570 §3 `*` addrtype** in `a=source-filter:` (FQDN dest/src per the
+  RFC 4570 ABNF).
+- **RFC 7273 §5.4 mediaclk `rate=` option.** Accept
+  `direct=0 rate=<int>/<int>` (pull-down form, e.g. 1000/1001 for NTSC
+  audio). Format validated.
+- **ST 2110-10:2022 §8.2 PTP domain required** when using
+  `ts-refclk:ptp=IEEE1588-2008:<gmid>` with a non-`traceable` gmid (per the
+  §8.2 SHALL "shall signal either clockIdentity AND domain number, or
+  traceable").
+- **ST 2110-40:2023 §7 SHALL clauses on smpte291 fmtp.** Require `SSN`
+  (`ST2110-40:2018` when `TM` is absent; `ST2110-40:2023` when present;
+  senders signaling `ST2110-40:2021` are rejected — §7 makes that value a
+  receiver-side tolerance only) and `exactframerate`. Validate `TM`
+  (`LLTM`/`CTM`) and `TROFF` (positive integer per ST 2110-21 §8) when
+  present.
 - **Opt-in conformance test suite** at `spec_conformance/`, driven against
-  upstream SDP fixtures from `AMWA-TV/nmos-testing` and `AMWA-TV/bcp-006-01`,
-  pinned to specific commit SHAs. Fixtures are fetched on demand into a
-  gitignored `.cache/` directory; nothing upstream is checked in. The six
-  templated nmos-testing fixtures are rendered through a minimal Jinja2
-  subset (`spec_conformance/render.lua`) before parsing. Includes a separate
-  GitHub Actions job. Run with `busted spec_conformance/`. The default
-  `busted spec/` run is unchanged and stays hermetic.
-- **Expected-failure semantics in the conformance suite.** Manifest entries
-  may set `expect = "fail"` with `expect_spec_ref` to declare that an upstream
-  fixture is known non-conformant and our parser must reject it for the
-  specified clause. Used for the `nmos-testing` 2022-7 fixture (identical
-  addressing across both legs, forbidden by ST 2110-10:2022 §8.5) and the
-  `data.sdp` fixture (missing fmtp parameters required by ST 2110-40:2023 §7).
-- **Allowlist** in `spec_conformance/allowlist.lua` for divergences that are
-  open questions where primary spec text hasn't been consulted yet. Currently
-  empty — all previously suspected over-strictness has been resolved against
-  primary spec PDFs.
+  pinned upstream fixtures from `AMWA-TV/nmos-testing` and
+  `AMWA-TV/bcp-006-01`. Fixtures are fetched on demand into a gitignored
+  `.cache/`. Manifest entries can declare `expect = "fail"` with an
+  `expect_spec_ref` for fixtures that are known non-conformant. Runs
+  separately via `busted spec_conformance/`; the default `busted spec/` stays
+  hermetic.
+
+### Fixed
+
+- **jxsv mandatory fmtp params reduced to spec.** Required set is now
+  `{width, height, TP, packetmode}` per ST 2110-22:2022 §7.2 Table 1 and
+  RFC 9134 §7.1. `sampling`, `depth`, `exactframerate`, `TCS`, `colorimetry`
+  are validated only when present (RFC 9134 §7.1 marks them optional).
+- **jxsv `profile` / `level` / `sublevel` / `transmode` / `SSN` optional.**
+  ST 2110-22 §7.2 Tables 1 and 2 don't list these as mandatory; IPMX
+  references them for the RTCP JPEG-XS Media Info Block (out of validator
+  scope), not SDP fmtp. Format is validated when present.
+- **jxsv `PM` requirement removed.** `PM` is the ST 2110-20 packing-mode
+  marker; `packetmode` (per RFC 9134) is the jxsv analogue.
+- **`VALID_TP_22` includes `2110TPN`** (added in ST 2110-22:2022 §7.2
+  Table 1).
+- **Blanket fmtp-required check removed.** ST 2110-10:2022 §8 imposes no
+  universal fmtp requirement; per-encoding branches enforce what they need.
+- **ST 2110-30 `channel-order` optional** per §6.2.2 (absent ⇒ Undefined
+  channels). Citation corrected from §7.2 to §6.2.2.
+- **ST 2110-40 `DID_SDID` optional.** RFC 8331's media-type registration
+  marks it optional; ST 2110-40:2023 §7 doesn't mention it. Format is
+  validated on every occurrence when present.
+- **Corrected RFC 4566 §6 citation** for the rtpmap/fmtp PT-match check
+  (was incorrectly cited as ST 2110-10 §7).
 
 ### Docs
 
 - Clarify the validation strictness principle in CLAUDE.md, GUIDE.md, and
-  PLAN.md. The principle now explicitly covers all three polarities of
-  normative spec text — positive "shall" / "MUST" requirements, prohibitive
-  "shall not" / "MUST NOT" / "is forbidden" clauses, and defined value forms /
-  value sets for optional fields when present. Prior wording mentioned only
-  prohibitions and well-formedness; behavior is unchanged.
+  PLAN.md across all three polarities of normative text — positive,
+  prohibitive, and defined-value-set-for-an-optional-field. Behavior is
+  unchanged.
+- GUIDE.md tables updated to match the new jxsv mandatory-param set,
+  `ST2115LOGS3` in `TCS`, `a=mediaclk` `rate=` form, mandatory PTP domain,
+  and `*` source-filter addrtype.
+- PLAN.md tightened: the SDPoker cross-reference backlog (now resolved end
+  to end) is no longer mirrored in the plan; remaining work is summarized
+  by milestone.
 
 ---
 

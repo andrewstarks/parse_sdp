@@ -556,10 +556,10 @@ When a `c=` line is present (at either session or media level), the address is v
 
 | Attribute | Requirement |
 | --- | --- |
-| `a=ts-refclk` | Required. The `ptp=` version token is restricted to `IEEE1588-2008` (ST 2110-10:2022 §6.1 mandates PTPv2; TR-10-1 §10.4 confirms the same for IPMX). `IEEE1588-2002`, `IEEE1588-2019`, and bare `IEEE1588` are rejected at both tiers. Accepted: `ptp=IEEE1588-2008:<gmid>[:<domain>]` (domain 0–127); `ptp=IEEE1588-2008:traceable`; `localmac=<mac>`; `ntp=<addr>` (addr must be a valid IPv4, IPv6, or hostname); `gps`; `gal`; `glonass` |
-| `a=mediaclk` | Required, **media-level only**. Accepted: `direct=0` (offset SHALL be zero per ST 2110-10 §7.3) or `sender`. Session-level `a=mediaclk` is rejected (ST 2110-10 §8.3) |
-| `a=mid` | Optional. When present, value must be unique within the session (RFC 5888 §8.1) |
-| `a=source-filter` | At ST 2110 tier: optional. At IPMX tier: **required** on every RTP block, either media-level or session-level (TR-10-TP-1 §13.2). Format follows RFC 4570: `<incl\|excl> IN <IP4\|IP6> <dest> <src>+`. The dest and every src must be a literal address of the declared family — FQDNs and malformed addresses are rejected (ST 2110-10 §6.5 / RFC 4570). |
+| `a=ts-refclk` | Required. The `ptp=` version token is restricted to `IEEE1588-2008` (ST 2110-10:2022 §6.1 mandates PTPv2; TR-10-1 §10.4 confirms the same for IPMX). `IEEE1588-2002`, `IEEE1588-2019`, and bare `IEEE1588` are rejected at both tiers. Accepted: `ptp=IEEE1588-2008:<gmid>:<domain>` (gmid is EUI-64; domain is 0–127; domain is required per ST 2110-10:2022 §8.2 "shall signal either clockIdentity AND domain number, OR traceable"); `ptp=IEEE1588-2008:traceable`; `localmac=<mac>`; `ntp=<addr>`; `gps`; `gal`; `glonass` |
+| `a=mediaclk` | Required, **media-level only**. Accepted: `direct=0` (offset SHALL be zero per ST 2110-10 §8.3), `direct=0 rate=<int>/<int>` (RFC 7273 §5.4 pull-down form), or `sender`. Session-level `a=mediaclk` is rejected (ST 2110-10 §8.3) |
+| `a=mid` | Optional. When present, value must be unique within the session (RFC 5888 §8.1). RFC 5888 imposes no position requirement on `a=mid` within a media block |
+| `a=source-filter` | At ST 2110 tier: optional. At IPMX tier: **required** on every RTP block, either media-level or session-level (TR-10-TP-1 §13.2). Format follows RFC 4570 §3: `<incl\|excl> IN <addrtype> <dest> <src>+` where `addrtype` is `IP4`, `IP6`, or `*` (the last per RFC 4570 §3 ABNF — `*` mode expects FQDN dest/src). For `IP4` / `IP6` the dest and every src must be a literal address of the declared family — malformed addresses are rejected (ST 2110-10 §6.5 / RFC 4570). |
 | `a=rtpmap` | Required. RTP payload type must be in the dynamic range 96–127 (ST 2110-10 §6.2). Clock rate validated: must be 90000 for video, `smpte291`, and `ST2110-41`; audio clock rate accepted for any positive integer (ST 2110-30 §6.1 puts non-{44.1, 48, 96} kHz "out of scope" but does not forbid). Audio encoding name validated: must be `L16`, `L24`, or `AM824`. Payload type must match the payload type in `a=fmtp` |
 | `a=fmtp` | Required for encodings whose spec mandates fmtp parameters (`raw` per ST 2110-20 §7.2, `jxsv` per ST 2110-22 §7, `ST2110-41` per ST 2110-41 §7.2). **Not** required for audio (`L16`/`L24`/`AM824`) or `smpte291` ancillary — ST 2110-10:2022 §8 imposes no universal fmtp requirement, and the per-encoding IANA registrations leave fmtp optional for these. Key=value pairs are validated per sub-standard when present. Payload type must match the payload type in `a=rtpmap` (RFC 4566 §6) |
 
@@ -575,7 +575,7 @@ and value format.
 | `height` | `1080` | integer between 1 and 32767 inclusive (ST 2110-20 §7.2) |
 | `exactframerate` | `30000/1001` | positive integer or `n/d` fraction (both parts positive). Reduction to lowest terms is **not** enforced — `60000/2002` is accepted (ST 2110-20 §7.2 requires "the numerically smallest numerator value possible" but the library does not currently check this) |
 | `depth` | `10` | one of `8`, `10`, `12`, `16`, `16f` (ST 2110-20 §7.4.2) |
-| `TCS` | `SDR` | `SDR`, `PQ`, `HLG`, `LINEAR`, `BT2100LINPQ`, `BT2100LINHLG`, `ST2065-1`, `ST428-1`, `DENSITY`, `UNSPECIFIED` |
+| `TCS` | `SDR` | `SDR`, `PQ`, `HLG`, `LINEAR`, `BT2100LINPQ`, `BT2100LINHLG`, `ST2065-1`, `ST428-1`, `DENSITY`, `ST2115LOGS3`, `UNSPECIFIED` (the full 11-value enum per ST 2110-20:2022 §7.6; `ST2115LOGS3` was added in :2022) |
 | `colorimetry` | `BT709` | `BT601`, `BT709`, `BT2020`, `BT2100`, `ST2065-1`, `ST2065-3`, `UNSPECIFIED`, `ALPHA`, `XYZ` |
 | `PM` | `2110GPM` | `2110GPM`, `2110BPM` |
 | `SSN` | `ST2110-20:2022` | must be `ST2110-20:YYYY` where YYYY is a 4-digit year (e.g. `ST2110-20:2017`, `ST2110-20:2022`) |
@@ -634,16 +634,15 @@ Compressed video flows use rtpmap encoding name `jxsv` at clock rate 90000
 ST 2110-20 (uncompressed video) packing-mode marker; the analogous control
 for jxsv is `packetmode` (IANA `video/jxsv` / RFC 9134 §4.3).
 
-ST 2110-22:2022 §7.2 Table 1 lists only `width`, `height`, and `TP` as
-mandatory format-specific parameters. Per IANA `video/jxsv` (RFC 9134),
-`packetmode` is also required. Beyond these, the parser additionally requires
-`sampling`, `exactframerate`, `depth`, `TCS`, and `colorimetry` (the
-ST 2110-20 baseline video-format parameters that ST 2110-22 inherits). All
-other parameters defined by the spec are optional at every tier and
-validated only when present — including `profile`, `level`, `sublevel`, and
-`transmode`. The IPMX JPEG-XS Video Profile §6.1.4 references those four
-fields for the RTCP **JPEG-XS Media Info Block** (type 0x0003), not SDP
-fmtp, and Media Info Blocks are out of scope for this validator.
+ST 2110-22:2022 §7.2 Table 1 lists `width`, `height`, and `TP` as the only
+mandatory format-specific parameters; the IANA `video/jxsv` registration
+(RFC 9134 §7.1) additionally requires `packetmode`. Everything else
+defined by the spec — including `sampling`, `depth`, `exactframerate`,
+`TCS`, `colorimetry`, `profile`, `level`, `sublevel`, `transmode`,
+`fbblevel` — is optional and validated only when present. The IPMX
+JPEG-XS Video Profile §6.1.4 references several of these fields for the
+RTCP **JPEG-XS Media Info Block** (type 0x0003), not SDP fmtp, and Media
+Info Blocks are out of scope for this validator.
 
 `TP` permits all three values `2110TPN`, `2110TPNL`, `2110TPW` per the 2022
 revision (`2110TPN` was added in ST 2110-22:2022 §7.2 Table 1).
@@ -652,13 +651,8 @@ Required parameters (all must be present):
 
 | Parameter | Example | Valid values |
 | --- | --- | --- |
-| `sampling` | `YCbCr-4:2:2` | same set as ST 2110-20 |
 | `width` | `1920` | positive integer |
 | `height` | `1080` | positive integer |
-| `exactframerate` | `25` | positive integer or `n/d` fraction |
-| `depth` | `10` | positive integer |
-| `TCS` | `SDR` | same set as ST 2110-20 |
-| `colorimetry` | `BT709` | same set as ST 2110-20 |
 | `TP` | `2110TPN` | `2110TPN`, `2110TPNL`, `2110TPW` (per ST 2110-22:2022 §7.2 Table 1) |
 | `packetmode` | `0` or `1` | 1-bit value (IANA `video/jxsv` / RFC 9134 §4.3) |
 
@@ -666,6 +660,11 @@ Optional parameters validated when present:
 
 | Parameter | Valid values | Spec ref |
 | --- | --- | --- |
+| `sampling` | same set as ST 2110-20 (including `RGB`, `XYZ`, `KEY`) | RFC 9134 §7.1 |
+| `depth` | positive integer | RFC 9134 §7.1 |
+| `exactframerate` | positive integer or `n/d` fraction | RFC 9134 §7.1 |
+| `TCS` | same set as ST 2110-20 | RFC 9134 §7.1 |
+| `colorimetry` | same set as ST 2110-20 | RFC 9134 §7.1 |
 | `SSN` | `ST2110-22:YYYY` (4-digit year) | ST 2110-22:2022 §7.2 Table 2 (not defined in 2019) |
 | `profile` | enum (TR-10-15 §8 / TR-08 §8.1.1): `Unrestricted`, `Light422.10`, `Light444.12`, `LightSubline422.10`, `LightSubline444.12`, `Main422.10`, `Main444.12`, `High444.12`, `MLS.12`, `LightBayer`, `MainBayer`, `HighBayer`, `MLSBayer` | ST 2110-22:2022 §7.2 |
 | `level` | enum (TR-10-15 §9 / ISO/IEC 21122-2): `Unrestricted`, `1k-1`, `2k-1`, `4k-1`, `4k-2`, `4k-3`, `8k-1`, `8k-2`, `8k-3`, `16k-1`, `16k-2`, `16k-3` | ST 2110-22:2022 §7.2 |

@@ -229,11 +229,59 @@ describe("sdp.parse — required session fields", function()
     assert.equal("My Session", doc.session.name)
   end)
 
+  it("rejects SDP that does not end with a newline (RFC 4566 §5 / §9 ABNF)", function()
+    local missing_nl = minimal:sub(1, -3)  -- strip trailing \r\n
+    local doc, err = sdp.parse(missing_nl)
+    assert.is_nil(doc)
+    assert.is_table(err)
+    assert.matches("newline", err.message)
+    assert.equal("RFC 4566 §5", err.spec_ref)
+  end)
+
+  it("rejects blank lines between records (RFC 4566 §5 / §9 ABNF)", function()
+    local with_blank = table.concat({
+      "v=0",
+      "o=- 1234567890 1 IN IP4 192.0.2.1",
+      "",
+      "s=My Session",
+      "t=0 0",
+    }, "\r\n") .. "\r\n"
+    local doc, err = sdp.parse(with_blank)
+    assert.is_nil(doc)
+    assert.is_table(err)
+  end)
+
   it("returns nil, err for empty input", function()
     local doc, err = sdp.parse("")
     assert.is_nil(doc)
     assert.is_table(err)
     assert.equal(1, err.line)
+  end)
+
+  -- RFC 8866 §5.3 (and RFC 4566 §5.3 with the same intent):
+  -- "If a session has no meaningful name, then 's= ' or 's=-' is RECOMMENDED."
+  -- The 's=' line MUST NOT be empty, but a single space or dash is valid.
+  it("accepts 's= ' (single space session name per RFC 8866 §5.3)", function()
+    local text = "v=0\r\no=- 0 0 IN IP4 127.0.0.1\r\ns= \r\nt=0 0\r\n"
+    local doc, err = sdp.parse(text)
+    assert.is_nil(err)
+    assert.is_table(doc)
+    assert.equal(" ", doc.session.name)
+  end)
+
+  it("accepts 's=-' (single dash session name per RFC 8866 §5.3)", function()
+    local text = "v=0\r\no=- 0 0 IN IP4 127.0.0.1\r\ns=-\r\nt=0 0\r\n"
+    local doc, err = sdp.parse(text)
+    assert.is_nil(err)
+    assert.is_table(doc)
+    assert.equal("-", doc.session.name)
+  end)
+
+  it("rejects 's=' empty session name (RFC 8866 §5.3 MUST NOT be empty)", function()
+    local text = "v=0\r\no=- 0 0 IN IP4 127.0.0.1\r\ns=\r\nt=0 0\r\n"
+    local doc, err = sdp.parse(text)
+    assert.is_nil(doc)
+    assert.is_table(err)
   end)
 
   it("returns nil, err when v= is missing", function()
@@ -576,6 +624,19 @@ describe("sdp.parse — media blocks (M5)", function()
     assert.equal(1,               #m.attributes)
     assert.equal("rtpmap",        m.attributes[1].name)
     assert.equal("96 H264/90000", m.attributes[1].value)
+  end)
+
+  it("accepts a=fmtp with payload type and no parameters (RFC 4566 §6)", function()
+    local doc, err = sdp.parse(make({
+      "m=video 49170 RTP/AVP 96",
+      "a=rtpmap:96 H264/90000",
+      "a=fmtp:96",
+    }))
+    assert.is_nil(err)
+    assert.is_table(doc)
+    local attrs = doc.media[1].attributes
+    assert.equal("fmtp", attrs[#attrs].name)
+    assert.equal("96",   attrs[#attrs].value)
   end)
 
   it("parses two media blocks in order", function()
