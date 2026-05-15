@@ -1139,13 +1139,22 @@ end
 -- inter-parameter spacing) and stricter than ST 2110-22:2022 §7.2 (which
 -- explicitly makes the trailing space optional). Apply at the -20 branch only.
 -- Returns true on conformance, or nil + error message string.
-local function valid_st2110_20_fmtp_format(value)
+-- "There is no semicolon character after the last item." — applies to both
+-- ST 2110-20:2022 §7.1 and ST 2110-22:2022 §7.2.
+local function fmtp_no_trailing_semicolon(value)
   local params_str = value:match("^%d+%s+(.+)$")
-  if not params_str then return true end  -- no params to check
-  -- Forbid trailing semicolon (possibly followed by whitespace).
+  if not params_str then return true end
   if params_str:match("^.*;%s*$") then
-    return nil, "no semicolon character after the last item (ST 2110-20:2022 §7.1)"
+    return nil, "no semicolon character after the last item"
   end
+  return true
+end
+
+local function valid_st2110_20_fmtp_format(value)
+  local nok, nmsg = fmtp_no_trailing_semicolon(value)
+  if not nok then return nil, nmsg .. " (ST 2110-20:2022 §7.1)" end
+  local params_str = value:match("^%d+%s+(.+)$")
+  if not params_str then return true end
   -- Every ';' SHALL be followed by whitespace (space or tab).
   local i = 1
   while true do
@@ -1479,10 +1488,61 @@ function st2110.validate(doc)
       -- ST 2110-22: constant bit-rate compressed video (JPEG-XS encoding).
       -- Required fmtp: standard video params + JPEG-XS codec params.
       -- Spec refs: SMPTE ST 2110-22:2019 §7, TR-10-11, IPMX JPEG-XS Profile §6.1.4.
+      -- N9 (§6.2): "The media type name shall be 'video'."
+      if m.media ~= "video" then
+        return attr_err(
+          string.format("jxsv requires m=video (got m=%s) per ST 2110-22:2022 §6.2", tostring(m.media)),
+          mpath, "rtpmap", "ST 2110-22:2022 §6.2", "INVALID_VALUE")
+      end
       if clock_rate ~= 90000 then
         return attr_err(
           string.format("rtpmap clock rate must be 90000 for jxsv (got %s)", tostring(clock_rate)),
           mpath, "rtpmap", "ST 2110-22 §7", "INVALID_VALUE")
+      end
+      -- N8 (§7.2): "There is no semicolon character after the last item."
+      -- (Unlike -20 §7.1, the post-';' whitespace is OPTIONAL in -22 §7.2.)
+      if fmtp then
+        local nok, nmsg = fmtp_no_trailing_semicolon(fmtp.value or "")
+        if not nok then
+          return attr_err(nmsg .. " (ST 2110-22:2022 §7.2)",
+            mpath, "fmtp", "ST 2110-22:2022 §7.2", "INVALID_VALUE")
+        end
+      end
+      -- N7 (§7.3): "The media-level section of the SDP object shall include
+      -- the attribute listed in Table 3" — b=<brtype>:<brvalue> with
+      -- brtype=AS. Bandwidths sit on the media block, not in attributes.
+      do
+        local has_as = false
+        for _, b in ipairs(m.bandwidths or {}) do
+          if b.type == "AS" then has_as = true; break end
+        end
+        if not has_as then
+          return attr_err("jxsv requires media-level b=AS bandwidth (ST 2110-22:2022 §7.3 Table 3)",
+            mpath, "bandwidth", "ST 2110-22:2022 §7.3")
+        end
+      end
+      -- N6 (§7.4): "The SDP object shall include an indication of frame rate
+      -- via one of the mechanisms listed in Table 4." Either a=framerate
+      -- (RFC 4566 §6) or fmtp exactframerate satisfies the SHALL.
+      do
+        local has_framerate_attr = find_attr(mattrs, "framerate") ~= nil
+        local has_exactframerate = params["exactframerate"] ~= nil
+                                   and params["exactframerate"] ~= true
+        if not has_framerate_attr and not has_exactframerate then
+          return attr_err(
+            "jxsv requires frame-rate signaling: 'a=framerate:<rate>' or fmtp 'exactframerate=<rate>' (ST 2110-22:2022 §7.4 Table 4)",
+            mpath, "fmtp", "ST 2110-22:2022 §7.4")
+        end
+        if has_framerate_attr then
+          local fr_attr = find_attr(mattrs, "framerate")
+          local fr_val = fr_attr and fr_attr.value or ""
+          -- RFC 4566 §6 / ST 2110-22:2022 Table 4: integer or <integer>.<fraction>.
+          if not fr_val:match("^%d+$") and not fr_val:match("^%d+%.%d+$") then
+            return attr_err(
+              "invalid a=framerate value '" .. fr_val .. "' (RFC 4566 §6 / ST 2110-22:2022 §7.4)",
+              mpath, "framerate", "ST 2110-22:2022 §7.4", "INVALID_VALUE")
+          end
+        end
       end
       -- Mandatory jxsv fmtp parameters at the ST 2110-22 tier:
       --   - width, height, TP  per ST 2110-22:2022 §7.2 Table 1 ("shall include")

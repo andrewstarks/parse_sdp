@@ -85,6 +85,10 @@ fixture findings, or user reports.
 - N2 + N3 + N4 + N5 — ST 2110-31:2022 §5.5 / §6.1 AM824 SHALLs:
   even `<nchan>`, clock-rate ∈ {44100, 48000, 96000}, `a=ptime` required,
   ptime value in Table 1 for the prevailing rate. L16/L24 unaffected.
+- N6 + N7 + N8 + N9 — ST 2110-22:2022 jxsv SHALLs: §6.2 requires
+  `m=video`; §7.2 forbids trailing `;` on fmtp; §7.3 requires `b=AS:<kbps>`
+  at the ST 2110 tier; §7.4 requires frame-rate signaling via either
+  `a=framerate` or fmtp `exactframerate`.
 
 These findings came out of a multi-spec audit that read every SDP-relevant
 SHALL / SHALL-NOT / defined-value clause across RFC 4566, RFC 8866,
@@ -114,106 +118,6 @@ SDPs; blockers for 1.0). N = false negatives (parser accepts non-conformant
 SDPs; should-fix). D = documentation/citation cleanups.
 
 ---
-
-### N6 — ST 2110-22 frame rate signaling not required
-
-**Parser behavior:** jxsv branch [parse_sdp.lua:1320-1476](parse_sdp.lua#L1320)
-lists `exactframerate` as an *optional* jxs param. No check on `a=framerate`.
-
-**Spec basis:** ST 2110-22:2022 §7.4: *"The SDP object shall include an
-indication of frame rate via one of the mechanisms listed in Table 4."*
-Table 4 lists two mechanisms: `a=framerate:<frame rate>` attribute OR
-`exactframerate=<frame rate>` fmtp parameter. At least one is REQUIRED.
-
-**Verify before acting:** Re-read §7.4 and Table 4. Confirm the "shall include"
-opens the SHALL. Both mechanisms are alternates — having either satisfies the
-requirement.
-
-**Fix direction:** In the jxsv branch, after fmtp validation, check whether
-`exactframerate` is in `params` OR `a=framerate` is in `m.attributes`. If
-neither, reject with cite `ST 2110-22 §7.4`. Validate `a=framerate` value
-form per RFC 4566 §6 (decimal `<integer>.<fraction>` or integer).
-
-**Doc sync:** GUIDE.md ST 2110-22 section — state that one of
-`a=framerate` or `exactframerate` is required (currently lists exactframerate
-under "optional" only).
-
-**Tests:** jxsv with exactframerate accepts; jxsv with a=framerate accepts;
-jxsv with neither rejects.
-
-### N7 — ST 2110-22 b=AS not required at the ST 2110 tier
-
-**Parser behavior:** [parse_sdp.lua:2194-2199](parse_sdp.lua#L2194) requires
-b=AS on jxsv *only* inside `ipmx.validate`. ST 2110 mode accepts a jxsv
-stream without b=AS.
-
-**Spec basis:** ST 2110-22:2022 §7.3: *"The media-level section of the SDP
-object shall include the attribute listed in Table 3."* Table 3 row: `b=<brtype>:<brvalue>`
-with `<brtype>` = `AS`, `<brvalue>` an integer kbps.
-
-**Verify before acting:** Re-read §7.3 to confirm the "shall include" SHALL
-and that it applies to all ST 2110-22 streams (not just IPMX-tagged ones).
-
-**Fix direction:** Move (or duplicate) the b=AS-required check into the
-jxsv branch of `st2110.validate`. The value-form check (positive integer)
-can stay shared.
-
-**Doc sync:** GUIDE.md `b=AS` row currently cites "TR-10-7 §11" — add the
-ST 2110-22 §7.3 cite for the ST 2110-tier requirement.
-
-**Tests:** ST 2110 mode jxsv SDP without b=AS rejects (was accepting).
-
-### N8 — ST 2110-22 fmtp "no trailing semicolon" not enforced on jxsv
-
-**Parser behavior:** `valid_st2110_20_fmtp_format` at [parse_sdp.lua:1005-1023](parse_sdp.lua#L1005)
-is only called for raw video at L1488. jxsv fmtp like
-`width=1920;height=1080;TP=2110TPN;packetmode=0;IPMX;` (trailing semicolon)
-is accepted.
-
-**Spec basis:** ST 2110-22:2022 §7.2: *"The <format specific parameters>
-section shall consist of a sequence of parameter entries separated by a
-semicolon (';') character, with the semicolon optionally followed by a space
-character. **There is no semicolon character after the last item.**"*
-
-Note: §7.2 differs from ST 2110-20:2022 §7.1 in one aspect — ST 2110-22
-makes the post-semicolon space *optional* (vs. mandatory in -20). So the
-trailing-semicolon SHALL transfers but the post-semicolon-whitespace SHALL
-does not (-20-only).
-
-**Verify before acting:** Re-read both §7.1 (in -20) and §7.2 (in -22).
-Confirm the trailing-semicolon prohibition in -22 §7.2 and confirm that the
-post-`;`-whitespace requirement is only in -20 §7.1.
-
-**Fix direction:** Factor the trailing-semicolon check out of
-`valid_st2110_20_fmtp_format` into a small `no_trailing_semicolon` helper.
-Call it from both the raw branch (existing) and the jxsv branch (new).
-The post-`;`-whitespace check stays only in the raw branch.
-
-**Doc sync:** GUIDE.md jxsv section — note the no-trailing-semicolon rule.
-
-**Tests:** jxsv fmtp ending in `;` rejects; jxsv fmtp without trailing `;`
-accepts; raw video still subject to both rules.
-
-### N9 — ST 2110-22 requires m=video for jxsv; parser doesn't enforce
-
-**Parser behavior:** jxsv branch [parse_sdp.lua:1320](parse_sdp.lua#L1320)
-is reached whenever `enc == "jxsv"`, regardless of `m.media`. The smpte291
-branch (L1204) has an analogous check; the jxsv branch does not.
-
-**Spec basis:** ST 2110-22:2022 §6.2: *"The media type name shall be 'video'.
-The subtype name shall be the name registered for the payload format."* (For
-JPEG-XS, the subtype is `jxsv` per RFC 9134.)
-
-**Verify before acting:** Re-read §6.2. Confirm "shall be 'video'" for the
-media type name (i.e., the `m=` field).
-
-**Fix direction:** At the start of the jxsv branch, reject if `m.media ~= "video"`.
-Mirror the smpte291 pattern at L1204.
-
-**Doc sync:** Add to GUIDE.md jxsv section.
-
-**Tests:** `m=application 5004 RTP/AVP 96` with `a=rtpmap:96 jxsv/90000`
-rejects (was accepting).
 
 ### N10 — ST 2110-40 FID prohibition not enforced at the ST 2110 tier
 

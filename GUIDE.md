@@ -648,19 +648,28 @@ Default MAXUDP is the Standard UDP Size Limit of 1460 octets per ST 2110-10 §6.
 ### ST 2110-22 (JPEG-XS / jxsv) `fmtp` parameters
 
 Compressed video flows use rtpmap encoding name `jxsv` at clock rate 90000
-(ST 2110-22 / TR-10-11). `PM` is **not** an ST 2110-22 parameter — that is a
+(ST 2110-22 / TR-10-11). The media type **must** be `video` per
+ST 2110-22:2022 §6.2 (*"The media type name shall be 'video'"*); `m=application
+… jxsv` is rejected. `PM` is **not** an ST 2110-22 parameter — that is a
 ST 2110-20 (uncompressed video) packing-mode marker; the analogous control
 for jxsv is `packetmode` (IANA `video/jxsv` / RFC 9134 §4.3).
 
 ST 2110-22:2022 §7.2 Table 1 lists `width`, `height`, and `TP` as the only
 mandatory format-specific parameters; the IANA `video/jxsv` registration
-(RFC 9134 §7.1) additionally requires `packetmode`. Everything else
-defined by the spec — including `sampling`, `depth`, `exactframerate`,
-`TCS`, `colorimetry`, `profile`, `level`, `sublevel`, `transmode`,
-`fbblevel` — is optional and validated only when present. The IPMX
-JPEG-XS Video Profile §6.1.4 references several of these fields for the
-RTCP **JPEG-XS Media Info Block** (type 0x0003), not SDP fmtp, and Media
-Info Blocks are out of scope for this validator.
+(RFC 9134 §7.1) additionally requires `packetmode`. §7.3 Table 3 makes
+`b=AS:<kbps>` REQUIRED on every jxsv media block (now enforced at the
+ST 2110 tier — was previously IPMX-only). §7.4 Table 4 makes frame-rate
+signaling REQUIRED via either `a=framerate:<rate>` or fmtp
+`exactframerate=<rate>`. §7.2 also forbids a trailing semicolon after the
+last fmtp item (the post-`;` whitespace, however, is OPTIONAL in -22 §7.2,
+unlike in -20 §7.1).
+
+Everything else defined by the spec — `sampling`, `depth`, `TCS`,
+`colorimetry`, `profile`, `level`, `sublevel`, `transmode`, `fbblevel` —
+is optional and validated only when present. The IPMX JPEG-XS Video
+Profile §6.1.4 references several of these fields for the RTCP **JPEG-XS
+Media Info Block** (type 0x0003), not SDP fmtp, and Media Info Blocks
+are out of scope for this validator.
 
 `TP` permits all three values `2110TPN`, `2110TPNL`, `2110TPW` per the 2022
 revision (`2110TPN` was added in ST 2110-22:2022 §7.2 Table 1).

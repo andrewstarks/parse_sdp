@@ -2114,12 +2114,15 @@ describe("IPMX validation", function()
       assert.is_table(doc)
     end)
 
-    it("rejects jxsv missing b=AS", function()
+    -- N7 (audit): b=AS is now required at the ST 2110 tier per
+    -- ST 2110-22:2022 §7.3 Table 3, so the rejection fires before IPMX
+    -- runs its TR-10-7 §11 check.
+    it("rejects jxsv missing b=AS (ST 2110-22:2022 §7.3)", function()
       local doc = sdp.parse(jxsv_sdp(nil))
       local ok, err = doc:validate("ipmx")
       assert.is_nil(ok)
       assert.matches("b=AS", err.message)
-      assert.matches("TR%-10%-7", err.spec_ref)
+      assert.matches("ST 2110%-22:2022 §7%.3", err.spec_ref)
     end)
   end)
 

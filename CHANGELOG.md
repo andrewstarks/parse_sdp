@@ -81,6 +81,20 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ### Fixed
 
+- **ST 2110-22:2022 jxsv SHALLs enforced (audit N6 + N7 + N8 + N9).**
+  - **N6 (§7.4 Table 4)** — Frame-rate signaling SHALL be present, via
+    either `a=framerate:<rate>` (RFC 4566 §6) or fmtp `exactframerate=<rate>`.
+  - **N7 (§7.3 Table 3)** — `b=<brtype>:<brvalue>` SHALL appear at media
+    level on every jxsv block, with `brtype=AS`. The check moves to the
+    ST 2110 tier; the equivalent IPMX-tier check (TR-10-7 §11) becomes
+    redundant but is kept as a defensive guard for the value form.
+  - **N8 (§7.2)** — *"There is no semicolon character after the last
+    item."* Trailing-`;` rejected on jxsv fmtp (factored shared helper
+    `fmtp_no_trailing_semicolon`). Unlike -20 §7.1, the post-`;`
+    whitespace is OPTIONAL in -22 §7.2, so only the trailing-only check
+    transfers.
+  - **N9 (§6.2)** — *"The media type name shall be 'video'."* Reject any
+    jxsv stream signaled with a non-`video` `m=` line.
 - **ST 2110-31:2022 AM824 SHALLs enforced (audit N2 + N3 + N4 + N5).**
   - **N2 (§6.1)** — `<nchan>` SHALL be even ("each AES3 signal contains two
     sequences of AES3 Subframes"). Odd channel counts on AM824 rejected.

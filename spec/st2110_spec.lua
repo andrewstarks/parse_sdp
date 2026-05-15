@@ -2871,6 +2871,7 @@ describe("ST 2110 validation", function()
         PTP,
         "m=video 5000 RTP/AVP 96",
         "c=IN IP4 239.100.0.1/64",
+        "b=AS:200000",
         "a=rtpmap:96 jxsv/90000",
         "a=fmtp:96 " .. fmtp_tail,
         "a=mediaclk:direct=0",
@@ -3002,11 +3003,60 @@ describe("ST 2110 validation", function()
     -- format-specific parameters; IANA video/jxsv (RFC 9134 §7.1) adds
     -- packetmode and the rate. Everything else is optional and validated only
     -- when present.
-    it("accepts jxsv with only the spec-mandatory params (width/height/TP/packetmode)", function()
-      local fmtp = "width=1920; height=1080; TP=2110TPNL; packetmode=0"
+    it("accepts jxsv with only the spec-mandatory params + framerate (§7.4)", function()
+      local fmtp = "width=1920; height=1080; TP=2110TPNL; packetmode=0; exactframerate=25"
       local doc, err = sdp.parse(jxsv_sdp(fmtp), "st2110")
       assert.is_nil(err)
       assert.is_table(doc)
+    end)
+
+    -- N8: ST 2110-22:2022 §7.2 — "There is no semicolon character after the
+    -- last item." (Unlike -20 §7.1, the post-';' whitespace is OPTIONAL in
+    -- -22 §7.2, so the trailing-only check applies here.)
+    it("rejects jxsv fmtp with trailing semicolon (§7.2)", function()
+      local fmtp = VALID_JXSV_FMTP .. ";"
+      local doc = sdp.parse(jxsv_sdp(fmtp))
+      local ok, err = doc:validate("st2110")
+      assert.is_nil(ok)
+      assert.matches("semicolon", err.message)
+    end)
+
+    -- N9: ST 2110-22:2022 §6.2 — "The media type name shall be 'video'."
+    it("rejects jxsv with non-video media type (§6.2)", function()
+      local text = table.concat({
+        "v=0",
+        "o=- 1234567890 1 IN IP4 192.168.1.1",
+        "s=jxsv N9", "t=0 0", PTP,
+        "m=application 5000 RTP/AVP 96",
+        "c=IN IP4 239.100.0.1/64",
+        "b=AS:200000",
+        "a=rtpmap:96 jxsv/90000",
+        "a=fmtp:96 " .. VALID_JXSV_FMTP,
+        "a=mediaclk:direct=0", PTP,
+      }, "\r\n") .. "\r\n"
+      local doc = sdp.parse(text)
+      local ok, err = doc:validate("st2110")
+      assert.is_nil(ok)
+      assert.matches("video", err.message)
+    end)
+
+    -- N7: ST 2110-22:2022 §7.3 — b=AS REQUIRED at the ST 2110 tier (was
+    -- previously enforced only at the IPMX tier).
+    it("rejects jxsv without b=AS at the ST 2110 tier (§7.3)", function()
+      local text = table.concat({
+        "v=0",
+        "o=- 1234567890 1 IN IP4 192.168.1.1",
+        "s=jxsv N7", "t=0 0", PTP,
+        "m=video 5000 RTP/AVP 96",
+        "c=IN IP4 239.100.0.1/64",
+        "a=rtpmap:96 jxsv/90000",
+        "a=fmtp:96 " .. VALID_JXSV_FMTP,
+        "a=mediaclk:direct=0", PTP,
+      }, "\r\n") .. "\r\n"
+      local doc = sdp.parse(text)
+      local ok, err = doc:validate("st2110")
+      assert.is_nil(ok)
+      assert.matches("b=AS", err.message)
     end)
 
     -- AMWA sdpoker PR #21 / BCP-006-01: RGB sampling is permitted for jxsv
@@ -3037,11 +3087,25 @@ describe("ST 2110 validation", function()
       assert.matches("sampling", err.message)
     end)
 
-    it("accepts missing exactframerate (optional per RFC 9134 §7.1)", function()
+    -- ST 2110-22:2022 §7.4 makes frame-rate signaling REQUIRED via Table 4
+    -- (one of: a=framerate OR fmtp exactframerate). RFC 9134 §7.1 alone
+    -- treats exactframerate as optional, but §7.4 tightens that for jxsv.
+    -- Confirm a=framerate satisfies the SHALL when exactframerate is absent.
+    it("accepts a=framerate when exactframerate absent (§7.4 alternate)", function()
       local fmtp = VALID_JXSV_FMTP:gsub("; exactframerate=25", "")
-      local doc, err = sdp.parse(jxsv_sdp(fmtp), "st2110")
+      local sdp_text = (jxsv_sdp(fmtp)):gsub(
+        "a=fmtp:96", "a=framerate:25\r\na=fmtp:96")
+      local doc, err = sdp.parse(sdp_text, "st2110")
       assert.is_nil(err)
       assert.is_table(doc)
+    end)
+
+    it("rejects jxsv without any frame-rate signaling (§7.4)", function()
+      local fmtp = VALID_JXSV_FMTP:gsub("; exactframerate=25", "")
+      local doc = sdp.parse(jxsv_sdp(fmtp))
+      local ok, err = doc:validate("st2110")
+      assert.is_nil(ok)
+      assert.matches("frame", err.message)
     end)
 
     it("accepts missing depth (optional per RFC 9134 §7.1)", function()
@@ -3936,10 +4000,27 @@ describe("ST 2110 validation", function()
     end)
 
     it("M6 rejects DUP video legs with different rtpmap encodings", function()
-      local doc = sdp.parse(dup_sdp({
-        rtpmap2 = "a=rtpmap:96 jxsv/90000",
-        fmtp2 = "a=fmtp:96 sampling=YCbCr-4:2:2; width=1920; height=1080; exactframerate=25; depth=10; TCS=SDR; colorimetry=BT709; PM=2110GPM; SSN=ST2110-22:2019; TP=2110TPNL; profile=High444.12; level=2k-1; sublevel=Sublev3bpp; transmode=1; packetmode=0",
-      }))
+      -- leg1 = raw video, leg2 = jxsv (with b=AS so the leg is internally
+      -- valid; the DUP encoding-mismatch check is the assertion under test).
+      local text = table.concat({
+        "v=0",
+        "o=- 1234567890 1 IN IP4 192.168.1.1",
+        "s=DUP Test", "t=0 0",
+        "a=group:DUP leg1 leg2", PTP,
+        "m=video 5000 RTP/AVP 96",
+        "c=IN IP4 239.100.0.1/64",
+        "a=mid:leg1",
+        "a=rtpmap:96 raw/90000", VFMTP,
+        "a=mediaclk:direct=0",
+        "m=video 5010 RTP/AVP 96",
+        "c=IN IP4 239.100.0.2/64",
+        "b=AS:200000",
+        "a=mid:leg2",
+        "a=rtpmap:96 jxsv/90000",
+        "a=fmtp:96 width=1920; height=1080; exactframerate=25; TP=2110TPNL; packetmode=0",
+        "a=mediaclk:direct=0",
+      }, "\r\n") .. "\r\n"
+      local doc = sdp.parse(text)
       local ok, err = doc:validate("st2110")
       assert.is_nil(ok)
       assert.matches("DUP", err.message)
