@@ -101,6 +101,10 @@ fixture findings, or user reports.
   forbids 4:2:0 sampling combined with interlace. Both scoped to raw
   video only — RFC 9134 §7.1 does not import either SHALL into jxsv
   (verified directly against the RFC text).
+- D1 — IPMX audio ptime cite corrected to ST 2110-30:2025 §6.2.1 (chains
+  to AES67 §8.1). Side-effect: `a=ptime` is now required for ALL audio
+  at the ST 2110 tier (extended from AM824-only). Redundant IPMX-tier
+  check removed.
 
 These findings came out of a multi-spec audit that read every SDP-relevant
 SHALL / SHALL-NOT / defined-value clause across RFC 4566, RFC 8866,
@@ -130,24 +134,6 @@ SDPs; blockers for 1.0). N = false negatives (parser accepts non-conformant
 SDPs; should-fix). D = documentation/citation cleanups.
 
 ---
-
----
-
-### D1 — `spec_ref = "TR-10-3 §8"` for IPMX audio a=ptime requirement is wrong
-
-**Parser cite:** [parse_sdp.lua:2378](parse_sdp.lua#L2378).
-
-**Actual spec basis:** TR-10-3 §8 is titled *"Payload Formats and Sample
-Rates"* and contains no SDP/ptime SHALL. The actual basis is either:
-- AES67 SDP requirements (transitively required by TR-10-3 §7 line 149:
-  *"Audio PCM IPMX Sender's digital audio streams shall conform to AES67"*).
-  Verify AES67 §6/§7/§8 for the SDP `a=ptime` SHALL — citation should
-  resolve to that AES67 clause.
-- ST 2110-31:2022 §6.1 — for AM824 specifically (see N4).
-
-**Fix direction:** After resolving N4, update the `spec_ref` to cite the
-correct underlying SHALL. If ptime is required for all audio (via AES67),
-cite AES67. If only for AM824 (via ST 2110-31 §6.1), branch the check.
 
 ### D2 — `spec_ref = "TR-10-11 §12"` for fmtp `fbblevel` is wrong
 

@@ -640,11 +640,20 @@ channel-order parameter is not present, the audio channels shall be treated as
 Undefined"). When present, its value format is validated; mono
 (`SMPTE2110.(M)`) is permitted.
 
-When `a=ptime` is present, its value must be a positive number (ST 2110-30 §7.2).
+`a=ptime` is **required** for every audio stream — ST 2110-30:2025 §6.2.1
+chains audio to AES67 (*"Digital audio streams shall conform to AES67,
+including the Session Description Protocol (SDP) as described in IETF
+RFC 8866"*), and AES67-2018 §8.1: *"Descriptions shall include a ptime
+attribute indicating the desired packet time."* Value must be a positive
+decimal (RFC 4566). For AM824, `<packet-time>` must additionally come from
+ST 2110-31:2022 §6.1 Table 1.
+
 The validator also enforces that the resulting RTP payload size
 (`channels × samples-per-packet × bytes-per-sample`, where L16=2 B, L24=3 B,
-AM824=4 B) fits within `MAXUDP − 12 B` of UDP payload (RTP header is 12 B).
-Default MAXUDP is the Standard UDP Size Limit of 1460 octets per ST 2110-10 §6.4.
+AM824=4 B) fits within `1460 − 12 B = 1448 B` of UDP payload (Standard UDP
+Size Limit per ST 2110-10 §6.3, minus the 12-octet RTP fixed header).
+**MAXUDP must not be signaled on audio** (ST 2110-30:2025 §6.2.1 mandates
+the Standard limit); raising it is rejected — see N11 in PLAN.md.
 
 | Parameter | Example | Valid values |
 | --- | --- | --- |

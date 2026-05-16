@@ -1394,12 +1394,16 @@ describe("IPMX validation", function()
       assert.is_table(doc)
     end)
 
-    it("spec_ref for ptime is TR-10-3 §8", function()
+    -- D1 (audit): the previous "TR-10-3 §8" cite was wrong (TR-10-3 §8 is
+    -- "Payload Formats and Sample Rates" with no ptime SHALL). The actual
+    -- chain is ST 2110-30:2025 §6.2.1 → AES67 §8.1 (and TR-10-3 §7 chains
+    -- IPMX PCM audio to AES67 the same way).
+    it("spec_ref for ptime is ST 2110-30:2025 §6.2.1 (D1 fix)", function()
       local doc = sdp.parse(ipmx_audio_sdp())
       assert.is_table(doc)
       local ok, err = doc:validate("ipmx")
       assert.is_nil(ok)
-      assert.equal("TR-10-3 §8", err.spec_ref)
+      assert.equal("ST 2110-30:2025 §6.2.1", err.spec_ref)
     end)
 
     -- IPMX permits the full AES67/extended professional-audio rate set. ST 2110-30

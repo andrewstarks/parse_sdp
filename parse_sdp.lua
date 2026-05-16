@@ -1936,29 +1936,30 @@ function st2110.validate(doc)
             mpath, "rtpmap", "ST 2110-31:2022 §6.1", "INVALID_VALUE")
         end
       end
-      -- Validate a=ptime if present (ST 2110-30 §7.2 recommends ptime=1 ms).
-      -- For AM824, ST 2110-31:2022 §6.1 makes a=ptime REQUIRED and constrains
-      -- its value to Table 1 (per-clock-rate enum).
+      -- a=ptime is REQUIRED for all audio at the ST 2110 tier.
+      -- ST 2110-30:2025 §6.2.1: "Digital audio streams shall conform to
+      -- AES67, including the Session Description Protocol (SDP) as
+      -- described in IETF RFC 8866." AES67-2018 §8.1 (Packet time):
+      -- "Descriptions shall include a ptime attribute indicating the
+      -- desired packet time." (For AM824 specifically, ST 2110-31:2022
+      -- §6.1 also makes ptime SHALL and additionally constrains its
+      -- value to Table 1 — see below.)
       local ptime_attr = find_attr(mattrs, "ptime")
-      local ptime_ms
-      if ptime_attr then
-        ptime_ms = tonumber(ptime_attr.value or "")
-        if not ptime_ms or ptime_ms <= 0 then
-          return attr_err("invalid a=ptime value (expected positive number)",
-            mpath, "ptime", "ST 2110-30 §7.2", "INVALID_VALUE")
-        end
+      if not ptime_attr then
+        return attr_err("audio streams require a=ptime (ST 2110-30:2025 §6.2.1 / AES67 §8.1)",
+          mpath, "ptime", "ST 2110-30:2025 §6.2.1")
+      end
+      local ptime_ms = tonumber(ptime_attr.value or "")
+      if not ptime_ms or ptime_ms <= 0 then
+        return attr_err("invalid a=ptime value (expected positive number)",
+          mpath, "ptime", "ST 2110-30 §7.2", "INVALID_VALUE")
       end
       if enc == "AM824" then
-        -- N4: "Senders under this standard shall signal a ptime attribute
-        -- in the SDP, as defined in IETF RFC 4566."
-        if not ptime_attr then
-          return attr_err("AM824 streams require a=ptime (ST 2110-31:2022 §6.1)",
-            mpath, "ptime", "ST 2110-31:2022 §6.1")
-        end
         -- N5: "<packet-time> parameter shall take one of the values from
         -- the Table 1, based on the prevailing sampling rate." Compare with
         -- a small tolerance so equivalent decimal strings (0.080 vs 0.08)
-        -- aren't rejected for floating-point reasons.
+        -- aren't rejected for floating-point reasons. (N4's presence
+        -- requirement is subsumed by the general AES67 §8.1 check above.)
         local valid_ptimes = {
           [44100] = { 1.09, 0.14, 0.09 },
           [48000] = { 1, 0.12, 0.08 },
@@ -1977,6 +1978,18 @@ function st2110.validate(doc)
             mpath, "ptime", "ST 2110-31:2022 §6.1", "INVALID_VALUE")
         end
       end
+      -- N11 (audit): ST 2110-30:2025 §6.2.1 — "The Standard UDP Datagram
+      -- Size Limit as defined in SMPTE ST 2110-10 shall be used." This
+      -- governs L16/L24; ST 2110-31 §5.x inherits the same UDP-size
+      -- constraint for AM824. MAXUDP signals exceeding the Standard limit
+      -- (ST 2110-10:2022 §6.4 / §8.6), so its presence is non-conformant
+      -- on any audio essence. Check this BEFORE packet-fit so the more
+      -- specific message wins.
+      if params["MAXUDP"] ~= nil then
+        return attr_err(
+          "MAXUDP must not be signaled on audio streams (ST 2110-30:2025 §6.2.1 / ST 2110-31 limit UDP size to the Standard UDP Size Limit)",
+          mpath, "fmtp", "ST 2110-30:2025 §6.2.1", "INVALID_VALUE")
+      end
       -- Packet payload fit (ST 2110-10 §6.4 + ST 2110-30 §6.2.2). When ptime is
       -- known, verify channels × samples-per-packet × bytes-per-sample fits in
       -- the available UDP payload (MAXUDP if signaled, else the 1460 Standard
@@ -1984,30 +1997,23 @@ function st2110.validate(doc)
       if ptime_ms then
         local bps = (enc == "L16" and 2) or (enc == "L24" and 3) or (enc == "AM824" and 4)
         if bps then
-          local samples_per_packet = clock_rate * ptime_ms / 1000
-          local maxudp = tonumber(tostring(params["MAXUDP"] or "")) or 1460
-          local rtp_payload_limit = maxudp - 12
+          -- AES67 §8.1: "Signaled packet time multiplied by sampling
+          -- frequency rounded to the nearest integer indicates the number
+          -- of samples in each packet."
+          local samples_per_packet = math.floor(clock_rate * ptime_ms / 1000 + 0.5)
+          local rtp_payload_limit = 1460 - 12  -- N11: MAXUDP forbidden on audio
           local needed = ch * samples_per_packet * bps
           if needed > rtp_payload_limit then
             return attr_err(
               string.format(
-                "audio packet RTP payload %d B (%d ch × %g samples × %d B) exceeds limit %d B (UDP %d − RTP 12); raise MAXUDP or reduce ptime/channels",
-                needed, ch, samples_per_packet, bps, rtp_payload_limit, maxudp),
+                "audio packet RTP payload %d B (%d ch × %d samples × %d B) exceeds Standard UDP limit %d B (1460 − RTP 12); reduce ptime or channels",
+                needed, ch, samples_per_packet, bps, rtp_payload_limit),
               mpath, "fmtp", "ST 2110-10 §6.4", "INVALID_VALUE")
           end
         end
       end
-      -- N11 (audit): ST 2110-30:2025 §6.2.1 — "The Standard UDP Datagram
-      -- Size Limit as defined in SMPTE ST 2110-10 shall be used." This
-      -- governs L16/L24; ST 2110-31 §5.x inherits the same UDP-size
-      -- constraint for AM824. MAXUDP signals exceeding the Standard limit
-      -- (ST 2110-10:2022 §6.4 / §8.6), so its presence is non-conformant
-      -- on any audio essence.
-      if params["MAXUDP"] ~= nil then
-        return attr_err(
-          "MAXUDP must not be signaled on audio streams (ST 2110-30:2025 §6.2.1 / ST 2110-31 limit UDP size to the Standard UDP Size Limit)",
-          mpath, "fmtp", "ST 2110-30:2025 §6.2.1", "INVALID_VALUE")
-      end
+      -- (Audio MAXUDP-forbidden check moved above the packet-fit check so
+      -- the more specific cite wins.)
       -- ST 2110-30:2017 §6.2.2: "If channel order is signaled in the SDP, the
       -- syntax of IETF RFC 3190 for the parameter channel-order shall be used."
       -- "If the channel-order parameter is not present, the audio channels
@@ -2738,15 +2744,11 @@ function ipmx.validate(doc)
           end
         end
       end
-      -- IPMX audio: ptime is required (TR-10-3 §8). AM824 is permitted under
-      -- TR-10-12 (IPMX equivalent of ST 2110-31 AES3 transparent transport).
-      if m.media == "audio" then
-        if not find_attr(m.attributes or {}, "ptime") then
-          return attr_err(
-            "a=ptime is required for IPMX audio",
-            mpath, "ptime", "TR-10-3 §8")
-        end
-      end
+      -- (IPMX audio ptime requirement is now enforced at the ST 2110 tier
+      -- via ST 2110-30:2025 §6.2.1 / AES67 §8.1, so the previous IPMX-tier
+      -- check is subsumed. The earlier "TR-10-3 §8" cite was wrong — TR-10-3
+      -- §8 is "Payload Formats and Sample Rates" and contains no ptime SHALL.
+      -- The transitive chain is TR-10-3 §7 → AES67 §8.1.)
     end
   end
 

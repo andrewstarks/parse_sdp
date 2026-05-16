@@ -81,6 +81,20 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ### Fixed
 
+- **Audio `a=ptime` required + cite corrected (audit D1).** TR-10-3 §8 is
+  *"Payload Formats and Sample Rates"* and contains no ptime SHALL — the
+  previous IPMX-tier `spec_ref = "TR-10-3 §8"` was wrong. The actual
+  chain: ST 2110-30:2025 §6.2.1 first sentence — *"Digital audio streams
+  shall conform to AES67, including the Session Description Protocol
+  (SDP) as described in IETF RFC 8866"* — pulls in AES67-2018 §8.1:
+  *"Descriptions shall include a ptime attribute indicating the desired
+  packet time."* TR-10-3 §7 line 149 makes IPMX PCM audio chain to AES67
+  the same way. Therefore `a=ptime` is required for **all** audio at the
+  ST 2110 tier (extended from the AM824-only requirement that landed in
+  N4). Cite now reads `ST 2110-30:2025 §6.2.1`. The redundant IPMX-tier
+  check is removed (subsumed). The audio packet-fit check now uses the
+  fixed Standard UDP Limit (1460 B) since MAXUDP is forbidden on audio
+  (N11), and rounds samples-per-packet to nearest integer per AES67 §8.1.
 - **ST 2110-20:2022 cross-parameter SHALLs on raw video (audit N12 + N13).**
   - **N12 (§7.4.1)** — *"The Key signal does not have a specific TCS or
     Colorimetry value itself; the Key stream shall signal the colorimetry

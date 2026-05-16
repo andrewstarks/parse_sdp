@@ -25,6 +25,7 @@ describe("ST 2110 validation", function()
     "m=audio 5010 RTP/AVP 97",
     "c=IN IP4 239.100.0.2/64",
     "a=rtpmap:97 L24/48000/8",
+    "a=ptime:1",
     "a=fmtp:97 channel-order=SMPTE2110.(ST)",
     "a=mediaclk:direct=0",
     "a=ts-refclk:ptp=IEEE1588-2008:00-11-22-FF-FE-33-44-55:0",
@@ -244,6 +245,7 @@ describe("ST 2110 validation", function()
         "m=audio 5010 RTP/AVP 97",
         "c=IN IP4 239.100.0.2/64",
         "a=rtpmap:97 L24/48000/8",
+        "a=ptime:1",
         "a=mediaclk:direct=0",
         "a=ts-refclk:ptp=IEEE1588-2008:00-11-22-FF-FE-33-44-55:0",
       }, "\r\n") .. "\r\n"
@@ -262,6 +264,7 @@ describe("ST 2110 validation", function()
         "m=audio 5010 RTP/AVP 97",
         "c=IN IP4 239.100.0.2/64",
         "a=rtpmap:97 L24/48000/8",
+        "a=ptime:1",
         "a=fmtp:97 channel-order=NoSeparatorHere",
         "a=mediaclk:direct=0",
         "a=ts-refclk:ptp=IEEE1588-2008:00-11-22-FF-FE-33-44-55:0",
@@ -943,6 +946,7 @@ describe("ST 2110 validation", function()
       if not omit_mid2 then lines[#lines+1] = string.format("a=mid:%s", mid2) end
       lines[#lines+1] = rtpmap2
       lines[#lines+1] = fmtp2
+      if type2 == "audio" then lines[#lines+1] = "a=ptime:1" end
       lines[#lines+1] = "a=mediaclk:direct=0"
       return table.concat(lines, "\r\n") .. "\r\n"
     end
@@ -1396,6 +1400,7 @@ describe("ST 2110 validation", function()
         "m=audio 5010 RTP/AVP 97",
         "c=IN IP4 239.100.0.2/64",
         "a=rtpmap:97 L24/48000/8",
+        "a=ptime:1",
         "a=fmtp:97 channel-order=" .. co_value,
         "a=mediaclk:direct=0",
       }, "\r\n") .. "\r\n"
@@ -1507,7 +1512,8 @@ describe("ST 2110 validation", function()
         "a=ts-refclk:ptp=IEEE1588-2008:00-11-22-FF-FE-33-44-55:0",
         "m=audio 5010 RTP/AVP 97",
         "c=IN IP4 239.100.0.2/64",
-        "a=rtpmap:97 L24/" .. rate .. "/8",
+        "a=rtpmap:97 L24/" .. rate .. "/2",  -- 2 ch fits any tested rate within Standard UDP at ptime=1
+        "a=ptime:1",
         "a=fmtp:97 channel-order=SMPTE2110.(ST)",
         "a=mediaclk:direct=0",
       }, "\r\n") .. "\r\n"
@@ -2178,16 +2184,20 @@ describe("ST 2110 validation", function()
         "c=IN IP4 239.100.0.2/64",
         rtpmap,
         "a=fmtp:97 channel-order=SMPTE2110.(ST)",
+        "a=ptime:1",
         "a=mediaclk:direct=0",
       }, "\r\n") .. "\r\n"
     end
 
     -- ST 2110-30 §6.2.2 / Table 2 documents Conformance Levels with channel
     -- counts up to 64 (Level C at 125 µs). The spec does not contain a global
-    -- "shall not exceed N channels" prohibition. Under M30 we accept any
-    -- positive integer channel count; only zero/missing is rejected as
-    -- RFC 3551 / RFC 4566 well-formedness.
-    for _, ch in ipairs({ 1, 2, 8, 16, 32, 64, 128 }) do
+    -- "shall not exceed N channels" prohibition; the validator imposes no
+    -- per-channel-count cap of its own. The natural upper bound is the
+    -- packet-fit derived constraint (audio_sdp_ch above uses L24/48k with
+    -- ptime=1 ms = 144 B/channel within the 1448-B Standard UDP payload, so
+    -- ~10 channels fit). The "no spec cap" property is exercised by
+    -- accepting counts up to that derived limit.
+    for _, ch in ipairs({ 1, 2, 4, 8 }) do
       it("accepts channel count " .. ch, function()
         local doc, err = sdp.parse(audio_sdp_ch(ch), "st2110")
         assert.is_nil(err)
@@ -2234,10 +2244,13 @@ describe("ST 2110 validation", function()
       return table.concat(lines, "\r\n") .. "\r\n"
     end
 
-    it("accepts absence of a=ptime (optional)", function()
-      local doc, err = sdp.parse(audio_with_ptime(nil), "st2110")
-      assert.is_nil(err)
-      assert.is_table(doc)
+    -- D1 (audit): ST 2110-30:2025 §6.2.1 chains audio to AES67 §8.1, which
+    -- makes a=ptime SHALL on every audio stream. Absence is rejected.
+    it("rejects absence of a=ptime (ST 2110-30:2025 §6.2.1 / AES67 §8.1)", function()
+      local doc = sdp.parse(audio_with_ptime(nil))
+      local ok, err = doc:validate("st2110")
+      assert.is_nil(ok)
+      assert.matches("ptime", err.message)
     end)
 
     it("accepts a=ptime:1", function()
@@ -2340,6 +2353,7 @@ describe("ST 2110 validation", function()
     it("rejects L16/96000/8 ch at ptime=1 (1536 B exceeds 1448)", function()
       local doc = sdp.parse(audio_pkt(
         "a=rtpmap:97 L16/96000/8",
+        "a=ptime:1",
         "a=fmtp:97 channel-order=SMPTE2110.(ST,U01,U02,U03,U04,U05,U06)",
         "1"))
       assert.is_table(doc)
@@ -2789,6 +2803,7 @@ describe("ST 2110 validation", function()
         "m=audio 5010 RTP/AVP 97",
         "c=IN IP4 239.100.0.2/64",
         "a=rtpmap:97 L24/48000/8",
+        "a=ptime:1",
         "a=fmtp:97 channel-order=SMPTE2110.(" .. co .. ")",
         "a=mediaclk:direct=0",
         PTP,
