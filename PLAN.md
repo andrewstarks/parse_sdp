@@ -48,7 +48,8 @@ The AMWA / Streampunk SDPoker cross-reference backlog and the pre-1.0
 conformance audit have both been walked end to end. All actionable findings
 have been evaluated against primary spec text and either landed parser
 changes, added regression tests, or were documented as non-applicable. See
-CHANGELOG.md for the specific spec citations.
+CHANGELOG.md for the specific spec citations and
+[SDPOKER_BACKLOG.md](SDPOKER_BACKLOG.md) for the per-finding regression index.
 
 ## Next
 
