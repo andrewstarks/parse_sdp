@@ -81,6 +81,15 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ### Fixed
 
+- **`fbblevel` SDP fmtp check removed (audit D2).** No spec defines
+  `fbblevel` as an SDP fmtp parameter. It appears only in the RTCP
+  JPEG-XS Media Info Block (TR-10-15-Part1 §12, encoded in the Plev
+  16-bit field alongside `sublevel`). The previous "TR-10-11 §12" cite
+  was wrong (TR-10-11 §12 describes the RTCP MIB, not SDP fmtp). Per
+  the strictness principle, the check is removed; the parser accepts
+  `fbblevel=…` in jxsv fmtp without validating its value form. Doc
+  updates the optional-jxsv-params table and the descriptive paragraph
+  accordingly.
 - **Audio `a=ptime` required + cite corrected (audit D1).** TR-10-3 §8 is
   *"Payload Formats and Sample Rates"* and contains no ptime SHALL — the
   previous IPMX-tier `spec_ref = "TR-10-3 §8"` was wrong. The actual

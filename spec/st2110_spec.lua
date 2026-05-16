@@ -3248,21 +3248,23 @@ describe("ST 2110 validation", function()
       assert.is_table(doc)
     end)
 
-    it("accepts optional fbblevel as positive integer", function()
+    -- D2 (audit): no spec defines `fbblevel` as an SDP fmtp parameter
+    -- (it lives only in the RTCP JPEG-XS Media Info Block per
+    -- TR-10-15-Part1 §12). The previous `fbblevel` value-form check has
+    -- been removed; unrecognized fmtp keys pass through silently per the
+    -- ST 2110-22 §7.2 / RFC 9134 §7.1 model.
+    it("accepts unrecognized fbblevel key (no SDP spec defines it)", function()
       local fmtp = VALID_JXSV_FMTP .. "; fbblevel=3"
       local doc, err = sdp.parse(jxsv_sdp(fmtp), "st2110")
       assert.is_nil(err)
       assert.is_table(doc)
     end)
 
-    it("rejects fbblevel=0 (not positive)", function()
+    it("accepts fbblevel=0 (no SDP spec defines a value form)", function()
       local fmtp = VALID_JXSV_FMTP .. "; fbblevel=0"
-      local doc = sdp.parse(jxsv_sdp(fmtp))
+      local doc, err = sdp.parse(jxsv_sdp(fmtp), "st2110")
+      assert.is_nil(err)
       assert.is_table(doc)
-      local ok, err = doc:validate("st2110")
-      assert.is_nil(ok)
-      assert.is_table(err)
-      assert.matches("fbblevel", err.message)
     end)
 
     -- RFC 9134 §7.1 — interlace and segmented are bare-flag parameters

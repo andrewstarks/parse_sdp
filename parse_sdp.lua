@@ -1703,14 +1703,12 @@ function st2110.validate(doc)
           return attr_err("CMAX: " .. vmsg, mpath, "fmtp", "ST 2110-21:2022 §8.2", "INVALID_VALUE")
         end
       end
-      -- Optional: fbblevel (positive integer, TR-10-11 §12).
-      local fbb = params["fbblevel"]
-      if fbb ~= nil and fbb ~= true then
-        local vok, vmsg = valid_pos_int(tostring(fbb))
-        if not vok then
-          return attr_err("fbblevel: " .. vmsg, mpath, "fmtp", "TR-10-11 §12", "INVALID_VALUE")
-        end
-      end
+      -- D2 (audit): no spec defines `fbblevel` as an SDP fmtp parameter.
+      -- It appears only in the RTCP JPEG-XS Media Info Block (TR-10-15-Part1
+      -- §12 — encoded in the Plev 16-bit field alongside sublevel). The
+      -- previous "TR-10-11 §12" cite was wrong (TR-10-11 §12 describes the
+      -- RTCP MIB and contains no SDP fmtp clauses). Per the strictness
+      -- principle (CLAUDE.md): no spec basis → no check. Removed.
 
     elseif m.media == "video" then
       -- ST 2110-20: uncompressed video

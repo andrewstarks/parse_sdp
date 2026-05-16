@@ -41,25 +41,28 @@ runs them through the parser. See [spec_conformance/README.md](spec_conformance/
 
 ## Current State
 
-728 tests passing (hermetic) · 10/10 upstream conformance · allowlist empty.
-Every validation check is grounded in explicit spec text. No known check is
-opinion-only.
+777 tests passing (hermetic) · allowlist empty. Every validation check is
+grounded in explicit spec text. No known check is opinion-only.
 
-The AMWA / Streampunk SDPoker cross-reference backlog has been walked end to
-end. All actionable PR-tagged and Issue-tagged findings have been evaluated
-against primary spec text and either landed parser changes, added regression
-tests, or were documented as non-applicable. See CHANGELOG.md for the
-specific spec citations.
+The AMWA / Streampunk SDPoker cross-reference backlog and the pre-1.0
+conformance audit have both been walked end to end. All actionable findings
+have been evaluated against primary spec text and either landed parser
+changes, added regression tests, or were documented as non-applicable. See
+CHANGELOG.md for the specific spec citations.
 
 ## Next
 
-The AMWA / Streampunk SDPoker backlog is fully walked. No tracked items
-remain open. Future work is driven by new spec releases, new conformance-
-fixture findings, or user reports.
+No tracked items remain open. Future work is driven by new spec releases,
+new conformance-fixture findings, or user reports.
 
-## Pre-1.0 Conformance Audit (open findings, 2026-05-15)
+## Pre-1.0 Conformance Audit — CLOSED (2026-05-15)
 
-**Resolved since audit opened (2026-05-15):**
+All F (false-positive) and N (false-negative) findings have landed; both
+D (citation cleanup) findings are resolved. See CHANGELOG.md `[Unreleased]`
+for the per-finding commits. The codebase has no known opinion-based
+checks and no known spec-grounded SHALL that the validator misses.
+
+**Resolved (2026-05-15):**
 
 - F1 + D3 — TCS optional per §7.3 + GUIDE doc sync.
 - F2 + D4 — `a=hkep` permitted at media level per TR-10-5 §17 + GUIDE doc sync.
@@ -105,6 +108,9 @@ fixture findings, or user reports.
   to AES67 §8.1). Side-effect: `a=ptime` is now required for ALL audio
   at the ST 2110 tier (extended from AM824-only). Redundant IPMX-tier
   check removed.
+- D2 — `fbblevel` is not an SDP fmtp parameter in any spec; check removed
+  per strictness principle. (It lives only in the RTCP JPEG-XS Media
+  Info Block per TR-10-15-Part1 §12.)
 
 These findings came out of a multi-spec audit that read every SDP-relevant
 SHALL / SHALL-NOT / defined-value clause across RFC 4566, RFC 8866,
@@ -135,26 +141,9 @@ SDPs; should-fix). D = documentation/citation cleanups.
 
 ---
 
-### D2 — `spec_ref = "TR-10-11 §12"` for fmtp `fbblevel` is wrong
-
-**Parser cite:** [parse_sdp.lua:1470-1476](parse_sdp.lua#L1470).
-
-**Actual spec basis:** TR-10-11 §12 is *"IPMX Info Block for Constant
-Bit-Rate Compressed Video"* — describes RTCP Media Info Block fields, not
-SDP fmtp. `fbblevel` is defined for the RTCP MIB (in TR-10-15-Part1 §12),
-not for SDP fmtp. **No spec defines `fbblevel` as an SDP fmtp parameter.**
-
-**Fix direction:** Two options:
-- (a) Remove the `fbblevel` check entirely. The conformance principle
-  forbids spec-ungrounded checks; an SDP `fbblevel` parameter is not
-  defined anywhere.
-- (b) Keep the check (since it only validates value form when present, and
-  is permissive — accepts any positive integer) but mark the cite as
-  "(no SDP spec — RTCP MIB defined in TR-10-15-Part1 §12; SDP form not
-  standardized)" so future readers don't follow a misleading cite.
-
-Recommend (a): remove. The check is technically opinion-based per the
-strictness principle.
+All open audit items have been resolved. See the "Resolved since audit
+opened" list at the top of this section for the canonical summary. The
+audit is closed.
 
 ---
 

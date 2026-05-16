@@ -679,11 +679,17 @@ last fmtp item (the post-`;` whitespace, however, is OPTIONAL in -22 §7.2,
 unlike in -20 §7.1).
 
 Everything else defined by the spec — `sampling`, `depth`, `TCS`,
-`colorimetry`, `profile`, `level`, `sublevel`, `transmode`, `fbblevel` —
-is optional and validated only when present. The IPMX JPEG-XS Video
-Profile §6.1.4 references several of these fields for the RTCP **JPEG-XS
-Media Info Block** (type 0x0003), not SDP fmtp, and Media Info Blocks
-are out of scope for this validator.
+`colorimetry`, `profile`, `level`, `sublevel`, `transmode` — is optional
+and validated only when present. The IPMX JPEG-XS Video Profile §6.1.4
+references several of these fields for the RTCP **JPEG-XS Media Info
+Block** (type 0x0003), not SDP fmtp, and Media Info Blocks are out of
+scope for this validator.
+
+`fbblevel` is **not** an SDP fmtp parameter in any spec the parser tracks.
+It appears only in the RTCP JPEG-XS Media Info Block (TR-10-15-Part1 §12,
+encoded in the Plev 16-bit field alongside `sublevel`). The parser
+accepts `fbblevel=…` in fmtp without validating its value form — there is
+no SDP value form to validate.
 
 `TP` permits all three values `2110TPN`, `2110TPNL`, `2110TPW` per the 2022
 revision (`2110TPN` was added in ST 2110-22:2022 §7.2 Table 1).
@@ -714,7 +720,6 @@ Optional parameters validated when present:
 | `RANGE` | `NARROW`, `FULLPROTECT`, `FULL` | RFC 9134 §7.1 |
 | `MAXUDP` | positive integer ≤ 8960 (Extended UDP Size Limit) | ST 2110-10 §6.4 |
 | `CMAX` | any integer (per ST 2110-21:2022 §8.2 — see uncompressed-video table above for the §7.1 upper-bound caveat) | ST 2110-21:2022 §8.2 (referenced by ST 2110-22:2022 §7.2 Table 2) |
-| `fbblevel` | positive integer | TR-10-11 §12 |
 
 Bare-flag parameters `interlace` and `segmented` are accepted on jxsv flows under the same rules as raw video (RFC 9134 §7.1 — same wording as ST 2110-20 §7.3): both are flag-only (`interlace=anything` / `segmented=anything` are rejected), and `segmented` SHALL only appear together with `interlace` (RFC 9134 §7.1: *"Signaling of this parameter without the interlace parameter is forbidden."*).
 
