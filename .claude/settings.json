@@ -1,4 +1,15 @@
 {
+  "permissions": {
+    "allow": [
+      "Bash(busted *)",
+      "Bash(docker compose run --rm test *)",
+      "Bash(pdftotext *)",
+      "Bash(make test)",
+      "Bash(git add *)",
+      "Bash(git commit *)",
+      "Bash(git push *)"
+    ]
+  },
   "hooks": {
     "PreToolUse": [
       {
