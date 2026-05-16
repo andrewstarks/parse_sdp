@@ -149,8 +149,20 @@ follow the strictness principle above. Audits follow these rules:
 
 1. **Get the primary spec on disk before forming a verdict.** Before claiming
    any check is over-strict, or that "the spec says X," locate the actual
-   SMPTE / IETF / VSF document text in a PDF or canonical source you can
-   quote. Do **not** substitute one of the following for primary spec text:
+   SMPTE / IETF / VSF document text in a canonical source you can quote.
+
+   **Prefer markdown versions of the specs whenever they exist.** The user
+   maintains permanent markdown conversions of SMPTE / VSF documents — they
+   are searchable with `grep`, diff cleanly, and quote without OCR
+   artifacts. Check the markdown directories first; fall back to PDF only
+   when the markdown for the cited clause is not yet available. Locations:
+
+   - VSF TR-10 markdown: `~/Library/CloudStorage/Dropbox/Personal/Claude/Macnica/Standards Related/smpte_standards_internal/TR-10 Markdowned Versions/`
+   - SMPTE ST 2110 + IPMX (markdown if present, PDF fallback): `~/Library/CloudStorage/Dropbox/Personal/Claude/Macnica/Standards Related/smpte_standards_internal/`
+   - IETF RFCs: `WebFetch https://www.rfc-editor.org/rfc/rfcNNNN.txt`
+   - Use `pdftotext` (allowlisted) only when no markdown is available.
+
+   Do **not** substitute one of the following for primary spec text:
    - an IANA media-type registration
    - a downstream IETF RFC the SMPTE document builds on
    - an AMWA NMOS profile / BCP that quotes the SMPTE clause
