@@ -6,6 +6,8 @@ describe("parse_sdp", function()
   end)
 end)
 
+-- ── Atomic grammar: primitive line and field parsers ────────────────────────
+
 describe("grammar.tokenize_line", function()
   local grammar = require("parse_sdp")._grammar
 
@@ -195,6 +197,70 @@ describe("grammar.parse_timing", function()
   end)
 end)
 
+describe("grammar.parse_media", function()
+  local grammar = require("parse_sdp")._grammar
+
+  it("parses a minimal m= value", function()
+    local m = grammar.parse_media("video 49170 RTP/AVP 96")
+    assert.is_table(m)
+    assert.equal("video",   m.media)
+    assert.equal(49170,     m.port)
+    assert.is_nil(m.port_count)
+    assert.equal("RTP/AVP", m.proto)
+    assert.equal(1,         #m.fmts)
+    assert.equal("96",      m.fmts[1])
+  end)
+
+  it("parses m= with port count", function()
+    local m = grammar.parse_media("video 49170/2 RTP/AVP 96")
+    assert.is_table(m)
+    assert.equal(49170, m.port)
+    assert.equal(2,     m.port_count)
+  end)
+
+  it("parses multiple fmt tokens", function()
+    local m = grammar.parse_media("video 49170 RTP/AVP 96 97 98")
+    assert.is_table(m)
+    assert.equal(3,    #m.fmts)
+    assert.equal("96", m.fmts[1])
+    assert.equal("97", m.fmts[2])
+    assert.equal("98", m.fmts[3])
+  end)
+
+  it("rejects value missing port/proto/fmt", function()
+    local m, pos = grammar.parse_media("audio")
+    assert.is_nil(m)
+    assert.is_number(pos)
+  end)
+
+  it("rejects value with non-numeric port", function()
+    local m, pos = grammar.parse_media("audio abc RTP/AVP 0")
+    assert.is_nil(m)
+    assert.is_number(pos)
+  end)
+
+  -- M26 L1: UDP port range (RFC 768).
+  it("accepts port at the upper bound (65535)", function()
+    local m = grammar.parse_media("video 65535 RTP/AVP 96")
+    assert.is_table(m)
+    assert.equal(65535, m.port)
+  end)
+
+  it("rejects port above UDP range (65536)", function()
+    local m, pos = grammar.parse_media("video 65536 RTP/AVP 96")
+    assert.is_nil(m)
+    assert.is_number(pos)
+  end)
+
+  it("rejects port well above UDP range (100000)", function()
+    local m, pos = grammar.parse_media("video 100000 RTP/AVP 96")
+    assert.is_nil(m)
+    assert.is_number(pos)
+  end)
+end)
+
+-- ── Session-level field structure ─────────────────────────────────────────────
+
 describe("sdp.parse — required session fields", function()
   local sdp = require("parse_sdp")
 
@@ -364,131 +430,6 @@ describe("sdp.parse — required session fields", function()
   end)
 end)
 
--- RFC 4566 §5: support for r= (repeat times), z= (time zones),
--- k= (encryption keys, session and media level), and multiple t= blocks.
-describe("sdp.parse — RFC 4566 §5 r=/z=/k=/multiple t= (audit F8)", function()
-  local sdp = require("parse_sdp")
-
-  local function make(extra_lines)
-    local lines = { "v=0", "o=- 1 1 IN IP4 127.0.0.1", "s=Test" }
-    for _, l in ipairs(extra_lines or {}) do lines[#lines + 1] = l end
-    return table.concat(lines, "\r\n") .. "\r\n"
-  end
-
-  it("accepts t= followed by r= (RFC 4566 §5.10)", function()
-    local doc, err = sdp.parse(make({ "t=2873397496 2873404696", "r=604800 3600 0 90000" }))
-    assert.is_nil(err)
-    assert.is_table(doc)
-    assert.equal(1, #doc.session.time_descriptions)
-    assert.equal("604800", doc.session.time_descriptions[1].repeats[1].interval)
-  end)
-
-  it("accepts t= followed by r= with typed-time tokens (7d 1h 0 25h)", function()
-    local doc, err = sdp.parse(make({ "t=2873397496 2873404696", "r=7d 1h 0 25h" }))
-    assert.is_nil(err)
-    assert.is_table(doc)
-    local r = doc.session.time_descriptions[1].repeats[1]
-    assert.equal("7d", r.interval)
-    assert.equal("1h", r.duration)
-    assert.same({ "0", "25h" }, r.offsets)
-  end)
-
-  it("accepts multiple time descriptions (RFC 4566 §5)", function()
-    local doc, err = sdp.parse(make({
-      "t=2873397496 2873404696", "r=604800 3600 0 90000",
-      "t=2880000000 2880003600",
-    }))
-    assert.is_nil(err)
-    assert.is_table(doc)
-    assert.equal(2, #doc.session.time_descriptions)
-    assert.equal(2873397496, doc.session.time_descriptions[1].start)
-    assert.equal(2880000000, doc.session.time_descriptions[2].start)
-    assert.equal(0, #doc.session.time_descriptions[2].repeats)
-    -- Back-compat: session.timing reflects the first description.
-    assert.equal(2873397496, doc.session.timing.start)
-  end)
-
-  it("accepts z= time zones (RFC 4566 §5.11)", function()
-    local doc, err = sdp.parse(make({
-      "t=2873397496 2873404696",
-      "z=2882844526 -1h 2898848070 0",
-    }))
-    assert.is_nil(err)
-    assert.is_table(doc)
-    assert.equal(2, #doc.session.time_zones)
-    assert.equal("-1h", doc.session.time_zones[1].offset)
-  end)
-
-  -- RFC 8866 §5.12 obsoletes k=: "One MUST NOT include a 'k=' line in an
-  -- SDP, and MUST discard it if it is received in an SDP." (Audit D1.1.)
-  it("discards session-level k= without rejecting (RFC 8866 §5.12)", function()
-    local doc, err = sdp.parse(make({ "t=0 0", "k=clear:secret" }))
-    assert.is_nil(err)
-    assert.is_table(doc)
-    assert.is_nil(doc.session.key)
-  end)
-
-  it("discards session-level k= method-only form (RFC 8866 §5.12)", function()
-    local doc, err = sdp.parse(make({ "t=0 0", "k=prompt" }))
-    assert.is_nil(err)
-    assert.is_nil(doc.session.key)
-  end)
-
-  it("discards media-level k= without rejecting (RFC 8866 §5.12)", function()
-    local doc, err = sdp.parse(make({
-      "t=0 0",
-      "m=audio 49170 RTP/AVP 0",
-      "k=base64:Zm9vYmFy",
-    }))
-    assert.is_nil(err)
-    assert.is_table(doc)
-    assert.is_nil(doc.media[1].key)
-  end)
-
-  it("serializer never emits k= (RFC 8866 §5.12) even if doc.session.key is set", function()
-    -- Round-trip a fully-loaded SDP including k= lines and confirm the
-    -- serialized form has neither session- nor media-level k=.
-    local text = make({
-      "c=IN IP4 224.2.17.12/127",
-      "t=2873397496 2873404696",
-      "r=7d 1h 0 25h",
-      "t=2880000000 2880003600",
-      "z=2882844526 -1h 2898848070 0",
-      "k=clear:secret",
-      "a=recvonly",
-      "m=audio 49170 RTP/AVP 0",
-      "k=base64:Zm9vYmFy",
-    })
-    local doc, err = sdp.parse(text)
-    assert.is_nil(err)
-    local out = doc:to_sdp()
-    assert.falsy(out:find("k=", 1, true))
-    -- Round-trip: re-parsed output keeps the rest of the structure.
-    local doc2, err2 = sdp.parse(out)
-    assert.is_nil(err2)
-    assert.equal(2, #doc2.session.time_descriptions)
-    assert.is_nil(doc2.session.key)
-    assert.is_nil(doc2.media[1].key)
-  end)
-
-  it("rejects z= without preceding t=", function()
-    -- z= requires t=. parser already requires t= first; this exercises ordering.
-    local text = make({ "z=2882844526 -1h" })
-    local _, err = sdp.parse(text)
-    assert.is_table(err)
-  end)
-
-  it("rejects malformed r= (less than three tokens)", function()
-    local _, err = sdp.parse(make({ "t=0 0", "r=604800 3600" }))
-    assert.is_table(err)
-  end)
-
-  it("rejects malformed z= (odd token count)", function()
-    local _, err = sdp.parse(make({ "t=0 0", "z=2882844526 -1h 2898848070" }))
-    assert.is_table(err)
-  end)
-end)
-
 describe("sdp.parse — optional session fields (M4)", function()
   local sdp = require("parse_sdp")
 
@@ -646,67 +587,132 @@ describe("sdp.parse — optional session fields (M4)", function()
   end)
 end)
 
-describe("grammar.parse_media", function()
-  local grammar = require("parse_sdp")._grammar
+-- RFC 4566 §5: support for r= (repeat times), z= (time zones),
+-- k= (encryption keys, session and media level), and multiple t= blocks.
+describe("sdp.parse — RFC 4566 §5 r=/z=/k=/multiple t= (audit F8)", function()
+  local sdp = require("parse_sdp")
 
-  it("parses a minimal m= value", function()
-    local m = grammar.parse_media("video 49170 RTP/AVP 96")
-    assert.is_table(m)
-    assert.equal("video",   m.media)
-    assert.equal(49170,     m.port)
-    assert.is_nil(m.port_count)
-    assert.equal("RTP/AVP", m.proto)
-    assert.equal(1,         #m.fmts)
-    assert.equal("96",      m.fmts[1])
+  local function make(extra_lines)
+    local lines = { "v=0", "o=- 1 1 IN IP4 127.0.0.1", "s=Test" }
+    for _, l in ipairs(extra_lines or {}) do lines[#lines + 1] = l end
+    return table.concat(lines, "\r\n") .. "\r\n"
+  end
+
+  it("accepts t= followed by r= (RFC 4566 §5.10)", function()
+    local doc, err = sdp.parse(make({ "t=2873397496 2873404696", "r=604800 3600 0 90000" }))
+    assert.is_nil(err)
+    assert.is_table(doc)
+    assert.equal(1, #doc.session.time_descriptions)
+    assert.equal("604800", doc.session.time_descriptions[1].repeats[1].interval)
   end)
 
-  it("parses m= with port count", function()
-    local m = grammar.parse_media("video 49170/2 RTP/AVP 96")
-    assert.is_table(m)
-    assert.equal(49170, m.port)
-    assert.equal(2,     m.port_count)
+  it("accepts t= followed by r= with typed-time tokens (7d 1h 0 25h)", function()
+    local doc, err = sdp.parse(make({ "t=2873397496 2873404696", "r=7d 1h 0 25h" }))
+    assert.is_nil(err)
+    assert.is_table(doc)
+    local r = doc.session.time_descriptions[1].repeats[1]
+    assert.equal("7d", r.interval)
+    assert.equal("1h", r.duration)
+    assert.same({ "0", "25h" }, r.offsets)
   end)
 
-  it("parses multiple fmt tokens", function()
-    local m = grammar.parse_media("video 49170 RTP/AVP 96 97 98")
-    assert.is_table(m)
-    assert.equal(3,    #m.fmts)
-    assert.equal("96", m.fmts[1])
-    assert.equal("97", m.fmts[2])
-    assert.equal("98", m.fmts[3])
+  it("accepts multiple time descriptions (RFC 4566 §5)", function()
+    local doc, err = sdp.parse(make({
+      "t=2873397496 2873404696", "r=604800 3600 0 90000",
+      "t=2880000000 2880003600",
+    }))
+    assert.is_nil(err)
+    assert.is_table(doc)
+    assert.equal(2, #doc.session.time_descriptions)
+    assert.equal(2873397496, doc.session.time_descriptions[1].start)
+    assert.equal(2880000000, doc.session.time_descriptions[2].start)
+    assert.equal(0, #doc.session.time_descriptions[2].repeats)
+    -- Back-compat: session.timing reflects the first description.
+    assert.equal(2873397496, doc.session.timing.start)
   end)
 
-  it("rejects value missing port/proto/fmt", function()
-    local m, pos = grammar.parse_media("audio")
-    assert.is_nil(m)
-    assert.is_number(pos)
+  it("accepts z= time zones (RFC 4566 §5.11)", function()
+    local doc, err = sdp.parse(make({
+      "t=2873397496 2873404696",
+      "z=2882844526 -1h 2898848070 0",
+    }))
+    assert.is_nil(err)
+    assert.is_table(doc)
+    assert.equal(2, #doc.session.time_zones)
+    assert.equal("-1h", doc.session.time_zones[1].offset)
   end)
 
-  it("rejects value with non-numeric port", function()
-    local m, pos = grammar.parse_media("audio abc RTP/AVP 0")
-    assert.is_nil(m)
-    assert.is_number(pos)
+  -- RFC 8866 §5.12 obsoletes k=: "One MUST NOT include a 'k=' line in an
+  -- SDP, and MUST discard it if it is received in an SDP." (Audit D1.1.)
+  it("discards session-level k= without rejecting (RFC 8866 §5.12)", function()
+    local doc, err = sdp.parse(make({ "t=0 0", "k=clear:secret" }))
+    assert.is_nil(err)
+    assert.is_table(doc)
+    assert.is_nil(doc.session.key)
   end)
 
-  -- M26 L1: UDP port range (RFC 768).
-  it("accepts port at the upper bound (65535)", function()
-    local m = grammar.parse_media("video 65535 RTP/AVP 96")
-    assert.is_table(m)
-    assert.equal(65535, m.port)
+  it("discards session-level k= method-only form (RFC 8866 §5.12)", function()
+    local doc, err = sdp.parse(make({ "t=0 0", "k=prompt" }))
+    assert.is_nil(err)
+    assert.is_nil(doc.session.key)
   end)
 
-  it("rejects port above UDP range (65536)", function()
-    local m, pos = grammar.parse_media("video 65536 RTP/AVP 96")
-    assert.is_nil(m)
-    assert.is_number(pos)
+  it("discards media-level k= without rejecting (RFC 8866 §5.12)", function()
+    local doc, err = sdp.parse(make({
+      "t=0 0",
+      "m=audio 49170 RTP/AVP 0",
+      "k=base64:Zm9vYmFy",
+    }))
+    assert.is_nil(err)
+    assert.is_table(doc)
+    assert.is_nil(doc.media[1].key)
   end)
 
-  it("rejects port well above UDP range (100000)", function()
-    local m, pos = grammar.parse_media("video 100000 RTP/AVP 96")
-    assert.is_nil(m)
-    assert.is_number(pos)
+  it("serializer never emits k= (RFC 8866 §5.12) even if doc.session.key is set", function()
+    -- Round-trip a fully-loaded SDP including k= lines and confirm the
+    -- serialized form has neither session- nor media-level k=.
+    local text = make({
+      "c=IN IP4 224.2.17.12/127",
+      "t=2873397496 2873404696",
+      "r=7d 1h 0 25h",
+      "t=2880000000 2880003600",
+      "z=2882844526 -1h 2898848070 0",
+      "k=clear:secret",
+      "a=recvonly",
+      "m=audio 49170 RTP/AVP 0",
+      "k=base64:Zm9vYmFy",
+    })
+    local doc, err = sdp.parse(text)
+    assert.is_nil(err)
+    local out = doc:to_sdp()
+    assert.falsy(out:find("k=", 1, true))
+    -- Round-trip: re-parsed output keeps the rest of the structure.
+    local doc2, err2 = sdp.parse(out)
+    assert.is_nil(err2)
+    assert.equal(2, #doc2.session.time_descriptions)
+    assert.is_nil(doc2.session.key)
+    assert.is_nil(doc2.media[1].key)
+  end)
+
+  it("rejects z= without preceding t=", function()
+    -- z= requires t=. parser already requires t= first; this exercises ordering.
+    local text = make({ "z=2882844526 -1h" })
+    local _, err = sdp.parse(text)
+    assert.is_table(err)
+  end)
+
+  it("rejects malformed r= (less than three tokens)", function()
+    local _, err = sdp.parse(make({ "t=0 0", "r=604800 3600" }))
+    assert.is_table(err)
+  end)
+
+  it("rejects malformed z= (odd token count)", function()
+    local _, err = sdp.parse(make({ "t=0 0", "z=2882844526 -1h 2898848070" }))
+    assert.is_table(err)
   end)
 end)
+
+-- ── Media-level field structure ────────────────────────────────────────────
 
 describe("sdp.parse — media blocks (M5)", function()
   local sdp = require("parse_sdp")
@@ -1118,6 +1124,8 @@ describe("sdp.parse — media blocks (M5)", function()
   end)
 end)
 
+-- ── doc object: methods and predicates ──────────────────────────────────────
+
 describe("sdp — doc object (M6)", function()
   local sdp = require("parse_sdp")
 
@@ -1199,6 +1207,8 @@ describe("sdp — doc object (M6)", function()
     assert.matches("unknown mode", err.message)
   end)
 end)
+
+-- ── Serializer: to_sdp and to_json ──────────────────────────────────────────
 
 describe("doc:to_sdp() (M7)", function()
   local sdp = require("parse_sdp")
@@ -1323,8 +1333,6 @@ describe("doc:to_sdp() (M7)", function()
     assert.same(doc1, doc2)
   end)
 end)
-
--- ── M10: to_json ──────────────────────────────────────────────────────────────
 
 describe("to_json", function()
   local sdp = require("parse_sdp")

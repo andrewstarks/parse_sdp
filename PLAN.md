@@ -130,6 +130,18 @@ Direction-A, Wave 4 RFC 4570 dest-address ↔ c= cross-line check,
 Wave 5 RFC 8866 base migration). Test suite: 853 hermetic + 10
 conformance. D1.5 deferred per strictness principle.
 
+**Test-suite reorganization in progress** (no behavior change). Goal:
+order describe blocks within each spec file from atomic → complex, top
+level SDP → ST 2110 → IPMX, and flag dedup candidates with TODOs.
+Staged in three commits, one per spec file.
+
+- `spec/sdp_spec.lua` reordered (setup → atomic grammar → session
+  structure → media structure → doc object → serializer); 136/136 pass.
+- `spec/st2110_spec.lua` — pending; cross-tier base-SDP grammar tests
+  (c= address syntax, multicast TTL/numaddr) to move to `sdp_spec.lua`.
+- `spec/ipmx_spec.lua` — pending; cross-tier tests (m= protocol form,
+  a=extmap URI RFC 8285, UDP port range) to move to `sdp_spec.lua`.
+
 ## Next
 
 Wave 1: cite migrations (E1–E8). Wave 2–5: Direction-A/B fixes and the

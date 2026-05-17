@@ -9,6 +9,23 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 
+### Changed (test suite reorganization)
+
+- **`spec/sdp_spec.lua` reordered by atomic → complex (no test changes).**
+  Top-level describe blocks now flow: setup → atomic grammar (tokenize,
+  parse_version/origin/timing/media — `parse_media` moved up next to the
+  other primitive parsers) → session-level field structure (required →
+  optional M4 → RFC 4566 §5 r=/z=/k=/multiple t= audit F8, with the
+  optional block moved ahead of the audit F8 block so the structural
+  required → optional → extended-optional reading is preserved) →
+  media-level field structure (m= block plus its four nested describes
+  covering dynamic-PT, IPv4/IPv6 multicast TTL, and multiple session-
+  level c=) → doc-object methods → serializer (to_sdp + to_json). Added
+  category section-comment headers to make the grouping visible. No
+  test was added, removed, or modified; all 136 cases still pass and
+  the full suite remains at 853 passing. First of three staged commits
+  reorganizing `spec/` (st2110 + ipmx to follow).
+
 ### Changed (audit pass #31 — Wave 5 RFC 8866 base migration)
 
 - **Multiple session-level c= lines rejected at parse (audit D1.6).**
