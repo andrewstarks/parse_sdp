@@ -11,6 +11,15 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ### Fixed (audit pass #31 — Wave 2 parser fixes)
 
+- **jxsv width/height 1..32767 upper bound (audit A5).** ST 2110-22:2022
+  §7.2 Table 1 restates ST 2110-20:2022 §7.2: *"Permitted values are
+  integers between 1 and 32767 inclusive."* The jxsv branch used
+  `valid_pos_int` for `width` and `height`, enforcing only the lower
+  bound; the raw-video branch already used `valid_width` /
+  `valid_height` (which cap at 32767). Swapped jxsv `width`/`height` to
+  `valid_width`/`valid_height` for symmetry with the raw-video tier. 3
+  new tests in the JPEG-XS describe block (boundary pass, width=32768
+  fail, height=99999 fail).
 - **SSN year-suffix closed sets (audit A3).** ST 2110-20:2022 §7.2
   defines only `:2017` and `:2022`; ST 2110-22:2022 §7.2 Table 2 defines
   only `:2019` and `:2022`; ST 2110-41:2024 §6 defines only `:2024`.

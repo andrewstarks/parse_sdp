@@ -73,7 +73,9 @@ A6 subset, A7, A9, A12, A13).
 - B1 landed: DID_SDID 1-or-2 hex digits (RFC 8331 §4 ABNF).
 - A2 landed: VPID_Code "appears only once" (RFC 8331 §4).
 - A3 landed: SSN year-suffix closed sets ({2017,2022} / {2019,2022} /
-  {2024}). A5 next.
+  {2024}).
+- A5 landed: jxsv width/height upper bound 32767 (ST 2110-22:2022 §7.2
+  Table 1). A6 subset next.
 
 ## Next
 

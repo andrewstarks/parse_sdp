@@ -3107,6 +3107,36 @@ describe("ST 2110 validation", function()
       assert.is_table(doc)
     end)
 
+    -- ST 2110-22:2022 §7.2 Table 1 restates ST 2110-20:2022 §7.2:
+    -- "Permitted values are integers between 1 and 32767 inclusive."
+    it("accepts width=32767 and height=32767 (boundary)", function()
+      local fmtp = VALID_JXSV_FMTP:gsub("width=1920", "width=32767")
+                                  :gsub("height=1080", "height=32767")
+      local doc, err = sdp.parse(jxsv_sdp(fmtp), "st2110")
+      assert.is_nil(err)
+      assert.is_table(doc)
+    end)
+
+    it("rejects width=32768 (exceeds 32767)", function()
+      local fmtp = VALID_JXSV_FMTP:gsub("width=1920", "width=32768")
+      local doc = sdp.parse(jxsv_sdp(fmtp))
+      assert.is_table(doc)
+      local ok, err = doc:validate("st2110")
+      assert.is_nil(ok)
+      assert.is_table(err)
+      assert.matches("width", err.message)
+    end)
+
+    it("rejects height=99999 (exceeds 32767)", function()
+      local fmtp = VALID_JXSV_FMTP:gsub("height=1080", "height=99999")
+      local doc = sdp.parse(jxsv_sdp(fmtp))
+      assert.is_table(doc)
+      local ok, err = doc:validate("st2110")
+      assert.is_nil(ok)
+      assert.is_table(err)
+      assert.matches("height", err.message)
+    end)
+
     -- profile / level / sublevel are OPTIONAL at every tier. ST 2110-22:2022
     -- §7.2 Table 1 (mandatory) lists only width/height/TP. IANA video/jxsv
     -- requires only `packetmode` besides rate. IPMX JPEG-XS Video Profile

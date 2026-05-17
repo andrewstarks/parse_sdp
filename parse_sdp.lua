@@ -1588,8 +1588,10 @@ function st2110.validate(doc)
       -- transmode, profile, level, sublevel, etc.) are OPTIONAL. Format is
       -- validated when present; absence is accepted.
       local jxs_req = {
-        { "width",      valid_pos_int },
-        { "height",     valid_pos_int },
+        -- ST 2110-22:2022 §7.2 Table 1 restates ST 2110-20:2022 §7.2:
+        -- "Permitted values are integers between 1 and 32767 inclusive."
+        { "width",      valid_width },
+        { "height",     valid_height },
         { "TP",         function(v) return valid_enum(v, VALID_TP_22,   "TP")         end },
         { "packetmode", function(v) return valid_enum(v, VALID_JXS_BIT, "packetmode") end },
       }
