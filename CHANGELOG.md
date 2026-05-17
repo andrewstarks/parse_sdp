@@ -11,6 +11,15 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ### Fixed (audit pass #31 — Wave 2 parser fixes)
 
+- **VPID_Code cardinality (audit A2).** RFC 8331 §4 (smpte291 media-type
+  registration) states: *"VPID_Code shall appear only once and a single
+  integer value shall be expressed."* The parser's `fmtp_params` helper
+  silently coalesces duplicate keys, so a fmtp line carrying
+  `VPID_Code=132; VPID_Code=133` was accepted with the last value kept.
+  Added a duplicate-count check in the smpte291 branch that counts raw
+  `VPID_Code=` occurrences in the unparsed fmtp value and rejects if >1
+  with `spec_ref="RFC 8331 §4"`. Single-occurrence and absent cases
+  remain accepted. 1 new test in `spec/st2110_spec.lua`.
 - **DID_SDID hex-token width (audit B1).** RFC 8331 §4 ABNF defines
   `TwoHex = "0x" 1*2(HEXDIG)` — 1 OR 2 hex digits per token. The parser
   previously demanded exactly 2 digits (`^{0x%x%x,0x%x%x}$`), rejecting

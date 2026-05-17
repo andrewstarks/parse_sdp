@@ -70,7 +70,8 @@ follow-up manifest-cite fix:
 **Wave 2 in progress** (atomic Direction-A/B fixes — B1, A2, A3, A5,
 A6 subset, A7, A9, A12, A13).
 
-- B1 landed: DID_SDID 1-or-2 hex digits (RFC 8331 §4 ABNF). A2 next.
+- B1 landed: DID_SDID 1-or-2 hex digits (RFC 8331 §4 ABNF).
+- A2 landed: VPID_Code "appears only once" (RFC 8331 §4). A3 next.
 
 ## Next
 

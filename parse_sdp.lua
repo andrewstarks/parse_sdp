@@ -1396,6 +1396,14 @@ function st2110.validate(doc)
       -- VPID_Code value form is defined by RFC 8331 §4 (smpte291 media-type
       -- registration: integer). ST 2110-40:2023 §5.2.2 invokes VPID_Code
       -- for SDI-mapped streams but defers value form to RFC 8331.
+      -- RFC 8331 §4: "VPID_Code shall appear only once and a single integer
+      -- value shall be expressed." fmtp_params coalesces duplicate keys, so
+      -- count raw "VPID_Code=" occurrences in the original fmtp value.
+      local _, vpid_count = (fmtp.value or ""):gsub("VPID_Code=", "")
+      if vpid_count > 1 then
+        return attr_err("VPID_Code shall appear only once (RFC 8331 §4)",
+          mpath, "fmtp", "RFC 8331 §4", "INVALID_VALUE")
+      end
       local vpid = params["VPID_Code"]
       if vpid ~= nil and vpid ~= true then
         local n = tonumber(tostring(vpid))

@@ -2089,6 +2089,19 @@ describe("ST 2110 validation", function()
       assert.is_nil(err)
       assert.is_table(doc)
     end)
+
+    -- RFC 8331 §4: "VPID_Code shall appear only once and a single integer
+    -- value shall be expressed."
+    it("rejects duplicate VPID_Code parameters (RFC 8331 §4 cardinality)", function()
+      local doc = sdp.parse(anc_sdp(DEFAULT_REQUIRED .. "; DID_SDID={0x61,0x02}; VPID_Code=132; VPID_Code=133"))
+      assert.is_table(doc)
+      local ok, err = doc:validate("st2110")
+      assert.is_nil(ok)
+      assert.is_table(err)
+      assert.matches("VPID_Code", err.message)
+      assert.matches("only once", err.message)
+      assert.equal("RFC 8331 §4", err.spec_ref)
+    end)
   end)
 
   -- ── ST 2110-41: DIT value format ───────────────────────────────────────────────
