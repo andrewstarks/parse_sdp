@@ -3627,7 +3627,7 @@ describe("ST 2110 validation", function()
     end)
   end)
 
-  -- ── M24: a=mid uniqueness per session (RFC 5888 §8.1) ────────────────────────
+  -- ── M24: a=mid uniqueness per session (RFC 5888 §4) ─────────────────────────
 
   describe("a=mid uniqueness per session", function()
     local PTP = "a=ts-refclk:ptp=IEEE1588-2008:00-11-22-FF-FE-33-44-55:0"
@@ -3667,7 +3667,7 @@ describe("ST 2110 validation", function()
       assert.is_table(doc)
     end)
 
-    -- RFC 5888 §4/§8.1 imposes no position requirement on a=mid within a
+    -- RFC 5888 §4 imposes no position requirement on a=mid within a
     -- media block. AMWA sdpoker PR #12 (open since 2022, never merged)
     -- proposed requiring a=mid immediately before m= and as the SDP's last
     -- line — neither constraint exists in RFC 5888. Accept a=mid anywhere

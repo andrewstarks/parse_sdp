@@ -11,6 +11,11 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ### Fixed (audit pass #31 — citation cleanup)
 
+- **a=mid uniqueness cite RFC 5888 §8.1 → §4 (audit E4).** RFC 5888 §4:
+  *"The identification-tag MUST be unique within an SDP session"* — that
+  is the operative MUST. §8.1 is the IANA registration section and
+  contains no uniqueness MUST. Updated `parse_sdp.lua:2062` and the
+  comment at `:2046` plus two test cite strings. Behavior is unchanged.
 - **RFC 5285 cites migrated to RFC 8285 (audit E1).** RFC 8285 (October
   2017) obsoletes RFC 5285. The `a=extmap` attribute is now defined in
   RFC 8285; the SDP signaling and ID-uniqueness rules live in §5 (was

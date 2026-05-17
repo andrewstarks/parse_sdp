@@ -2043,7 +2043,8 @@ function st2110.validate(doc)
   end
 
   -- a=mid format (RFC 5888 §4: identification-tag = token) and uniqueness
-  -- (RFC 5888 §8.1).
+  -- (RFC 5888 §4: "The identification-tag MUST be unique within an SDP
+  -- session").
   local seen_mid = {}
   for i, m in ipairs(doc.media) do
     local mid_attr = find_attr(m.attributes or {}, "mid")
@@ -2059,7 +2060,7 @@ function st2110.validate(doc)
         return nil, errors.new(
           "duplicate a=mid value '" .. mid_attr.value .. "'",
           { field_path = string.format("media[%d].attributes[mid]", i),
-            spec_ref = "RFC 5888 §8.1", code = "INVALID_VALUE" })
+            spec_ref = "RFC 5888 §4", code = "INVALID_VALUE" })
       end
       seen_mid[mid_attr.value] = true
     end
