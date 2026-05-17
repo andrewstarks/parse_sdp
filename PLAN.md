@@ -45,16 +45,23 @@ runs them through the parser. See [spec_conformance/README.md](spec_conformance/
 grounded in explicit spec text. No known check is opinion-only.
 
 The AMWA / Streampunk SDPoker cross-reference backlog and the pre-1.0
-conformance audit have both been walked end to end. All actionable findings
-have been evaluated against primary spec text and either landed parser
-changes, added regression tests, or were documented as non-applicable. See
+conformance audit (first pass) have both been walked end to end. See
 CHANGELOG.md for the specific spec citations and
 [SDPOKER_BACKLOG.md](SDPOKER_BACKLOG.md) for the per-finding regression index.
 
+**Audit Pass #31 (2026-05-16) — IN PROGRESS.** An inverted-direction audit
+(spec → parser, the first such pass) enumerated ~1750 normative SDP-touching
+clauses across 30+ specs cold, then mapped each to a parser line. Found 17
+new findings (12 Direction-A, 1 Direction-B, 7 Direction-C / cosmetic) plus
+6 RFC 8866 base-migration sub-findings. See
+[audits/PHASE3_FINDINGS.md](audits/PHASE3_FINDINGS.md) for the full report
+and a 28-commit landing plan in five waves. Wave 1 (citation cleanup) is
+landing now.
+
 ## Next
 
-No tracked items remain open. Future work is driven by new spec releases,
-new conformance-fixture findings, or user reports.
+Wave 1: cite migrations (E1–E8). Wave 2–5: Direction-A/B fixes and the
+RFC 8866 base migration. Per-finding commits with the standard gates.
 
 ## Pre-1.0 Conformance Audit — CLOSED (2026-05-15)
 

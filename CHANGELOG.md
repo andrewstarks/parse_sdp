@@ -9,6 +9,18 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 
+### Fixed (audit pass #31 — citation cleanup)
+
+- **RFC 5285 cites migrated to RFC 8285 (audit E1).** RFC 8285 (October
+  2017) obsoletes RFC 5285. The `a=extmap` attribute is now defined in
+  RFC 8285; the SDP signaling and ID-uniqueness rules live in §5 (was
+  §3 in RFC 5285), the ABNF in §8 (was §8), and the 1–255 entry-count
+  bound derives from §4.3 (two-byte header). Updated nine cite sites
+  in `parse_sdp.lua` (one comment, one error-message text, four
+  `spec_ref` strings, three uniqueness sites) plus two test
+  describe-string cites and one hard test assertion. Behavior is
+  unchanged.
+
 ### Added
 
 - **RFC 4566 §5 `r=`, `z=`, `k=`, and multiple `t=` support (audit F8).**

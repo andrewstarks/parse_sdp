@@ -1117,9 +1117,9 @@ describe("IPMX validation", function()
     end)
   end)
 
-  -- ── a=extmap URI format validation (RFC 5285) ─────────────────────────────
+  -- ── a=extmap URI format validation (RFC 8285 §5) ─────────────────────────
 
-  describe("a=extmap URI format validation (RFC 5285)", function()
+  describe("a=extmap URI format validation (RFC 8285 §5)", function()
     local function ipmx_with_session_extmap(extmap_value)
       return table.concat({
         "v=0",
@@ -1194,7 +1194,7 @@ describe("IPMX validation", function()
       assert.matches("extmap", err.field_path)
     end)
 
-    -- RFC 5285 §7 ABNF: extensionattributes = byte-string. RFC 4566 §9 defines
+    -- RFC 8285 §8 ABNF: extensionattributes = byte-string. RFC 4566 §9 defines
     -- byte-string = 1*(%x01-09/%x0B-0C/%x0E-FF) — NUL, CR, LF are forbidden.
     it("rejects extmap ext-attr containing a NUL byte", function()
       local doc = sdp.parse(
@@ -1585,9 +1585,9 @@ describe("IPMX validation", function()
     end)
   end)
 
-  -- ── M23: extmap ID uniqueness per RFC 5285 §3 ─────────────────────────────────
+  -- ── M23: extmap ID uniqueness per RFC 8285 §5 (obsoletes RFC 5285) ────────────
 
-  describe("a=extmap ID uniqueness (RFC 5285 §3)", function()
+  describe("a=extmap ID uniqueness (RFC 8285 §5)", function()
     it("rejects duplicate extmap ID at session level", function()
       local text = base_ipmx_sdp({
         "a=extmap:1 urn:ietf:params:rtp-hdrext:ntp-64",
@@ -1599,11 +1599,11 @@ describe("IPMX validation", function()
       assert.is_nil(ok)
       assert.is_table(err)
       assert.matches("duplicate", err.message)
-      assert.equal("RFC 5285 §3", err.spec_ref)
+      assert.equal("RFC 8285 §5", err.spec_ref)
     end)
 
     it("accepts same extmap ID at session level and media level (different scopes)", function()
-      -- extmap:1 at session scope + extmap:1 at media scope is allowed by RFC 5285
+      -- extmap:1 at session scope + extmap:1 at media scope is allowed by RFC 8285 §5
       local text = base_ipmx_sdp({}, { "a=extmap:1 urn:ietf:params:rtp-hdrext:ntp-64" })
       local doc = sdp.parse(text)
       assert.is_table(doc)

@@ -2201,7 +2201,8 @@ local function valid_infoframe(value)
   return nil, "invalid a=infoframe format"
 end
 
--- RFC 5285 §7 a=extmap: mapentry SP extensionname [SP extensionattributes]
+-- RFC 8285 §5 a=extmap (RFC 8285 obsoletes RFC 5285): mapentry SP
+-- extensionname [SP extensionattributes]; §8 ABNF.
 -- extensionattributes = byte-string (RFC 4566 §9): 1*(%x01-09/%x0B-0C/%x0E-FF),
 -- i.e. any byte except NUL, LF, CR.
 local _extmap_id  = R("09")^1
@@ -2231,7 +2232,7 @@ local function valid_extmap(value)
     return nil, "a=extmap entry count must be >= 1"
   end
   if id > 255 then
-    return nil, "a=extmap entry count must be 1-255 (RFC 5285)"
+    return nil, "a=extmap entry count must be 1-255 (RFC 8285 §4.3)"
   end
   return true
 end
@@ -2586,7 +2587,7 @@ function ipmx.validate(doc)
   -- §1.1.1 only mandates it WHEN declaring RTP Extension Headers for PEP
   -- (privacy). The M31 audit removed an unconditional presence requirement
   -- that cited a non-existent "IPMX §6". When `a=extmap` IS present, its
-  -- URI format is still validated (RFC 5285); for PEP IV-Counter URIs the
+  -- URI format is still validated (RFC 8285 §5); for PEP IV-Counter URIs the
   -- direction must be `sendonly` (TR-10-13 §20.1).
   for _, attr in ipairs(doc.session.attributes or {}) do
     if attr.name == "extmap" then
@@ -2595,7 +2596,7 @@ function ipmx.validate(doc)
       if not ok then
         return nil, errors.new("invalid a=extmap: " .. msg, {
           field_path = "session.attributes[extmap]",
-          spec_ref   = "RFC 5285", code = "INVALID_VALUE",
+          spec_ref   = "RFC 8285 §5", code = "INVALID_VALUE",
         })
       end
       local pok, pmsg = pep_extmap_direction_ok(val)
@@ -2616,7 +2617,7 @@ function ipmx.validate(doc)
           if not ok then
             return nil, errors.new("invalid a=extmap: " .. emsg, {
               field_path = string.format("media[%d].attributes[extmap]", i),
-              spec_ref   = "RFC 5285", code = "INVALID_VALUE",
+              spec_ref   = "RFC 8285 §5", code = "INVALID_VALUE",
             })
           end
           local pok, pmsg = pep_extmap_direction_ok(val)
@@ -2631,7 +2632,7 @@ function ipmx.validate(doc)
     end
   end
 
-  -- Enforce a=extmap ID uniqueness per RFC 5285 §3 ("unique per level").
+  -- Enforce a=extmap ID uniqueness per RFC 8285 §5 ("unique per level").
   -- Session scope and each media-block scope are checked independently.
   local sess_extmap_ids = {}
   for _, attr in ipairs(doc.session.attributes or {}) do
@@ -2640,9 +2641,9 @@ function ipmx.validate(doc)
       if id then
         if sess_extmap_ids[id] then
           return nil, errors.new(
-            string.format("duplicate a=extmap ID %d (must be unique per RFC 5285 §3)", id),
+            string.format("duplicate a=extmap ID %d (must be unique per RFC 8285 §5)", id),
             { field_path = "session.attributes[extmap]",
-              spec_ref = "RFC 5285 §3", code = "INVALID_VALUE" })
+              spec_ref = "RFC 8285 §5", code = "INVALID_VALUE" })
         end
         sess_extmap_ids[id] = true
       end
@@ -2657,9 +2658,9 @@ function ipmx.validate(doc)
           if id then
             if media_extmap_ids[id] then
               return nil, errors.new(
-                string.format("duplicate a=extmap ID %d (must be unique per RFC 5285 §3)", id),
+                string.format("duplicate a=extmap ID %d (must be unique per RFC 8285 §5)", id),
                 { field_path = string.format("media[%d].attributes[extmap]", i),
-                  spec_ref = "RFC 5285 §3", code = "INVALID_VALUE" })
+                  spec_ref = "RFC 8285 §5", code = "INVALID_VALUE" })
             end
             media_extmap_ids[id] = true
           end

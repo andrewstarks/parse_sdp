@@ -3337,7 +3337,7 @@ describe("ST 2110 validation", function()
     end)
   end)
 
-  -- ── M22: a=extmap ID upper bound = 255 (RFC 5285) ────────────────────────────
+  -- ── M22: a=extmap ID upper bound = 255 (RFC 8285 §4.3) ───────────────────────
 
   describe("a=extmap ID upper bound (M22)", function()
     local function ipmx_with_extmap(id)
@@ -3366,7 +3366,7 @@ describe("ST 2110 validation", function()
       assert.equal(true, ok)
     end)
 
-    it("rejects extmap ID=256 (exceeds RFC 5285 limit)", function()
+    it("rejects extmap ID=256 (exceeds RFC 8285 §4.3 limit)", function()
       local doc = sdp.parse(ipmx_with_extmap(256))
       assert.is_table(doc)
       local ok, err = doc:validate("ipmx")
