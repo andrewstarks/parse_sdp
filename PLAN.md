@@ -116,7 +116,12 @@ D1.3, D1.4, D1.5, D1.6).
 - D1.3 landed: IPv4 multicast /ttl mandatory at base tier (RFC 8866
   §5.7).
 - D1.4 landed: IPv6 multicast TTL forbidden at base tier (RFC 8866
-  §5.7 / §9). D1.5 next.
+  §5.7 / §9).
+- D1.5: NOT enforced (re-evaluated against primary source —
+  RFC 8866 §5.14 / §8.2.2 contain only SHOULD NOT, not MUST NOT,
+  for `m=control`/`m=data`; grounded in RFC 3840 SIP backward-compat,
+  not a draft artifact). Marked as a future-warning candidate. D1.6
+  next.
 
 ## Next
 

@@ -11,6 +11,30 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ### Changed (audit pass #31 — Wave 5 RFC 8866 base migration)
 
+- **m= media-type value set (audit D1.5) — NOT enforced; future-
+  warning candidate.** The audit recommended rejecting any m= media
+  type outside `{audio, video, text, application, message}` (and the
+  IANA-registered extensions) per RFC 8866 §5.14, with §8.2.2
+  removing `control` and `data` (which RFC 4566 had listed).
+  Careful re-read of the verbatim text shows the relevant
+  prohibitions are weaker than the audit assumed:
+  - **§5.14** *defines* the five values and notes the list "may be
+    further extended by additional memos registering media types in
+    the future" — no `MUST be one of` wording.
+  - **§8.2.2** is a Note that says these "have been removed in this
+    specification" and "applications **SHOULD NOT** use these types
+    and SHOULD NOT declare support for them in SIP capabilities…
+    (even though they exist in the registry created by [RFC3840])."
+  The SHOULD NOT is grounded in real backward-compat (SIP user agents
+  still hold these in their capability registry via RFC 3840), not a
+  spec-draft artifact that would tighten in a later revision. Per
+  CLAUDE.md "Validation Strictness Principle" (only positive shall /
+  prohibitive shall-not / defined-value optionals warrant rejection),
+  bare SHOULD-level guidance is recommendatory and excluded.
+  **Action**: marked as a future-warning candidate. When/if the
+  parser grows a warning channel, `m=control` and `m=data` should
+  emit a warning citing RFC 8866 §8.2.2 (and any future m= subtype
+  outside the §5.14 list could too). No parser change in this commit.
 - **IPv6 multicast TTL forbidden at base tier (audit D1.4).** RFC 8866
   §5.7: *"TTL value MUST NOT be present for 'IP6' multicast."* §9
   ABNF: `IP6-multicast = IP6-address [ "/" numaddr ]` — the only

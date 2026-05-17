@@ -906,6 +906,25 @@ multicast."*  Currently enforced at ST 2110 tier only.  Hoist.
 `data` (RFC 4566 listed them).  Parser doesn't enforce a media-type
 value set today — `m=control` is accepted.  Land at base tier.
 
+> **D1.5 LANDING NOTE (Wave 5 re-evaluation).** Not landed as a parser
+> check. Careful re-read of the primary source:
+>
+> - §5.14 *defines* the five values and notes the list "may be further
+>   extended by additional memos registering media types in the future"
+>   — no `MUST be one of` / `MUST NOT use others` wording.
+> - §8.2.2 is a Note that says `control`/`data` "have been removed in
+>   this specification" but only says "applications **SHOULD NOT** use
+>   these types and SHOULD NOT declare support for them in SIP
+>   capabilities… (even though they exist in the registry created by
+>   [RFC3840])." The SHOULD NOT is grounded in RFC 3840 SIP backward
+>   compatibility, not a draft artifact that would tighten later.
+>
+> Per CLAUDE.md "Validation Strictness Principle", only positive
+> `shall`, prohibitive `shall not`, or defined-value optionals warrant
+> rejection. Bare SHOULD NOT is excluded. Marked as a future-warning
+> candidate: when/if the parser grows a warning channel, `m=control`
+> and `m=data` should emit a warning citing RFC 8866 §8.2.2.
+
 **D1.6 — RFC 8866 §5.14 multiple `c=` rules at session level.**
 *"MUST NOT" multiple session-level c=*; per-media c= permitted in
 specific layered-encoding cases per §5.7.  Currently parser accepts
