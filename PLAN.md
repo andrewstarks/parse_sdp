@@ -58,7 +58,8 @@ new findings (12 Direction-A, 1 Direction-B, 7 Direction-C / cosmetic) plus
 and a 28-commit landing plan in five waves. Wave 1 (citation cleanup) is
 landing now.
 
-**Wave 1 complete (citation cleanup).** All six commits landed:
+**Wave 1 complete (citation cleanup).** All six commits landed plus a
+follow-up manifest-cite fix:
 - E1 RFC 5285 → RFC 8285 (`a=extmap`, 9 sites)
 - E4 RFC 5888 §8.1 → §4 (a=mid uniqueness)
 - E2 ST 2110-40 §7.2 → §5.3 / RFC 8331 §4 (clock-rate + VPID_Code)

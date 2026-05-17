@@ -11,6 +11,12 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ### Fixed (audit pass #31 — citation cleanup)
 
+- **Conformance manifest `expect_spec_ref` follow-up to E8.** The
+  nmos-testing video-2022-7 negative-test fixture expected
+  `"ST 2110-10 §8.5"`; E8's year-tag pass made the parser emit
+  `"ST 2110-10:2022 §8.5"` instead. Updated the manifest's
+  `expect_spec_ref` to match the new emitted form. Conformance suite
+  10/10 passes again.
 - **Year-tag consistency pass on ST 2110 cites (audit E8).** Prior
   cite-style mixed `ST 2110-XX` and `ST 2110-XX:YYYY` for the same
   spec. Standardized on `ST 2110-XX:YYYY §Z` for all revision-specific

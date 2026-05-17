@@ -116,7 +116,7 @@ return {
         exactframerate = "60000/1001",
       },
       expect = "fail",
-      expect_spec_ref = "ST 2110-10 §8.5",
+      expect_spec_ref = "ST 2110-10:2022 §8.5",
     },
 
     -- ── nmos-testing: ST 2110-22 JPEG XS ──
