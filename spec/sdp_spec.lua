@@ -996,6 +996,78 @@ describe("sdp.parse — media blocks (M5)", function()
       assert.equal(true, ok)
     end)
   end)
+
+  -- RFC 8866 §5.7 (audit D1.4): "TTL value MUST NOT be present for 'IP6'
+  -- multicast." §9 ABNF: IP6-multicast = IP6-address [ "/" numaddr ] —
+  -- the suffix is /numaddr, never /ttl. The check was previously enforced
+  -- only at the ST 2110 tier; hoisted to base via the D1.3 commit's
+  -- valid_connection_address(tier="base") call.
+  describe("RFC 8866 §5.7 IPv6 multicast TTL forbidden (base tier)", function()
+    it("accepts unicast IPv6 c= without suffix", function()
+      local doc = sdp.parse(table.concat({
+        "v=0", "o=- 1 1 IN IP4 127.0.0.1", "s=Test",
+        "c=IN IP6 2001:db8::1", "t=0 0",
+      }, "\r\n") .. "\r\n")
+      assert.is_table(doc)
+      local ok, err = doc:validate()
+      assert.is_nil(err)
+      assert.equal(true, ok)
+    end)
+
+    it("accepts IPv6 multicast c= with /numaddr suffix only", function()
+      local doc = sdp.parse(table.concat({
+        "v=0", "o=- 1 1 IN IP4 127.0.0.1", "s=Test",
+        "c=IN IP6 ff0e::1/3", "t=0 0",
+      }, "\r\n") .. "\r\n")
+      assert.is_table(doc)
+      local ok, err = doc:validate()
+      assert.is_nil(err)
+      assert.equal(true, ok)
+    end)
+
+    -- A user might mistakenly include a TTL on IPv6 multicast modeled on
+    -- the IPv4 form. The §9 ABNF rejects any suffix that isn't /numaddr,
+    -- so "ff0e::1/64/3" (TTL-looking) and "ff0e::1/0" (numaddr=0) fail.
+    it("rejects session-level IPv6 multicast c= with two suffixes (looks like TTL)", function()
+      local doc = sdp.parse(table.concat({
+        "v=0", "o=- 1 1 IN IP4 127.0.0.1", "s=Test",
+        "c=IN IP6 ff0e::1/64/3", "t=0 0",
+      }, "\r\n") .. "\r\n")
+      assert.is_table(doc)
+      local ok, err = doc:validate()
+      assert.is_nil(ok)
+      assert.is_table(err)
+      assert.matches("IPv6 multicast", err.message)
+      assert.equal("RFC 8866 §5.7", err.spec_ref)
+    end)
+
+    it("rejects media-level IPv6 multicast c= with numaddr=0", function()
+      local doc = sdp.parse(make({
+        "m=video 5000 RTP/AVP 96",
+        "c=IN IP6 ff0e::1/0",
+        "a=rtpmap:96 H264/90000",
+      }))
+      assert.is_table(doc)
+      local ok, err = doc:validate()
+      assert.is_nil(ok)
+      assert.is_table(err)
+      assert.matches("numaddr", err.message)
+      assert.equal("RFC 8866 §5.7", err.spec_ref)
+    end)
+
+    it("rejects IPv6 unicast c= with a /suffix (no slash form defined)", function()
+      local doc = sdp.parse(table.concat({
+        "v=0", "o=- 1 1 IN IP4 127.0.0.1", "s=Test",
+        "c=IN IP6 2001:db8::1/64", "t=0 0",
+      }, "\r\n") .. "\r\n")
+      assert.is_table(doc)
+      local ok, err = doc:validate()
+      assert.is_nil(ok)
+      assert.is_table(err)
+      assert.matches("IPv6 unicast", err.message)
+      assert.equal("RFC 8866 §5.7", err.spec_ref)
+    end)
+  end)
 end)
 
 describe("sdp — doc object (M6)", function()

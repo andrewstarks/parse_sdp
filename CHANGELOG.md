@@ -11,6 +11,18 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ### Changed (audit pass #31 — Wave 5 RFC 8866 base migration)
 
+- **IPv6 multicast TTL forbidden at base tier (audit D1.4).** RFC 8866
+  §5.7: *"TTL value MUST NOT be present for 'IP6' multicast."* §9
+  ABNF: `IP6-multicast = IP6-address [ "/" numaddr ]` — the only
+  permitted suffix for IPv6 multicast is `/numaddr`, never `/ttl` or
+  `/ttl/numaddr`. The same `valid_connection_address` hoist landed in
+  D1.3 already enforces both IPv4 (`/ttl` required) and IPv6
+  (`/numaddr` only) rules at the base tier; D1.4 is the IPv6-side
+  test coverage of that hoist. 5 new tests in `spec/sdp_spec.lua`:
+  unicast IPv6 no-suffix pass, multicast IPv6 `/numaddr` pass,
+  multicast IPv6 `/ttl/numaddr` reject (the IPv4-mirror error mode),
+  multicast IPv6 `/0` numaddr=0 reject, and unicast IPv6 `/suffix`
+  reject. All cite `RFC 8866 §5.7`.
 - **IPv4 multicast `c=` /ttl mandatory hoisted to base tier (audit
   D1.3).** RFC 8866 §5.7 / §9 ABNF: *"IP4-multicast = m1 3('.'
   decimal-uchar) '/' ttl [ '/' numaddr ]"* — the `/ttl` suffix is
