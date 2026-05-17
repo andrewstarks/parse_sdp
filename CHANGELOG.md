@@ -11,6 +11,24 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ### Changed (audit pass #31 — Wave 5 RFC 8866 base migration)
 
+- **`k=` (encryption-key) line obsoleted (audit D1.1).** RFC 8866
+  §5.12: *"The 'k=' line (key-field) is obsolete and MUST NOT be
+  used. It is included in this document for legacy reasons. One MUST
+  NOT include a 'k=' line in an SDP, and MUST discard it if it is
+  received in an SDP."* The parser previously stored session-level
+  `k=` at `doc.session.key` and media-level `k=` at `doc.media[i].key`,
+  and the serializer round-tripped both. Per the §5.12 receiver MUST,
+  k= is now parsed-and-discarded (the line is consumed so we advance
+  past it, but no value is stored). Per the §5.12 sender MUST NOT,
+  the serializer no longer emits k= even when a caller hand-constructs
+  a doc with `session.key` or `media[i].key` set. Removed `ser_key`
+  helper and the `key` field initialization in the session table
+  builder; the `parse_required` calls that previously bound
+  `session_key` / `m.key` now bind throwaway locals (`discarded`).
+  Updated three sdp_spec tests to assert discard semantics (no
+  `doc.session.key`, no `doc.media[i].key`) and the round-trip
+  fully-loaded test to assert the serialized output contains no
+  `k=` substring.
 - **CLAUDE.md / PLAN.md base spec rename (audit D1.7).** Updated the
   three-tier description (`RFC 4566 (generic SDP) → SMPTE ST 2110 →
   IPMX`) to `RFC 8866 (generic SDP; obsoletes RFC 4566) → SMPTE

@@ -105,6 +105,13 @@ A10, E5).
   full RFC 8866 §5.7 /numaddr expansion for IPv4 and IPv6 multicast
   (per user decision D3). **Wave 4 complete.**
 
+**Wave 5 in progress** (RFC 8866 base migration — D1.7, D1.1, D1.2,
+D1.3, D1.4, D1.5, D1.6).
+
+- D1.7 landed: base-spec rename in CLAUDE.md + PLAN.md (no code).
+- D1.1 landed: k= obsoleted per RFC 8866 §5.12 (parse-and-discard;
+  serializer never emits). D1.2 next.
+
 ## Next
 
 Wave 1: cite migrations (E1–E8). Wave 2–5: Direction-A/B fixes and the

@@ -400,11 +400,6 @@ local function ser_timezone(pairs_list)
   return ln("z", table.concat(toks, " "))
 end
 
-local function ser_key(k)
-  if k.value then return ln("k", k.method .. ":" .. k.value) end
-  return ln("k", k.method)
-end
-
 local function ser_media_block(m)
   local port_field = tostring(m.port)
   if m.port_count then port_field = port_field .. "/" .. tostring(m.port_count) end
@@ -414,7 +409,7 @@ local function ser_media_block(m)
   if m.info       then parts[#parts + 1] = ln("i", m.info) end
   if m.connection then parts[#parts + 1] = ser_connection(m.connection) end
   for _, b in ipairs(m.bandwidths or {}) do parts[#parts + 1] = ser_bandwidth(b) end
-  if m.key        then parts[#parts + 1] = ser_key(m.key) end
+  -- RFC 8866 §5.12: k= is obsolete; serializer never emits one. (Audit D1.1.)
   for _, a in ipairs(m.attributes or {}) do parts[#parts + 1] = ser_attribute(a) end
   return table.concat(parts)
 end
@@ -453,7 +448,7 @@ function serialize.to_sdp(doc)
     add(ln("t", tostring(s.timing.start) .. " " .. tostring(s.timing.stop)))
   end
   if s.time_zones then add(ser_timezone(s.time_zones)) end
-  if s.key        then add(ser_key(s.key)) end
+  -- RFC 8866 §5.12: k= is obsolete; serializer never emits one. (Audit D1.1.)
   for _, a in ipairs(s.attributes or {}) do add(ser_attribute(a)) end
   for _, m in ipairs(doc.media    or {}) do add(ser_media_block(m)) end
   return table.concat(parts)
@@ -3481,11 +3476,13 @@ function parser.parse(text, mode)
     pos = pos + 1
   end
 
-  -- RFC 4566 §5.12: optional session-level k= (encryption key), at most one.
-  local session_key
+  -- RFC 8866 §5.12: "The 'k=' line (key-field) is obsolete and MUST NOT be
+  -- used… One MUST NOT include a 'k=' line in an SDP, and MUST discard it
+  -- if it is received in an SDP." Parse the line so we advance past it, but
+  -- discard the value (no storage on doc.session). (Audit D1.1.)
   if pos <= n and peek_type(lines, pos) == "k" then
-    session_key, e = parse_required(lines, pos, "k", grammar.parse_key)
-    if not session_key then return nil, e end
+    local discarded, derr = parse_required(lines, pos, "k", grammar.parse_key)
+    if not discarded then return nil, derr end
     pos = pos + 1
   end
 
@@ -3526,10 +3523,11 @@ function parser.parse(text, mode)
       pos = pos + 1
     end
 
-    -- RFC 4566 §5.14 / §5: optional media-level k= (encryption key).
+    -- RFC 8866 §5.12 obsoletes k=. Parse the line so we advance past it,
+    -- but discard the value (no storage on m). (Audit D1.1.)
     if pos <= n and peek_type(lines, pos) == "k" then
-      m.key, e = parse_required(lines, pos, "k", grammar.parse_key)
-      if not m.key then return nil, e end
+      local discarded, derr = parse_required(lines, pos, "k", grammar.parse_key)
+      if not discarded then return nil, derr end
       pos = pos + 1
     end
 
@@ -3575,7 +3573,8 @@ function parser.parse(text, mode)
       timing            = timing,
       time_descriptions = time_descriptions,
       time_zones        = time_zones,
-      key               = session_key,
+      -- RFC 8866 §5.12 obsoletes k=; the parser discards on parse and the
+      -- serializer omits, so doc.session has no `key` field. (Audit D1.1.)
       attributes        = attributes,
     },
     media = media,

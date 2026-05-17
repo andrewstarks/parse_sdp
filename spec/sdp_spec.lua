@@ -419,22 +419,22 @@ describe("sdp.parse — RFC 4566 §5 r=/z=/k=/multiple t= (audit F8)", function(
     assert.equal("-1h", doc.session.time_zones[1].offset)
   end)
 
-  it("accepts session-level k= (RFC 4566 §5.12)", function()
+  -- RFC 8866 §5.12 obsoletes k=: "One MUST NOT include a 'k=' line in an
+  -- SDP, and MUST discard it if it is received in an SDP." (Audit D1.1.)
+  it("discards session-level k= without rejecting (RFC 8866 §5.12)", function()
     local doc, err = sdp.parse(make({ "t=0 0", "k=clear:secret" }))
     assert.is_nil(err)
     assert.is_table(doc)
-    assert.equal("clear", doc.session.key.method)
-    assert.equal("secret", doc.session.key.value)
+    assert.is_nil(doc.session.key)
   end)
 
-  it("accepts session-level k= method-only form", function()
+  it("discards session-level k= method-only form (RFC 8866 §5.12)", function()
     local doc, err = sdp.parse(make({ "t=0 0", "k=prompt" }))
     assert.is_nil(err)
-    assert.equal("prompt", doc.session.key.method)
-    assert.is_nil(doc.session.key.value)
+    assert.is_nil(doc.session.key)
   end)
 
-  it("accepts media-level k= (RFC 4566 §5.14)", function()
+  it("discards media-level k= without rejecting (RFC 8866 §5.12)", function()
     local doc, err = sdp.parse(make({
       "t=0 0",
       "m=audio 49170 RTP/AVP 0",
@@ -442,10 +442,12 @@ describe("sdp.parse — RFC 4566 §5 r=/z=/k=/multiple t= (audit F8)", function(
     }))
     assert.is_nil(err)
     assert.is_table(doc)
-    assert.equal("base64", doc.media[1].key.method)
+    assert.is_nil(doc.media[1].key)
   end)
 
-  it("round-trips a fully-loaded SDP through to_sdp()", function()
+  it("serializer never emits k= (RFC 8866 §5.12) even if doc.session.key is set", function()
+    -- Round-trip a fully-loaded SDP including k= lines and confirm the
+    -- serialized form has neither session- nor media-level k=.
     local text = make({
       "c=IN IP4 224.2.17.12/127",
       "t=2873397496 2873404696",
@@ -460,12 +462,13 @@ describe("sdp.parse — RFC 4566 §5 r=/z=/k=/multiple t= (audit F8)", function(
     local doc, err = sdp.parse(text)
     assert.is_nil(err)
     local out = doc:to_sdp()
-    -- Re-parse the serialized output and confirm it round-trips equivalently.
+    assert.falsy(out:find("k=", 1, true))
+    -- Round-trip: re-parsed output keeps the rest of the structure.
     local doc2, err2 = sdp.parse(out)
     assert.is_nil(err2)
     assert.equal(2, #doc2.session.time_descriptions)
-    assert.equal("clear", doc2.session.key.method)
-    assert.equal("base64", doc2.media[1].key.method)
+    assert.is_nil(doc2.session.key)
+    assert.is_nil(doc2.media[1].key)
   end)
 
   it("rejects z= without preceding t=", function()
