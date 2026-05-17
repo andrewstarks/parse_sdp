@@ -2179,14 +2179,31 @@ function st2110.validate(doc)
   -- RFC 5888 §5: a=group value grammar (semantics + identification-tags),
   -- both required to be RFC 4566 tokens. Validate every a=group attribute
   -- regardless of semantics, before any DUP-specific checks.
+  local has_group = false
   for _, attr in ipairs(doc.session.attributes or {}) do
     if attr.name == "group" then
+      has_group = true
       local gok, gerr = valid_group_value(attr.value or "")
       if not gok then
         return nil, errors.new("invalid a=group: " .. gerr, {
           field_path = "session.attributes[group]",
           spec_ref   = "RFC 5888 §5", code = "INVALID_VALUE",
         })
+      end
+    end
+  end
+
+  -- RFC 5888 §6: "All of the 'm' lines of a session description that uses
+  -- 'group' MUST be identified with a 'mid' attribute whether they appear
+  -- in the group line(s) or not." Triggered solely by a=group presence —
+  -- semantics-independent (LS, FID, DUP, …).
+  if has_group then
+    for i, m in ipairs(doc.media) do
+      if not find_attr(m.attributes or {}, "mid") then
+        return nil, errors.new(
+          string.format("media[%d] missing a=mid (required when SDP contains a=group)", i),
+          { field_path = string.format("media[%d].attributes[mid]", i),
+            spec_ref = "RFC 5888 §6", code = "MISSING_FIELD" })
       end
     end
   end

@@ -11,6 +11,24 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ### Fixed (audit pass #31 — Wave 3 parser fixes)
 
+- **Any a=group ⇒ every m= has a=mid (audit A10).** RFC 5888 §6:
+  *"All of the 'm' lines of a session description that uses 'group'
+  MUST be identified with a 'mid' attribute whether they appear in the
+  group line(s) or not."* The parser walked a=group:DUP-specific
+  semantics only (via `each_dup_group`), so an SDP carrying
+  `a=group:LS 1 2` with one of the two media blocks missing a=mid
+  was accepted. Added a session-level pre-check in `st2110.validate`
+  next to the existing RFC 5888 §5 a=group grammar check: if ANY
+  session attribute is `group` (LS, FID, DUP, …), scan every media
+  block for `a=mid` presence and reject with `spec_ref="RFC 5888 §6"`
+  on the first missing one. Two pre-existing tests using
+  `omit_mid2 = true` now correctly trigger the §6 path first (they
+  used to surface the downstream "DUP references undefined mid"
+  error) and were refactored to assert §6 explicitly, plus a separate
+  scenario was used for the §8.5 spec_ref assertion. 4 new tests
+  under a dedicated `RFC 5888 §6: a=group requires a=mid on every
+  m= line` describe block. Two IPMX FID-rejection fixtures now
+  include `a=mid` so they still reach the IPMX-tier check.
 - **TSMODE / TSDELAY scope hoisted to all media types (audit A8).**
   ST 2110-10:2022 §8.7 is under "SDP Parameters" (§8) — the umbrella
   section that applies to every RTP stream conforming to ST 2110, not

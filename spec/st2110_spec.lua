@@ -1126,14 +1126,18 @@ describe("ST 2110 validation", function()
       assert.is_table(doc)
     end)
 
-    it("rejects DUP referencing a mid that has no matching media block", function()
+    -- RFC 5888 §6 (A10): "All of the 'm' lines of a session description
+    -- that uses 'group' MUST be identified with a 'mid' attribute."
+    -- Triggers before the DUP-specific "references undefined mid" check.
+    it("rejects SDP with a=group but missing a=mid on a media block (RFC 5888 §6)", function()
       local text = dup_sdp({ omit_mid2 = true })
       local doc = sdp.parse(text)
       assert.is_table(doc)
       local ok, err = doc:validate("st2110")
       assert.is_nil(ok)
       assert.is_table(err)
-      assert.matches("leg2", err.message)
+      assert.matches("missing a=mid", err.message)
+      assert.equal("RFC 5888 §6", err.spec_ref)
     end)
 
     it("rejects DUP where the two legs have different media types", function()
@@ -1151,7 +1155,14 @@ describe("ST 2110 validation", function()
     end)
 
     it("spec_ref for DUP errors is ST 2110-10 §8.5", function()
-      local text = dup_sdp({ omit_mid2 = true })
+      -- Use a DUP-specific failure (legs differ in media type) so both
+      -- mids are present and the §6 check at the RFC 5888 layer doesn't
+      -- intercept first.
+      local text = dup_sdp({
+        type2   = "audio",
+        rtpmap2 = "a=rtpmap:96 L24/48000/8",
+        fmtp2   = "a=fmtp:96 channel-order=SMPTE2110.(ST)",
+      })
       local doc = sdp.parse(text)
       assert.is_table(doc)
       local ok, err = doc:validate("st2110")
@@ -1181,6 +1192,74 @@ describe("ST 2110 validation", function()
       assert.is_nil(ok)
       assert.is_table(err)
       assert.matches("DUP", err.message)
+    end)
+  end)
+
+  -- ── A10: RFC 5888 §6 — any a=group ⇒ every m= has a=mid ────────────────────
+
+  describe("RFC 5888 §6: a=group requires a=mid on every m= line", function()
+    local PTP = "a=ts-refclk:ptp=IEEE1588-2008:00-11-22-FF-FE-33-44-55:0"
+    local VFMTP = "a=fmtp:96 sampling=YCbCr-4:2:2; width=1920; height=1080; exactframerate=25; depth=10; TCS=SDR; colorimetry=BT709; PM=2110GPM; SSN=ST2110-20:2022; TP=2110TPN"
+
+    local function two_video_sdp(opts)
+      opts = opts or {}
+      local group_line = opts.group_line  -- e.g. "a=group:LS 1 2" or nil for no group
+      local mid1 = opts.mid1
+      local mid2 = opts.mid2
+      local lines = { "v=0", "o=- 1 1 IN IP4 192.168.1.1", "s=Test", "t=0 0" }
+      if group_line then lines[#lines+1] = group_line end
+      lines[#lines+1] = PTP
+      lines[#lines+1] = "m=video 5000 RTP/AVP 96"
+      lines[#lines+1] = "c=IN IP4 239.100.0.1/64"
+      if mid1 then lines[#lines+1] = "a=mid:" .. mid1 end
+      lines[#lines+1] = "a=rtpmap:96 raw/90000"
+      lines[#lines+1] = VFMTP
+      lines[#lines+1] = "a=mediaclk:direct=0"
+      lines[#lines+1] = "m=video 5010 RTP/AVP 96"
+      lines[#lines+1] = "c=IN IP4 239.100.0.2/64"
+      if mid2 then lines[#lines+1] = "a=mid:" .. mid2 end
+      lines[#lines+1] = "a=rtpmap:96 raw/90000"
+      lines[#lines+1] = VFMTP
+      lines[#lines+1] = "a=mediaclk:direct=0"
+      return table.concat(lines, "\r\n") .. "\r\n"
+    end
+
+    it("accepts an SDP with no a=group line and no a=mid lines", function()
+      local doc, err = sdp.parse(two_video_sdp({}), "st2110")
+      assert.is_nil(err)
+      assert.is_table(doc)
+    end)
+
+    it("accepts a=group:LS with a=mid on every m= line", function()
+      local doc, err = sdp.parse(two_video_sdp({
+        group_line = "a=group:LS 1 2", mid1 = "1", mid2 = "2",
+      }), "st2110")
+      assert.is_nil(err)
+      assert.is_table(doc)
+    end)
+
+    it("rejects a=group:LS when one m= line is missing a=mid", function()
+      local doc = sdp.parse(two_video_sdp({
+        group_line = "a=group:LS 1 2", mid1 = "1", mid2 = nil,
+      }))
+      assert.is_table(doc)
+      local ok, err = doc:validate("st2110")
+      assert.is_nil(ok)
+      assert.is_table(err)
+      assert.matches("missing a=mid", err.message)
+      assert.equal("RFC 5888 §6", err.spec_ref)
+    end)
+
+    it("rejects a=group:LS when both m= lines are missing a=mid", function()
+      local doc = sdp.parse(two_video_sdp({
+        group_line = "a=group:LS 1 2", mid1 = nil, mid2 = nil,
+      }))
+      assert.is_table(doc)
+      local ok, err = doc:validate("st2110")
+      assert.is_nil(ok)
+      assert.is_table(err)
+      assert.matches("missing a=mid", err.message)
+      assert.equal("RFC 5888 §6", err.spec_ref)
     end)
   end)
 

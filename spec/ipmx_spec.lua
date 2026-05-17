@@ -1540,7 +1540,9 @@ describe("IPMX validation", function()
 
   describe("a=group:FID rejection (TR-10-1 §10)", function()
     it("rejects IPMX SDP with a=group:FID at session level", function()
-      local text = base_ipmx_sdp({ "a=group:FID 1 2" })
+      -- a=mid added to keep RFC 5888 §6 (audit A10) satisfied so the FID
+      -- check at the IPMX tier is what reports the error.
+      local text = base_ipmx_sdp({ "a=group:FID 1 2" }, { "a=mid:1" })
       local doc = sdp.parse(text)
       assert.is_table(doc)
       local ok, err = doc:validate("ipmx")
@@ -1562,6 +1564,8 @@ describe("IPMX validation", function()
     end)
 
     it("accepts ST 2110 SDP with a=group:FID (rule is IPMX-only)", function()
+      -- a=mid added per RFC 5888 §6 (audit A10) so the FID-vs-tier
+      -- precondition stays the focus of this test.
       local text = table.concat({
         "v=0",
         "o=- 1234567890 1 IN IP4 192.168.1.1",
@@ -1575,6 +1579,7 @@ describe("IPMX validation", function()
         "a=rtpmap:96 raw/90000",
         "a=fmtp:96 sampling=YCbCr-4:2:2; width=1920; height=1080; exactframerate=25; depth=10; TCS=SDR; colorimetry=BT709; PM=2110GPM; SSN=ST2110-20:2022; TP=2110TPN",
         "a=mediaclk:direct=0",
+        "a=mid:1",
         "a=ts-refclk:ptp=IEEE1588-2008:00-11-22-FF-FE-33-44-55:0",
       }, "\r\n") .. "\r\n"
       local doc = sdp.parse(text)
