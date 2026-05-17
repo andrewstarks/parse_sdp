@@ -79,7 +79,9 @@ A6 subset, A7, A9, A12, A13).
 - A6 subset landed: BT2100 → RANGE ∈ {NARROW, FULL} only (ST 2110-20:2022
   §7.3).
 - A7 landed: whitespace around '=' rejected in raw-video fmtp
-  (ST 2110-20:2022 §7.1). A9 next.
+  (ST 2110-20:2022 §7.1).
+- A9 landed: TSMODE=SAMP requires TSDELAY (ST 2110-10:2022 §8.7);
+  also fixed a nil-safety bug in the A2 VPID_Code check. A12 next.
 
 ## Next
 

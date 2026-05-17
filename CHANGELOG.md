@@ -11,6 +11,27 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ### Fixed (audit pass #31 — Wave 2 parser fixes)
 
+- **TSMODE=SAMP requires TSDELAY (audit A9).** ST 2110-10:2022 §8.7
+  (and §7.9): *"Devices which signal TSMODE=SAMP shall also signal
+  their Transmission Delay value in the SDP as indicated in
+  section 8.7."* TSMODE and TSDELAY validators ran independently
+  inside `video_opt_checks`, so a fmtp line carrying `TSMODE=SAMP`
+  with no `TSDELAY` parameter was accepted. Added a post-loop
+  cross-check in the raw-video branch: if
+  `tostring(params["TSMODE"]) == "SAMP"` and `params["TSDELAY"] == nil`,
+  reject with `spec_ref="ST 2110-10:2022 §8.7"`. Scope is raw-video
+  only today; A8 (Wave 3) will hoist TSMODE/TSDELAY validation to all
+  media types and this cross-check should hoist with it. Updated the
+  legacy `accepts TSMODE=SAMP` test to pair it with TSDELAY=100, and
+  added 2 new tests under a `TSMODE=SAMP → TSDELAY presence (§8.7)`
+  describe block.
+- **Drive-by nil-safety fix in the A2 VPID_Code cardinality check.**
+  The A2 commit indexed `fmtp.value` unconditionally; AMWA upstream's
+  `nmos-testing:data.sdp` fixture has a smpte291 media block without
+  an `a=fmtp` line, which surfaced as `attempt to index a nil value`
+  in the conformance suite. Guarded the count with `if fmtp then`,
+  matching the surrounding optional-fmtp pattern (the rest of the
+  smpte291 branch already null-checks `fmtp`).
 - **Whitespace around '=' in raw-video fmtp tokens (audit A7).**
   ST 2110-20:2022 §7.1: *"Each parameter entry shall be constructed as
   either: 'name=value' (no whitespace) or 'name' (no value)."* The

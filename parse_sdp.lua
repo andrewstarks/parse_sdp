@@ -1409,10 +1409,12 @@ function st2110.validate(doc)
       -- RFC 8331 §4: "VPID_Code shall appear only once and a single integer
       -- value shall be expressed." fmtp_params coalesces duplicate keys, so
       -- count raw "VPID_Code=" occurrences in the original fmtp value.
-      local _, vpid_count = (fmtp.value or ""):gsub("VPID_Code=", "")
-      if vpid_count > 1 then
-        return attr_err("VPID_Code shall appear only once (RFC 8331 §4)",
-          mpath, "fmtp", "RFC 8331 §4", "INVALID_VALUE")
+      if fmtp then
+        local _, vpid_count = (fmtp.value or ""):gsub("VPID_Code=", "")
+        if vpid_count > 1 then
+          return attr_err("VPID_Code shall appear only once (RFC 8331 §4)",
+            mpath, "fmtp", "RFC 8331 §4", "INVALID_VALUE")
+        end
       end
       local vpid = params["VPID_Code"]
       if vpid ~= nil and vpid ~= true then
@@ -1923,6 +1925,16 @@ function st2110.validate(doc)
             return attr_err(key .. ": " .. vmsg, mpath, "fmtp", ref, "INVALID_VALUE")
           end
         end
+      end
+      -- ST 2110-10:2022 §8.7 (and §7.9): "Devices which signal TSMODE=SAMP
+      -- shall also signal their Transmission Delay value in the SDP as
+      -- indicated in section 8.7." Cross-check after the per-param loop.
+      -- (Scope: raw-video only today; A8 will hoist TSMODE/TSDELAY to all
+      -- media types, at which point this cross-check should hoist with it.)
+      if tostring(params["TSMODE"] or "") == "SAMP" and params["TSDELAY"] == nil then
+        return attr_err(
+          "TSMODE=SAMP requires TSDELAY to also be signaled",
+          mpath, "fmtp", "ST 2110-10:2022 §8.7", "INVALID_VALUE")
       end
 
     elseif m.media == "audio" then

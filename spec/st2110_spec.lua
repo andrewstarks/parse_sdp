@@ -3987,7 +3987,14 @@ describe("ST 2110 validation", function()
       }, "\r\n") .. "\r\n"
     end
 
-    for _, m in ipairs({ "SAMP", "NEW", "PRES" }) do
+    -- SAMP requires TSDELAY (ST 2110-10:2022 §8.7 cross-check below);
+    -- NEW and PRES do not.
+    it("accepts TSMODE=SAMP with TSDELAY", function()
+      local doc, err = sdp.parse(video_sdp("; TSMODE=SAMP; TSDELAY=100"), "st2110")
+      assert.is_nil(err)
+      assert.is_table(doc)
+    end)
+    for _, m in ipairs({ "NEW", "PRES" }) do
       it("accepts TSMODE=" .. m, function()
         local doc, err = sdp.parse(video_sdp("; TSMODE=" .. m), "st2110")
         assert.is_nil(err)
@@ -4033,6 +4040,28 @@ describe("ST 2110 validation", function()
       local ok, err = doc:validate("st2110")
       assert.is_nil(ok)
       assert.matches("TSDELAY", err.message)
+    end)
+
+    -- ST 2110-10:2022 §8.7 (and §7.9): "Devices which signal TSMODE=SAMP
+    -- shall also signal their Transmission Delay value in the SDP as
+    -- indicated in section 8.7."
+    describe("TSMODE=SAMP → TSDELAY presence (§8.7)", function()
+      it("rejects TSMODE=SAMP without TSDELAY", function()
+        local doc = sdp.parse(video_sdp("; TSMODE=SAMP"))
+        assert.is_table(doc)
+        local ok, err = doc:validate("st2110")
+        assert.is_nil(ok)
+        assert.is_table(err)
+        assert.matches("TSMODE=SAMP", err.message)
+        assert.matches("TSDELAY", err.message)
+        assert.equal("ST 2110-10:2022 §8.7", err.spec_ref)
+      end)
+
+      it("accepts TSMODE=NEW without TSDELAY (no cross-rule)", function()
+        local doc, err = sdp.parse(video_sdp("; TSMODE=NEW"), "st2110")
+        assert.is_nil(err)
+        assert.is_table(doc)
+      end)
     end)
   end)
 
