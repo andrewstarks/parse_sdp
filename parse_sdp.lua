@@ -1460,14 +1460,16 @@ function st2110.validate(doc)
           return attr_err("TROFF: " .. tmsg, mpath, "fmtp", "ST 2110-40:2023 §7 / ST 2110-21", "INVALID_VALUE")
         end
       end
-      -- N11 (audit): ST 2110-40:2023 §6.1.4 — "The UDP size of each RTP
+      -- N11 (audit): ST 2110-40:2023 §5.2.1 — "The UDP size of each RTP
       -- packet shall not exceed the Standard UDP Size Limit as specified
       -- in SMPTE ST 2110-10." MAXUDP signals exceeding the Standard limit
       -- (ST 2110-10:2022 §6.4 / §8.6), so its presence is non-conformant.
+      -- (Audit E3 corrected the cite from §6.1.4 — which doesn't exist in
+      -- ST 2110-40:2023 — to §5.2.1 where the SHALL actually lives.)
       if params["MAXUDP"] ~= nil then
         return attr_err(
-          "MAXUDP must not be signaled on smpte291 streams (§6.1.4 limits UDP size to the Standard UDP Size Limit)",
-          mpath, "fmtp", "ST 2110-40:2023 §6.1.4", "INVALID_VALUE")
+          "MAXUDP must not be signaled on smpte291 streams (§5.2.1 limits UDP size to the Standard UDP Size Limit)",
+          mpath, "fmtp", "ST 2110-40:2023 §5.2.1", "INVALID_VALUE")
       end
 
     elseif enc == "ST2110-41" then

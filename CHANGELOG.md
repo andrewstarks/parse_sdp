@@ -11,6 +11,14 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ### Fixed (audit pass #31 — citation cleanup)
 
+- **MAXUDP-on-smpte291 cite §6.1.4 → §5.2.1 (audit E3).** ST 2110-40:2023
+  has no §6.1.4 — §6 is "Timing Model" with §6.1 General, §6.2 Definitions
+  of Time Offsets (with §6.2.1 / §6.2.2), §6.3, §6.4, §6.5. The "UDP size
+  of each RTP packet shall not exceed the Standard UDP Size Limit" SHALL
+  is at §5.2.1 (RTP Payload Format / General Requirements), verified
+  against the on-disk 2023 PDF. Updated `parse_sdp.lua:1463-1470` plus
+  the user-facing error message text and two test cite-string
+  references. Behavior unchanged.
 - **ST 2110-40 cite cleanup (audit E2).** Two smpte291 cite sites
   previously cited `ST 2110-40 §7.2`, a section that doesn't exist in
   ST 2110-40:2023 (§7 has no numbered subsections). Verified against

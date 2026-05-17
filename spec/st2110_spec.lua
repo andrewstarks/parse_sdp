@@ -549,9 +549,9 @@ describe("ST 2110 validation", function()
       assert.is_table(doc)
     end)
 
-    -- N11 (audit): ST 2110-40:2023 §6.1.4 forbids MAXUDP on smpte291
+    -- N11 (audit): ST 2110-40:2023 §5.2.1 forbids MAXUDP on smpte291
     -- (UDP size shall not exceed the Standard limit).
-    it("rejects MAXUDP on smpte291 (ST 2110-40:2023 §6.1.4)", function()
+    it("rejects MAXUDP on smpte291 (ST 2110-40:2023 §5.2.1)", function()
       local doc = sdp.parse(ancillary_sdp(DEFAULT_REQUIRED .. "; MAXUDP=8960"))
       local ok, err = doc:validate("st2110")
       assert.is_nil(ok)
