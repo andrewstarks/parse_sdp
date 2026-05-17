@@ -295,7 +295,11 @@ end
 -- ── Validate ──────────────────────────────────────────────────────────────────
 local validate = {}
 
---- Validate an SDP document table against RFC 4566 structural requirements.
+-- Forward declaration: valid_connection_address is defined later in this file
+-- (in the helpers section) but is referenced by validate.sdp below.
+local valid_connection_address
+
+--- Validate an SDP document table against RFC 8866 structural requirements.
 -- Checks version, all origin fields, session name, timing, and each media block's
 -- required fields (media type, port, proto, fmts).
 -- @param doc table  SDP document table.
@@ -339,6 +343,21 @@ function validate.sdp(doc)
       { code = "MISSING_FIELD" })
   end
 
+  -- RFC 8866 §5.7 / §9 — session-level c= must satisfy the multicast/unicast
+  -- value-form rules at the base tier (IPv4 multicast requires TTL; IPv6
+  -- multicast must not have TTL). The ST 2110 tier called
+  -- valid_connection_address already; hoist it to base. (Audit D1.3/D1.4.)
+  if doc.session and doc.session.connection then
+    local sc = doc.session.connection
+    local cok, cmsg = valid_connection_address(sc.addr_type, sc.address, "base")
+    if not cok then
+      return nil, errors.new(cmsg, {
+        field_path = "session.connection",
+        spec_ref   = "RFC 8866 §5.7", code = "INVALID_VALUE",
+      })
+    end
+  end
+
   if type(doc.media) ~= "table" then
     return nil, errors.new("media must be a table", { code = "INVALID_VALUE" })
   end
@@ -358,6 +377,19 @@ function validate.sdp(doc)
     if type(m.fmts) ~= "table" or #m.fmts < 1 then
       return nil, errors.new(string.format("media[%d].fmts must be non-empty", i),
         { code = "MISSING_FIELD" })
+    end
+
+    -- RFC 8866 §5.7 / §9 — media-level c= must satisfy the multicast /
+    -- unicast value-form rules at the base tier. (Audit D1.3/D1.4.)
+    if m.connection then
+      local mc = m.connection
+      local cok, cmsg = valid_connection_address(mc.addr_type, mc.address, "base")
+      if not cok then
+        return nil, errors.new(cmsg, {
+          field_path = string.format("media[%d].connection", i),
+          spec_ref   = "RFC 8866 §5.7", code = "INVALID_VALUE",
+        })
+      end
     end
 
     -- RFC 8866 §8.2.3: "If the payload type number is dynamically assigned
@@ -986,7 +1018,10 @@ local function source_filter_dest(value)
 end
 
 -- Validate the address field of a c= line per RFC 8866 §9 ABNF and §5.7
--- prose, with the ST 2110-10 §6.5 / RFC 5771 forbidden multicast ranges.
+-- prose, plus (when `tier == "st2110"`) the ST 2110-10 §6.5 / RFC 5771
+-- forbidden multicast ranges. Default `tier` is "st2110" for backward
+-- compatibility with existing call sites; the base-tier hoist (audit
+-- D1.3 / D1.4) passes "base" to skip the SMPTE-specific check.
 --
 -- ABNF (§9):
 --   IP4-multicast = m1 3("." decimal-uchar) "/" ttl [ "/" numaddr ]
@@ -999,7 +1034,8 @@ end
 --   multicast"); the bracketed `/numaddr` is the layered-address count form.
 -- Unicast (either family): no slash-suffix form is defined.
 -- M29 G1: the address portion (before any /suffix) must parse as a literal.
-local function valid_connection_address(addr_type, addr)
+function valid_connection_address(addr_type, addr, tier)
+  tier = tier or "st2110"
   if addr_type == "IP6" then
     local ip6, rest6 = addr:match("^([^/]+)(.*)")
     if not ip6 then return nil, "invalid IPv6 address in c= line" end
@@ -1055,11 +1091,16 @@ local function valid_connection_address(addr_type, addr)
         return nil, string.format("IPv4 layered-multicast numaddr must be a positive integer per RFC 8866 §9 (got %s)", num_str)
       end
     end
-    local o2 = tonumber(ip:match("^%d+%.(%d+)%."))
-    local o3 = tonumber(ip:match("^%d+%.%d+%.(%d+)%."))
-    if o1 == 224 and o2 == 0 and (o3 == 0 or o3 == 1) then
-      return nil, string.format(
-        "forbidden multicast range 224.0.%d.0/24 (ST 2110-10 §6.5): %s", o3, ip)
+    -- ST 2110-10 §6.5 / RFC 5771 forbidden multicast ranges (link-local
+    -- and SAP). Only enforced at the ST 2110 tier — RFC 8866 itself
+    -- doesn't forbid these ranges.
+    if tier == "st2110" then
+      local o2 = tonumber(ip:match("^%d+%.(%d+)%."))
+      local o3 = tonumber(ip:match("^%d+%.%d+%.(%d+)%."))
+      if o1 == 224 and o2 == 0 and (o3 == 0 or o3 == 1) then
+        return nil, string.format(
+          "forbidden multicast range 224.0.%d.0/24 (ST 2110-10 §6.5): %s", o3, ip)
+      end
     end
   else
     if rest ~= "" then

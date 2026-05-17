@@ -929,6 +929,73 @@ describe("sdp.parse — media blocks (M5)", function()
       assert.equal("RFC 8866 §8.2.3", err.spec_ref)
     end)
   end)
+
+  -- RFC 8866 §5.7 / §9 (audit D1.3): IPv4 multicast c= address requires a
+  -- TTL suffix. ABNF: IP4-multicast = m1 3("." decimal-uchar) "/" ttl
+  -- [ "/" numaddr ]. The check was previously enforced only at the ST 2110
+  -- tier; hoisted to base via valid_connection_address(tier="base").
+  describe("RFC 8866 §5.7 IPv4 multicast /ttl mandatory (base tier)", function()
+    it("accepts unicast IPv4 c= without TTL", function()
+      local doc = sdp.parse(table.concat({
+        "v=0", "o=- 1 1 IN IP4 127.0.0.1", "s=Test",
+        "c=IN IP4 192.0.2.10", "t=0 0",
+      }, "\r\n") .. "\r\n")
+      assert.is_table(doc)
+      local ok, err = doc:validate()
+      assert.is_nil(err)
+      assert.equal(true, ok)
+    end)
+
+    it("accepts session-level multicast IPv4 c= with TTL", function()
+      local doc = sdp.parse(table.concat({
+        "v=0", "o=- 1 1 IN IP4 127.0.0.1", "s=Test",
+        "c=IN IP4 239.100.0.1/64", "t=0 0",
+      }, "\r\n") .. "\r\n")
+      assert.is_table(doc)
+      local ok, err = doc:validate()
+      assert.is_nil(err)
+      assert.equal(true, ok)
+    end)
+
+    it("rejects session-level multicast IPv4 c= missing TTL (base tier)", function()
+      local doc = sdp.parse(table.concat({
+        "v=0", "o=- 1 1 IN IP4 127.0.0.1", "s=Test",
+        "c=IN IP4 239.100.0.1", "t=0 0",
+      }, "\r\n") .. "\r\n")
+      assert.is_table(doc)
+      local ok, err = doc:validate()
+      assert.is_nil(ok)
+      assert.is_table(err)
+      assert.matches("TTL", err.message)
+      assert.equal("RFC 8866 §5.7", err.spec_ref)
+    end)
+
+    it("rejects media-level multicast IPv4 c= missing TTL (base tier)", function()
+      local doc = sdp.parse(make({
+        "m=video 5000 RTP/AVP 96",
+        "c=IN IP4 239.100.0.1",
+        "a=rtpmap:96 H264/90000",
+      }))
+      assert.is_table(doc)
+      local ok, err = doc:validate()
+      assert.is_nil(ok)
+      assert.is_table(err)
+      assert.matches("TTL", err.message)
+      assert.equal("RFC 8866 §5.7", err.spec_ref)
+    end)
+
+    it("accepts media-level multicast IPv4 c= with /ttl/numaddr", function()
+      local doc = sdp.parse(make({
+        "m=video 5000 RTP/AVP 96",
+        "c=IN IP4 239.100.0.1/64/3",
+        "a=rtpmap:96 H264/90000",
+      }))
+      assert.is_table(doc)
+      local ok, err = doc:validate()
+      assert.is_nil(err)
+      assert.equal(true, ok)
+    end)
+  end)
 end)
 
 describe("sdp — doc object (M6)", function()

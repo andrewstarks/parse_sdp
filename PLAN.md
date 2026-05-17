@@ -112,7 +112,9 @@ D1.3, D1.4, D1.5, D1.6).
 - D1.1 landed: k= obsoleted per RFC 8866 §5.12 (parse-and-discard;
   serializer never emits).
 - D1.2 landed: dynamic-PT requires a=rtpmap, hoisted to base tier
-  (RFC 8866 §8.2.3). D1.3 next.
+  (RFC 8866 §8.2.3).
+- D1.3 landed: IPv4 multicast /ttl mandatory at base tier (RFC 8866
+  §5.7). D1.4 next.
 
 ## Next
 

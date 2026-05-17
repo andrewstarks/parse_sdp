@@ -11,6 +11,25 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ### Changed (audit pass #31 — Wave 5 RFC 8866 base migration)
 
+- **IPv4 multicast `c=` /ttl mandatory hoisted to base tier (audit
+  D1.3).** RFC 8866 §5.7 / §9 ABNF: *"IP4-multicast = m1 3('.'
+  decimal-uchar) '/' ttl [ '/' numaddr ]"* — the `/ttl` suffix is
+  required for IPv4 multicast c= lines. The check previously lived
+  only at the ST 2110 tier (which called `valid_connection_address`
+  on session/media c=); base-tier `doc:validate()` silently accepted
+  `c=IN IP4 239.100.0.1` (no TTL). Added a `valid_connection_address`
+  call in `validate.sdp` for both session-level (`doc.session.
+  connection`) and per-media (`m.connection`) c= entries, with cite
+  `RFC 8866 §5.7`. Refactored `valid_connection_address` to take an
+  optional `tier` argument (`"base"` / `"st2110"`, default
+  `"st2110"`) and gated the ST 2110-10 §6.5 forbidden-multicast-range
+  check behind `tier == "st2110"` so the SMPTE-specific rule doesn't
+  leak into the base tier with the wrong cite. The previously
+  forward-declared `valid_connection_address` is now declared at the
+  top of the Validate section so `validate.sdp` can reference it.
+  5 new tests in `spec/sdp_spec.lua` (unicast pass, multicast +TTL
+  pass at session and via `/ttl/numaddr`, multicast no-TTL reject at
+  both session and media level).
 - **Dynamic-PT requires a=rtpmap hoisted to base tier (audit D1.2).**
   RFC 8866 §8.2.3: *"If the payload type number is dynamically
   assigned by this session description, an additional 'a=rtpmap:'
