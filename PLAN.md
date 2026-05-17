@@ -99,6 +99,12 @@ A10, E5).
 - E5 landed: RFC 7273 cite-upstream for ts-refclk / mediaclk
   value-form errors. **Wave 3 complete.**
 
+**Wave 4 in progress** (complex Direction-A — A11).
+
+- A11 landed: RFC 4570 §3.1 dest-address ↔ c= cross-line check with
+  full RFC 8866 §5.7 /numaddr expansion for IPv4 and IPv6 multicast
+  (per user decision D3). **Wave 4 complete.**
+
 ## Next
 
 Wave 1: cite migrations (E1–E8). Wave 2–5: Direction-A/B fixes and the

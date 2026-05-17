@@ -819,6 +819,153 @@ local function valid_source_filter(value)
   return true
 end
 
+-- ── A11 helpers: c= address expansion + source-filter dest cross-check ───────
+-- RFC 4570 §3.1 requires every source-filter <dest-address> to match an
+-- existing c= <connection-field> value somewhere in the SDP. RFC 8866 §5.7
+-- defines /numaddr expansion for multicast c= lines: "Multicast addresses
+-- so assigned are contiguously allocated above the base address."
+
+local function _ipv4_to_int(addr)
+  local a, b, c, d = addr:match("^(%d+)%.(%d+)%.(%d+)%.(%d+)$")
+  if not a then return nil end
+  return (tonumber(a) * 0x1000000) + (tonumber(b) * 0x10000)
+       + (tonumber(c) * 0x100)     + tonumber(d)
+end
+
+local function _int_to_ipv4(n)
+  return string.format("%d.%d.%d.%d",
+    (n >> 24) & 0xff, (n >> 16) & 0xff,
+    (n >> 8)  & 0xff,  n        & 0xff)
+end
+
+-- Parse an IPv6 textual address into 8 16-bit groups; expand "::" if present.
+local function _ipv6_to_groups(addr)
+  local lo = addr:lower()
+  if lo == "::" then return { 0, 0, 0, 0, 0, 0, 0, 0 } end
+  local left, right
+  local dc = lo:find("::", 1, true)
+  if dc then
+    left  = lo:sub(1, dc - 1)
+    right = lo:sub(dc + 2)
+  else
+    left  = lo
+    right = ""
+  end
+  local function split(s)
+    local out = {}
+    if s == "" then return out end
+    for tok in (s .. ":"):gmatch("([^:]*):") do
+      out[#out + 1] = tok
+    end
+    return out
+  end
+  local lg, rg = split(left), split(right)
+  if #lg + #rg > 8 then return nil end
+  if not dc and #lg + #rg ~= 8 then return nil end
+  local groups = {}
+  for _, g in ipairs(lg) do
+    local n = tonumber(g, 16)
+    if not n or n < 0 or n > 0xffff then return nil end
+    groups[#groups + 1] = n
+  end
+  local zeros = 8 - (#lg + #rg)
+  for _ = 1, zeros do groups[#groups + 1] = 0 end
+  for _, g in ipairs(rg) do
+    local n = tonumber(g, 16)
+    if not n or n < 0 or n > 0xffff then return nil end
+    groups[#groups + 1] = n
+  end
+  if #groups ~= 8 then return nil end
+  return groups
+end
+
+local function _ipv6_canonical(groups)
+  return string.format("%04x:%04x:%04x:%04x:%04x:%04x:%04x:%04x",
+    groups[1], groups[2], groups[3], groups[4],
+    groups[5], groups[6], groups[7], groups[8])
+end
+
+local function _ipv6_add(groups, n)
+  local g = { groups[1], groups[2], groups[3], groups[4],
+              groups[5], groups[6], groups[7], groups[8] }
+  local carry = n
+  for i = 8, 1, -1 do
+    local v = g[i] + carry
+    g[i] = v & 0xffff
+    carry = v >> 16
+    if carry == 0 then break end
+  end
+  return g
+end
+
+-- Expand a c= entry into a list of canonical address strings.
+-- Returns { addr_type, [addr1, addr2, …] }; addr_type is "IP4"|"IP6"|other.
+-- For unrecognised forms (which valid_connection_address would catch upstream)
+-- returns the original address verbatim — the A11 cross-check then degrades
+-- gracefully and lets the dedicated grammar validators report the real error.
+local function expand_connection(addr_type, addr_value)
+  local out = { addr_type = addr_type }
+  if addr_type == "IP4" then
+    local base, _ttl, num = addr_value:match("^([%d%.]+)/(%d+)/(%d+)$")
+    if not base then
+      base, _ttl = addr_value:match("^([%d%.]+)/(%d+)$")
+      num = nil
+    end
+    if not base then base = addr_value end
+    local base_n = _ipv4_to_int(base)
+    if not base_n then
+      out[1] = base
+      return out
+    end
+    local count = tonumber(num) or 1
+    for i = 0, count - 1 do
+      out[#out + 1] = _int_to_ipv4(base_n + i)
+    end
+    return out
+  elseif addr_type == "IP6" then
+    local base, num = addr_value:match("^([^/]+)/(%d+)$")
+    if not base then base = addr_value end
+    local groups = _ipv6_to_groups(base)
+    if not groups then
+      out[1] = base:lower()
+      return out
+    end
+    local count = tonumber(num) or 1
+    for i = 0, count - 1 do
+      out[#out + 1] = _ipv6_canonical(_ipv6_add(groups, i))
+    end
+    return out
+  end
+  out[1] = addr_value
+  return out
+end
+
+-- Normalise a source-filter dest-address to the same canonical form
+-- expand_connection emits, for cross-set membership.
+local function canonicalize_address(addr_type, addr)
+  if addr_type == "IP4" then
+    local n = _ipv4_to_int(addr)
+    return n and _int_to_ipv4(n) or addr
+  elseif addr_type == "IP6" then
+    local g = _ipv6_to_groups(addr)
+    return g and _ipv6_canonical(g) or addr:lower()
+  end
+  return addr
+end
+
+-- Parse a syntactically valid source-filter value into { addrtype, dest }.
+-- Returns nil if the value isn't well-formed (the syntax check upstream
+-- already would have rejected it; this helper is conservative).
+local function source_filter_dest(value)
+  local trimmed = value:gsub("^%s+", "")
+  local filter, addrtype, rest = trimmed:match("^(%S+) IN (%S+) (.+)$")
+  if not filter or not addrtype then return nil end
+  if filter ~= "incl" and filter ~= "excl" then return nil end
+  local dest = rest:match("^(%S+)")
+  if not dest then return nil end
+  return addrtype, dest
+end
+
 -- Validate the address field of a c= line per RFC 8866 §9 ABNF and §5.7
 -- prose, with the ST 2110-10 §6.5 / RFC 5771 forbidden multicast ranges.
 --
@@ -2182,6 +2329,55 @@ function st2110.validate(doc)
       return attr_err(
         "TSMODE=SAMP requires TSDELAY to also be signaled",
         mpath, "fmtp", "ST 2110-10:2022 §8.7", "INVALID_VALUE")
+    end
+  end
+
+  -- RFC 4570 §3.1 (audit A11): "The <dest-address> value in a
+  -- 'source-filter' attribute MUST correspond to an existing
+  -- <connection-field> value in the session description. The only
+  -- exception to this is when a '*' wildcard is used to indicate that
+  -- the source-filter applies to all <connection-field> values."
+  -- RFC 8866 §5.7: multicast c= /numaddr expands to contiguous addresses
+  -- above the base. Build the union set of every c= address in the SDP
+  -- (session + all media, expanded), keyed by addr_type + canonical form,
+  -- then verify each source-filter's dest is in that set.
+  do
+    local sf_set = {}  -- sf_set[addr_type][canonical_addr] = true
+    local function add_conn(conn)
+      if not conn then return end
+      local exp = expand_connection(conn.addr_type, conn.address)
+      sf_set[exp.addr_type] = sf_set[exp.addr_type] or {}
+      for _, a in ipairs(exp) do sf_set[exp.addr_type][a] = true end
+    end
+    add_conn(doc.session and doc.session.connection)
+    for _, m in ipairs(doc.media) do add_conn(m.connection) end
+
+    local function check_sf(sf, path)
+      local addrtype, dest = source_filter_dest(sf.value or "")
+      if not addrtype or addrtype == "*" then return nil end  -- FQDN form; not a literal cross-check
+      local set = sf_set[addrtype]
+      local key = canonicalize_address(addrtype, dest)
+      if not (set and set[key]) then
+        return errors.new(string.format(
+          "a=source-filter dest-address '%s' has no matching c= address in the SDP", dest),
+          { field_path = path, spec_ref = "RFC 4570 §3.1", code = "INVALID_VALUE" })
+      end
+      return nil
+    end
+
+    for _, a in ipairs(doc.session.attributes or {}) do
+      if a.name == "source-filter" then
+        local err = check_sf(a, "session.attributes[source-filter]")
+        if err then return nil, err end
+      end
+    end
+    for i, m in ipairs(doc.media) do
+      for _, a in ipairs(m.attributes or {}) do
+        if a.name == "source-filter" then
+          local err = check_sf(a, string.format("media[%d].attributes[source-filter]", i))
+          if err then return nil, err end
+        end
+      end
     end
   end
 

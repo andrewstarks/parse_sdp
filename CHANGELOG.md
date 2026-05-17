@@ -9,6 +9,46 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 
+### Fixed (audit pass #31 — Wave 4 parser fixes)
+
+- **RFC 4570 §3.1 dest-address ↔ c= cross-line check (audit A11; user
+  decision D3 — full RFC 8866 expansion).** RFC 4570 §3.1: *"The
+  `<dest-address>` value in a 'source-filter' attribute MUST correspond
+  to an existing `<connection-field>` value in the session description.
+  The only exception to this is when a '*' wildcard is used to
+  indicate that the source-filter applies to all `<connection-field>`
+  values."* Previously the parser validated source-filter syntax via
+  `valid_source_filter` but never cross-checked the dest-address
+  against any `c=` line, so a SDP with `c=IN IP4 239.100.0.1/64` and
+  `a=source-filter: incl IN IP4 239.200.0.1 192.168.1.1` was
+  accepted. Added a post-loop check in `st2110.validate` that:
+  1. Builds a set of every c= address in the SDP (session-level +
+     every media-level) with RFC 8866 §5.7 `/numaddr` expansion —
+     IPv4 multicast addresses contiguously above the base
+     (`233.252.0.1/127/3` ⇒ `.1`, `.2`, `.3`), IPv6 multicast same
+     pattern with 16-bit-group carry (`ff00::db8:0:101/3` ⇒ `:101`,
+     `:102`, `:103`).
+  2. For each session-level and media-level source-filter, normalises
+     the dest-address to the same canonical form and rejects if not
+     in the set.
+  3. Skips the cross-check when source-filter `addrtype` is `*`
+     (per §3.1 the dest is an FQDN or `*` literal in that case;
+     literal-set membership doesn't apply).
+  Cite: `RFC 4570 §3.1`. Two pre-existing test fixtures that paired
+  an IP6 source-filter with an IP4 `c=` line (which is itself a §3.1
+  violation) were corrected to align their addrtypes. 9 new tests
+  under a dedicated `RFC 4570 §3.1 dest-address ↔ c= cross-line
+  check` describe block exercising match, /numaddr expansion both
+  families, mismatch reject, cross-level matching, and the `*`
+  addrtype skip. **Wave 4 complete.**
+
+  New parse_sdp.lua helpers (private): `_ipv4_to_int`, `_int_to_ipv4`,
+  `_ipv6_to_groups` (handles `::` expansion), `_ipv6_canonical`
+  (8-group lowercase-hex form), `_ipv6_add` (16-bit-group carry),
+  `expand_connection(addr_type, addr)`,
+  `canonicalize_address(addr_type, addr)`, and
+  `source_filter_dest(value)`.
+
 ### Fixed (audit pass #31 — Wave 3 parser fixes)
 
 - **RFC 7273 cite-upstream for ts-refclk / mediaclk value-form errors

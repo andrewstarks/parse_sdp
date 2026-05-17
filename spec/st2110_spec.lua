@@ -4548,7 +4548,21 @@ describe("ST 2110 validation", function()
     end)
 
     it("accepts 'excl IN IP6 <dest> <src>'", function()
-      local doc, err = sdp.parse(video_sdp(" excl IN IP6 ff0e::1 fe80::1"), "st2110")
+      -- IPv6 source-filter dest must match an IPv6 c= (audit A11 / RFC 4570 §3.1).
+      local lines = {
+        "v=0",
+        "o=- 1234567890 1 IN IP4 192.168.1.1",
+        "s=Video",
+        "t=0 0",
+        "a=ts-refclk:ptp=IEEE1588-2008:00-11-22-FF-FE-33-44-55:0",
+        "m=video 5000 RTP/AVP 96",
+        "c=IN IP6 ff0e::1",
+        "a=source-filter: excl IN IP6 ff0e::1 fe80::1",
+        "a=rtpmap:96 raw/90000",
+        "a=fmtp:96 sampling=YCbCr-4:2:2; width=1920; height=1080; exactframerate=25; depth=10; TCS=SDR; colorimetry=BT709; PM=2110GPM; SSN=ST2110-20:2022; TP=2110TPN",
+        "a=mediaclk:direct=0",
+      }
+      local doc, err = sdp.parse(table.concat(lines, "\r\n") .. "\r\n", "st2110")
       assert.is_nil(err)
       assert.is_table(doc)
     end)
@@ -4617,6 +4631,128 @@ describe("ST 2110 validation", function()
         assert.is_table(err)
         assert.matches("source%-filter", err.message)
         assert.equal("RFC 4570 §3", err.spec_ref)
+      end)
+    end)
+
+    -- A11: RFC 4570 §3.1 — "The <dest-address> value in a 'source-filter'
+    -- attribute MUST correspond to an existing <connection-field> value
+    -- in the session description." RFC 8866 §5.7 multicast /numaddr
+    -- expansion produces contiguous addresses above the base.
+    describe("RFC 4570 §3.1 dest-address ↔ c= cross-line check (audit A11)", function()
+      local PTP = "a=ts-refclk:ptp=IEEE1588-2008:00-11-22-FF-FE-33-44-55:0"
+      local VFMTP = "a=fmtp:96 sampling=YCbCr-4:2:2; width=1920; height=1080; exactframerate=25; depth=10; TCS=SDR; colorimetry=BT709; PM=2110GPM; SSN=ST2110-20:2022; TP=2110TPN"
+
+      local function build(opts)
+        local lines = {
+          "v=0",
+          "o=- 1 1 IN IP4 192.168.1.1",
+          "s=A11",
+        }
+        if opts.session_c then lines[#lines + 1] = "c=" .. opts.session_c end
+        lines[#lines + 1] = "t=0 0"
+        lines[#lines + 1] = PTP
+        if opts.session_sf then lines[#lines + 1] = "a=source-filter:" .. opts.session_sf end
+        lines[#lines + 1] = "m=video 5000 RTP/AVP 96"
+        if opts.media_c then lines[#lines + 1] = "c=" .. opts.media_c end
+        if opts.media_sf then lines[#lines + 1] = "a=source-filter:" .. opts.media_sf end
+        lines[#lines + 1] = "a=rtpmap:96 raw/90000"
+        lines[#lines + 1] = VFMTP
+        lines[#lines + 1] = "a=mediaclk:direct=0"
+        return table.concat(lines, "\r\n") .. "\r\n"
+      end
+
+      it("accepts source-filter whose dest matches the media-level c=", function()
+        local doc, err = sdp.parse(build({
+          media_c  = "IN IP4 239.100.0.1/64",
+          media_sf = " incl IN IP4 239.100.0.1 192.168.1.50",
+        }), "st2110")
+        assert.is_nil(err)
+        assert.is_table(doc)
+      end)
+
+      it("accepts source-filter whose dest falls inside an IPv4 /numaddr range", function()
+        local doc, err = sdp.parse(build({
+          media_c  = "IN IP4 239.100.0.1/64/3",
+          media_sf = " incl IN IP4 239.100.0.3 192.168.1.50",
+        }), "st2110")
+        assert.is_nil(err)
+        assert.is_table(doc)
+      end)
+
+      it("rejects source-filter whose dest is one past the IPv4 /numaddr range", function()
+        local doc = sdp.parse(build({
+          media_c  = "IN IP4 239.100.0.1/64/3",
+          media_sf = " incl IN IP4 239.100.0.4 192.168.1.50",
+        }))
+        assert.is_table(doc)
+        local ok, err = doc:validate("st2110")
+        assert.is_nil(ok)
+        assert.is_table(err)
+        assert.matches("239%.100%.0%.4", err.message)
+        assert.equal("RFC 4570 §3.1", err.spec_ref)
+      end)
+
+      it("accepts source-filter whose dest falls inside an IPv6 /numaddr range", function()
+        local doc, err = sdp.parse(build({
+          media_c  = "IN IP6 ff00::db8:0:101/3",
+          media_sf = " incl IN IP6 ff00::db8:0:103 fe80::1",
+        }), "st2110")
+        assert.is_nil(err)
+        assert.is_table(doc)
+      end)
+
+      it("rejects source-filter whose dest is one past the IPv6 /numaddr range", function()
+        local doc = sdp.parse(build({
+          media_c  = "IN IP6 ff00::db8:0:101/3",
+          media_sf = " incl IN IP6 ff00::db8:0:104 fe80::1",
+        }))
+        assert.is_table(doc)
+        local ok, err = doc:validate("st2110")
+        assert.is_nil(ok)
+        assert.is_table(err)
+        assert.equal("RFC 4570 §3.1", err.spec_ref)
+      end)
+
+      it("rejects source-filter dest that matches no c= anywhere in the SDP", function()
+        local doc = sdp.parse(build({
+          media_c  = "IN IP4 239.100.0.1/64",
+          media_sf = " incl IN IP4 239.200.0.1 192.168.1.50",
+        }))
+        assert.is_table(doc)
+        local ok, err = doc:validate("st2110")
+        assert.is_nil(ok)
+        assert.is_table(err)
+        assert.matches("239%.200%.0%.1", err.message)
+        assert.equal("RFC 4570 §3.1", err.spec_ref)
+      end)
+
+      it("accepts session-level source-filter that points at a media-level c=", function()
+        -- §3.1: "an existing <connection-field> value in the session
+        -- description" — anywhere in the SDP, not just the same level.
+        local doc, err = sdp.parse(build({
+          session_sf = " incl IN IP4 239.100.0.1 192.168.1.50",
+          media_c    = "IN IP4 239.100.0.1/64",
+        }), "st2110")
+        assert.is_nil(err)
+        assert.is_table(doc)
+      end)
+
+      it("accepts media-level source-filter that points at a session-level c=", function()
+        local doc, err = sdp.parse(build({
+          session_c = "IN IP4 239.100.0.1/64",
+          media_sf  = " incl IN IP4 239.100.0.1 192.168.1.50",
+        }), "st2110")
+        assert.is_nil(err)
+        assert.is_table(doc)
+      end)
+
+      it("skips cross-check when source-filter addrtype is '*' (FQDN form)", function()
+        local doc, err = sdp.parse(build({
+          media_c  = "IN IP4 239.100.0.1/64",
+          media_sf = " incl IN * stream.example.com sender.example.com",
+        }), "st2110")
+        assert.is_nil(err)
+        assert.is_table(doc)
       end)
     end)
   end)
@@ -5242,8 +5378,21 @@ describe("ST 2110 validation", function()
     end)
 
     it("accepts source-filter with valid IPv6 dest and src", function()
-      local doc, err = sdp.parse(st2110_with_sf(
-        "a=source-filter: incl IN IP6 ff02::1 2001:db8::1"), "st2110")
+      -- IPv6 source-filter dest must match an IPv6 c= (audit A11 / RFC 4570 §3.1).
+      local text = table.concat({
+        "v=0",
+        "o=- 1234567890 1 IN IP4 192.168.1.1",
+        "s=ST 2110 M29 G2",
+        "t=0 0",
+        "a=ts-refclk:localmac=AA-BB-CC-DD-EE-FF",
+        "m=video 5000 RTP/AVP 96",
+        "c=IN IP6 ff02::1",
+        "a=rtpmap:96 raw/90000",
+        "a=fmtp:96 sampling=YCbCr-4:2:2; width=1920; height=1080; exactframerate=25; depth=10; TCS=SDR; colorimetry=BT709; PM=2110GPM; SSN=ST2110-20:2022; TP=2110TPN",
+        "a=mediaclk:direct=0",
+        "a=source-filter: incl IN IP6 ff02::1 2001:db8::1",
+      }, "\r\n") .. "\r\n"
+      local doc, err = sdp.parse(text, "st2110")
       assert.is_nil(err)
       assert.is_table(doc)
     end)
