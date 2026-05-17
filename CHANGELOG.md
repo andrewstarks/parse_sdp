@@ -11,6 +11,15 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ### Fixed (audit pass #31 — citation cleanup)
 
+- **ST 2022-7 parenthetical removed from DUP error-message text (audit
+  E7).** Phase 1's independent spec walk confirmed that ST 2022-7:2013
+  contains no SDP-level normative clauses (the §6 "RTP header and RTP
+  payload shall be identical for each datagram copy" is a wire-format
+  SHALL). The structured `spec_ref` already correctly points at
+  ST 2110-10 §8.5 — the SDP-tier authority. Removed the misleading
+  `(ST 2022-7 §6)` parenthetical from two user-facing error messages
+  (`a=group:DUP` PT-mismatch and fmtp-mismatch) and added comments
+  explaining the wire-format-to-SDP derivation. No behavior change.
 - **MAXUDP-on-smpte291 cite §6.1.4 → §5.2.1 (audit E3).** ST 2110-40:2023
   has no §6.1.4 — §6 is "Timing Model" with §6.1 General, §6.2 Definitions
   of Time Offsets (with §6.2.1 / §6.2.2), §6.3, §6.4, §6.5. The "UDP size

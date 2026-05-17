@@ -2118,23 +2118,28 @@ function st2110.validate(doc)
           { field_path = "session.attributes[group]",
             spec_ref = "ST 2110-10 §8.5", code = "INVALID_VALUE" })
       end
-      -- ST 2022-7 §6: DUP legs SHALL use the same RTP payload type number.
+      -- DUP legs SHALL use the same RTP payload type number. ST 2022-7:2013
+      -- contains no SDP-level clauses (verified by Phase 1 spec walk); the
+      -- coherence rule is inferred from §6's RTP-layer "RTP header and RTP
+      -- payload shall be identical for each datagram copy", and the SDP-side
+      -- binding lives in ST 2110-10 §8.5.
       local pt = (rm and rm.value or ""):match("^(%d+)")
       if pt ~= base_pt then
         return nil, errors.new(
-          "a=group:DUP legs must use the same RTP payload type number (ST 2022-7 §6)",
+          "a=group:DUP legs must use the same RTP payload type number",
           { field_path = "session.attributes[group]",
             spec_ref = "ST 2110-10 §8.5", code = "INVALID_VALUE" })
       end
-      -- Identical RTP payload data (ST 2022-7 §6) implies identical essence
-      -- parameters. Compare full fmtp value strings; differences in any
-      -- essence field (resolution, sampling, channel-order, etc.) fail.
+      -- Identical RTP payload bytes (ST 2022-7 §6 wire-format requirement)
+      -- implies identical SDP essence parameters; SDP-tier cite is
+      -- ST 2110-10 §8.5. Compare full fmtp value strings; differences in
+      -- any essence field (resolution, sampling, channel-order, etc.) fail.
       local fm = find_attr(legs[j].block.attributes or {}, "fmtp")
       local base_fmtp_v = base_fmtp and base_fmtp.value or ""
       local leg_fmtp_v  = fm and fm.value or ""
       if base_fmtp_v ~= leg_fmtp_v then
         return nil, errors.new(
-          "a=group:DUP legs must have identical fmtp essence parameters (ST 2022-7 §6)",
+          "a=group:DUP legs must have identical fmtp essence parameters",
           { field_path = "session.attributes[group]",
             spec_ref = "ST 2110-10 §8.5", code = "INVALID_VALUE" })
       end
