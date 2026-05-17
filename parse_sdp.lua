@@ -1811,6 +1811,13 @@ function st2110.validate(doc)
         if not vok then
           return attr_err(vmsg, mpath, "fmtp", "ST 2110-20:2022 §7.2", "INVALID_VALUE")
         end
+        -- ST 2110-20:2022 §7.3: "When the colorimetry value is BT2100, only
+        -- the NARROW and FULL values are permitted."
+        if params["colorimetry"] == "BT2100" and range_val == "FULLPROTECT" then
+          return attr_err(
+            "RANGE=FULLPROTECT is not permitted with colorimetry=BT2100 (only NARROW and FULL are permitted)",
+            mpath, "fmtp", "ST 2110-20:2022 §7.3", "INVALID_VALUE")
+        end
       end
       -- (TP is now required for all raw video streams — see video_checks
       -- above — so the historical "TROFF/CMAX require TP" cross-field check

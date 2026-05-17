@@ -11,6 +11,18 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ### Fixed (audit pass #31 — Wave 2 parser fixes)
 
+- **BT2100 colorimetry restricts RANGE to {NARROW, FULL} (audit A6
+  subset).** ST 2110-20:2022 §7.3: *"When the colorimetry value is
+  BT2100, only the NARROW and FULL values are permitted."* The
+  raw-video branch validated RANGE against the global
+  `{NARROW, FULLPROTECT, FULL}` enum independently of colorimetry, so
+  `colorimetry=BT2100; RANGE=FULLPROTECT` was accepted. Added a
+  post-enum cross-check in the `range_val` block: if
+  `params["colorimetry"] == "BT2100"` and `range_val == "FULLPROTECT"`,
+  reject with `spec_ref="ST 2110-20:2022 §7.3"`. Scope: raw video only
+  — jxsv RANGE per RFC 9134 §7.1 is independent and the spec doesn't
+  import this cross-rule. 3 new tests under the `RANGE` describe block
+  (BT2100+NARROW pass, BT2100+FULL pass, BT2100+FULLPROTECT fail).
 - **jxsv width/height 1..32767 upper bound (audit A5).** ST 2110-22:2022
   §7.2 Table 1 restates ST 2110-20:2022 §7.2: *"Permitted values are
   integers between 1 and 32767 inclusive."* The jxsv branch used

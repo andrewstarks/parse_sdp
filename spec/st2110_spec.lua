@@ -1650,6 +1650,35 @@ describe("ST 2110 validation", function()
         assert.is_nil(err)
         assert.is_table(doc)
       end)
+
+      -- ST 2110-20:2022 §7.3: "When the colorimetry value is BT2100, only
+      -- the NARROW and FULL values are permitted."
+      describe("BT2100 → RANGE restriction (§7.3)", function()
+        local BT2100_BASE = BASE:gsub("colorimetry=BT709", "colorimetry=BT2100")
+
+        it("accepts colorimetry=BT2100 with RANGE=NARROW", function()
+          local doc, err = sdp.parse(video20_sdp(BT2100_BASE .. "; RANGE=NARROW"), "st2110")
+          assert.is_nil(err)
+          assert.is_table(doc)
+        end)
+
+        it("accepts colorimetry=BT2100 with RANGE=FULL", function()
+          local doc, err = sdp.parse(video20_sdp(BT2100_BASE .. "; RANGE=FULL"), "st2110")
+          assert.is_nil(err)
+          assert.is_table(doc)
+        end)
+
+        it("rejects colorimetry=BT2100 with RANGE=FULLPROTECT", function()
+          local doc = sdp.parse(video20_sdp(BT2100_BASE .. "; RANGE=FULLPROTECT"))
+          assert.is_table(doc)
+          local ok, err = doc:validate("st2110")
+          assert.is_nil(ok)
+          assert.is_table(err)
+          assert.matches("RANGE", err.message)
+          assert.matches("BT2100", err.message)
+          assert.equal("ST 2110-20:2022 §7.3", err.spec_ref)
+        end)
+      end)
     end)
 
     describe("TP (transport profile)", function()

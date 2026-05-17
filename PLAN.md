@@ -75,7 +75,9 @@ A6 subset, A7, A9, A12, A13).
 - A3 landed: SSN year-suffix closed sets ({2017,2022} / {2019,2022} /
   {2024}).
 - A5 landed: jxsv width/height upper bound 32767 (ST 2110-22:2022 §7.2
-  Table 1). A6 subset next.
+  Table 1).
+- A6 subset landed: BT2100 → RANGE ∈ {NARROW, FULL} only (ST 2110-20:2022
+  §7.3). A7 next.
 
 ## Next
 
