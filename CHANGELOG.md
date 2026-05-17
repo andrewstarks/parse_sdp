@@ -11,6 +11,18 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ### Fixed (audit pass #31 — Wave 2 parser fixes)
 
+- **Whitespace around '=' in raw-video fmtp tokens (audit A7).**
+  ST 2110-20:2022 §7.1: *"Each parameter entry shall be constructed as
+  either: 'name=value' (no whitespace) or 'name' (no value)."* The
+  shared `fmtp_params` helper matched `^([^=%s]+)%s*=%s*(.-)$`, silently
+  accepting `width = 1920`, `width =1920`, and `width= 1920`. The check
+  is grounded in the -20 §7.1 wording only, so the strict rule was
+  added inside `valid_st2110_20_fmtp_format` (which already runs only
+  in the raw-video branch with the §7.1 cite) rather than tightening
+  the shared parser globally. No in-repo fixture relies on the lenient
+  form. 4 new tests under the §7.1 fmtp-format describe block
+  (spaces-both-sides reject, space-before reject, space-after reject,
+  canonical pass).
 - **BT2100 colorimetry restricts RANGE to {NARROW, FULL} (audit A6
   subset).** ST 2110-20:2022 §7.3: *"When the colorimetry value is
   BT2100, only the NARROW and FULL values are permitted."* The

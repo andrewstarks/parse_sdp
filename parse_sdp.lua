@@ -1157,6 +1157,15 @@ local function valid_st2110_20_fmtp_format(value)
   if not nok then return nil, nmsg .. " (ST 2110-20:2022 §7.1)" end
   local params_str = value:match("^%d+%s+(.+)$")
   if not params_str then return true end
+  -- ST 2110-20:2022 §7.1: "Each parameter entry shall be constructed as
+  -- either: 'name=value' (no whitespace) or 'name' (no value)."
+  -- Reject whitespace immediately before or after '=' in any token.
+  for tok in params_str:gmatch("[^;]+") do
+    local trimmed = tok:match("^%s*(.-)%s*$")
+    if trimmed:find("[ \t]=") or trimmed:find("=[ \t]") then
+      return nil, "fmtp parameter must not have whitespace around '=' (ST 2110-20:2022 §7.1)"
+    end
+  end
   -- Every ';' SHALL be followed by whitespace (space or tab).
   local i = 1
   while true do

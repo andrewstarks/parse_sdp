@@ -77,7 +77,9 @@ A6 subset, A7, A9, A12, A13).
 - A5 landed: jxsv width/height upper bound 32767 (ST 2110-22:2022 §7.2
   Table 1).
 - A6 subset landed: BT2100 → RANGE ∈ {NARROW, FULL} only (ST 2110-20:2022
-  §7.3). A7 next.
+  §7.3).
+- A7 landed: whitespace around '=' rejected in raw-video fmtp
+  (ST 2110-20:2022 §7.1). A9 next.
 
 ## Next
 
