@@ -1205,7 +1205,7 @@ function st2110.validate(doc)
 
   if #doc.media < 1 then
     return nil, errors.new("ST 2110 requires at least one media block",
-      { field_path = "media", spec_ref = "ST 2110-10 §7" })
+      { field_path = "media", spec_ref = "ST 2110-10:2022 §7" })
   end
 
   local sess_attrs = doc.session.attributes or {}
@@ -1217,7 +1217,7 @@ function st2110.validate(doc)
       return nil, errors.new(
         "a=mediaclk must be media-level, not session-level",
         { field_path = "session.attributes[mediaclk]",
-          spec_ref = "ST 2110-10 §8.3", code = "INVALID_VALUE" })
+          spec_ref = "ST 2110-10:2022 §8.3", code = "INVALID_VALUE" })
     end
   end
 
@@ -1228,7 +1228,7 @@ function st2110.validate(doc)
     if not cok then
       return nil, errors.new(msg, {
         field_path = "session.connection",
-        spec_ref   = "ST 2110-10 §6.5", code = "INVALID_VALUE",
+        spec_ref   = "ST 2110-10:2022 §6.5", code = "INVALID_VALUE",
       })
     end
   end
@@ -1240,7 +1240,7 @@ function st2110.validate(doc)
     if not VALID_ST2110_PROTO[m.proto or ""] then
       return nil, errors.new(
         string.format("invalid media protocol '%s' (expected RTP/AVP)", tostring(m.proto)),
-        { field_path = mpath .. ".proto", spec_ref = "ST 2110-10 §8.1", code = "INVALID_VALUE" })
+        { field_path = mpath .. ".proto", spec_ref = "ST 2110-10:2022 §8.1", code = "INVALID_VALUE" })
     end
 
     local conn = m.connection
@@ -1249,7 +1249,7 @@ function st2110.validate(doc)
       if not cok then
         return nil, errors.new(msg, {
           field_path = mpath .. ".connection",
-          spec_ref   = "ST 2110-10 §6.5", code = "INVALID_VALUE",
+          spec_ref   = "ST 2110-10:2022 §6.5", code = "INVALID_VALUE",
         })
       end
     end
@@ -1260,7 +1260,7 @@ function st2110.validate(doc)
         local ok_sf, msg_sf = valid_source_filter(a.value or "")
         if not ok_sf then
           return attr_err(msg_sf, mpath, "source-filter",
-            "ST 2110-10 §8.4 / RFC 4570", "INVALID_VALUE")
+            "ST 2110-10:2022 §8.4 / RFC 4570", "INVALID_VALUE")
         end
       end
     end
@@ -1269,7 +1269,7 @@ function st2110.validate(doc)
     if not conn and not sess_conn then
       return nil, errors.new(
         "missing required connection address (c=) for media block",
-        { field_path = mpath .. ".connection", spec_ref = "ST 2110-10 §6.3" })
+        { field_path = mpath .. ".connection", spec_ref = "ST 2110-10:2022 §6.3" })
     end
 
     -- Validate all ts-refclk attrs from both session and media level (ST 2110-10 §8.2).
@@ -1282,27 +1282,27 @@ function st2110.validate(doc)
       if a.name == "ts-refclk" then all_tsrefclk[#all_tsrefclk + 1] = a end
     end
     if #all_tsrefclk == 0 then
-      return attr_err("missing required attribute 'ts-refclk'", mpath, "ts-refclk", "ST 2110-10 §7.2")
+      return attr_err("missing required attribute 'ts-refclk'", mpath, "ts-refclk", "ST 2110-10:2022 §7.2")
     end
     for _, tsrefclk in ipairs(all_tsrefclk) do
       local trok, trmsg = valid_tsrefclk(tsrefclk.value or "")
       if not trok then
-        return attr_err("invalid ts-refclk: " .. (trmsg or ""), mpath, "ts-refclk", "ST 2110-10 §7.2", "INVALID_VALUE")
+        return attr_err("invalid ts-refclk: " .. (trmsg or ""), mpath, "ts-refclk", "ST 2110-10:2022 §7.2", "INVALID_VALUE")
       end
     end
 
     local mediaclk = find_attr(mattrs, "mediaclk")
     if not mediaclk then
-      return attr_err("missing required attribute 'mediaclk'", mpath, "mediaclk", "ST 2110-10 §7.3")
+      return attr_err("missing required attribute 'mediaclk'", mpath, "mediaclk", "ST 2110-10:2022 §7.3")
     end
     local mcok, mcmsg = valid_mediaclk(mediaclk.value or "")
     if not mcok then
-      return attr_err("invalid mediaclk: " .. (mcmsg or ""), mpath, "mediaclk", "ST 2110-10 §7.3", "INVALID_VALUE")
+      return attr_err("invalid mediaclk: " .. (mcmsg or ""), mpath, "mediaclk", "ST 2110-10:2022 §7.3", "INVALID_VALUE")
     end
 
     local rtpmap = find_attr(mattrs, "rtpmap")
     if not rtpmap then
-      return attr_err("missing required attribute 'rtpmap'", mpath, "rtpmap", "ST 2110-10 §7")
+      return attr_err("missing required attribute 'rtpmap'", mpath, "rtpmap", "ST 2110-10:2022 §7")
     end
 
     -- a=fmtp is NOT universally required by ST 2110-10:2022 §8. §8 covers SDP
@@ -1348,7 +1348,7 @@ function st2110.validate(doc)
           string.format(
             "RTP payload type %s is outside the dynamic range 96-127 and does not match an RFC 3551 §6 static designation for this encoding (ST 2110-10 §6.2)",
             tostring(rtp_pt)),
-          mpath, "rtpmap", "ST 2110-10 §6.2", "INVALID_VALUE")
+          mpath, "rtpmap", "ST 2110-10:2022 §6.2", "INVALID_VALUE")
       end
     end
 
@@ -1522,7 +1522,7 @@ function st2110.validate(doc)
       if clock_rate ~= 90000 then
         return attr_err(
           string.format("rtpmap clock rate must be 90000 for jxsv (got %s)", tostring(clock_rate)),
-          mpath, "rtpmap", "ST 2110-22 §7", "INVALID_VALUE")
+          mpath, "rtpmap", "ST 2110-22:2022 §7", "INVALID_VALUE")
       end
       -- N8 (§7.2): "There is no semicolon character after the last item."
       -- (Unlike -20 §7.1, the post-';' whitespace is OPTIONAL in -22 §7.2.)
@@ -1603,28 +1603,28 @@ function st2110.validate(doc)
       if transmode_v ~= nil and transmode_v ~= true then
         local vok, vmsg = valid_enum(tostring(transmode_v), VALID_JXS_BIT, "transmode")
         if not vok then
-          return attr_err("transmode: " .. vmsg, mpath, "fmtp", "ST 2110-22 §7.2", "INVALID_VALUE")
+          return attr_err("transmode: " .. vmsg, mpath, "fmtp", "ST 2110-22:2022 §7.2", "INVALID_VALUE")
         end
       end
       local profile_v = params["profile"]
       if profile_v ~= nil and profile_v ~= true then
         local vok, vmsg = valid_enum(tostring(profile_v), VALID_JXS_PROFILE, "profile")
         if not vok then
-          return attr_err("profile: " .. vmsg, mpath, "fmtp", "ST 2110-22 §7.2", "INVALID_VALUE")
+          return attr_err("profile: " .. vmsg, mpath, "fmtp", "ST 2110-22:2022 §7.2", "INVALID_VALUE")
         end
       end
       local level_v = params["level"]
       if level_v ~= nil and level_v ~= true then
         local vok, vmsg = valid_enum(tostring(level_v), VALID_JXS_LEVEL, "level")
         if not vok then
-          return attr_err("level: " .. vmsg, mpath, "fmtp", "ST 2110-22 §7.2", "INVALID_VALUE")
+          return attr_err("level: " .. vmsg, mpath, "fmtp", "ST 2110-22:2022 §7.2", "INVALID_VALUE")
         end
       end
       local sublevel_v = params["sublevel"]
       if sublevel_v ~= nil and sublevel_v ~= true then
         local vok, vmsg = valid_enum(tostring(sublevel_v), VALID_JXS_SUBLEVEL, "sublevel")
         if not vok then
-          return attr_err("sublevel: " .. vmsg, mpath, "fmtp", "ST 2110-22 §7.2", "INVALID_VALUE")
+          return attr_err("sublevel: " .. vmsg, mpath, "fmtp", "ST 2110-22:2022 §7.2", "INVALID_VALUE")
         end
       end
       -- PM (Packing Mode) is NOT a ST 2110-22 parameter. ST 2110-22:2019 §7.2
@@ -1641,7 +1641,7 @@ function st2110.validate(doc)
       if ssn ~= nil and ssn ~= true then
         if not _ssn22_pat:match(tostring(ssn)) then
           return attr_err("invalid SSN value (expected ST2110-22:YYYY, e.g. ST2110-22:2019 or ST2110-22:2022)",
-            mpath, "fmtp", "ST 2110-22 §7.2", "INVALID_VALUE")
+            mpath, "fmtp", "ST 2110-22:2022 §7.2", "INVALID_VALUE")
         end
       end
       for _, ck in ipairs(jxs_req) do
@@ -1649,11 +1649,11 @@ function st2110.validate(doc)
         local val = params[key]
         if val == nil then
           return attr_err("fmtp missing required '" .. key .. "' parameter for jxsv",
-            mpath, "fmtp", "ST 2110-22 §7.2")
+            mpath, "fmtp", "ST 2110-22:2022 §7.2")
         end
         local vok, vmsg = fn(tostring(val))
         if not vok then
-          return attr_err(key .. ": " .. vmsg, mpath, "fmtp", "ST 2110-22 §7.2", "INVALID_VALUE")
+          return attr_err(key .. ": " .. vmsg, mpath, "fmtp", "ST 2110-22:2022 §7.2", "INVALID_VALUE")
         end
       end
       for _, ck in ipairs(jxs_opt) do
@@ -1662,7 +1662,7 @@ function st2110.validate(doc)
         if val ~= nil and val ~= true then
           local vok, vmsg = fn(tostring(val))
           if not vok then
-            return attr_err(key .. ": " .. vmsg, mpath, "fmtp", "ST 2110-22 §7 / RFC 9134 §7.1", "INVALID_VALUE")
+            return attr_err(key .. ": " .. vmsg, mpath, "fmtp", "ST 2110-22:2022 §7 / RFC 9134 §7.1", "INVALID_VALUE")
           end
         end
       end
@@ -1699,7 +1699,7 @@ function st2110.validate(doc)
       if maxudp_v ~= nil and maxudp_v ~= true then
         local vok, vmsg = valid_maxudp(tostring(maxudp_v))
         if not vok then
-          return attr_err("MAXUDP: " .. vmsg, mpath, "fmtp", "ST 2110-22 §7", "INVALID_VALUE")
+          return attr_err("MAXUDP: " .. vmsg, mpath, "fmtp", "ST 2110-22:2022 §7", "INVALID_VALUE")
         end
       end
       local cmax_v = params["CMAX"]
@@ -1721,7 +1721,7 @@ function st2110.validate(doc)
       if clock_rate ~= 90000 then
         return attr_err(
           string.format("rtpmap clock rate must be 90000 for video (got %s)", tostring(clock_rate)),
-          mpath, "rtpmap", "ST 2110-20 §7.2", "INVALID_VALUE")
+          mpath, "rtpmap", "ST 2110-20:2022 §7.2", "INVALID_VALUE")
       end
       -- ST 2110-20:2022 §7.1: separator SHALL be ";" followed by whitespace,
       -- with no semicolon after the last item. Validate the raw fmtp string
@@ -1749,7 +1749,7 @@ function st2110.validate(doc)
         { "width",          valid_width },   -- §7.2: integer 1..32767
         { "height",         valid_height },  -- §7.2: integer 1..32767
         { "exactframerate", valid_exactframerate },
-        { "depth",          valid_depth, "ST 2110-20 §7.4.2" },  -- M30 G1: enum {8,10,12,16,16f}
+        { "depth",          valid_depth, "ST 2110-20:2022 §7.4.2" },  -- M30 G1: enum {8,10,12,16,16f}
         { "colorimetry",    function(v) return valid_enum(v, VALID_COLORIMETRY, "colorimetry") end },
         { "PM",             function(v) return valid_enum(v, VALID_PM,          "PM")          end },
         { "SSN",            function(v)
@@ -1760,7 +1760,7 @@ function st2110.validate(doc)
                             "ST 2110-21:2022 §8.1" },
       }
       for _, ck in ipairs(video_checks) do
-        local key, fn, ref = ck[1], ck[2], ck[3] or "ST 2110-20 §7.2"
+        local key, fn, ref = ck[1], ck[2], ck[3] or "ST 2110-20:2022 §7.2"
         local val = params[key]
         if val == nil then
           return attr_err("fmtp missing required '" .. key .. "' parameter for video",
@@ -1797,7 +1797,7 @@ function st2110.validate(doc)
       if range_val ~= nil then
         local vok, vmsg = valid_enum(tostring(range_val), VALID_RANGE, "RANGE")
         if not vok then
-          return attr_err(vmsg, mpath, "fmtp", "ST 2110-20 §7.2", "INVALID_VALUE")
+          return attr_err(vmsg, mpath, "fmtp", "ST 2110-20:2022 §7.2", "INVALID_VALUE")
         end
       end
       -- (TP is now required for all raw video streams — see video_checks
@@ -1809,14 +1809,14 @@ function st2110.validate(doc)
       for _, flag in ipairs({ "interlace", "segmented" }) do
         if params[flag] ~= nil and params[flag] ~= true then
           return attr_err(flag .. " must be a bare flag, not name=value (ST 2110-20 §7.3)",
-            mpath, "fmtp", "ST 2110-20 §7.3", "INVALID_VALUE")
+            mpath, "fmtp", "ST 2110-20:2022 §7.3", "INVALID_VALUE")
         end
       end
       -- ST 2110-20:2017 §7.3: "Signaling of [segmented] without the interlace
       -- parameter is forbidden." (PsF requires interlace to be set as well.)
       if params["segmented"] and not params["interlace"] then
         return attr_err("segmented requires interlace to also be present (ST 2110-20 §7.3)",
-          mpath, "fmtp", "ST 2110-20 §7.3")
+          mpath, "fmtp", "ST 2110-20:2022 §7.3")
       end
       -- M30 G9: ST 2110-20 §6.3.3 — "The Extended UDP size limit defined in
       -- SMPTE ST 2110-10 shall not be used in the Block Packing Mode."
@@ -1825,7 +1825,7 @@ function st2110.validate(doc)
       if params["PM"] == "2110BPM" and params["MAXUDP"] ~= nil then
         return attr_err(
           "MAXUDP must not be signaled with PM=2110BPM (ST 2110-20 §6.3.3 forbids Extended UDP size in BPM)",
-          mpath, "fmtp", "ST 2110-20 §6.3.3", "INVALID_VALUE")
+          mpath, "fmtp", "ST 2110-20:2022 §6.3.3", "INVALID_VALUE")
       end
       -- N12 (audit): ST 2110-20:2022 §7.4.1 — "Key signals are used in
       -- relationship to 'fill' signals of video content. The Key signal
@@ -1880,14 +1880,14 @@ function st2110.validate(doc)
         -- and is therefore an upper bound, not a lower bound on the
         -- SDP-signaled value, and requires NPACKETS context to compute.
         { "CMAX",    valid_integer,  "ST 2110-21:2022 §8.2" },
-        { "TSMODE",  function(v) return valid_enum(v, VALID_TSMODE, "TSMODE") end, "ST 2110-10 §8.7" },
+        { "TSMODE",  function(v) return valid_enum(v, VALID_TSMODE, "TSMODE") end, "ST 2110-10:2022 §8.7" },
         -- ST 2110-10:2022 §8.7 — TSDELAY "is represented as a decimal positive
         -- integer number of microseconds". (Annex B Informative SDP example
         -- shows TSDELAY=0; non-normative — §8.7 SHALL governs.)
-        { "TSDELAY", valid_pos_int,  "ST 2110-10 §8.7" },
+        { "TSDELAY", valid_pos_int,  "ST 2110-10:2022 §8.7" },
       }
       for _, ck in ipairs(video_opt_checks) do
-        local key, fn, ref = ck[1], ck[2], ck[3] or "ST 2110-20 §7.2"
+        local key, fn, ref = ck[1], ck[2], ck[3] or "ST 2110-20:2022 §7.2"
         local val = params[key]
         if val ~= nil and val ~= true then
           local vok, vmsg = fn(tostring(val))
@@ -1904,7 +1904,7 @@ function st2110.validate(doc)
         return attr_err(
           string.format("rtpmap encoding '%s' is not valid for ST 2110-30 audio (must be L16, L24, or AM824)",
             tostring(enc)),
-          mpath, "rtpmap", "ST 2110-30 §7.1", "INVALID_VALUE")
+          mpath, "rtpmap", "ST 2110-30:2025 §6.1", "INVALID_VALUE")
       end
       -- Clock rate: ST 2110-30 §6.1 mandates 48 kHz and permits 44.1/96 kHz, then
       -- says "Other sampling frequencies … are out of scope of this standard."
@@ -1956,7 +1956,7 @@ function st2110.validate(doc)
       local ptime_ms = tonumber(ptime_attr.value or "")
       if not ptime_ms or ptime_ms <= 0 then
         return attr_err("invalid a=ptime value (expected positive number)",
-          mpath, "ptime", "ST 2110-30 §7.2", "INVALID_VALUE")
+          mpath, "ptime", "ST 2110-30:2025 §6.2.1", "INVALID_VALUE")
       end
       if enc == "AM824" then
         -- N5: "<packet-time> parameter shall take one of the values from
@@ -2012,7 +2012,7 @@ function st2110.validate(doc)
               string.format(
                 "audio packet RTP payload %d B (%d ch × %d samples × %d B) exceeds Standard UDP limit %d B (1460 − RTP 12); reduce ptime or channels",
                 needed, ch, samples_per_packet, bps, rtp_payload_limit),
-              mpath, "fmtp", "ST 2110-10 §6.4", "INVALID_VALUE")
+              mpath, "fmtp", "ST 2110-10:2022 §6.4", "INVALID_VALUE")
           end
         end
       end
@@ -2027,7 +2027,7 @@ function st2110.validate(doc)
       if co ~= nil and co ~= true then
         local cok, cmsg = valid_channel_order(tostring(co), enc)
         if not cok then
-          return attr_err(cmsg, mpath, "fmtp", "ST 2110-30 §6.2.2", "INVALID_VALUE")
+          return attr_err(cmsg, mpath, "fmtp", "ST 2110-30:2025 §6.2.2", "INVALID_VALUE")
         end
       end
     end
@@ -2096,7 +2096,7 @@ function st2110.validate(doc)
     end
     return src, dst
   end
-  local dup_ok, dup_err = each_dup_group(doc, "ST 2110-10 §8.5", function(legs)
+  local dup_ok, dup_err = each_dup_group(doc, "ST 2110-10:2022 §8.5", function(legs)
     local base_type   = legs[1].block.media
     local base_rtpmap = find_attr(legs[1].block.attributes or {}, "rtpmap")
     local base_fmtp   = find_attr(legs[1].block.attributes or {}, "fmtp")
@@ -2108,7 +2108,7 @@ function st2110.validate(doc)
         return nil, errors.new(
           "a=group:DUP legs must have the same media type",
           { field_path = "session.attributes[group]",
-            spec_ref = "ST 2110-10 §8.5", code = "INVALID_VALUE" })
+            spec_ref = "ST 2110-10:2022 §8.5", code = "INVALID_VALUE" })
       end
       local rm = find_attr(legs[j].block.attributes or {}, "rtpmap")
       local enc, rate = rtpmap_parse((rm and rm.value) or "")
@@ -2116,7 +2116,7 @@ function st2110.validate(doc)
         return nil, errors.new(
           "a=group:DUP legs must have the same rtpmap encoding and clock rate",
           { field_path = "session.attributes[group]",
-            spec_ref = "ST 2110-10 §8.5", code = "INVALID_VALUE" })
+            spec_ref = "ST 2110-10:2022 §8.5", code = "INVALID_VALUE" })
       end
       -- DUP legs SHALL use the same RTP payload type number. ST 2022-7:2013
       -- contains no SDP-level clauses (verified by Phase 1 spec walk); the
@@ -2128,7 +2128,7 @@ function st2110.validate(doc)
         return nil, errors.new(
           "a=group:DUP legs must use the same RTP payload type number",
           { field_path = "session.attributes[group]",
-            spec_ref = "ST 2110-10 §8.5", code = "INVALID_VALUE" })
+            spec_ref = "ST 2110-10:2022 §8.5", code = "INVALID_VALUE" })
       end
       -- Identical RTP payload bytes (ST 2022-7 §6 wire-format requirement)
       -- implies identical SDP essence parameters; SDP-tier cite is
@@ -2141,14 +2141,14 @@ function st2110.validate(doc)
         return nil, errors.new(
           "a=group:DUP legs must have identical fmtp essence parameters",
           { field_path = "session.attributes[group]",
-            spec_ref = "ST 2110-10 §8.5", code = "INVALID_VALUE" })
+            spec_ref = "ST 2110-10:2022 §8.5", code = "INVALID_VALUE" })
       end
       local src, dst = leg_addrs(legs[j].block)
       if dst ~= "" and dst == base_dst and src == base_src then
         return nil, errors.new(
           "a=group:DUP legs must not use identical source and destination addresses (ST 2110-10 §8.5)",
           { field_path = "session.attributes[group]",
-            spec_ref = "ST 2110-10 §8.5", code = "INVALID_VALUE" })
+            spec_ref = "ST 2110-10:2022 §8.5", code = "INVALID_VALUE" })
       end
     end
     return true
@@ -2411,7 +2411,7 @@ function ipmx.validate(doc)
   -- accept empty SDPs.
   if #doc.media < 1 then
     return nil, errors.new("IPMX requires at least one media block",
-      { field_path = "media", spec_ref = "ST 2110-10 §7" })
+      { field_path = "media", spec_ref = "ST 2110-10:2022 §7" })
   end
 
   -- Two predicates over media blocks:

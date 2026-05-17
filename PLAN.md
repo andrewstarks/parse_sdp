@@ -58,10 +58,16 @@ new findings (12 Direction-A, 1 Direction-B, 7 Direction-C / cosmetic) plus
 and a 28-commit landing plan in five waves. Wave 1 (citation cleanup) is
 landing now.
 
-**Wave 1 progress.** E1 (RFC 5285 → RFC 8285), E4 (RFC 5888 §8.1 → §4),
-E2 (ST 2110-40 §7.2 → §5.3 / RFC 8331 §4), E3 (ST 2110-40 MAXUDP
-§6.1.4 → §5.2.1), and E7 (ST 2022-7 parenthetical removal) landed.
-E8 (year-tagging consistency) remaining.
+**Wave 1 complete (citation cleanup).** All six commits landed:
+- E1 RFC 5285 → RFC 8285 (`a=extmap`, 9 sites)
+- E4 RFC 5888 §8.1 → §4 (a=mid uniqueness)
+- E2 ST 2110-40 §7.2 → §5.3 / RFC 8331 §4 (clock-rate + VPID_Code)
+- E3 ST 2110-40 MAXUDP §6.1.4 → §5.2.1
+- E7 ST 2022-7 parenthetical removed from DUP error text
+- E8 Year-tag consistency pass on ST 2110 cites
+
+Next: Wave 2 (atomic Direction-A/B fixes) — B1, A2, A3, A5, A6, A7,
+A9, A12, A13.
 
 ## Next
 

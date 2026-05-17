@@ -58,7 +58,7 @@ describe("errors.format", function()
     local out = errors.format({
       message    = "missing ts-refclk",
       field_path = "media[1].attributes[ts-refclk]",
-      spec_ref   = "ST 2110-10 §7.2",
+      spec_ref   = "ST 2110-10:2022 §7.2",
       line = 0, col = 0, context = "",
     })
     assert.truthy(out:find("ST 2110-10", 1, true))
@@ -107,9 +107,9 @@ describe("errors.new", function()
   end)
 
   it("sets field_path and spec_ref when given", function()
-    local e = errors.new("err", { field_path = "media[1]", spec_ref = "ST 2110-10 §7" })
+    local e = errors.new("err", { field_path = "media[1]", spec_ref = "ST 2110-10:2022 §7" })
     assert.equal("media[1]",       e.field_path)
-    assert.equal("ST 2110-10 §7", e.spec_ref)
+    assert.equal("ST 2110-10:2022 §7", e.spec_ref)
   end)
 
 end)

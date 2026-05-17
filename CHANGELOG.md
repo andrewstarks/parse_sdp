@@ -11,6 +11,23 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ### Fixed (audit pass #31 — citation cleanup)
 
+- **Year-tag consistency pass on ST 2110 cites (audit E8).** Prior
+  cite-style mixed `ST 2110-XX` and `ST 2110-XX:YYYY` for the same
+  spec. Standardized on `ST 2110-XX:YYYY §Z` for all revision-specific
+  clauses:
+  - `ST 2110-10 §X` → `ST 2110-10:2022 §X` (12 distinct cite strings)
+  - `ST 2110-20 §X` → `ST 2110-20:2022 §X` (4 cites)
+  - `ST 2110-22 §X` → `ST 2110-22:2022 §X` (3 cites)
+  - `ST 2110-30 §6.2.2` → `ST 2110-30:2025 §6.2.2`
+  - `ST 2110-30 §7.1` → `ST 2110-30:2025 §6.1` (§7 in :2025 is
+    "Conformance Levels"; the encoding-name SHALL for L16/L24 sits at
+    §6.1 in the current revision)
+  - `ST 2110-30 §7.2` → `ST 2110-30:2025 §6.2.1` (the ptime
+    value-form rule chains via §6.2.1's AES67 reference)
+  Behavior unchanged; 16 test hard-assertions on spec_ref updated;
+  62 lines changed across parse_sdp.lua, spec/st2110_spec.lua, and
+  spec/errors_spec.lua. 777 hermetic + 10 conformance tests still
+  pass.
 - **ST 2022-7 parenthetical removed from DUP error-message text (audit
   E7).** Phase 1's independent spec walk confirmed that ST 2022-7:2013
   contains no SDP-level normative clauses (the §6 "RTP header and RTP
