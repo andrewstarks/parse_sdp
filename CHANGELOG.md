@@ -9,6 +9,22 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 
+### Fixed (audit pass #31 — Wave 3 parser fixes)
+
+- **SSN=ST2110-40:2021 receiver-equivalence (audit A1; user decision
+  D2).** ST 2110-40:2023 §7: *"Receivers shall consider a Format
+  Specific Parameter SSN value of ST2110-40:2021 as equivalent to a
+  value of ST2110-40:2023."* The parser previously demanded an exact
+  `ST2110-40:2023` when TM was signaled, rejecting spec-conformant
+  senders that emit `:2021`. The parser acts as a receiver here, so
+  rejecting `:2021` violates the receiver SHALL. Updated the smpte291
+  SSN check: when TM is signaled, accept either `ST2110-40:2023` or
+  `ST2110-40:2021`; when TM is absent, still require `ST2110-40:2018`
+  (bare `:2021` is not equivalent to `:2018`). Reworded the error
+  message to note the equivalence. 3 new tests in
+  `spec/st2110_spec.lua` (2021+LLTM pass, 2021+CTM pass, bare-2021
+  reject).
+
 ### Fixed (audit pass #31 — Wave 2 parser fixes)
 
 - **Mixed traceable / non-traceable ts-refclk rejection (audit A13).**

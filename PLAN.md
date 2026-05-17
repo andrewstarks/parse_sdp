@@ -87,6 +87,12 @@ A6 subset, A7, A9, A12, A13).
 - A13 landed: per-level mixed traceable / non-traceable ts-refclk
   rejection (RFC 7273 §4.8). **Wave 2 complete.**
 
+**Wave 3 in progress** (medium-complexity Direction-A — A1, A4, A8,
+A10, E5).
+
+- A1 landed: SSN=ST2110-40:2021 receiver-equivalence (ST 2110-40:2023
+  §7 / user decision D2). A4 next.
+
 ## Next
 
 Wave 1: cite migrations (E1–E8). Wave 2–5: Direction-A/B fixes and the

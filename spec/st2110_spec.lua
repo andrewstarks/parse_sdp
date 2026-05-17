@@ -838,6 +838,33 @@ describe("ST 2110 validation", function()
       assert.is_table(doc)
     end)
 
+    -- ST 2110-40:2023 §7: "Receivers shall consider a Format Specific
+    -- Parameter SSN value of ST2110-40:2021 as equivalent to a value of
+    -- ST2110-40:2023." Parser acts as a receiver — accept :2021 wherever
+    -- :2023 is required (i.e. when TM is signaled). Bare :2021 without TM
+    -- is not equivalent to :2018 and is rejected.
+    it("accepts SSN=ST2110-40:2021 paired with TM=LLTM (receiver-equivalent to :2023)", function()
+      local doc, err = sdp.parse(ancillary_sdp("SSN=ST2110-40:2021; TM=LLTM; exactframerate=25"), "st2110")
+      assert.is_nil(err)
+      assert.is_table(doc)
+    end)
+
+    it("accepts SSN=ST2110-40:2021 paired with TM=CTM (receiver-equivalent to :2023)", function()
+      local doc, err = sdp.parse(ancillary_sdp("SSN=ST2110-40:2021; TM=CTM; exactframerate=25"), "st2110")
+      assert.is_nil(err)
+      assert.is_table(doc)
+    end)
+
+    it("rejects bare SSN=ST2110-40:2021 with no TM", function()
+      local doc = sdp.parse(ancillary_sdp("SSN=ST2110-40:2021; exactframerate=25"))
+      assert.is_table(doc)
+      local ok, err = doc:validate("st2110")
+      assert.is_nil(ok)
+      assert.is_table(err)
+      assert.matches("SSN", err.message)
+      assert.equal("ST 2110-40:2023 §7", err.spec_ref)
+    end)
+
     it("rejects unrecognized TM value", function()
       local doc = sdp.parse(ancillary_sdp("SSN=ST2110-40:2023; TM=XYZ; exactframerate=25"))
       assert.is_table(doc)

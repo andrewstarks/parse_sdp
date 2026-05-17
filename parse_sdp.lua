@@ -1510,17 +1510,30 @@ function st2110.validate(doc)
       -- value ST2110-40:2018 unless they are signaling Format Specific
       -- Parameter TM, in which case they shall signal the value
       -- ST2110-40:2023." Value is tied to TM presence.
+      -- Receiver-equivalence rule (ST 2110-40:2023 §7): "Receivers shall
+      -- consider a Format Specific Parameter SSN value of ST2110-40:2021
+      -- as equivalent to a value of ST2110-40:2023." Acting as a receiver,
+      -- the parser accepts :2021 wherever :2023 is required (i.e. when TM
+      -- is signaled). The bare :2021 form (without TM) is still rejected.
       local ssn = params["SSN"]
       if ssn == nil or ssn == true then
         return attr_err("fmtp missing required 'SSN' parameter for smpte291",
           mpath, "fmtp", "ST 2110-40:2023 §7")
       end
       local ssn_str = tostring(ssn)
-      local expected_ssn = (tm and tm ~= true) and "ST2110-40:2023" or "ST2110-40:2018"
-      if ssn_str ~= expected_ssn then
+      local tm_signaled = (tm and tm ~= true)
+      local ssn_ok
+      if tm_signaled then
+        ssn_ok = (ssn_str == "ST2110-40:2023" or ssn_str == "ST2110-40:2021")
+      else
+        ssn_ok = (ssn_str == "ST2110-40:2018")
+      end
+      if not ssn_ok then
+        local expected = tm_signaled
+          and "'ST2110-40:2023' (or 'ST2110-40:2021', accepted as equivalent per §7) when TM is signaled"
+          or  "'ST2110-40:2018' when TM is absent"
         return attr_err(string.format(
-          "invalid SSN value '%s' (expected '%s' %s)", ssn_str, expected_ssn,
-          (tm and tm ~= true) and "when TM is signaled" or "when TM is absent"),
+          "invalid SSN value '%s' (expected %s)", ssn_str, expected),
           mpath, "fmtp", "ST 2110-40:2023 §7", "INVALID_VALUE")
       end
       -- ST 2110-40:2023 §7: exactframerate is REQUIRED. "All Senders shall
