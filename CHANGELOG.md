@@ -9,6 +9,22 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 
+### Changed (audit pass #31 — Wave 5 RFC 8866 base migration)
+
+- **CLAUDE.md / PLAN.md base spec rename (audit D1.7).** Updated the
+  three-tier description (`RFC 4566 (generic SDP) → SMPTE ST 2110 →
+  IPMX`) to `RFC 8866 (generic SDP; obsoletes RFC 4566) → SMPTE
+  ST 2110 → IPMX` in CLAUDE.md, and the matching layered-tiers note
+  in PLAN.md. Updated four other "RFC 4566" mentions in CLAUDE.md
+  (Project Purpose, Public API examples, "Strict by default", "Key
+  References", "Things to Watch Out For") to RFC 8866. RFC 4566 is
+  kept in Key References as the historical predecessor. No code or
+  parser-behavior changes — this commit establishes the base-spec
+  context that Wave 5's six following commits (D1.1–D1.6) operate
+  in. README.md / GUIDE.md mentions of RFC 4566 are user-facing API
+  documentation and will land in their own commits as those tiers'
+  behavior actually shifts.
+
 ### Fixed (audit pass #31 — Wave 4 parser fixes)
 
 - **RFC 4570 §3.1 dest-address ↔ c= cross-line check (audit A11; user

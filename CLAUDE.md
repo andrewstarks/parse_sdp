@@ -6,7 +6,7 @@ Context and conventions for Claude Code working in this repo.
 
 `parse_sdp` is a Lua 5.5 + LPEG library that parses, validates, and serializes SDP
 (Session Description Protocol) files. Three validation tiers:
-RFC 4566 (generic SDP) → SMPTE ST 2110 → IPMX.
+RFC 8866 (generic SDP; obsoletes RFC 4566) → SMPTE ST 2110 → IPMX.
 
 **Strictness is a primary feature**, but it is *spec-grounded*, not opinion.
 The library rejects any SDP that the relevant standard explicitly forbids and
@@ -37,7 +37,7 @@ parse_sdp.lua        single-file library AND CLI executable (dual-purpose)
                      Internal sections (in order): errors · util · grammar ·
                      validate · serialize · st2110 · ipmx · parser · public API · CLI
 spec/
-  sdp_spec.lua       RFC 4566 parser tests
+  sdp_spec.lua       RFC 8866 (base SDP) parser tests
   st2110_spec.lua    ST 2110 validation tests
   ipmx_spec.lua      IPMX validation tests
   errors_spec.lua    error formatting tests
@@ -45,7 +45,7 @@ spec/
   fixtures/          sample .sdp files used by tests
 examples/
   examples.lua       runnable API walkthrough (lua examples/examples.lua)
-  generic/           RFC 4566 SDP samples — valid/ and invalid/
+  generic/           RFC 8866 SDP samples — valid/ and invalid/
   st2110/            ST 2110 SDP samples — valid/ and invalid/
   ipmx/              IPMX SDP samples — valid/ and invalid/
 ```
@@ -56,19 +56,19 @@ examples/
 local sdp = require("parse_sdp")
 
 -- Entry points (module-level)
-local doc, err = sdp.parse(text)            -- parse + validate RFC 4566
+local doc, err = sdp.parse(text)            -- parse + validate RFC 8866
 local doc, err = sdp.parse(text, "st2110") -- parse + validate ST 2110
 local doc, err = sdp.parse(text, "ipmx")   -- parse + validate IPMX
 local doc       = sdp.new(table)            -- wrap table as doc (no validation)
 
 -- doc methods (via metatable)
-doc:validate()            -- validate as RFC 4566; true or nil, err
+doc:validate()            -- validate as RFC 8866; true or nil, err
 doc:validate("st2110")    -- validate as ST 2110; true or nil, err
 doc:validate("ipmx")      -- validate as IPMX; true or nil, err
 doc:is_sdp()              -- bool
 doc:is_st2110()           -- bool
 doc:is_ipmx()             -- bool
-doc:to_sdp()           -- → SDP text string (CRLF, strict RFC 4566 ordering)
+doc:to_sdp()           -- → SDP text string (CRLF, strict RFC 8866 ordering)
 doc:to_json()             -- → JSON string (via dkjson)
 
 -- doc is also a plain table
@@ -109,8 +109,8 @@ When adding or auditing a check:
 
 **In scope for validation:**
 
-- RFC 4566 grammar, field order, required fields, and defined value forms for
-  every field (required or optional).
+- RFC 8866 grammar (obsoletes RFC 4566), field order, required fields, and
+  defined value forms for every field (required or optional).
 - RFC 3550 / 3551 internal coherence (dynamic PT requires `a=rtpmap`; `a=fmtp`
   PT must match `a=rtpmap` PT; audio rtpmap requires the channels field; etc.).
 - Every explicit "shall" / "shall not" / "is forbidden" in ST 2110-10 / -20 /
@@ -226,7 +226,7 @@ confirmed-against-primary-source findings get fixed.
   compiles once, is composable, and is the established tool in this codebase.
 - **`M._grammar` and `M._errors`** are exposed on the returned module for spec
   access only; they are not part of the public contract.
-- **Strict by default.** If RFC 4566 says a field is required, the parser rejects
+- **Strict by default.** If RFC 8866 says a field is required, the parser rejects
   input that omits it — no silent defaults, no forgiveness.
 - **dkjson** is the only external runtime dependency beyond LPEG.
 - Lua 5.5: use `local` and `global` declarations explicitly; no implicit globals.
@@ -251,7 +251,8 @@ confirmed-against-primary-source findings get fixed.
 
 ## Key References
 
-- RFC 4566 (SDP): https://www.rfc-editor.org/rfc/rfc4566
+- RFC 8866 (SDP — current; obsoletes RFC 4566): https://www.rfc-editor.org/rfc/rfc8866
+- RFC 4566 (SDP — historical): https://www.rfc-editor.org/rfc/rfc4566
 - SMPTE ST 2110-10/20/21/30/40
 - IPMX specification
 - LPEG docs: https://www.inf.puc-rio.br/~roberto/lpeg/
@@ -260,7 +261,7 @@ confirmed-against-primary-source findings get fixed.
 
 ## Things to Watch Out For
 
-- SDP field ordering is mandatory per RFC 4566 §5. The serializer must enforce it;
+- SDP field ordering is mandatory per RFC 8866 §5. The serializer must enforce it;
   the parser must reject violations.
 - LPEG failure position: use `lpeg.Cp()` captures and map byte offset → line/col
   after the match attempt, not during.

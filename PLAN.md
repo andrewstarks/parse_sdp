@@ -7,8 +7,8 @@
   text — a positive "shall" / "MUST", a prohibitive "shall not" / "MUST NOT" /
   "is forbidden", or a defined value form / value set for an optional field.
   Spec silence is not a reason to reject.
-- **Layered.** Each tier (RFC 4566 → ST 2110 → IPMX) extends the previous; it
-  never replaces it.
+- **Layered.** Each tier (RFC 8866 → ST 2110 → IPMX) extends the previous; it
+  never replaces it. RFC 8866 obsoletes RFC 4566.
 - **Tight.** If a file is growing, stop and refactor before continuing. Prefer
   fewer, well-named things.
 - **Fail loudly.** Parse failures report exactly where and why.
