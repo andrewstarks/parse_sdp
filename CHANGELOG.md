@@ -11,6 +11,21 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ### Fixed (audit pass #31 — Wave 3 parser fixes)
 
+- **TSMODE / TSDELAY scope hoisted to all media types (audit A8).**
+  ST 2110-10:2022 §8.7 is under "SDP Parameters" (§8) — the umbrella
+  section that applies to every RTP stream conforming to ST 2110, not
+  the uncompressed-video subsection. The TSMODE and TSDELAY validators
+  lived inside the raw-video `video_opt_checks` table and ran only when
+  `m.media == "video"` with encoding `raw`, so jxsv, audio, smpte291,
+  and ST 2110-41 streams skipped both the value-form check and the
+  SAMP→TSDELAY cross-rule entirely. Moved the TSMODE enum check, the
+  TSDELAY positive-integer check, and the SAMP→TSDELAY cross-rule out
+  of the raw-video arm and into a single block that runs after the
+  encoding-specific branches conclude, still inside the per-media
+  loop. Same `spec_ref="ST 2110-10:2022 §8.7"`, same error messages.
+  7 new tests under a `TSMODE / TSDELAY scope is umbrella, not
+  raw-video` describe block exercising audio, smpte291, and jxsv
+  paths.
 - **m=video raw subtype assertion (audit A4).** ST 2110-20:2022 §7.1:
   *"For an uncompressed Active Video RTP Stream, the Media Type Field
   shall be 'video' and the Media Subtype name 'raw' shall be used."*

@@ -4247,6 +4247,121 @@ describe("ST 2110 validation", function()
         assert.is_table(doc)
       end)
     end)
+
+    -- A8: ST 2110-10:2022 §8.7 is an umbrella "SDP Parameters" clause that
+    -- applies to all RTP streams conforming to ST 2110, not the
+    -- uncompressed-video subsection. TSMODE/TSDELAY value-form validation
+    -- and the SAMP→TSDELAY cross-rule run for every media block carrying
+    -- an fmtp (audio, smpte291, jxsv, ST 2110-41, …) — not just raw video.
+    describe("TSMODE / TSDELAY scope is umbrella, not raw-video (§8.7, audit A8)", function()
+      local PTP = "a=ts-refclk:ptp=IEEE1588-2008:00-11-22-FF-FE-33-44-55:0"
+
+      local function audio_sdp(extra)
+        return table.concat({
+          "v=0",
+          "o=- 1234567890 1 IN IP4 192.168.1.1",
+          "s=Audio",
+          "t=0 0",
+          PTP,
+          "m=audio 5010 RTP/AVP 97",
+          "c=IN IP4 239.100.0.2/64",
+          "a=rtpmap:97 L24/48000/2",
+          "a=ptime:1",
+          "a=fmtp:97 channel-order=SMPTE2110.(ST)" .. extra,
+          "a=mediaclk:direct=0",
+        }, "\r\n") .. "\r\n"
+      end
+
+      local function ancillary_sdp(extra)
+        return table.concat({
+          "v=0",
+          "o=- 1234567890 1 IN IP4 192.168.1.1",
+          "s=Ancillary",
+          "t=0 0",
+          PTP,
+          "m=video 5020 RTP/AVP 96",
+          "c=IN IP4 239.100.0.3/64",
+          "a=rtpmap:96 smpte291/90000",
+          "a=fmtp:96 SSN=ST2110-40:2018; exactframerate=25" .. extra,
+          "a=mediaclk:direct=0",
+        }, "\r\n") .. "\r\n"
+      end
+
+      local function jxsv_sdp(extra)
+        local FMTP = "sampling=YCbCr-4:2:2; width=1920; height=1080; exactframerate=25; depth=10; TCS=SDR; colorimetry=BT709; PM=2110GPM; SSN=ST2110-22:2019; TP=2110TPNL; profile=High444.12; level=1k-1; sublevel=Sublev3bpp; transmode=1; packetmode=0"
+        return table.concat({
+          "v=0",
+          "o=- 1234567890 1 IN IP4 192.168.1.1",
+          "s=JPEG-XS",
+          "t=0 0",
+          PTP,
+          "m=video 5000 RTP/AVP 96",
+          "c=IN IP4 239.100.0.1/64",
+          "b=AS:200000",
+          "a=rtpmap:96 jxsv/90000",
+          "a=fmtp:96 " .. FMTP .. extra,
+          "a=mediaclk:direct=0",
+        }, "\r\n") .. "\r\n"
+      end
+
+      it("audio: rejects unknown TSMODE value", function()
+        local doc = sdp.parse(audio_sdp("; TSMODE=GARBAGE"))
+        assert.is_table(doc)
+        local ok, err = doc:validate("st2110")
+        assert.is_nil(ok)
+        assert.matches("TSMODE", err.message)
+        assert.equal("ST 2110-10:2022 §8.7", err.spec_ref)
+      end)
+
+      it("audio: rejects TSMODE=SAMP without TSDELAY (SAMP→TSDELAY cross-rule)", function()
+        local doc = sdp.parse(audio_sdp("; TSMODE=SAMP"))
+        assert.is_table(doc)
+        local ok, err = doc:validate("st2110")
+        assert.is_nil(ok)
+        assert.matches("TSMODE=SAMP", err.message)
+        assert.matches("TSDELAY", err.message)
+        assert.equal("ST 2110-10:2022 §8.7", err.spec_ref)
+      end)
+
+      it("audio: accepts TSMODE=SAMP with TSDELAY", function()
+        local doc, err = sdp.parse(audio_sdp("; TSMODE=SAMP; TSDELAY=100"), "st2110")
+        assert.is_nil(err)
+        assert.is_table(doc)
+      end)
+
+      it("smpte291: rejects TSMODE=SAMP without TSDELAY", function()
+        local doc = sdp.parse(ancillary_sdp("; TSMODE=SAMP"))
+        assert.is_table(doc)
+        local ok, err = doc:validate("st2110")
+        assert.is_nil(ok)
+        assert.matches("TSMODE=SAMP", err.message)
+        assert.equal("ST 2110-10:2022 §8.7", err.spec_ref)
+      end)
+
+      it("smpte291: rejects TSDELAY=0 (positive-integer value form)", function()
+        local doc = sdp.parse(ancillary_sdp("; TSMODE=NEW; TSDELAY=0"))
+        assert.is_table(doc)
+        local ok, err = doc:validate("st2110")
+        assert.is_nil(ok)
+        assert.matches("TSDELAY", err.message)
+        assert.equal("ST 2110-10:2022 §8.7", err.spec_ref)
+      end)
+
+      it("jxsv: rejects TSMODE=SAMP without TSDELAY", function()
+        local doc = sdp.parse(jxsv_sdp("; TSMODE=SAMP"))
+        assert.is_table(doc)
+        local ok, err = doc:validate("st2110")
+        assert.is_nil(ok)
+        assert.matches("TSMODE=SAMP", err.message)
+        assert.equal("ST 2110-10:2022 §8.7", err.spec_ref)
+      end)
+
+      it("jxsv: accepts TSMODE=NEW (no cross-rule)", function()
+        local doc, err = sdp.parse(jxsv_sdp("; TSMODE=NEW"), "st2110")
+        assert.is_nil(err)
+        assert.is_table(doc)
+      end)
+    end)
   end)
 
   -- ── M24: a=source-filter format (RFC 4570) ───────────────────────────────────

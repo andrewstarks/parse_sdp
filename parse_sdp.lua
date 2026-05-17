@@ -1983,7 +1983,7 @@ function st2110.validate(doc)
         end
       end
       -- Optional ST 2110-20 fmtp params that have defined value formats.
-      -- TSMODE / TSDELAY are from ST 2110-10 §8.7 (RTP timestamp generation).
+      -- TSMODE / TSDELAY are hoisted to all-media scope below (audit A8).
       -- Each entry: { key, validator, spec_ref (optional override of §7.2) }.
       local video_opt_checks = {
         -- ST 2110-20:2022 §7.3 lists TCS under "Media Type Parameters with
@@ -2001,11 +2001,6 @@ function st2110.validate(doc)
         -- and is therefore an upper bound, not a lower bound on the
         -- SDP-signaled value, and requires NPACKETS context to compute.
         { "CMAX",    valid_integer,  "ST 2110-21:2022 §8.2" },
-        { "TSMODE",  function(v) return valid_enum(v, VALID_TSMODE, "TSMODE") end, "ST 2110-10:2022 §8.7" },
-        -- ST 2110-10:2022 §8.7 — TSDELAY "is represented as a decimal positive
-        -- integer number of microseconds". (Annex B Informative SDP example
-        -- shows TSDELAY=0; non-normative — §8.7 SHALL governs.)
-        { "TSDELAY", valid_pos_int,  "ST 2110-10:2022 §8.7" },
       }
       for _, ck in ipairs(video_opt_checks) do
         local key, fn, ref = ck[1], ck[2], ck[3] or "ST 2110-20:2022 §7.2"
@@ -2016,16 +2011,6 @@ function st2110.validate(doc)
             return attr_err(key .. ": " .. vmsg, mpath, "fmtp", ref, "INVALID_VALUE")
           end
         end
-      end
-      -- ST 2110-10:2022 §8.7 (and §7.9): "Devices which signal TSMODE=SAMP
-      -- shall also signal their Transmission Delay value in the SDP as
-      -- indicated in section 8.7." Cross-check after the per-param loop.
-      -- (Scope: raw-video only today; A8 will hoist TSMODE/TSDELAY to all
-      -- media types, at which point this cross-check should hoist with it.)
-      if tostring(params["TSMODE"] or "") == "SAMP" and params["TSDELAY"] == nil then
-        return attr_err(
-          "TSMODE=SAMP requires TSDELAY to also be signaled",
-          mpath, "fmtp", "ST 2110-10:2022 §8.7", "INVALID_VALUE")
       end
 
     elseif m.media == "audio" then
@@ -2161,6 +2146,33 @@ function st2110.validate(doc)
           return attr_err(cmsg, mpath, "fmtp", "ST 2110-30:2025 §6.2.2", "INVALID_VALUE")
         end
       end
+    end
+
+    -- ST 2110-10:2022 §8.7 — TSMODE / TSDELAY are defined under "SDP
+    -- Parameters" (§8), the umbrella section that applies to all RTP
+    -- streams conforming to ST 2110, not the uncompressed-video subsection.
+    -- Validate value form for every media block that carries an fmtp, and
+    -- enforce the §7.9 / §8.7 cross-rule: "Devices which signal
+    -- TSMODE=SAMP shall also signal their Transmission Delay value in
+    -- the SDP as indicated in section 8.7."
+    local tsmode_v = params["TSMODE"]
+    if tsmode_v ~= nil and tsmode_v ~= true then
+      local vok, vmsg = valid_enum(tostring(tsmode_v), VALID_TSMODE, "TSMODE")
+      if not vok then
+        return attr_err("TSMODE: " .. vmsg, mpath, "fmtp", "ST 2110-10:2022 §8.7", "INVALID_VALUE")
+      end
+    end
+    local tsdelay_v = params["TSDELAY"]
+    if tsdelay_v ~= nil and tsdelay_v ~= true then
+      local vok, vmsg = valid_pos_int(tostring(tsdelay_v))
+      if not vok then
+        return attr_err("TSDELAY: " .. vmsg, mpath, "fmtp", "ST 2110-10:2022 §8.7", "INVALID_VALUE")
+      end
+    end
+    if tostring(tsmode_v or "") == "SAMP" and tsdelay_v == nil then
+      return attr_err(
+        "TSMODE=SAMP requires TSDELAY to also be signaled",
+        mpath, "fmtp", "ST 2110-10:2022 §8.7", "INVALID_VALUE")
     end
   end
 

@@ -93,7 +93,8 @@ A10, E5).
 - A1 landed: SSN=ST2110-40:2021 receiver-equivalence (ST 2110-40:2023
   §7 / user decision D2).
 - A4 landed: m=video raw subtype assertion (ST 2110-20:2022 §7.1).
-  A8 next.
+- A8 landed: TSMODE/TSDELAY scope hoisted to all media types
+  (ST 2110-10:2022 §8.7 umbrella). A10 next.
 
 ## Next
 
