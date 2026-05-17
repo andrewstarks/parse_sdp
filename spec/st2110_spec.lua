@@ -4126,6 +4126,43 @@ describe("ST 2110 validation", function()
       local ok, err = doc:validate("st2110")
       assert.is_nil(ok)
     end)
+
+    -- Symmetric session-level validation (audit A12). The media-level scan
+    -- has always validated source-filter syntax; the session-level scan
+    -- previously only checked presence in the IPMX tier.
+    describe("session-level a=source-filter syntax (RFC 4570 §3)", function()
+      local function session_sf_sdp(sf_value)
+        return table.concat({
+          "v=0",
+          "o=- 1234567890 1 IN IP4 192.168.1.1",
+          "s=Video",
+          "t=0 0",
+          "a=ts-refclk:ptp=IEEE1588-2008:00-11-22-FF-FE-33-44-55:0",
+          "a=source-filter:" .. sf_value,
+          "m=video 5000 RTP/AVP 96",
+          "c=IN IP4 239.100.0.1/64",
+          "a=rtpmap:96 raw/90000",
+          "a=fmtp:96 sampling=YCbCr-4:2:2; width=1920; height=1080; exactframerate=25; depth=10; TCS=SDR; colorimetry=BT709; PM=2110GPM; SSN=ST2110-20:2022; TP=2110TPN",
+          "a=mediaclk:direct=0",
+        }, "\r\n") .. "\r\n"
+      end
+
+      it("accepts a syntactically valid session-level source-filter", function()
+        local doc, err = sdp.parse(session_sf_sdp(" incl IN IP4 239.100.0.1 192.168.1.1"), "st2110")
+        assert.is_nil(err)
+        assert.is_table(doc)
+      end)
+
+      it("rejects a session-level source-filter missing src", function()
+        local doc = sdp.parse(session_sf_sdp(" incl IN IP4 239.100.0.1"))
+        assert.is_table(doc)
+        local ok, err = doc:validate("st2110")
+        assert.is_nil(ok)
+        assert.is_table(err)
+        assert.matches("source%-filter", err.message)
+        assert.equal("RFC 4570 §3", err.spec_ref)
+      end)
+    end)
   end)
 
   -- ── M25 ───────────────────────────────────────────────────────────────────────

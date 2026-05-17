@@ -11,6 +11,19 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ### Fixed (audit pass #31 — Wave 2 parser fixes)
 
+- **Session-level a=source-filter syntax validation (audit A12).**
+  Asymmetric coverage: the per-media loop in `st2110.validate` has
+  always called `valid_source_filter` on every media-level
+  `a=source-filter`, but the session-level scan only checked
+  presence (in the IPMX validator). A session-level
+  `a=source-filter` with malformed syntax was therefore accepted.
+  Added a symmetric session-level walk in `st2110.validate` (between
+  the session-c= check and the per-media loop) that runs
+  `valid_source_filter` on every session-level `a=source-filter`
+  value and rejects with `spec_ref="RFC 4570 §3"` on syntax failure.
+  IPMX inherits via the chained `st2110.validate` call. 2 new tests
+  (pass + missing-src reject) under a dedicated session-level
+  describe block.
 - **TSMODE=SAMP requires TSDELAY (audit A9).** ST 2110-10:2022 §8.7
   (and §7.9): *"Devices which signal TSMODE=SAMP shall also signal
   their Transmission Delay value in the SDP as indicated in

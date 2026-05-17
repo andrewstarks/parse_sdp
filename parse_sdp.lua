@@ -1244,6 +1244,21 @@ function st2110.validate(doc)
     end
   end
 
+  -- Validate every session-level a=source-filter syntactically (RFC 4570 §3).
+  -- The per-media loop below validates media-level source-filters; this
+  -- symmetric pass closes the asymmetric coverage at session scope.
+  for _, a in ipairs(sess_attrs) do
+    if a.name == "source-filter" then
+      local ok_sf, msg_sf = valid_source_filter(a.value or "")
+      if not ok_sf then
+        return nil, errors.new(msg_sf, {
+          field_path = "session.attributes[source-filter]",
+          spec_ref   = "RFC 4570 §3", code = "INVALID_VALUE",
+        })
+      end
+    end
+  end
+
   for i, m in ipairs(doc.media) do
     local mpath  = string.format("media[%d]", i)
     local mattrs = m.attributes or {}
