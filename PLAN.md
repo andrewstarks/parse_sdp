@@ -83,7 +83,9 @@ A6 subset, A7, A9, A12, A13).
 - A9 landed: TSMODE=SAMP requires TSDELAY (ST 2110-10:2022 §8.7);
   also fixed a nil-safety bug in the A2 VPID_Code check.
 - A12 landed: symmetric session-level source-filter syntax validation
-  (RFC 4570 §3). A13 next.
+  (RFC 4570 §3).
+- A13 landed: per-level mixed traceable / non-traceable ts-refclk
+  rejection (RFC 7273 §4.8). **Wave 2 complete.**
 
 ## Next
 

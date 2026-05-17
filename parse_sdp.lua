@@ -709,6 +709,21 @@ local function valid_tsrefclk(value)
   return nil, "unrecognized ts-refclk clock source"
 end
 
+-- Classify a ts-refclk value as "traceable" or "non-traceable" per RFC 7273.
+-- §4.6: gps/gal/glonass MUST be traceable to UTC, so they are traceable.
+-- §4.5: ptp= with gmid="traceable" is traceable; specific gmid:domain is not.
+-- §4.3/§4.7: ntp=, localmac=, and other specific forms (without :traceable
+-- suffix) are non-traceable. Used only for the §4.8 mixed-class check.
+local function tsrefclk_traceability(value)
+  if value == "gps" or value == "gal" or value == "glonass" then
+    return "traceable"
+  end
+  if value:find(":traceable", 1, true) then
+    return "traceable"
+  end
+  return "non-traceable"
+end
+
 -- Validate a DID_SDID fmtp value; expected format: {0xH[H],0xH[H]}.
 -- RFC 8331 §4: TwoHex = "0x" 1*2(HEXDIG) — 1 OR 2 hex digits per token.
 local function valid_did_sdid(value)
@@ -1259,6 +1274,25 @@ function st2110.validate(doc)
     end
   end
 
+  -- RFC 7273 §4.8: "Traceable time sources MUST NOT be mixed with
+  -- non-traceable time sources at any given level." Enforce at session
+  -- level here; the per-media loop below enforces at each media level.
+  do
+    local has_t, has_n = false, false
+    for _, a in ipairs(sess_attrs) do
+      if a.name == "ts-refclk" then
+        local cls = tsrefclk_traceability(a.value or "")
+        if cls == "traceable" then has_t = true else has_n = true end
+      end
+    end
+    if has_t and has_n then
+      return nil, errors.new(
+        "session-level ts-refclk mixes traceable and non-traceable sources",
+        { field_path = "session.attributes[ts-refclk]",
+          spec_ref = "RFC 7273 §4.8", code = "INVALID_VALUE" })
+    end
+  end
+
   for i, m in ipairs(doc.media) do
     local mpath  = string.format("media[%d]", i)
     local mattrs = m.attributes or {}
@@ -1314,6 +1348,24 @@ function st2110.validate(doc)
       local trok, trmsg = valid_tsrefclk(tsrefclk.value or "")
       if not trok then
         return attr_err("invalid ts-refclk: " .. (trmsg or ""), mpath, "ts-refclk", "ST 2110-10:2022 §7.2", "INVALID_VALUE")
+      end
+    end
+
+    -- RFC 7273 §4.8: "Traceable time sources MUST NOT be mixed with
+    -- non-traceable time sources at any given level." Media-level scope
+    -- only — session-level was checked once above before this loop.
+    do
+      local has_t, has_n = false, false
+      for _, a in ipairs(mattrs) do
+        if a.name == "ts-refclk" then
+          local cls = tsrefclk_traceability(a.value or "")
+          if cls == "traceable" then has_t = true else has_n = true end
+        end
+      end
+      if has_t and has_n then
+        return attr_err(
+          "media-level ts-refclk mixes traceable and non-traceable sources",
+          mpath, "ts-refclk", "RFC 7273 §4.8", "INVALID_VALUE")
       end
     end
 

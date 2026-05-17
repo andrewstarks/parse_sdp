@@ -11,6 +11,20 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ### Fixed (audit pass #31 — Wave 2 parser fixes)
 
+- **Mixed traceable / non-traceable ts-refclk rejection (audit A13).**
+  RFC 7273 §4.8: *"Traceable time sources MUST NOT be mixed with
+  non-traceable time sources at any given level."* The parser
+  validates every ts-refclk individually but never cross-checks the
+  traceability classes at the same level. Added a per-level
+  mixed-class check in `st2110.validate`: one pass over session-level
+  ts-refclks, then per-media-block over media-level ts-refclks. Class
+  is computed by a new `tsrefclk_traceability(value)` helper —
+  `gps`/`gal`/`glonass` and any value containing `:traceable` are
+  traceable; everything else (specific PTP `gmid:domain`,
+  `localmac=`, plain `ntp=`) is non-traceable. Mixed within one level
+  rejects with `spec_ref="RFC 7273 §4.8"`; mixing across levels is
+  permitted (the spec is per-level). 5 new tests under an
+  `RFC 7273 §4.8 mixed-class rejection` describe block.
 - **Session-level a=source-filter syntax validation (audit A12).**
   Asymmetric coverage: the per-media loop in `st2110.validate` has
   always called `valid_source_filter` on every media-level

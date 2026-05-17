@@ -518,6 +518,111 @@ describe("ST 2110 validation", function()
       assert.is_nil(err)
       assert.is_table(doc)
     end)
+
+    -- RFC 7273 §4.8: "Traceable time sources MUST NOT be mixed with
+    -- non-traceable time sources at any given level."
+    describe("RFC 7273 §4.8 mixed-class rejection", function()
+      local FMTP = "sampling=YCbCr-4:2:2; width=1920; height=1080; exactframerate=25; depth=10; TCS=SDR; colorimetry=BT709; PM=2110GPM; SSN=ST2110-20:2022; TP=2110TPN"
+
+      local function media_sdp(...)
+        local lines = {
+          "v=0",
+          "o=- 1234567890 1 IN IP4 192.168.1.1",
+          "s=Video",
+          "t=0 0",
+          "m=video 5000 RTP/AVP 96",
+          "c=IN IP4 239.100.0.1/64",
+          "a=rtpmap:96 raw/90000",
+          "a=fmtp:96 " .. FMTP,
+          "a=mediaclk:direct=0",
+        }
+        for _, tsr in ipairs({...}) do
+          lines[#lines + 1] = "a=ts-refclk:" .. tsr
+        end
+        return table.concat(lines, "\r\n") .. "\r\n"
+      end
+
+      local function session_sdp(...)
+        local lines = {
+          "v=0",
+          "o=- 1234567890 1 IN IP4 192.168.1.1",
+          "s=Video",
+          "t=0 0",
+        }
+        for _, tsr in ipairs({...}) do
+          lines[#lines + 1] = "a=ts-refclk:" .. tsr
+        end
+        for _, ml in ipairs({
+          "m=video 5000 RTP/AVP 96",
+          "c=IN IP4 239.100.0.1/64",
+          "a=rtpmap:96 raw/90000",
+          "a=fmtp:96 " .. FMTP,
+          "a=mediaclk:direct=0",
+        }) do
+          lines[#lines + 1] = ml
+        end
+        return table.concat(lines, "\r\n") .. "\r\n"
+      end
+
+      it("accepts two traceable sources at media level", function()
+        local doc, err = sdp.parse(media_sdp(
+          "ptp=IEEE1588-2008:traceable", "gps"), "st2110")
+        assert.is_nil(err)
+        assert.is_table(doc)
+      end)
+
+      it("accepts two non-traceable sources at media level", function()
+        local doc, err = sdp.parse(media_sdp(
+          "ptp=IEEE1588-2008:00-11-22-FF-FE-33-44-55:0",
+          "localmac=AA-BB-CC-DD-EE-FF"), "st2110")
+        assert.is_nil(err)
+        assert.is_table(doc)
+      end)
+
+      it("rejects traceable + non-traceable mixed at media level", function()
+        local doc = sdp.parse(media_sdp(
+          "ptp=IEEE1588-2008:traceable",
+          "ptp=IEEE1588-2008:00-11-22-FF-FE-33-44-55:0"))
+        assert.is_table(doc)
+        local ok, err = doc:validate("st2110")
+        assert.is_nil(ok)
+        assert.is_table(err)
+        assert.matches("traceable", err.message)
+        assert.equal("RFC 7273 §4.8", err.spec_ref)
+      end)
+
+      it("rejects traceable + non-traceable mixed at session level", function()
+        local doc = sdp.parse(session_sdp(
+          "gps",
+          "ptp=IEEE1588-2008:00-11-22-FF-FE-33-44-55:0"))
+        assert.is_table(doc)
+        local ok, err = doc:validate("st2110")
+        assert.is_nil(ok)
+        assert.is_table(err)
+        assert.matches("traceable", err.message)
+        assert.equal("RFC 7273 §4.8", err.spec_ref)
+      end)
+
+      it("permits traceable at session, non-traceable at media (different levels)", function()
+        -- §4.8 is per-level — mixing across levels is not forbidden.
+        local lines = {
+          "v=0",
+          "o=- 1234567890 1 IN IP4 192.168.1.1",
+          "s=Video",
+          "t=0 0",
+          "a=ts-refclk:ptp=IEEE1588-2008:traceable",
+          "m=video 5000 RTP/AVP 96",
+          "c=IN IP4 239.100.0.1/64",
+          "a=rtpmap:96 raw/90000",
+          "a=fmtp:96 " .. FMTP,
+          "a=mediaclk:direct=0",
+          "a=ts-refclk:ptp=IEEE1588-2008:00-11-22-FF-FE-33-44-55:0",
+        }
+        local doc, err = sdp.parse(table.concat(lines, "\r\n") .. "\r\n", "st2110")
+        assert.is_nil(err)
+        assert.is_table(doc)
+      end)
+    end)
   end)
 
   -- ── ST 2110-40: ancillary data (smpte291) ──────────────────────────────────
