@@ -2041,7 +2041,7 @@ describe("ST 2110 validation", function()
       assert.is_nil(ok)
       assert.is_table(err)
       assert.matches("VPID_Code", err.message)
-      assert.equal("ST 2110-40 §7.2", err.spec_ref)
+      assert.equal("RFC 8331 §4", err.spec_ref)
     end)
 
     it("rejects negative VPID_Code", function()

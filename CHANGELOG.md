@@ -11,6 +11,15 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ### Fixed (audit pass #31 — citation cleanup)
 
+- **ST 2110-40 cite cleanup (audit E2).** Two smpte291 cite sites
+  previously cited `ST 2110-40 §7.2`, a section that doesn't exist in
+  ST 2110-40:2023 (§7 has no numbered subsections). Verified against
+  the on-disk 2023 PDF: the rtpmap clock-rate=90000 SHALL is at §5.3
+  (*"The RTP Clock rate shall be 90 kHz."*); the VPID_Code integer
+  value form is defined by RFC 8331 §4 (smpte291 media-type
+  registration). Updated `parse_sdp.lua:1377` to `ST 2110-40:2023 §5.3`
+  and `parse_sdp.lua:1399` to `RFC 8331 §4`. One test assertion
+  updated to match. Behavior unchanged.
 - **a=mid uniqueness cite RFC 5888 §8.1 → §4 (audit E4).** RFC 5888 §4:
   *"The identification-tag MUST be unique within an SDP session"* — that
   is the operative MUST. §8.1 is the IANA registration section and

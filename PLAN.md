@@ -58,8 +58,9 @@ new findings (12 Direction-A, 1 Direction-B, 7 Direction-C / cosmetic) plus
 and a 28-commit landing plan in five waves. Wave 1 (citation cleanup) is
 landing now.
 
-**Wave 1 progress.** E1 landed (RFC 5285 → RFC 8285, 9 sites). E4 landing
-now (RFC 5888 §8.1 → §4 for a=mid uniqueness).
+**Wave 1 progress.** E1 landed (RFC 5285 → RFC 8285, 9 sites). E4 landed
+(RFC 5888 §8.1 → §4 for a=mid uniqueness). E2 landing now (ST 2110-40
+§7.2 → §5.3 / RFC 8331 §4).
 
 ## Next
 

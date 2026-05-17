@@ -1370,11 +1370,12 @@ function st2110.validate(doc)
           string.format("smpte291 requires m=video (got m=%s) per RFC 8331 §4", tostring(m.media)),
           mpath, "rtpmap", "RFC 8331 §4", "INVALID_VALUE")
       end
-      -- ST 2110-40: ancillary data (RFC 8331 / SMPTE ST 2110-40:2023)
+      -- ST 2110-40: ancillary data (RFC 8331 / SMPTE ST 2110-40:2023).
+      -- ST 2110-40:2023 §5.3: "The RTP Clock rate shall be 90 kHz."
       if clock_rate ~= 90000 then
         return attr_err(
           string.format("rtpmap clock rate must be 90000 for smpte291 (got %s)", tostring(clock_rate)),
-          mpath, "rtpmap", "ST 2110-40 §7.2", "INVALID_VALUE")
+          mpath, "rtpmap", "ST 2110-40:2023 §5.3", "INVALID_VALUE")
       end
       -- DID_SDID is OPTIONAL. ST 2110-40:2023 §7 (Session Description Protocol)
       -- does not mention DID_SDID at all; the SDP "shall be constructed as
@@ -1391,12 +1392,15 @@ function st2110.validate(doc)
           end
         end
       end
+      -- VPID_Code value form is defined by RFC 8331 §4 (smpte291 media-type
+      -- registration: integer). ST 2110-40:2023 §5.2.2 invokes VPID_Code
+      -- for SDI-mapped streams but defers value form to RFC 8331.
       local vpid = params["VPID_Code"]
       if vpid ~= nil and vpid ~= true then
         local n = tonumber(tostring(vpid))
         if not n or n < 0 or n ~= math.floor(n) then
           return attr_err("invalid VPID_Code value (must be a non-negative integer)",
-            mpath, "fmtp", "ST 2110-40 §7.2", "INVALID_VALUE")
+            mpath, "fmtp", "RFC 8331 §4", "INVALID_VALUE")
         end
       end
       -- ST 2110-40:2023 §7: TM (Transmission Model) is OPTIONAL with two
