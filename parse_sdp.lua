@@ -1344,10 +1344,14 @@ function st2110.validate(doc)
     if #all_tsrefclk == 0 then
       return attr_err("missing required attribute 'ts-refclk'", mpath, "ts-refclk", "ST 2110-10:2022 §7.2")
     end
+    -- ts-refclk value form (clksrc literals, ptp-version, EUI-64 form) is
+    -- defined by RFC 7273 §4 (Figure 1 ABNF). ST 2110-10:2022 §7.2 mandates
+    -- presence (cited above) but defers value form to RFC 7273; the
+    -- per-value error therefore cites the upstream source. (Audit E5.)
     for _, tsrefclk in ipairs(all_tsrefclk) do
       local trok, trmsg = valid_tsrefclk(tsrefclk.value or "")
       if not trok then
-        return attr_err("invalid ts-refclk: " .. (trmsg or ""), mpath, "ts-refclk", "ST 2110-10:2022 §7.2", "INVALID_VALUE")
+        return attr_err("invalid ts-refclk: " .. (trmsg or ""), mpath, "ts-refclk", "RFC 7273 §4", "INVALID_VALUE")
       end
     end
 
@@ -1373,9 +1377,14 @@ function st2110.validate(doc)
     if not mediaclk then
       return attr_err("missing required attribute 'mediaclk'", mpath, "mediaclk", "ST 2110-10:2022 §7.3")
     end
+    -- mediaclk value form (sender / direct=<offset> / rate=<n>/<d>) is
+    -- defined by RFC 7273 §5. ST 2110-10:2022 §7.3 mandates presence
+    -- (cited above) and §8.3 narrows the offset to 0 (cited inside
+    -- valid_mediaclk), but the base value-form SHALLs are RFC 7273 §5.
+    -- (Audit E5.)
     local mcok, mcmsg = valid_mediaclk(mediaclk.value or "")
     if not mcok then
-      return attr_err("invalid mediaclk: " .. (mcmsg or ""), mpath, "mediaclk", "ST 2110-10:2022 §7.3", "INVALID_VALUE")
+      return attr_err("invalid mediaclk: " .. (mcmsg or ""), mpath, "mediaclk", "RFC 7273 §5", "INVALID_VALUE")
     end
 
     local rtpmap = find_attr(mattrs, "rtpmap")

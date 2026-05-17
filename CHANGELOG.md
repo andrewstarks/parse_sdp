@@ -11,6 +11,24 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ### Fixed (audit pass #31 — Wave 3 parser fixes)
 
+- **RFC 7273 cite-upstream for ts-refclk / mediaclk value-form errors
+  (audit E5).** ST 2110-10:2022 §7.2 and §7.3 mandate that ts-refclk
+  and mediaclk respectively *be present*, but defer the *value form*
+  (clksrc literals, ptp-version, EUI-64 grandmaster identifier,
+  sender/direct/rate literals) to RFC 7273. The parser previously
+  cited `ST 2110-10:2022 §7.2`/`§7.3` for both presence AND
+  value-form errors. Migrated the two value-form `attr_err` sites to
+  upstream cites:
+  - `invalid ts-refclk` value → `RFC 7273 §4` (Figure 1 ABNF).
+  - `invalid mediaclk` value → `RFC 7273 §5` (mediaclk forms).
+  Presence cites (missing ts-refclk / missing mediaclk) keep the
+  `ST 2110-10:2022 §7.2`/`§7.3` cite because the SHALL-be-present
+  requirement is SMPTE-specific (RFC 7273 doesn't mandate either
+  attribute be present). `ST 2110-10:2022 §8.3` cite for
+  session-level mediaclk rejection and `ST 2110-10:2022 §8.2` cite
+  for the PTP-domain-required tightening also stay (both are SMPTE
+  narrowings of RFC 7273). Added 3 regression-protection tests in a
+  new `RFC 7273 cite-upstream for value-form errors` describe block.
 - **Any a=group ⇒ every m= has a=mid (audit A10).** RFC 5888 §6:
   *"All of the 'm' lines of a session description that uses 'group'
   MUST be identified with a 'mid' attribute whether they appear in the

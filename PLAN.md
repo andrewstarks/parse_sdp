@@ -95,8 +95,9 @@ A10, E5).
 - A4 landed: m=video raw subtype assertion (ST 2110-20:2022 §7.1).
 - A8 landed: TSMODE/TSDELAY scope hoisted to all media types
   (ST 2110-10:2022 §8.7 umbrella).
-- A10 landed: any a=group ⇒ every m= has a=mid (RFC 5888 §6). E5
-  next.
+- A10 landed: any a=group ⇒ every m= has a=mid (RFC 5888 §6).
+- E5 landed: RFC 7273 cite-upstream for ts-refclk / mediaclk
+  value-form errors. **Wave 3 complete.**
 
 ## Next
 

@@ -1075,6 +1075,84 @@ describe("ST 2110 validation", function()
     end)
   end)
 
+  -- ── E5: RFC 7273 cite-upstream migration for value-form errors ──────────────
+
+  describe("RFC 7273 cite-upstream for value-form errors (audit E5)", function()
+    -- ST 2110-10 §7.2 mandates ts-refclk presence; the value form (clksrc
+    -- literals, ptp-version, EUI-64) is defined by RFC 7273 §4. Likewise
+    -- §7.3 mandates mediaclk presence; RFC 7273 §5 defines the value form.
+    -- Per-value errors now cite the upstream RFC, while presence errors
+    -- keep the ST 2110-10 cite.
+
+    local function ts_with(value)
+      return table.concat({
+        "v=0",
+        "o=- 1234567890 1 IN IP4 192.168.1.1",
+        "s=Video",
+        "t=0 0",
+        "m=video 5000 RTP/AVP 96",
+        "c=IN IP4 239.100.0.1/64",
+        "a=rtpmap:96 raw/90000",
+        "a=fmtp:96 sampling=YCbCr-4:2:2; width=1920; height=1080; exactframerate=25; depth=10; TCS=SDR; colorimetry=BT709; PM=2110GPM; SSN=ST2110-20:2022; TP=2110TPN",
+        "a=mediaclk:direct=0",
+        "a=ts-refclk:" .. value,
+      }, "\r\n") .. "\r\n"
+    end
+
+    local function mediaclk_with(value)
+      return table.concat({
+        "v=0",
+        "o=- 1234567890 1 IN IP4 192.168.1.1",
+        "s=Video",
+        "t=0 0",
+        "a=ts-refclk:ptp=IEEE1588-2008:00-11-22-FF-FE-33-44-55:0",
+        "m=video 5000 RTP/AVP 96",
+        "c=IN IP4 239.100.0.1/64",
+        "a=rtpmap:96 raw/90000",
+        "a=fmtp:96 sampling=YCbCr-4:2:2; width=1920; height=1080; exactframerate=25; depth=10; TCS=SDR; colorimetry=BT709; PM=2110GPM; SSN=ST2110-20:2022; TP=2110TPN",
+        "a=mediaclk:" .. value,
+      }, "\r\n") .. "\r\n"
+    end
+
+    it("ts-refclk value-form error cites RFC 7273 §4", function()
+      local doc = sdp.parse(ts_with("garbage-value"))
+      assert.is_table(doc)
+      local ok, err = doc:validate("st2110")
+      assert.is_nil(ok)
+      assert.is_table(err)
+      assert.equal("RFC 7273 §4", err.spec_ref)
+    end)
+
+    it("ts-refclk presence error still cites ST 2110-10:2022 §7.2", function()
+      local text = table.concat({
+        "v=0",
+        "o=- 1234567890 1 IN IP4 192.168.1.1",
+        "s=Video",
+        "t=0 0",
+        "m=video 5000 RTP/AVP 96",
+        "c=IN IP4 239.100.0.1/64",
+        "a=rtpmap:96 raw/90000",
+        "a=fmtp:96 sampling=YCbCr-4:2:2; width=1920; height=1080; exactframerate=25; depth=10; TCS=SDR; colorimetry=BT709; PM=2110GPM; SSN=ST2110-20:2022; TP=2110TPN",
+        "a=mediaclk:direct=0",
+      }, "\r\n") .. "\r\n"
+      local doc = sdp.parse(text)
+      assert.is_table(doc)
+      local ok, err = doc:validate("st2110")
+      assert.is_nil(ok)
+      assert.matches("missing", err.message)
+      assert.equal("ST 2110-10:2022 §7.2", err.spec_ref)
+    end)
+
+    it("mediaclk value-form error cites RFC 7273 §5", function()
+      local doc = sdp.parse(mediaclk_with("not-a-mediaclk-form"))
+      assert.is_table(doc)
+      local ok, err = doc:validate("st2110")
+      assert.is_nil(ok)
+      assert.is_table(err)
+      assert.equal("RFC 7273 §5", err.spec_ref)
+    end)
+  end)
+
   -- ── M16: a=group:DUP grouping (ST 2022-7 / RFC 7104) ─────────────────────────
 
   describe("a=group:DUP grouping (ST 2110-10 §8.5)", function()
