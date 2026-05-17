@@ -9,6 +9,17 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 
+### Fixed (audit pass #31 — Wave 2 parser fixes)
+
+- **DID_SDID hex-token width (audit B1).** RFC 8331 §4 ABNF defines
+  `TwoHex = "0x" 1*2(HEXDIG)` — 1 OR 2 hex digits per token. The parser
+  previously demanded exactly 2 digits (`^{0x%x%x,0x%x%x}$`), rejecting
+  spec-legal forms like `DID_SDID={0x6,0x2}`. Relaxed the pattern to
+  `^{0x%x%x?,0x%x%x?}$` and updated the error-message hint to
+  `{0xH[H],0xH[H]}`. Tokens with 3+ hex digits or empty tokens still
+  reject. 4 new tests in `spec/st2110_spec.lua` (3 pass paths, 2 fail
+  paths). 781 hermetic + 10 conformance tests pass.
+
 ### Fixed (audit pass #31 — citation cleanup)
 
 - **Conformance manifest `expect_spec_ref` follow-up to E8.** The

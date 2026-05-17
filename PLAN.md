@@ -67,8 +67,10 @@ follow-up manifest-cite fix:
 - E7 ST 2022-7 parenthetical removed from DUP error text
 - E8 Year-tag consistency pass on ST 2110 cites
 
-Next: Wave 2 (atomic Direction-A/B fixes) — B1, A2, A3, A5, A6, A7,
-A9, A12, A13.
+**Wave 2 in progress** (atomic Direction-A/B fixes — B1, A2, A3, A5,
+A6 subset, A7, A9, A12, A13).
+
+- B1 landed: DID_SDID 1-or-2 hex digits (RFC 8331 §4 ABNF). A2 next.
 
 ## Next
 

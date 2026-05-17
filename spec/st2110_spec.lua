@@ -642,6 +642,37 @@ describe("ST 2110 validation", function()
       assert.matches("DID_SDID", err.message)
     end)
 
+    -- RFC 8331 §4: TwoHex = "0x" 1*2(HEXDIG) — 1 OR 2 hex digits per token.
+    it("accepts single-hex-digit DID_SDID tokens (RFC 8331 §4 ABNF)", function()
+      local doc, err = sdp.parse(ancillary_sdp(DEFAULT_REQUIRED .. "; DID_SDID={0x6,0x2}"), "st2110")
+      assert.is_nil(err)
+      assert.is_table(doc)
+    end)
+
+    it("accepts mixed 1-/2-digit DID_SDID tokens", function()
+      local doc, err = sdp.parse(ancillary_sdp(DEFAULT_REQUIRED .. "; DID_SDID={0x6,0x02}"), "st2110")
+      assert.is_nil(err)
+      assert.is_table(doc)
+    end)
+
+    it("rejects DID_SDID with > 2 hex digits in a token", function()
+      local doc = sdp.parse(ancillary_sdp(DEFAULT_REQUIRED .. "; DID_SDID={0x123,0x01}"))
+      assert.is_table(doc)
+      local ok, err = doc:validate("st2110")
+      assert.is_nil(ok)
+      assert.is_table(err)
+      assert.matches("DID_SDID", err.message)
+    end)
+
+    it("rejects DID_SDID with an empty token", function()
+      local doc = sdp.parse(ancillary_sdp(DEFAULT_REQUIRED .. "; DID_SDID={,0x01}"))
+      assert.is_table(doc)
+      local ok, err = doc:validate("st2110")
+      assert.is_nil(ok)
+      assert.is_table(err)
+      assert.matches("DID_SDID", err.message)
+    end)
+
     -- ── ST 2110-40:2023 §7 SHALL clauses ──────────────────────────────────
     -- "Senders implementing this standard shall signal a Format Specific
     -- Parameter SSN with the value ST2110-40:2018 unless they are signaling

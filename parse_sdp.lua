@@ -709,10 +709,11 @@ local function valid_tsrefclk(value)
   return nil, "unrecognized ts-refclk clock source"
 end
 
--- Validate a DID_SDID fmtp value; expected format: {0xHH,0xHH}.
+-- Validate a DID_SDID fmtp value; expected format: {0xH[H],0xH[H]}.
+-- RFC 8331 §4: TwoHex = "0x" 1*2(HEXDIG) — 1 OR 2 hex digits per token.
 local function valid_did_sdid(value)
-  if value:match("^{0x%x%x,0x%x%x}$") then return true end
-  return nil, "invalid DID_SDID value (expected {0xHH,0xHH})"
+  if value:match("^{0x%x%x?,0x%x%x?}$") then return true end
+  return nil, "invalid DID_SDID value (expected {0xH[H],0xH[H]})"
 end
 
 -- ── ST 2110-20/30 fmtp value validators ───────────────────────────────────────
