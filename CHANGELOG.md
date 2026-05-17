@@ -11,6 +11,19 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ### Fixed (audit pass #31 — Wave 3 parser fixes)
 
+- **m=video raw subtype assertion (audit A4).** ST 2110-20:2022 §7.1:
+  *"For an uncompressed Active Video RTP Stream, the Media Type Field
+  shall be 'video' and the Media Subtype name 'raw' shall be used."*
+  The raw-video branch (`m.media == "video"`) keyed only on the media
+  name, so `m=video 5000 RTP/AVP 96` paired with
+  `a=rtpmap:96 foo/90000` routed through the ST 2110-20 raw-video
+  validators with no encoding-name check. Added a pre-branch
+  `enc and enc ~= "raw"` reject with `spec_ref="ST 2110-20:2022 §7.1"`.
+  Safe today because `jxsv` and `smpte291` are dispatched before this
+  branch; widen the check when new `m=video` codecs land. 3 new tests
+  (raw pass, foo reject, rawvideo reject) under a new
+  `ST 2110-20:2022 §7.1 m=video subtype 'raw' assertion` describe
+  block in `spec/st2110_spec.lua`.
 - **SSN=ST2110-40:2021 receiver-equivalence (audit A1; user decision
   D2).** ST 2110-40:2023 §7: *"Receivers shall consider a Format
   Specific Parameter SSN value of ST2110-40:2021 as equivalent to a

@@ -1184,6 +1184,58 @@ describe("ST 2110 validation", function()
     end)
   end)
 
+  -- ── A4: m=video subtype 'raw' assertion (ST 2110-20:2022 §7.1) ──────────────
+
+  describe("ST 2110-20:2022 §7.1 m=video subtype 'raw' assertion", function()
+    local FMTP = "sampling=YCbCr-4:2:2; width=1920; height=1080; exactframerate=25; depth=10; TCS=SDR; colorimetry=BT709; PM=2110GPM; SSN=ST2110-20:2022; TP=2110TPN"
+    local function video_enc_sdp(enc)
+      return table.concat({
+        "v=0",
+        "o=- 1234567890 1 IN IP4 192.168.1.1",
+        "s=ST2110 Video",
+        "t=0 0",
+        "a=ts-refclk:ptp=IEEE1588-2008:00-11-22-FF-FE-33-44-55:0",
+        "m=video 5000 RTP/AVP 96",
+        "c=IN IP4 239.100.0.1/64",
+        "a=rtpmap:96 " .. enc .. "/90000",
+        "a=fmtp:96 " .. FMTP,
+        "a=mediaclk:direct=0",
+      }, "\r\n") .. "\r\n"
+    end
+
+    it("accepts m=video with encoding 'raw' (boundary)", function()
+      local doc, err = sdp.parse(video_enc_sdp("raw"), "st2110")
+      assert.is_nil(err)
+      assert.is_table(doc)
+    end)
+
+    -- §7.1: "For an uncompressed Active Video RTP Stream, the Media Type
+    -- Field shall be 'video' and the Media Subtype name 'raw' shall be
+    -- used." Codecs handled by earlier branches (jxsv, smpte291) are
+    -- routed before the raw-video branch, so any other encoding reaching
+    -- it fails the SHALL.
+    it("rejects m=video with encoding 'foo' (ST 2110-20:2022 §7.1)", function()
+      local doc = sdp.parse(video_enc_sdp("foo"))
+      assert.is_table(doc)
+      local ok, err = doc:validate("st2110")
+      assert.is_nil(ok)
+      assert.is_table(err)
+      assert.matches("foo", err.message)
+      assert.matches("raw", err.message)
+      assert.equal("ST 2110-20:2022 §7.1", err.spec_ref)
+    end)
+
+    it("rejects m=video with encoding 'rawvideo' (not 'raw')", function()
+      local doc = sdp.parse(video_enc_sdp("rawvideo"))
+      assert.is_table(doc)
+      local ok, err = doc:validate("st2110")
+      assert.is_nil(ok)
+      assert.is_table(err)
+      assert.matches("rawvideo", err.message)
+      assert.equal("ST 2110-20:2022 §7.1", err.spec_ref)
+    end)
+  end)
+
   -- ── M18: ST 2110-20 fmtp value validation ────────────────────────────────────
 
   describe("ST 2110-20 fmtp value validation (§7.2)", function()

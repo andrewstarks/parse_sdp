@@ -91,7 +91,9 @@ A6 subset, A7, A9, A12, A13).
 A10, E5).
 
 - A1 landed: SSN=ST2110-40:2021 receiver-equivalence (ST 2110-40:2023
-  §7 / user decision D2). A4 next.
+  §7 / user decision D2).
+- A4 landed: m=video raw subtype assertion (ST 2110-20:2022 §7.1).
+  A8 next.
 
 ## Next
 

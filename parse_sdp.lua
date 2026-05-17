@@ -1820,7 +1820,18 @@ function st2110.validate(doc)
       -- principle (CLAUDE.md): no spec basis → no check. Removed.
 
     elseif m.media == "video" then
-      -- ST 2110-20: uncompressed video
+      -- ST 2110-20: uncompressed video.
+      -- §7.1: "For an uncompressed Active Video RTP Stream, the Media Type
+      -- Field shall be 'video' and the Media Subtype name 'raw' shall be
+      -- used." Codecs handled by earlier branches (jxsv, smpte291) have
+      -- already routed past this point, so any other encoding name reaching
+      -- the raw-video branch fails the SHALL. Widen the dispatch when new
+      -- m=video codecs land.
+      if enc and enc ~= "raw" then
+        return attr_err(
+          string.format("m=video with encoding '%s' is not uncompressed video; ST 2110-20:2022 §7.1 requires encoding name 'raw'", tostring(enc)),
+          mpath, "rtpmap", "ST 2110-20:2022 §7.1", "INVALID_VALUE")
+      end
       if clock_rate ~= 90000 then
         return attr_err(
           string.format("rtpmap clock rate must be 90000 for video (got %s)", tostring(clock_rate)),
