@@ -359,6 +359,30 @@ function validate.sdp(doc)
       return nil, errors.new(string.format("media[%d].fmts must be non-empty", i),
         { code = "MISSING_FIELD" })
     end
+
+    -- RFC 8866 §8.2.3: "If the payload type number is dynamically assigned
+    -- by this session description, an additional 'a=rtpmap:' attribute MUST
+    -- be included to specify the format name and parameters as defined by
+    -- the media type registration for the payload format." Dynamic range is
+    -- 96-127 per RFC 3551 §6 / RFC 8866 §6.6. (Audit D1.2.)
+    if type(m.proto) == "string" and m.proto:find("RTP", 1, true) then
+      local rtpmap_pts = {}
+      for _, a in ipairs(m.attributes or {}) do
+        if a.name == "rtpmap" then
+          local pt = (a.value or ""):match("^(%d+)")
+          if pt then rtpmap_pts[pt] = true end
+        end
+      end
+      for _, fmt in ipairs(m.fmts) do
+        local pt = tonumber(fmt)
+        if pt and pt >= 96 and pt <= 127 and not rtpmap_pts[tostring(pt)] then
+          return nil, errors.new(
+            string.format("dynamic RTP payload type %d requires a matching a=rtpmap (media[%d])", pt, i),
+            { field_path = string.format("media[%d].attributes[rtpmap]", i),
+              spec_ref = "RFC 8866 §8.2.3", code = "MISSING_FIELD" })
+        end
+      end
+    end
   end
 
   return true

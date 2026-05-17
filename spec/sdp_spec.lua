@@ -834,6 +834,101 @@ describe("sdp.parse — media blocks (M5)", function()
     assert.is_string(err.message)
     assert.is_number(err.line)
   end)
+
+  -- RFC 8866 §8.2.3 (audit D1.2): "If the payload type number is
+  -- dynamically assigned by this session description, an additional
+  -- 'a=rtpmap:' attribute MUST be included to specify the format name
+  -- and parameters as defined by the media type registration for the
+  -- payload format." Dynamic PT range is 96-127.
+  describe("RFC 8866 §8.2.3 dynamic-PT requires a=rtpmap (base tier)", function()
+    -- The base-tier check runs in validate.sdp, which is invoked via
+    -- doc:validate() (or transitively by st2110/ipmx modes). sdp.parse()
+    -- with the default mode only runs the grammar parser.
+
+    it("accepts a dynamic-PT media block with a matching a=rtpmap", function()
+      local doc = sdp.parse(make({
+        "m=video 5000 RTP/AVP 96",
+        "a=rtpmap:96 H264/90000",
+      }))
+      assert.is_table(doc)
+      local ok, err = doc:validate()
+      assert.is_nil(err)
+      assert.equal(true, ok)
+    end)
+
+    it("rejects a dynamic-PT media block with no a=rtpmap", function()
+      local doc = sdp.parse(make({
+        "m=video 5000 RTP/AVP 96",
+      }))
+      assert.is_table(doc)
+      local ok, err = doc:validate()
+      assert.is_nil(ok)
+      assert.is_table(err)
+      assert.matches("96", err.message)
+      assert.matches("rtpmap", err.message)
+      assert.equal("RFC 8866 §8.2.3", err.spec_ref)
+    end)
+
+    it("rejects when an a=rtpmap exists but for a different PT", function()
+      local doc = sdp.parse(make({
+        "m=video 5000 RTP/AVP 96",
+        "a=rtpmap:97 H264/90000",  -- wrong PT
+      }))
+      assert.is_table(doc)
+      local ok, err = doc:validate()
+      assert.is_nil(ok)
+      assert.is_table(err)
+      assert.equal("RFC 8866 §8.2.3", err.spec_ref)
+    end)
+
+    it("accepts static PT (range 0-95) without a=rtpmap", function()
+      -- PT 0 = PCMU/8000 per RFC 3551 §6 static table; no rtpmap required.
+      local doc = sdp.parse(make({
+        "m=audio 49170 RTP/AVP 0",
+      }))
+      assert.is_table(doc)
+      local ok, err = doc:validate()
+      assert.is_nil(err)
+      assert.equal(true, ok)
+    end)
+
+    it("does not apply the check to non-RTP protocols", function()
+      -- D1.2 only fires when m.proto contains "RTP". Other protocols
+      -- (e.g. udp) don't have rtpmap requirements at base.
+      local doc = sdp.parse(make({
+        "m=application 5000 udp 96",
+      }))
+      assert.is_table(doc)
+      local ok, err = doc:validate()
+      assert.is_nil(err)
+      assert.equal(true, ok)
+    end)
+
+    it("accepts a media block with two dynamic PTs both mapped", function()
+      local doc = sdp.parse(make({
+        "m=video 5000 RTP/AVP 96 97",
+        "a=rtpmap:96 H264/90000",
+        "a=rtpmap:97 H265/90000",
+      }))
+      assert.is_table(doc)
+      local ok, err = doc:validate()
+      assert.is_nil(err)
+      assert.equal(true, ok)
+    end)
+
+    it("rejects a media block with two dynamic PTs where one lacks rtpmap", function()
+      local doc = sdp.parse(make({
+        "m=video 5000 RTP/AVP 96 97",
+        "a=rtpmap:96 H264/90000",
+      }))
+      assert.is_table(doc)
+      local ok, err = doc:validate()
+      assert.is_nil(ok)
+      assert.is_table(err)
+      assert.matches("97", err.message)
+      assert.equal("RFC 8866 §8.2.3", err.spec_ref)
+    end)
+  end)
 end)
 
 describe("sdp — doc object (M6)", function()

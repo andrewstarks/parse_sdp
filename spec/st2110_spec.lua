@@ -1168,6 +1168,9 @@ describe("ST 2110 validation", function()
       local fmtp2    = opts.fmtp2    or VFMTP
       local rtpmap2  = opts.rtpmap2  or "a=rtpmap:96 raw/90000"
       local omit_mid2 = opts.omit_mid2 or false
+      -- Align the m= line's fmt with the rtpmap's PT so RFC 8866 §8.2.3
+      -- (dynamic PT requires matching rtpmap) is satisfied at the base tier.
+      local fmt2 = rtpmap2:match("a=rtpmap:(%d+)") or "96"
       local lines = {
         "v=0",
         "o=- 1234567890 1 IN IP4 192.168.1.1",
@@ -1181,7 +1184,7 @@ describe("ST 2110 validation", function()
         "a=rtpmap:96 raw/90000",
         VFMTP,
         "a=mediaclk:direct=0",
-        string.format("m=%s 5010 RTP/AVP 96", type2),
+        string.format("m=%s 5010 RTP/AVP %s", type2, fmt2),
         "c=IN IP4 239.100.0.2/64",
       }
       if not omit_mid2 then lines[#lines+1] = string.format("a=mid:%s", mid2) end
@@ -4886,6 +4889,10 @@ describe("ST 2110 validation", function()
       local rtpmap2 = opts.rtpmap2 or "a=rtpmap:96 raw/90000"
       local fmtp1 = opts.fmtp1 or VFMTP
       local fmtp2 = opts.fmtp2 or VFMTP
+      -- Align the m= line's fmt with the rtpmap's PT so RFC 8866 §8.2.3
+      -- (dynamic PT requires matching rtpmap) is satisfied at the base tier.
+      local fmt1 = rtpmap1:match("a=rtpmap:(%d+)") or "96"
+      local fmt2 = rtpmap2:match("a=rtpmap:(%d+)") or "96"
       local lines = {
         "v=0",
         "o=- 1234567890 1 IN IP4 192.168.1.1",
@@ -4893,7 +4900,7 @@ describe("ST 2110 validation", function()
         "t=0 0",
         "a=group:DUP leg1 leg2",
         PTP,
-        "m=video 5000 RTP/AVP 96",
+        string.format("m=video 5000 RTP/AVP %s", fmt1),
         c1,
         "a=mid:leg1",
         rtpmap1,
@@ -4901,7 +4908,7 @@ describe("ST 2110 validation", function()
         "a=mediaclk:direct=0",
       }
       if opts.sf1 then lines[#lines+1] = opts.sf1 end
-      lines[#lines+1] = "m=video 5010 RTP/AVP 96"
+      lines[#lines+1] = string.format("m=video 5010 RTP/AVP %s", fmt2)
       lines[#lines+1] = c2
       lines[#lines+1] = "a=mid:leg2"
       lines[#lines+1] = rtpmap2

@@ -11,6 +11,27 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ### Changed (audit pass #31 — Wave 5 RFC 8866 base migration)
 
+- **Dynamic-PT requires a=rtpmap hoisted to base tier (audit D1.2).**
+  RFC 8866 §8.2.3: *"If the payload type number is dynamically
+  assigned by this session description, an additional 'a=rtpmap:'
+  attribute MUST be included to specify the format name and
+  parameters as defined by the media type registration for the
+  payload format."* The parser previously enforced rtpmap presence
+  only at the ST 2110 tier (unconditional, since ST 2110 mandates
+  rtpmap for every stream). Added a per-media block check in
+  `validate.sdp` that walks `m.fmts`, identifies each dynamic PT
+  (96–127 per RFC 3551 §6 / RFC 8866 §6.6), and verifies a matching
+  `a=rtpmap` exists in `m.attributes`. Cite: `RFC 8866 §8.2.3`.
+  Scope: only fires when `m.proto` contains "RTP" (the rule is
+  RTP-specific). Two pre-existing `dup_sdp` test helpers hardcoded
+  `m=… RTP/AVP 96` but allowed callers to override `rtpmap2` to use
+  PT 97 — an internal inconsistency that the new check correctly
+  flags. Updated both helpers to extract the PT from the rtpmap
+  string and emit a matching `m=` fmt. 7 new tests in
+  `spec/sdp_spec.lua` covering dynamic-PT match pass, missing-rtpmap
+  reject, wrong-PT-rtpmap reject, static-PT (no rtpmap) pass,
+  non-RTP-proto skip, multi-PT both-mapped pass, and multi-PT one-
+  unmapped reject.
 - **`k=` (encryption-key) line obsoleted (audit D1.1).** RFC 8866
   §5.12: *"The 'k=' line (key-field) is obsolete and MUST NOT be
   used. It is included in this document for legacy reasons. One MUST
