@@ -3483,6 +3483,16 @@ function parser.parse(text, mode)
     connection, e = parse_required(lines, pos, "c", grammar.parse_connection)
     if not connection then return nil, e end
     pos = pos + 1
+    -- RFC 8866 §5.7 (audit D1.6): "Multiple addresses or 'c=' lines MUST
+    -- NOT be specified at session level." (Multiple media-level c= for
+    -- layered encoding are still permitted per the same clause.)
+    if pos <= n and peek_type(lines, pos) == "c" then
+      return nil, errors.new(
+        "multiple session-level c= lines are not permitted (RFC 8866 §5.7)",
+        { field_path = "session.connection",
+          spec_ref = "RFC 8866 §5.7", code = "INVALID_VALUE",
+          line = pos, col = 1, context = lines[pos] })
+    end
   end
 
   local bandwidths = {}

@@ -1068,6 +1068,54 @@ describe("sdp.parse — media blocks (M5)", function()
       assert.equal("RFC 8866 §5.7", err.spec_ref)
     end)
   end)
+
+  -- RFC 8866 §5.7 (audit D1.6): "Multiple addresses or 'c=' lines MUST NOT
+  -- be specified at session level." (Multiple media-level c= lines remain
+  -- permitted only for layered/hierarchical encoding.) The check fires
+  -- during parse, before any tier validation.
+  describe("RFC 8866 §5.7 multiple session-level c= rejection", function()
+    it("accepts a single session-level c=", function()
+      local doc, err = sdp.parse(table.concat({
+        "v=0", "o=- 1 1 IN IP4 127.0.0.1", "s=Test",
+        "c=IN IP4 192.0.2.1", "t=0 0",
+      }, "\r\n") .. "\r\n")
+      assert.is_nil(err)
+      assert.is_table(doc)
+    end)
+
+    it("rejects two session-level c= lines", function()
+      local doc, err = sdp.parse(table.concat({
+        "v=0", "o=- 1 1 IN IP4 127.0.0.1", "s=Test",
+        "c=IN IP4 192.0.2.1",
+        "c=IN IP4 192.0.2.2",
+        "t=0 0",
+      }, "\r\n") .. "\r\n")
+      assert.is_nil(doc)
+      assert.is_table(err)
+      assert.matches("multiple session%-level c=", err.message)
+      assert.equal("RFC 8866 §5.7", err.spec_ref)
+    end)
+
+    -- NOTE: multiple media-level c= (the §5.7 layered-encoding exception)
+    -- is NOT tested here because the parser doesn't support multiple
+    -- media-level c= lines today for separate reasons (strict media-block
+    -- ordering: only one c= is consumed before b=/a=/m=). D1.6 only adds
+    -- the session-level rejection — broadening media-level c= support
+    -- for layered encoding is a separate enhancement.
+
+    it("rejects two session-level c= even when a media block follows", function()
+      local doc, err = sdp.parse(table.concat({
+        "v=0", "o=- 1 1 IN IP4 127.0.0.1", "s=Test",
+        "c=IN IP4 192.0.2.1",
+        "c=IN IP4 192.0.2.2",
+        "t=0 0",
+        "m=audio 49170 RTP/AVP 0",
+      }, "\r\n") .. "\r\n")
+      assert.is_nil(doc)
+      assert.is_table(err)
+      assert.equal("RFC 8866 §5.7", err.spec_ref)
+    end)
+  end)
 end)
 
 describe("sdp — doc object (M6)", function()

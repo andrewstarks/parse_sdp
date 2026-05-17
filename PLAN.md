@@ -120,8 +120,15 @@ D1.3, D1.4, D1.5, D1.6).
 - D1.5: NOT enforced (re-evaluated against primary source —
   RFC 8866 §5.14 / §8.2.2 contain only SHOULD NOT, not MUST NOT,
   for `m=control`/`m=data`; grounded in RFC 3840 SIP backward-compat,
-  not a draft artifact). Marked as a future-warning candidate. D1.6
-  next.
+  not a draft artifact). Marked as a future-warning candidate.
+- D1.6 landed: multiple session-level c= rejected at parse
+  (RFC 8866 §5.7). **Wave 5 complete.**
+
+**Audit pass #31 complete.** All five waves landed (Wave 1
+citation-only, Wave 2 atomic Direction-A/B, Wave 3 medium-complexity
+Direction-A, Wave 4 RFC 4570 dest-address ↔ c= cross-line check,
+Wave 5 RFC 8866 base migration). Test suite: 853 hermetic + 10
+conformance. D1.5 deferred per strictness principle.
 
 ## Next
 

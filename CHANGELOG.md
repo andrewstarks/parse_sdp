@@ -11,6 +11,24 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ### Changed (audit pass #31 — Wave 5 RFC 8866 base migration)
 
+- **Multiple session-level c= lines rejected at parse (audit D1.6).**
+  RFC 8866 §5.7: *"Multiple addresses or 'c=' lines MUST NOT be
+  specified at session level."* (The same clause permits multiple
+  media-level c= lines but only for hierarchical/layered multicast
+  encoding.) The parser previously consumed one session-level c=
+  line and then proceeded to look for `b=`/`a=`/`m=` — a second
+  c= line at session level would either silently fall through or
+  trip an unrelated `WRONG_ORDER` error. Added an explicit check in
+  the parser's session-block walker: after consuming a session-level
+  c=, peek the next line; if it's another c=, reject with
+  `spec_ref="RFC 8866 §5.7"` and the explicit "multiple session-level
+  c= lines are not permitted" message. 3 new tests under a
+  `RFC 8866 §5.7 multiple session-level c= rejection` describe block
+  (single c= pass, two-c= reject, two-c= reject even with following
+  m= block). Media-level c= multiplicity (layered-encoding exception)
+  is out of scope — the parser doesn't accept multiple media-level c=
+  lines today for unrelated strict-ordering reasons; widening that
+  is a separate enhancement noted in tests.
 - **m= media-type value set (audit D1.5) — NOT enforced; future-
   warning candidate.** The audit recommended rejecting any m= media
   type outside `{audio, video, text, application, message}` (and the
