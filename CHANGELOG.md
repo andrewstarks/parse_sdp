@@ -11,6 +11,18 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ### Fixed (audit pass #31 — Wave 2 parser fixes)
 
+- **SSN year-suffix closed sets (audit A3).** ST 2110-20:2022 §7.2
+  defines only `:2017` and `:2022`; ST 2110-22:2022 §7.2 Table 2 defines
+  only `:2019` and `:2022`; ST 2110-41:2024 §6 defines only `:2024`.
+  Previously `_ssn_year` matched any 4 decimal digits, so
+  `SSN=ST2110-20:1999` or `:9999` was accepted as a value-form. Replaced
+  with explicit closed sets:
+  - `_ssn20_pat`: `(P("2017") + P("2022"))`
+  - `_ssn22_pat`: `(P("2019") + P("2022"))`
+  - `_ssn41_pat`: `P("2024")`
+  All in-repo fixtures (`spec/fixtures/`, `examples/`) already use
+  permitted years, so no fixture churn. 3 new pass/fail tests in
+  `spec/st2110_spec.lua` under the §7.2 SSN coupling describe block.
 - **VPID_Code cardinality (audit A2).** RFC 8331 §4 (smpte291 media-type
   registration) states: *"VPID_Code shall appear only once and a single
   integer value shall be expressed."* The parser's `fmtp_params` helper

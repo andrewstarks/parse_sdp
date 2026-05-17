@@ -725,12 +725,13 @@ local _signed_int_pat = (P("-") + P("+"))^-1 * _digit_seq * P(-1)
 local _efr_pat     = (_digit_seq * P("/") * _digit_seq + _digit_seq) * P(-1)
 local _par_pat     = _digit_seq * P(":") * _digit_seq * P(-1)
 
--- SSN year suffix: exactly 4 decimal digits (e.g. "2017", "2022").
--- Combined with a prefix to form exact SSN patterns per each standard edition.
-local _ssn_year  = R("09") * R("09") * R("09") * R("09")
-local _ssn20_pat = P("ST2110-20:") * _ssn_year * P(-1)  -- ST 2110-20 §7.2
-local _ssn22_pat = P("ST2110-22:") * _ssn_year * P(-1)  -- ST 2110-22 §7 (JPEG-XS)
-local _ssn41_pat = P("ST2110-41:") * _ssn_year * P(-1)  -- ST 2110-41 §7.2
+-- SSN year suffix: closed sets per each standard edition.
+-- ST 2110-20:2022 §7.2 defines only :2017 and :2022.
+-- ST 2110-22:2022 §7.2 Table 2 defines only :2019 and :2022.
+-- ST 2110-41:2024 §6 defines only :2024 so far.
+local _ssn20_pat = P("ST2110-20:") * (P("2017") + P("2022")) * P(-1)
+local _ssn22_pat = P("ST2110-22:") * (P("2019") + P("2022")) * P(-1)
+local _ssn41_pat = P("ST2110-41:") * P("2024") * P(-1)
 
 -- ST 2110-41:2024 §6 DIT value: comma-separated uppercase hex tokens.
 -- "The hexadecimal values shall not include the leading '0x' and any

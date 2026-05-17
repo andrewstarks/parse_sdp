@@ -1262,6 +1262,38 @@ describe("ST 2110 validation", function()
         assert.is_nil(err)
         assert.is_table(doc)
       end)
+
+      -- ST 2110-20:2022 §7.2 defines only :2017 and :2022 — reject any
+      -- other year suffix at the value-form check.
+      it("rejects SSN=ST2110-20:1999 (year not defined by §7.2)", function()
+        local fmtp = VALID:gsub("SSN=ST2110%-20:2022", "SSN=ST2110-20:1999")
+        local doc = sdp.parse(video20_sdp(fmtp))
+        assert.is_table(doc)
+        local ok, err = doc:validate("st2110")
+        assert.is_nil(ok)
+        assert.is_table(err)
+        assert.matches("SSN", err.message)
+      end)
+
+      it("rejects SSN=ST2110-20:2018 (year not defined by §7.2)", function()
+        local fmtp = VALID:gsub("SSN=ST2110%-20:2022", "SSN=ST2110-20:2018")
+        local doc = sdp.parse(video20_sdp(fmtp))
+        assert.is_table(doc)
+        local ok, err = doc:validate("st2110")
+        assert.is_nil(ok)
+        assert.is_table(err)
+        assert.matches("SSN", err.message)
+      end)
+
+      it("rejects SSN=ST2110-20:9999 (year not defined by §7.2)", function()
+        local fmtp = VALID:gsub("SSN=ST2110%-20:2022", "SSN=ST2110-20:9999")
+        local doc = sdp.parse(video20_sdp(fmtp))
+        assert.is_table(doc)
+        local ok, err = doc:validate("st2110")
+        assert.is_nil(ok)
+        assert.is_table(err)
+        assert.matches("SSN", err.message)
+      end)
     end)
 
     -- ST 2110-20:2022 §7.2 exactframerate: "non-integer rates shall be signaled
