@@ -137,10 +137,13 @@ Staged in three commits, one per spec file.
 
 - `spec/sdp_spec.lua` reordered (setup → atomic grammar → session
   structure → media structure → doc object → serializer); 136/136 pass.
-- `spec/st2110_spec.lua` — pending; cross-tier base-SDP grammar tests
-  (c= address syntax, multicast TTL/numaddr) to move to `sdp_spec.lua`.
-- `spec/ipmx_spec.lua` — pending; cross-tier tests (m= protocol form,
-  a=extmap URI RFC 8285, UDP port range) to move to `sdp_spec.lua`.
+- 4 cross-tier c= describes hoisted from `st2110_spec.lua` →
+  `sdp_spec.lua` (RFC 8866 §5.7/§9 TTL range, layered numaddr, IPv6
+  multicast numaddr, literal address syntax). 22 `it` blocks relocated;
+  full suite still 853 / 0.
+- `spec/st2110_spec.lua` — within-file reorder + dedup TODOs pending.
+- `spec/ipmx_spec.lua` — cross-tier moves (m= protocol form, a=extmap
+  URI RFC 8285, UDP port range) + within-file reorder pending.
 
 ## Next
 

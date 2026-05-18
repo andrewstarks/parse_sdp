@@ -11,6 +11,27 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ### Changed (test suite reorganization)
 
+- **Hoisted 4 base-tier c= describes from `spec/st2110_spec.lua` to
+  `spec/sdp_spec.lua`.** The checks all live in
+  `valid_connection_address(..., "base")` (parser hoisted them per audit
+  D1.3/D1.4) and fire from any tier that calls `validate.sdp`, including
+  base-tier `doc:validate()`. The tests were exercising base-tier
+  behavior through the ST 2110 mode entry point — relocating them puts
+  the coverage next to the rest of the base c= tests and keeps the
+  ST 2110 file focused on tier-specific rules. Mode calls rewritten:
+  `sdp.parse(text, "st2110")` → `sdp.parse(text)`;
+  `doc:validate("st2110")` → `doc:validate()`. The 22 `it` blocks behave
+  identically post-move (full suite still 853 / 0). Describes hoisted:
+  - `multicast TTL range validation (RFC 8866 §5.7 / §9)` → renamed
+    `RFC 8866 §5.7 / §9 multicast TTL range (base tier)`.
+  - `IPv4 layered multicast numaddr (RFC 8866 §9 IP4-multicast)` →
+    `RFC 8866 §9 IPv4 layered multicast numaddr (base tier)`.
+  - `c= IPv6 multicast numaddr suffix (RFC 8866 §9 IP6-multicast)` →
+    `RFC 8866 §9 c= IPv6 multicast numaddr suffix (base tier)`. Carries
+    a `TODO(dedup)` noting possible merge with the existing
+    "IPv6 multicast TTL forbidden" describe above.
+  - `M29 G1: c= IPv4/IPv6 literal address syntax` →
+    `RFC 8866 §5.7 c= IPv4/IPv6 literal address syntax (base tier)`.
 - **`spec/sdp_spec.lua` reordered by atomic → complex (no test changes).**
   Top-level describe blocks now flow: setup → atomic grammar (tokenize,
   parse_version/origin/timing/media — `parse_media` moved up next to the
