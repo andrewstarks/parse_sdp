@@ -11,6 +11,26 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ### Changed (test suite reorganization)
 
+- **`spec/ipmx_spec.lua` reordered by atomic → complex (no test
+  changes).** 50 sibling describes regrouped under 13 category sections
+  in this order: setup → IPMX baseline markers and a=extmap → leaf
+  values (bandwidth, infoframe, ts-refclk) → field structure (m=,
+  ports, RTCP) → per-encoding fmtp blocks (IPMX baseband, JPEG-XS,
+  audio) → cross-field within a media block → cross-media / cross-
+  session (a=group:DUP and a=privacy inheritance) → feature blocks
+  grouped by TR-10 spec (HKEP / TR-10-5, PEP-a=privacy / TR-10-13,
+  USB / TR-10-14, FEC / TR-10-6) → cross-feature interactions
+  (HKEP+PEP coexistence) → doc-object predicate. Cross-file dedup
+  TODOs added symmetric to the st2110 side:
+  - `a=group:DUP grouping — IPMX (TR-10-13 §13)` ↔ ST 2110 DUP
+  - `M26 H2: IPMX ts-refclk PTP version` ↔ ST 2110 PTP version
+  - `M25 M5: session-level b=AS validation` ↔ ST 2110 b=AS
+  Plus one within-file TODO flagging the two FEC_ADD_LATENCY describes
+  as tightly coupled (consider merging). The inventory's other IPMX
+  cross-tier candidates (m= protocol field validation, a=extmap URI,
+  media port range) were re-examined and confirmed to be IPMX-tier-
+  only checks (parser-side validation lives in `ipmx.validate`), so
+  they stay in `ipmx_spec.lua`. Suite still 853 / 0.
 - **`spec/st2110_spec.lua` reordered by atomic → complex (no test
   changes).** 56 sibling describes regrouped under 17 category sections
   in this order: setup → leaf values (ts-refclk, mediaclk, RTP PT

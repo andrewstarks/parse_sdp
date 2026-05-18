@@ -130,23 +130,27 @@ Direction-A, Wave 4 RFC 4570 dest-address ↔ c= cross-line check,
 Wave 5 RFC 8866 base migration). Test suite: 853 hermetic + 10
 conformance. D1.5 deferred per strictness principle.
 
-**Test-suite reorganization in progress** (no behavior change). Goal:
-order describe blocks within each spec file from atomic → complex, top
-level SDP → ST 2110 → IPMX, and flag dedup candidates with TODOs.
-Staged in three commits, one per spec file.
+**Test-suite reorganization complete** (no behavior change). Describe
+blocks within each spec file now flow atomic → complex, top level SDP
+→ ST 2110 → IPMX. Dedup candidates flagged in place with TODOs for a
+follow-up pruning pass.
 
 - `spec/sdp_spec.lua` reordered (setup → atomic grammar → session
-  structure → media structure → doc object → serializer); 136/136 pass.
+  structure → media structure → doc object → serializer); 158 cases
+  (up from 136 after the cross-tier hoist below).
 - 4 cross-tier c= describes hoisted from `st2110_spec.lua` →
   `sdp_spec.lua` (RFC 8866 §5.7/§9 TTL range, layered numaddr, IPv6
-  multicast numaddr, literal address syntax). 22 `it` blocks relocated;
-  full suite still 853 / 0.
-- `spec/st2110_spec.lua` reordered into 17 category sections (setup,
-  leaf values per topic, field structure, per-encoding fmtp, cross-
-  field, cross-media/session, feature blocks, doc-object). 3 cross-
+  multicast numaddr, literal address syntax). 22 `it` blocks relocated.
+- `spec/st2110_spec.lua` reordered into 17 category sections; 3 cross-
   file dedup TODOs added.
-- `spec/ipmx_spec.lua` — cross-tier moves (m= protocol form, a=extmap
-  URI RFC 8285, UDP port range) + within-file reorder pending.
+- `spec/ipmx_spec.lua` reordered into 13 category sections grouped by
+  feature (HKEP, PEP/privacy, USB, FEC); 3 cross-file dedup TODOs added
+  (mirroring the st2110 side) plus 1 within-file TODO. The inventory's
+  IPMX cross-tier candidates didn't survive review — all three (m=
+  protocol, a=extmap URI, media port range) are IPMX-tier-only checks
+  with parser-side validation in `ipmx.validate`, so they stay in
+  `ipmx_spec.lua`.
+- Suite still 853 / 0 across all four commits.
 
 ## Next
 
