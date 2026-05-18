@@ -159,6 +159,16 @@ they were never duplicates — they were intentional tier-specific test
 pairs (ST 2110 ↔ IPMX for PTP version, b=AS, a=group:DUP). Test count:
 853 → 849 (4 verified IPv6 multicast c= duplicates removed).
 
+**Citation audit + marking pass.** Of 802 `it` blocks, 695 (86.7%)
+reference a standards section; 107 don't. Each uncited `it` now
+carries `-- NOT-SPEC: <category>` on the line above. Categories:
+`parser-internal` 35, `validation-sanity` 33, `cli` 13, `error-format`
+11, `api-surface` 9, `mode-dispatch` 6. ST 2110 test file is at 100%
+citation coverage. The `validation-sanity` group (33 tests, mostly
+required-field rejection edges and feature-rule tests like b=AS / USB
+privacy / a=privacy hex counts) is the strongest candidate for a
+follow-up "upgrade describe names with explicit cites" pass.
+
 ## Next
 
 Wave 1: cite migrations (E1–E8). Wave 2–5: Direction-A/B fixes and the

@@ -76,6 +76,7 @@ describe("IPMX validation", function()
   -- ── Original test suites (updated fixtures) ──────────────────────────────────
 
   describe("sdp.parse with 'ipmx' mode", function()
+    -- NOT-SPEC: mode-dispatch
     it("returns a doc for valid IPMX SDP (localmac ts-refclk, not PTP)", function()
       local doc, err = sdp.parse(IPMX_VIDEO_SDP, "ipmx")
       assert.is_nil(err)
@@ -92,6 +93,7 @@ describe("IPMX validation", function()
       assert.matches("IPMX", err.message)
     end)
 
+    -- NOT-SPEC: mode-dispatch
     it("returns nil+err for generic SDP (no media block)", function()
       local doc, err = sdp.parse(GENERIC_SDP, "ipmx")
       assert.is_nil(doc)
@@ -101,6 +103,7 @@ describe("IPMX validation", function()
   end)
 
   describe("doc:validate('ipmx')", function()
+    -- NOT-SPEC: mode-dispatch
     it("returns true for valid IPMX SDP", function()
       local doc = sdp.parse(IPMX_VIDEO_SDP)
       assert.is_table(doc)
@@ -128,6 +131,7 @@ describe("IPMX validation", function()
       assert.is_string(err.spec_ref)
     end)
 
+    -- NOT-SPEC: mode-dispatch
     it("returns nil+err for generic SDP (no media block)", function()
       local doc = sdp.parse(GENERIC_SDP)
       assert.is_table(doc)
@@ -437,18 +441,21 @@ describe("IPMX validation", function()
       return table.concat(lines, "\r\n") .. "\r\n"
     end
 
+    -- NOT-SPEC: validation-sanity
     it("accepts b=AS:<positive integer>", function()
       local doc, err = sdp.parse(ipmx_video_with_bandwidth("b=AS:5000"), "ipmx")
       assert.is_nil(err)
       assert.is_table(doc)
     end)
 
+    -- NOT-SPEC: validation-sanity
     it("accepts b=AS:1 (lower positive integer boundary)", function()
       local doc, err = sdp.parse(ipmx_video_with_bandwidth("b=AS:1"), "ipmx")
       assert.is_nil(err)
       assert.is_table(doc)
     end)
 
+    -- NOT-SPEC: validation-sanity
     it("rejects b=AS:0 (must be positive)", function()
       local doc = sdp.parse(ipmx_video_with_bandwidth("b=AS:0"))
       assert.is_table(doc)
@@ -457,6 +464,7 @@ describe("IPMX validation", function()
       assert.matches("b=AS", err.message)
     end)
 
+    -- NOT-SPEC: validation-sanity
     it("absent b=AS is accepted (optional today)", function()
       local doc, err = sdp.parse(ipmx_video_with_bandwidth(nil), "ipmx")
       assert.is_nil(err)
@@ -724,6 +732,7 @@ describe("IPMX validation", function()
       }, "\r\n") .. "\r\n"
     end
 
+    -- NOT-SPEC: validation-sanity
     it("rejects non-RTP/AVP protocol on RTP media block", function()
       local doc = sdp.parse(ipmx_with_proto("RTP/SAVPF"))
       assert.is_table(doc)
@@ -1992,6 +2001,7 @@ describe("IPMX validation", function()
   -- ── a=privacy protocol=RTP_KV (TR-10-13 §13) ─────────────────────────────────
 
   describe("a=privacy protocol=RTP_KV", function()
+    -- NOT-SPEC: validation-sanity
     it("accepts protocol=RTP_KV", function()
       local text = base_ipmx_sdp({
         "a=privacy: protocol=RTP_KV; mode=AES-128-CTR; iv=0102030405060708; key_generator=aabbccddeeff00112233445566778899; key_version=01020304; key_id=deadbeefcafebabe",
@@ -2084,11 +2094,13 @@ describe("IPMX validation", function()
     -- in earlier describe blocks (they all use these exact defaults).
 
     -- iv (64-bit → 16 hex)
+    -- NOT-SPEC: validation-sanity
     it("rejects iv with 15 hex digits", function()
       local doc = sdp.parse(privacy_with({ iv = "010203040506070" }))
       local ok, err = doc:validate("ipmx")
       assert.is_nil(ok); assert.matches("iv", err.message)
     end)
+    -- NOT-SPEC: validation-sanity
     it("rejects iv with 17 hex digits", function()
       local doc = sdp.parse(privacy_with({ iv = "01020304050607080" }))
       local ok, err = doc:validate("ipmx")
@@ -2096,11 +2108,13 @@ describe("IPMX validation", function()
     end)
 
     -- key_generator (128-bit → 32 hex)
+    -- NOT-SPEC: validation-sanity
     it("rejects key_generator with 31 hex digits", function()
       local doc = sdp.parse(privacy_with({ key_generator = string.rep("a", 31) }))
       local ok, err = doc:validate("ipmx")
       assert.is_nil(ok); assert.matches("key_generator", err.message)
     end)
+    -- NOT-SPEC: validation-sanity
     it("rejects key_generator with 33 hex digits", function()
       local doc = sdp.parse(privacy_with({ key_generator = string.rep("a", 33) }))
       local ok, err = doc:validate("ipmx")
@@ -2108,11 +2122,13 @@ describe("IPMX validation", function()
     end)
 
     -- key_version (32-bit → 8 hex)
+    -- NOT-SPEC: validation-sanity
     it("rejects key_version with 7 hex digits", function()
       local doc = sdp.parse(privacy_with({ key_version = "0102030" }))
       local ok, err = doc:validate("ipmx")
       assert.is_nil(ok); assert.matches("key_version", err.message)
     end)
+    -- NOT-SPEC: validation-sanity
     it("rejects key_version with 9 hex digits", function()
       local doc = sdp.parse(privacy_with({ key_version = "010203040" }))
       local ok, err = doc:validate("ipmx")
@@ -2120,11 +2136,13 @@ describe("IPMX validation", function()
     end)
 
     -- key_id (64-bit → 16 hex)
+    -- NOT-SPEC: validation-sanity
     it("rejects key_id with 15 hex digits", function()
       local doc = sdp.parse(privacy_with({ key_id = "deadbeefcafebab" }))
       local ok, err = doc:validate("ipmx")
       assert.is_nil(ok); assert.matches("key_id", err.message)
     end)
+    -- NOT-SPEC: validation-sanity
     it("rejects key_id with 17 hex digits", function()
       local doc = sdp.parse(privacy_with({ key_id = "deadbeefcafebabe0" }))
       local ok, err = doc:validate("ipmx")
@@ -2388,6 +2406,7 @@ describe("IPMX validation", function()
     local USB_AAD = "AES-128-CTR_CMAC-64-AAD"
     local HEX = "iv=0102030405060708; key_generator=aabbccddeeff00112233445566778899; key_version=01020304; key_id=deadbeefcafebabe"
 
+    -- NOT-SPEC: validation-sanity
     it("accepts USB block with protocol=USB_KV and AAD mode", function()
       local text = with_usb("a=privacy: protocol=USB_KV; mode=" .. USB_AAD .. "; " .. HEX)
       local doc = sdp.parse(text)
@@ -2397,6 +2416,7 @@ describe("IPMX validation", function()
       assert.equal(true, ok)
     end)
 
+    -- NOT-SPEC: validation-sanity
     it("rejects USB block with protocol=RTP", function()
       local text = with_usb("a=privacy: protocol=RTP; mode=" .. USB_AAD .. "; " .. HEX)
       local doc = sdp.parse(text)
@@ -2405,6 +2425,7 @@ describe("IPMX validation", function()
       assert.matches("protocol", err.message)
     end)
 
+    -- NOT-SPEC: validation-sanity
     it("rejects USB block with protocol=RTP_KV", function()
       local text = with_usb("a=privacy: protocol=RTP_KV; mode=" .. USB_AAD .. "; " .. HEX)
       local doc = sdp.parse(text)
@@ -2439,12 +2460,14 @@ describe("IPMX validation", function()
       return table.concat(lines, "\r\n") .. "\r\n"
     end
 
+    -- NOT-SPEC: validation-sanity
     it("accepts USB block with a=setup:passive", function()
       local doc, err = sdp.parse(with_usb_setup("a=setup:passive"), "ipmx")
       assert.is_nil(err)
       assert.is_table(doc)
     end)
 
+    -- NOT-SPEC: validation-sanity
     it("rejects USB block missing a=setup", function()
       local doc = sdp.parse(with_usb_setup(nil))
       local ok, err = doc:validate("ipmx")
@@ -2452,6 +2475,7 @@ describe("IPMX validation", function()
       assert.matches("setup", err.message)
     end)
 
+    -- NOT-SPEC: validation-sanity
     it("rejects a=setup:active on USB", function()
       local doc = sdp.parse(with_usb_setup("a=setup:active"))
       local ok, err = doc:validate("ipmx")
@@ -2459,6 +2483,7 @@ describe("IPMX validation", function()
       assert.matches("setup", err.message)
     end)
 
+    -- NOT-SPEC: validation-sanity
     it("rejects a=setup:actpass on USB", function()
       local doc = sdp.parse(with_usb_setup("a=setup:actpass"))
       local ok, err = doc:validate("ipmx")
@@ -2720,6 +2745,7 @@ describe("IPMX validation", function()
   -- ── HKEP and PEP coexistence ──────────────────────────────────────────────────
 
   describe("HKEP and PEP coexistence", function()
+    -- NOT-SPEC: validation-sanity
     it("accepts SDP with both a=hkep and a=privacy at session level", function()
       local text = base_ipmx_sdp({
         "a=hkep:10000 IN IP4 192.168.1.100 550e8400-e29b-41d4-a716-446655440000 01-02-03-04-05",
@@ -2736,6 +2762,7 @@ describe("IPMX validation", function()
   -- ── doc-object predicate ────────────────────────────────────────────────────────
 
   describe("doc:is_ipmx()", function()
+    -- NOT-SPEC: mode-dispatch
     it("returns true for valid IPMX SDP", function()
       local doc = sdp.parse(IPMX_VIDEO_SDP)
       assert.is_table(doc)
@@ -2748,6 +2775,7 @@ describe("IPMX validation", function()
       assert.equal(false, doc:is_ipmx())
     end)
 
+    -- NOT-SPEC: mode-dispatch
     it("returns false for generic SDP (no media block)", function()
       local doc = sdp.parse(GENERIC_SDP)
       assert.is_table(doc)

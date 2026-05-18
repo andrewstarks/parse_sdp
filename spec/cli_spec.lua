@@ -37,6 +37,7 @@ end
 
 describe("CLI: to_json subcommand", function()
 
+  -- NOT-SPEC: cli
   it("parses a valid SDP file → JSON on stdout, exit 0", function()
     local stdout, stderr, code = run("to_json spec/fixtures/minimal.sdp")
     assert.equal(0, code)
@@ -46,6 +47,7 @@ describe("CLI: to_json subcommand", function()
     assert.equal("0", decoded.version)
   end)
 
+  -- NOT-SPEC: cli
   it("reads from stdin when no file given → JSON on stdout, exit 0", function()
     local sdp_text = "v=0\r\no=- 1 1 IN IP4 127.0.0.1\r\ns=Test\r\nt=0 0\r\n"
     local stdout, stderr, code = run("to_json", sdp_text)
@@ -55,6 +57,7 @@ describe("CLI: to_json subcommand", function()
     assert.is_table(decoded)
   end)
 
+  -- NOT-SPEC: cli
   it("invalid SDP → human-readable error on stderr, exit 1", function()
     local stdout, stderr, code = run("to_json spec/fixtures/invalid.sdp")
     assert.equal(1, code)
@@ -76,17 +79,20 @@ describe("CLI: to_json subcommand", function()
     assert.truthy(stderr:match("^error:"))
   end)
 
+  -- NOT-SPEC: cli
   it("--pretty produces indented JSON", function()
     local stdout, _, code = run("to_json --pretty spec/fixtures/minimal.sdp")
     assert.equal(0, code)
     assert.truthy(stdout:find("\n", 2, true))
   end)
 
+  -- NOT-SPEC: cli
   it("unknown subcommand → exit 1", function()
     local _, _, code = run("bogus")
     assert.equal(1, code)
   end)
 
+  -- NOT-SPEC: cli
   it("missing file → human-readable error on stderr, exit 1", function()
     local stdout, stderr, code = run("to_json spec/fixtures/no_such_file.sdp")
     assert.equal(1, code)
@@ -94,12 +100,14 @@ describe("CLI: to_json subcommand", function()
     assert.truthy(stderr:match("^error:"))
   end)
 
+  -- NOT-SPEC: cli
   it("--help exits 0 and prints usage", function()
     local stdout, _, code = run("--help")
     assert.equal(0, code)
     assert.truthy(stdout:find("parse_sdp", 1, true))
   end)
 
+  -- NOT-SPEC: cli
   it("to_json --help exits 0 and mentions --mode", function()
     local stdout, _, code = run("to_json --help")
     assert.equal(0, code)
@@ -120,6 +128,7 @@ describe("CLI: to_sdp subcommand", function()
     return json
   end
 
+  -- NOT-SPEC: cli
   it("serializes JSON from stdin → SDP text on stdout, exit 0", function()
     local json = fixture_json("spec/fixtures/minimal.sdp")
     local stdout, stderr, code = run("to_sdp", json)
@@ -129,6 +138,7 @@ describe("CLI: to_sdp subcommand", function()
     assert.truthy(stdout:find("s=Minimal", 1, true))
   end)
 
+  -- NOT-SPEC: cli
   it("serializes JSON from file → SDP text on stdout, exit 0", function()
     local json = fixture_json("spec/fixtures/minimal.sdp")
     local tmp = os.tmpname()
@@ -142,6 +152,7 @@ describe("CLI: to_sdp subcommand", function()
     assert.truthy(stdout:find("v=0", 1, true))
   end)
 
+  -- NOT-SPEC: cli
   it("invalid JSON → human-readable error on stderr, exit 1", function()
     local stdout, stderr, code = run("to_sdp", "not { valid } json")
     assert.equal(1, code)
@@ -149,6 +160,7 @@ describe("CLI: to_sdp subcommand", function()
     assert.truthy(stderr:match("^error:"))
   end)
 
+  -- NOT-SPEC: cli
   it("missing file → human-readable error on stderr, exit 1", function()
     local stdout, stderr, code = run("to_sdp spec/fixtures/no_such.json")
     assert.equal(1, code)
@@ -156,6 +168,7 @@ describe("CLI: to_sdp subcommand", function()
     assert.truthy(stderr:match("^error:"))
   end)
 
+  -- NOT-SPEC: cli
   it("round-trip: to_json → to_sdp produces re-parseable SDP", function()
     local json = fixture_json("spec/fixtures/minimal.sdp")
     local stdout, _, code = run("to_sdp", json)

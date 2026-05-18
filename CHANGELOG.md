@@ -11,6 +11,40 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ### Changed (test suite reorganization)
 
+- **Marked 107 `it` blocks with `-- NOT-SPEC: <category>` comments.**
+  Citation audit found 107 of the suite's 802 `it` blocks (13.3%)
+  don't textually reference a standard or specification (no `RFC NNNN`,
+  `§N`, `ST 2110-X`, `TR-10-X`, `IEEE 1588`, `AES3`, `(MNN)`, or
+  `audit X` in describe path / test name / body / `spec_ref`
+  assertion). Each is now annotated with one of six categories so the
+  next reviewer can decide whether to upgrade the test with an
+  explicit citation, leave as legitimate non-spec coverage, or drop:
+  - `parser-internal` (35) — grammar.tokenize_line, parse_version,
+    parse_origin, parse_timing, parse_media. The grammar IS the
+    RFC 8866 §9 ABNF but the tests exercise the LPEG parser layer
+    rather than declaring spec compliance.
+  - `validation-sanity` (33) — required-field happy-path and rejection
+    edge cases (e.g. `parses a minimal valid SDP`, `returns nil, err
+    for empty input`, b=AS positivity acceptance/rejection, USB
+    privacy/setup checks) where the rule has a parser-side `spec_ref`
+    but the describe doesn't restate it. These are the strongest
+    candidates for upgrading: adding the cite to the describe name
+    would lift them to "cited".
+  - `cli` (13) — `cli_spec.lua` integration tests (subcommand behavior,
+    exit codes, --pretty output). Test the CLI surface, not a spec.
+  - `error-format` (11) — `errors_spec.lua` tests of the internal
+    error formatter (`errors.format` / `errors.new`). API tests.
+  - `api-surface` (9) — sanity checks: `loads without error`, `to_json
+    method exists`, `to_json returns a string`, doc method-existence
+    probes. Test API shape, not spec compliance.
+  - `mode-dispatch` (6) — `sdp.parse(text, "ipmx")` / `doc:is_ipmx()`
+    happy-path checks that exercise the mode entry point but don't
+    enforce a specific rule.
+  ST 2110 test file is at 100% citation coverage; all `NOT-SPEC`
+  markers live in `sdp_spec.lua` (55), `ipmx_spec.lua` (28),
+  `errors_spec.lua` (11), and `cli_spec.lua` (13). No test was
+  modified — only inline comments added.
+
 - **Test-suite dedup pass — 4 duplicate `it`s removed (853 → 849).**
   An audit across nine candidate clusters (`a=privacy`, `b=AS`,
   `ts-refclk`, `a=group`, base-tier c=, FEC, a=infoframe, USB, plus
