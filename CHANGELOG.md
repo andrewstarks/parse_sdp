@@ -11,6 +11,49 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ### Changed (test suite reorganization)
 
+- **Lifted 33 `validation-sanity` tests to "cited" by adding spec
+  citations to their describe names; consolidated the remaining
+  non-spec markers into two clean buckets.** Citation coverage is
+  now 90.8% (728 / 802), up from 86.7%. The eight describes upgraded:
+  - sdp_spec.lua: `sdp.parse — required session fields` →
+    `... (RFC 8866 §5)`
+  - ipmx_spec.lua: `b=AS bandwidth format` → `... (TR-10-7 §11)`
+  - ipmx_spec.lua: `m= protocol field validation (IPMX)` →
+    `... (IPMX, ST 2110-10 §8.1)`
+  - ipmx_spec.lua: `a=privacy protocol=RTP_KV` → `... (TR-10-13 §13)`
+  - ipmx_spec.lua: `a=privacy exact hex digit counts` →
+    `... (TR-10-13 §13)`
+  - ipmx_spec.lua: `USB privacy protocol` → `... (TR-10-14 §14)`
+  - ipmx_spec.lua: `USB a=setup:passive requirement` →
+    `... (TR-10-14 §14)`
+  - ipmx_spec.lua: `HKEP and PEP coexistence` →
+    `... (TR-10-5 §10 / TR-10-13 §13)`
+
+  Each citation matches the parser-side `spec_ref` value the validator
+  emits for that rule (verified against `parse_sdp.lua`).
+
+  The remaining 74 `NOT-SPEC` markers were collapsed from six narrow
+  categories into two clean buckets that reflect *what kind of code
+  the test is exercising*:
+  - **`implementation`** (35) — the LPEG-layer grammar primitive
+    tests in sdp_spec.lua (`grammar.tokenize_line`,
+    `grammar.parse_version`, `grammar.parse_origin`,
+    `grammar.parse_timing`, `grammar.parse_media`). These are
+    characterization tests for `M._grammar` (the parser internals
+    `parse_sdp.lua` exposes for spec access only — explicitly *not*
+    part of the public contract per `CLAUDE.md`). They have value
+    (fast feedback during parser development, sharp diagnostics on
+    regression) but they are white-box: a complete refactor that
+    inlined these helpers would fail them even with identical
+    public-API behavior. Tagged as `implementation` so future readers
+    know what they're signing up for.
+  - **`library`** (39) — everything else: CLI subcommand behavior
+    (`cli_spec.lua`, 13), internal error-formatter API
+    (`errors_spec.lua`, 11), API-surface sanity (load, to_json, doc
+    method-existence, 9), and ipmx mode-dispatch happy-path checks
+    (6). These exercise the library's user-facing implementation but
+    don't ground in a published standard.
+
 - **Marked 107 `it` blocks with `-- NOT-SPEC: <category>` comments.**
   Citation audit found 107 of the suite's 802 `it` blocks (13.3%)
   don't textually reference a standard or specification (no `RFC NNNN`,

@@ -3,13 +3,13 @@ local errors = require("parse_sdp")._errors
 
 describe("errors.format", function()
 
-  -- NOT-SPEC: error-format
+  -- NOT-SPEC: library
   it("includes the message", function()
     local out = errors.format({ message = "something failed", line = 0, col = 0, context = "" })
     assert.truthy(out:find("something failed", 1, true))
   end)
 
-  -- NOT-SPEC: error-format
+  -- NOT-SPEC: library
   it("includes the error code when present", function()
     local out = errors.format({ message = "field missing", code = "MISSING_FIELD",
                                  line = 0, col = 0, context = "" })
@@ -17,34 +17,34 @@ describe("errors.format", function()
     assert.truthy(out:find("field missing",  1, true))
   end)
 
-  -- NOT-SPEC: error-format
+  -- NOT-SPEC: library
   it("omits code bracket when code is absent", function()
     local out = errors.format({ message = "oops", line = 0, col = 0, context = "" })
     assert.falsy(out:find("%[", 1, false))  -- no '[' character
   end)
 
-  -- NOT-SPEC: error-format
+  -- NOT-SPEC: library
   it("includes line and col when line > 0", function()
     local out = errors.format({ message = "bad", line = 3, col = 5, context = "" })
     assert.truthy(out:find("line 3", 1, true))
     assert.truthy(out:find("col 5",  1, true))
   end)
 
-  -- NOT-SPEC: error-format
+  -- NOT-SPEC: library
   it("shows context line and caret when context is non-empty", function()
     local out = errors.format({ message = "bad value", line = 2, col = 1, context = "s=Bad" })
     assert.truthy(out:find("s=Bad", 1, true))
     assert.truthy(out:find("^",     1, true))
   end)
 
-  -- NOT-SPEC: error-format
+  -- NOT-SPEC: library
   it("caret is offset by col-1 spaces", function()
     -- col 4 → 3 spaces before ^
     local out = errors.format({ message = "x", line = 1, col = 4, context = "v=XX" })
     assert.truthy(out:find("   ^", 1, true))
   end)
 
-  -- NOT-SPEC: error-format
+  -- NOT-SPEC: library
   it("col 1 produces caret with no leading spaces (just the prefix)", function()
     local out = errors.format({ message = "x", line = 1, col = 1, context = "v=0" })
     -- caret line ends with "| ^" (no spaces between | and ^)
@@ -81,7 +81,7 @@ describe("errors.format", function()
     assert.falsy(out:find("note:", 1, true))
   end)
 
-  -- NOT-SPEC: error-format
+  -- NOT-SPEC: library
   it("handles nil err gracefully", function()
     local out = errors.format(nil)
     assert.is_string(out)
@@ -92,20 +92,20 @@ end)
 
 describe("errors.new", function()
 
-  -- NOT-SPEC: error-format
+  -- NOT-SPEC: library
   it("returns a table with the given message", function()
     local e = errors.new("something went wrong")
     assert.is_table(e)
     assert.equal("something went wrong", e.message)
   end)
 
-  -- NOT-SPEC: error-format
+  -- NOT-SPEC: library
   it("defaults code to MISSING_FIELD", function()
     local e = errors.new("field missing")
     assert.equal("MISSING_FIELD", e.code)
   end)
 
-  -- NOT-SPEC: error-format
+  -- NOT-SPEC: library
   it("accepts explicit code override", function()
     local e = errors.new("bad value", { code = "INVALID_VALUE" })
     assert.equal("INVALID_VALUE", e.code)

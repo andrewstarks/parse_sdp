@@ -1,6 +1,6 @@
 ---@diagnostic disable
 describe("parse_sdp", function()
-  -- NOT-SPEC: api-surface
+  -- NOT-SPEC: library
   it("loads without error", function()
     local sdp = require("parse_sdp")
     assert.is_table(sdp)
@@ -12,7 +12,7 @@ end)
 describe("grammar.tokenize_line", function()
   local grammar = require("parse_sdp")._grammar
 
-  -- NOT-SPEC: parser-internal
+  -- NOT-SPEC: implementation
   it("parses a valid CRLF line", function()
     local t, v, offset = grammar.tokenize_line("v=0\r\n")
     assert.equal("v", t)
@@ -20,7 +20,7 @@ describe("grammar.tokenize_line", function()
     assert.equal(3, offset)
   end)
 
-  -- NOT-SPEC: parser-internal
+  -- NOT-SPEC: implementation
   it("parses a valid LF-only line", function()
     local t, v, offset = grammar.tokenize_line("s=My Session\n")
     assert.equal("s", t)
@@ -28,7 +28,7 @@ describe("grammar.tokenize_line", function()
     assert.equal(3, offset)
   end)
 
-  -- NOT-SPEC: parser-internal
+  -- NOT-SPEC: implementation
   it("parses a line with no trailing newline", function()
     local t, v, offset = grammar.tokenize_line("v=0")
     assert.equal("v", t)
@@ -36,7 +36,7 @@ describe("grammar.tokenize_line", function()
     assert.equal(3, offset)
   end)
 
-  -- NOT-SPEC: parser-internal
+  -- NOT-SPEC: implementation
   it("parses a line with a complex value", function()
     local t, v, offset = grammar.tokenize_line("o=- 0 0 IN IP4 127.0.0.1\r\n")
     assert.equal("o", t)
@@ -44,56 +44,56 @@ describe("grammar.tokenize_line", function()
     assert.equal(3, offset)
   end)
 
-  -- NOT-SPEC: parser-internal
+  -- NOT-SPEC: implementation
   it("rejects empty input", function()
     local t, pos = grammar.tokenize_line("")
     assert.is_nil(t)
     assert.is_number(pos)
   end)
 
-  -- NOT-SPEC: parser-internal
+  -- NOT-SPEC: implementation
   it("rejects a line with no equals sign", function()
     local t, pos = grammar.tokenize_line("invalid\r\n")
     assert.is_nil(t)
     assert.is_number(pos)
   end)
 
-  -- NOT-SPEC: parser-internal
+  -- NOT-SPEC: implementation
   it("rejects a line with multi-char type field", function()
     local t, pos = grammar.tokenize_line("ab=value\r\n")
     assert.is_nil(t)
     assert.is_number(pos)
   end)
 
-  -- NOT-SPEC: parser-internal
+  -- NOT-SPEC: implementation
   it("rejects a line with non-alpha type character", function()
     local t, pos = grammar.tokenize_line("1=value\r\n")
     assert.is_nil(t)
     assert.is_number(pos)
   end)
 
-  -- NOT-SPEC: parser-internal
+  -- NOT-SPEC: implementation
   it("rejects a line with an empty value", function()
     local t, pos = grammar.tokenize_line("v=\r\n")
     assert.is_nil(t)
     assert.is_number(pos)
   end)
 
-  -- NOT-SPEC: parser-internal
+  -- NOT-SPEC: implementation
   it("returns failure position 1 for non-alpha type", function()
     local t, pos = grammar.tokenize_line("1=value\r\n")
     assert.is_nil(t)
     assert.equal(1, pos)
   end)
 
-  -- NOT-SPEC: parser-internal
+  -- NOT-SPEC: implementation
   it("returns failure position after type char for multi-char type", function()
     local t, pos = grammar.tokenize_line("ab=value\r\n")
     assert.is_nil(t)
     assert.equal(2, pos)  -- failed after consuming 'a'
   end)
 
-  -- NOT-SPEC: parser-internal
+  -- NOT-SPEC: implementation
   it("returns failure position at value start for empty value", function()
     local t, pos = grammar.tokenize_line("v=\r\n")
     assert.is_nil(t)
@@ -104,27 +104,27 @@ end)
 describe("grammar.parse_version", function()
   local grammar = require("parse_sdp")._grammar
 
-  -- NOT-SPEC: parser-internal
+  -- NOT-SPEC: implementation
   it("accepts '0'", function()
     local v = grammar.parse_version("0")
     assert.equal("0", v)
   end)
 
-  -- NOT-SPEC: parser-internal
+  -- NOT-SPEC: implementation
   it("rejects '1'", function()
     local v, pos = grammar.parse_version("1")
     assert.is_nil(v)
     assert.is_number(pos)
   end)
 
-  -- NOT-SPEC: parser-internal
+  -- NOT-SPEC: implementation
   it("rejects empty string", function()
     local v, pos = grammar.parse_version("")
     assert.is_nil(v)
     assert.is_number(pos)
   end)
 
-  -- NOT-SPEC: parser-internal
+  -- NOT-SPEC: implementation
   it("rejects '0' with trailing content", function()
     local v, pos = grammar.parse_version("0 extra")
     assert.is_nil(v)
@@ -135,7 +135,7 @@ end)
 describe("grammar.parse_origin", function()
   local grammar = require("parse_sdp")._grammar
 
-  -- NOT-SPEC: parser-internal
+  -- NOT-SPEC: implementation
   it("parses a valid origin value", function()
     local o = grammar.parse_origin("- 1234567890 1 IN IP4 192.0.2.1")
     assert.is_table(o)
@@ -147,7 +147,7 @@ describe("grammar.parse_origin", function()
     assert.equal("192.0.2.1",  o.unicast_address)
   end)
 
-  -- NOT-SPEC: parser-internal
+  -- NOT-SPEC: implementation
   it("accepts IP6 address type", function()
     local o = grammar.parse_origin("- 1 1 IN IP6 ::1")
     assert.is_table(o)
@@ -155,28 +155,28 @@ describe("grammar.parse_origin", function()
     assert.equal("::1", o.unicast_address)
   end)
 
-  -- NOT-SPEC: parser-internal
+  -- NOT-SPEC: implementation
   it("rejects too few fields", function()
     local o, pos = grammar.parse_origin("invalid")
     assert.is_nil(o)
     assert.is_number(pos)
   end)
 
-  -- NOT-SPEC: parser-internal
+  -- NOT-SPEC: implementation
   it("rejects non-numeric sess-id", function()
     local o, pos = grammar.parse_origin("- abc 1 IN IP4 192.0.2.1")
     assert.is_nil(o)
     assert.is_number(pos)
   end)
 
-  -- NOT-SPEC: parser-internal
+  -- NOT-SPEC: implementation
   it("rejects unknown nettype", function()
     local o, pos = grammar.parse_origin("- 1 1 OUT IP4 192.0.2.1")
     assert.is_nil(o)
     assert.is_number(pos)
   end)
 
-  -- NOT-SPEC: parser-internal
+  -- NOT-SPEC: implementation
   it("rejects unknown addrtype", function()
     local o, pos = grammar.parse_origin("- 1 1 IN IP5 192.0.2.1")
     assert.is_nil(o)
@@ -187,7 +187,7 @@ end)
 describe("grammar.parse_timing", function()
   local grammar = require("parse_sdp")._grammar
 
-  -- NOT-SPEC: parser-internal
+  -- NOT-SPEC: implementation
   it("parses '0 0'", function()
     local t = grammar.parse_timing("0 0")
     assert.is_table(t)
@@ -195,7 +195,7 @@ describe("grammar.parse_timing", function()
     assert.equal(0, t.stop)
   end)
 
-  -- NOT-SPEC: parser-internal
+  -- NOT-SPEC: implementation
   it("parses NTP timestamps", function()
     local t = grammar.parse_timing("3034423619 3042462419")
     assert.is_table(t)
@@ -203,21 +203,21 @@ describe("grammar.parse_timing", function()
     assert.equal(3042462419, t.stop)
   end)
 
-  -- NOT-SPEC: parser-internal
+  -- NOT-SPEC: implementation
   it("rejects missing stop time", function()
     local t, pos = grammar.parse_timing("0")
     assert.is_nil(t)
     assert.is_number(pos)
   end)
 
-  -- NOT-SPEC: parser-internal
+  -- NOT-SPEC: implementation
   it("rejects non-numeric values", function()
     local t, pos = grammar.parse_timing("abc def")
     assert.is_nil(t)
     assert.is_number(pos)
   end)
 
-  -- NOT-SPEC: parser-internal
+  -- NOT-SPEC: implementation
   it("rejects trailing content after stop time", function()
     local t, pos = grammar.parse_timing("0 0 extra")
     assert.is_nil(t)
@@ -228,7 +228,7 @@ end)
 describe("grammar.parse_media", function()
   local grammar = require("parse_sdp")._grammar
 
-  -- NOT-SPEC: parser-internal
+  -- NOT-SPEC: implementation
   it("parses a minimal m= value", function()
     local m = grammar.parse_media("video 49170 RTP/AVP 96")
     assert.is_table(m)
@@ -240,7 +240,7 @@ describe("grammar.parse_media", function()
     assert.equal("96",      m.fmts[1])
   end)
 
-  -- NOT-SPEC: parser-internal
+  -- NOT-SPEC: implementation
   it("parses m= with port count", function()
     local m = grammar.parse_media("video 49170/2 RTP/AVP 96")
     assert.is_table(m)
@@ -248,7 +248,7 @@ describe("grammar.parse_media", function()
     assert.equal(2,     m.port_count)
   end)
 
-  -- NOT-SPEC: parser-internal
+  -- NOT-SPEC: implementation
   it("parses multiple fmt tokens", function()
     local m = grammar.parse_media("video 49170 RTP/AVP 96 97 98")
     assert.is_table(m)
@@ -258,14 +258,14 @@ describe("grammar.parse_media", function()
     assert.equal("98", m.fmts[3])
   end)
 
-  -- NOT-SPEC: parser-internal
+  -- NOT-SPEC: implementation
   it("rejects value missing port/proto/fmt", function()
     local m, pos = grammar.parse_media("audio")
     assert.is_nil(m)
     assert.is_number(pos)
   end)
 
-  -- NOT-SPEC: parser-internal
+  -- NOT-SPEC: implementation
   it("rejects value with non-numeric port", function()
     local m, pos = grammar.parse_media("audio abc RTP/AVP 0")
     assert.is_nil(m)
@@ -273,21 +273,21 @@ describe("grammar.parse_media", function()
   end)
 
   -- M26 L1: UDP port range (RFC 768).
-  -- NOT-SPEC: parser-internal
+  -- NOT-SPEC: implementation
   it("accepts port at the upper bound (65535)", function()
     local m = grammar.parse_media("video 65535 RTP/AVP 96")
     assert.is_table(m)
     assert.equal(65535, m.port)
   end)
 
-  -- NOT-SPEC: parser-internal
+  -- NOT-SPEC: implementation
   it("rejects port above UDP range (65536)", function()
     local m, pos = grammar.parse_media("video 65536 RTP/AVP 96")
     assert.is_nil(m)
     assert.is_number(pos)
   end)
 
-  -- NOT-SPEC: parser-internal
+  -- NOT-SPEC: implementation
   it("rejects port well above UDP range (100000)", function()
     local m, pos = grammar.parse_media("video 100000 RTP/AVP 96")
     assert.is_nil(m)
@@ -297,7 +297,7 @@ end)
 
 -- ── Session-level field structure ─────────────────────────────────────────────
 
-describe("sdp.parse — required session fields", function()
+describe("sdp.parse — required session fields (RFC 8866 §5)", function()
   local sdp = require("parse_sdp")
 
   local minimal = table.concat({
@@ -307,7 +307,6 @@ describe("sdp.parse — required session fields", function()
     "t=0 0",
   }, "\r\n") .. "\r\n"
 
-  -- NOT-SPEC: validation-sanity
   it("parses a minimal valid SDP into a doc table", function()
     local doc, err = sdp.parse(minimal)
     assert.is_nil(err)
@@ -324,7 +323,6 @@ describe("sdp.parse — required session fields", function()
     assert.equal(0,             doc.session.timing.stop)
   end)
 
-  -- NOT-SPEC: validation-sanity
   it("accepts LF-only line endings", function()
     local lf = minimal:gsub("\r\n", "\n")
     local doc, err = sdp.parse(lf)
@@ -355,7 +353,6 @@ describe("sdp.parse — required session fields", function()
     assert.is_table(err)
   end)
 
-  -- NOT-SPEC: validation-sanity
   it("returns nil, err for empty input", function()
     local doc, err = sdp.parse("")
     assert.is_nil(doc)
@@ -389,7 +386,6 @@ describe("sdp.parse — required session fields", function()
     assert.is_table(err)
   end)
 
-  -- NOT-SPEC: validation-sanity
   it("returns nil, err when v= is missing", function()
     local doc, err = sdp.parse(table.concat({
       "o=- 1234567890 1 IN IP4 192.0.2.1",
@@ -401,7 +397,6 @@ describe("sdp.parse — required session fields", function()
     assert.equal(1, err.line)
   end)
 
-  -- NOT-SPEC: validation-sanity
   it("returns nil, err for wrong field order", function()
     local doc, err = sdp.parse(table.concat({
       "v=0",
@@ -415,7 +410,6 @@ describe("sdp.parse — required session fields", function()
     assert.equal("s=My Session", err.context)
   end)
 
-  -- NOT-SPEC: validation-sanity
   it("returns nil, err for malformed o= value", function()
     local doc, err = sdp.parse(table.concat({
       "v=0",
@@ -429,7 +423,6 @@ describe("sdp.parse — required session fields", function()
     assert.equal("o=invalid", err.context)
   end)
 
-  -- NOT-SPEC: validation-sanity
   it("returns nil, err for wrong v= value", function()
     local doc, err = sdp.parse(table.concat({
       "v=1",
@@ -443,7 +436,6 @@ describe("sdp.parse — required session fields", function()
     assert.equal("v=1", err.context)
   end)
 
-  -- NOT-SPEC: validation-sanity
   it("error table contains message, line, col, context", function()
     local doc, err = sdp.parse("v=1\r\no=- 1 1 IN IP4 127.0.0.1\r\ns=x\r\nt=0 0\r\n")
     assert.is_nil(doc)
@@ -453,14 +445,12 @@ describe("sdp.parse — required session fields", function()
     assert.is_string(err.context)
   end)
 
-  -- NOT-SPEC: validation-sanity
   it("ignores content after the four required fields", function()
     local doc, err = sdp.parse(minimal .. "a=recvonly\r\n")
     assert.is_nil(err)
     assert.is_table(doc)
   end)
 
-  -- NOT-SPEC: validation-sanity
   it("rejects unrecognized field type after all SDP fields", function()
     local doc, err = sdp.parse(minimal .. "x=garbage\r\n")
     assert.is_nil(doc)
@@ -468,7 +458,6 @@ describe("sdp.parse — required session fields", function()
     assert.equal("WRONG_ORDER", err.code)
   end)
 
-  -- NOT-SPEC: validation-sanity
   it("rejects malformed content at end of SDP", function()
     local doc, err = sdp.parse(minimal .. "not-a-field\r\n")
     assert.is_nil(doc)
@@ -1614,21 +1603,21 @@ describe("to_json", function()
     "a=rtpmap:96 H264/90000",
   }, "\r\n") .. "\r\n"
 
-  -- NOT-SPEC: api-surface
+  -- NOT-SPEC: library
   it("to_json method exists on parsed doc", function()
     local doc = sdp.parse(full_text)
     assert.is_table(doc)
     assert.is_function(doc.to_json)
   end)
 
-  -- NOT-SPEC: api-surface
+  -- NOT-SPEC: library
   it("returns a string", function()
     local doc = sdp.parse(full_text)
     local out = doc:to_json()
     assert.is_string(out)
   end)
 
-  -- NOT-SPEC: api-surface
+  -- NOT-SPEC: library
   it("output is valid JSON (parses back without error)", function()
     local dkjson = require("dkjson")
     local doc = sdp.parse(full_text)
@@ -1638,7 +1627,7 @@ describe("to_json", function()
     assert.is_table(decoded)
   end)
 
-  -- NOT-SPEC: api-surface
+  -- NOT-SPEC: library
   it("JSON contains top-level doc fields (version, origin, session, media)", function()
     local dkjson = require("dkjson")
     local doc = sdp.parse(full_text)
@@ -1649,7 +1638,7 @@ describe("to_json", function()
     assert.is_table(decoded.media)
   end)
 
-  -- NOT-SPEC: api-surface
+  -- NOT-SPEC: library
   it("JSON origin fields are correct", function()
     local dkjson = require("dkjson")
     local doc = sdp.parse(full_text)
@@ -1659,7 +1648,7 @@ describe("to_json", function()
     assert.equal("IP4",         decoded.origin.addr_type)
   end)
 
-  -- NOT-SPEC: api-surface
+  -- NOT-SPEC: library
   it("JSON session attributes array is present", function()
     local dkjson = require("dkjson")
     local doc = sdp.parse(full_text)
@@ -1669,7 +1658,7 @@ describe("to_json", function()
     assert.equal("tool", decoded.session.attributes[1].name)
   end)
 
-  -- NOT-SPEC: api-surface
+  -- NOT-SPEC: library
   it("JSON media array has correct entry", function()
     local dkjson = require("dkjson")
     local doc = sdp.parse(full_text)
@@ -1679,7 +1668,7 @@ describe("to_json", function()
     assert.equal(5000,    decoded.media[1].port)
   end)
 
-  -- NOT-SPEC: api-surface
+  -- NOT-SPEC: library
   it("sdp.new({}) has to_json method", function()
     local doc = sdp.new({})
     assert.is_function(doc.to_json)

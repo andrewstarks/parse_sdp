@@ -159,15 +159,22 @@ they were never duplicates — they were intentional tier-specific test
 pairs (ST 2110 ↔ IPMX for PTP version, b=AS, a=group:DUP). Test count:
 853 → 849 (4 verified IPv6 multicast c= duplicates removed).
 
-**Citation audit + marking pass.** Of 802 `it` blocks, 695 (86.7%)
-reference a standards section; 107 don't. Each uncited `it` now
-carries `-- NOT-SPEC: <category>` on the line above. Categories:
-`parser-internal` 35, `validation-sanity` 33, `cli` 13, `error-format`
-11, `api-surface` 9, `mode-dispatch` 6. ST 2110 test file is at 100%
-citation coverage. The `validation-sanity` group (33 tests, mostly
-required-field rejection edges and feature-rule tests like b=AS / USB
-privacy / a=privacy hex counts) is the strongest candidate for a
-follow-up "upgrade describe names with explicit cites" pass.
+**Citation audit + marking pass.** Now at 90.8% citation coverage
+(728 / 802 `it` blocks). The 33 `validation-sanity` describes were
+upgraded with explicit spec citations matching the parser-side
+`spec_ref` value (RFC 8866 §5 for required session fields; TR-10-7
+§11 for b=AS positivity; ST 2110-10 §8.1 for m= protocol; TR-10-13
+§13 for a=privacy rules; TR-10-14 §14 for USB rules; TR-10-5 §10 +
+TR-10-13 §13 for HKEP+PEP coexistence). The remaining 74 NOT-SPEC
+markers were collapsed into two buckets:
+
+- `implementation` (35): grammar.* LPEG primitive tests. White-box,
+  refactor-fragile, but useful for fast parser-dev feedback.
+- `library` (39): CLI, error-formatter, API surface, mode-dispatch
+  sanity. Tests the library's user-facing implementation but doesn't
+  ground in a standard.
+
+ST 2110 test file remains at 100% citation coverage.
 
 ## Next
 
