@@ -443,6 +443,12 @@ describe("IPMX validation", function()
       assert.is_table(doc)
     end)
 
+    it("accepts b=AS:1 (lower positive integer boundary)", function()
+      local doc, err = sdp.parse(ipmx_video_with_bandwidth("b=AS:1"), "ipmx")
+      assert.is_nil(err)
+      assert.is_table(doc)
+    end)
+
     it("rejects b=AS:0 (must be positive)", function()
       local doc = sdp.parse(ipmx_video_with_bandwidth("b=AS:0"))
       assert.is_table(doc)
@@ -453,30 +459,6 @@ describe("IPMX validation", function()
 
     it("absent b=AS is accepted (optional today)", function()
       local doc, err = sdp.parse(ipmx_video_with_bandwidth(nil), "ipmx")
-      assert.is_nil(err)
-      assert.is_table(doc)
-    end)
-  end)
-
-  describe("M25 LOW: b=AS:1 lower-bound acceptance", function()
-    it("accepts b=AS:1 (lower positive integer boundary)", function()
-      local text = table.concat({
-        "v=0",
-        "o=- 1234567890 1 IN IP4 192.168.1.1",
-        "s=IPMX b=AS lower bound",
-        "t=0 0",
-        "a=ts-refclk:localmac=AA-BB-CC-DD-EE-FF",
-        "a=extmap:1 urn:ietf:params:rtp-hdrext:smpte-tc",
-        "m=video 5000 RTP/AVP 96",
-        "c=IN IP4 239.100.0.1/64",
-        "b=AS:1",
-        "a=source-filter: incl IN IP4 239.100.0.1 192.168.1.1",
-        "a=rtpmap:96 raw/90000",
-        "a=fmtp:96 sampling=YCbCr-4:2:2; width=1920; height=1080; exactframerate=25; depth=10; TCS=SDR; colorimetry=BT709; PM=2110GPM; SSN=ST2110-20:2022; TP=2110TPN; measuredpixclk=148500000; vtotal=1125; htotal=2200; IPMX",
-        "a=mediaclk:direct=0",
-        "a=ts-refclk:localmac=AA-BB-CC-DD-EE-FF",
-      }, "\r\n") .. "\r\n"
-      local doc, err = sdp.parse(text, "ipmx")
       assert.is_nil(err)
       assert.is_table(doc)
     end)
@@ -522,7 +504,7 @@ describe("IPMX validation", function()
     end)
   end)
 
-  -- TODO(dedup): see also st2110_spec.lua 'M25 M5: b=AS validated at session and media level (TR-10-7 §11)'.
+  -- XREF: see also st2110_spec.lua 'M25 M5: b=AS validated at session and media level (TR-10-7 §11)'.
   describe("M25 M5: session-level b=AS validation (TR-10-7 §11)", function()
     it("rejects session-level b=AS:0 at IPMX tier", function()
       local text = table.concat({
@@ -652,7 +634,7 @@ describe("IPMX validation", function()
     end)
   end)
 
-  -- TODO(dedup): see also st2110_spec.lua 'M26 H2: ST 2110 mode restricts ts-refclk ptp version to IEEE1588-2008'.
+  -- XREF: see also st2110_spec.lua 'M26 H2: ST 2110 mode restricts ts-refclk ptp version to IEEE1588-2008'.
   describe("M26 H2: IPMX ts-refclk PTP version (TR-10-1 §10.4)", function()
     local function ipmx_with_tsrefclk(ts_value)
       return table.concat({
@@ -1539,7 +1521,7 @@ describe("IPMX validation", function()
 
   -- ── M16: a=group:DUP grouping — IPMX-specific checks (TR-10-13 §13) ──────────
 
-  -- TODO(dedup): see also st2110_spec.lua 'a=group:DUP grouping (ST 2110-10 §8.5)'.
+  -- XREF: see also st2110_spec.lua 'a=group:DUP grouping (ST 2110-10 §8.5)'.
   describe("a=group:DUP grouping — IPMX (TR-10-13 §13)", function()
     local MAC  = "a=ts-refclk:localmac=AA-BB-CC-DD-EE-FF"
     local VFMTP_IPMX = "a=fmtp:96 sampling=YCbCr-4:2:2; width=1920; height=1080; exactframerate=25; depth=10; TCS=SDR; colorimetry=BT709; PM=2110GPM; SSN=ST2110-20:2022; TP=2110TPN; measuredpixclk=148500000; vtotal=1125; htotal=2200; IPMX"
@@ -2657,6 +2639,18 @@ describe("IPMX validation", function()
       assert.matches("FEC_ADD_LATENCY_VIDEO", err.message)
     end)
 
+    it("rejects non-integer FEC_ADD_LATENCY_AUDIO", function()
+      local text = base_ipmx_sdp({}, {},
+        "a=fmtp:96 sampling=YCbCr-4:2:2; width=1920; height=1080; exactframerate=25; depth=10; TCS=SDR; colorimetry=BT709; PM=2110GPM; SSN=ST2110-20:2022; TP=2110TPN; measuredpixclk=148500000; vtotal=1125; htotal=2200; FECPROFILE=profile-a; FEC_ADD_LATENCY_AUDIO=notanumber; IPMX")
+      local doc = sdp.parse(text)
+      assert.is_table(doc)
+      local ok, err = doc:validate("ipmx")
+      assert.is_nil(ok)
+      assert.is_table(err)
+      assert.matches("FEC_ADD_LATENCY_AUDIO", err.message)
+      assert.matches("TR%-10%-6", err.spec_ref)
+    end)
+
     it("accepts valid FEC_ADD_LATENCY_AUDIO with FECPROFILE", function()
       local text = base_ipmx_sdp({}, {},
         "a=fmtp:96 sampling=YCbCr-4:2:2; width=1920; height=1080; exactframerate=25; depth=10; TCS=SDR; colorimetry=BT709; PM=2110GPM; SSN=ST2110-20:2022; TP=2110TPN; measuredpixclk=148500000; vtotal=1125; htotal=2200; FECPROFILE=profile-a; FEC_ADD_LATENCY_AUDIO=500; IPMX")
@@ -2684,25 +2678,8 @@ describe("IPMX validation", function()
     end)
   end)
 
-  -- ── FEC_ADD_LATENCY_AUDIO invalid value ───────────────────────────────────────
-
-  describe("FEC_ADD_LATENCY_AUDIO invalid value (TR-10-6 §7.6)", function()
-    it("rejects non-integer FEC_ADD_LATENCY_AUDIO", function()
-      local text = base_ipmx_sdp({}, {},
-        "a=fmtp:96 sampling=YCbCr-4:2:2; width=1920; height=1080; exactframerate=25; depth=10; TCS=SDR; colorimetry=BT709; PM=2110GPM; SSN=ST2110-20:2022; TP=2110TPN; measuredpixclk=148500000; vtotal=1125; htotal=2200; FECPROFILE=profile-a; FEC_ADD_LATENCY_AUDIO=notanumber; IPMX")
-      local doc = sdp.parse(text)
-      assert.is_table(doc)
-      local ok, err = doc:validate("ipmx")
-      assert.is_nil(ok)
-      assert.is_table(err)
-      assert.matches("FEC_ADD_LATENCY_AUDIO", err.message)
-      assert.matches("TR%-10%-6", err.spec_ref)
-    end)
-  end)
-
   -- ── FEC_ADD_LATENCY_* without FECPROFILE ──────────────────────────────────────
 
-  -- TODO(dedup): tightly coupled with 'FEC_ADD_LATENCY_AUDIO invalid value' above — consider merging.
   describe("FEC_ADD_LATENCY requires FECPROFILE (TR-10-6 §7.6)", function()
     it("rejects FEC_ADD_LATENCY_VIDEO without FECPROFILE", function()
       local text = base_ipmx_sdp({}, {},

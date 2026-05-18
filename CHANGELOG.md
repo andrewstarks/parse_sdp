@@ -11,6 +11,37 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ### Changed (test suite reorganization)
 
+- **Test-suite dedup pass — 4 duplicate `it`s removed (853 → 849).**
+  An audit across nine candidate clusters (`a=privacy`, `b=AS`,
+  `ts-refclk`, `a=group`, base-tier c=, FEC, a=infoframe, USB, plus
+  cross-file ST 2110 ↔ IPMX pairs) found the suite was already well-
+  deduped; only three genuine merges remained:
+  1. `spec/ipmx_spec.lua`: folded singleton describe
+     `M25 LOW: b=AS:1 lower-bound acceptance` into
+     `b=AS bandwidth format`. Net: 0 tests removed, 1 describe removed,
+     fixture redundancy eliminated.
+  2. `spec/ipmx_spec.lua`: folded singleton describe
+     `FEC_ADD_LATENCY_AUDIO invalid value (TR-10-6 §7.6)` into
+     `FEC FECPROFILE (TR-10-6 §7.6)` right next to the parallel
+     `FEC_ADD_LATENCY_VIDEO=notanumber` test. Net: 0 tests removed,
+     1 describe removed.
+  3. `spec/sdp_spec.lua`: merged
+     `RFC 8866 §9 c= IPv6 multicast numaddr suffix (base tier)` into
+     `RFC 8866 §5.7 IPv6 multicast TTL forbidden (base tier)` and
+     renamed the result to
+     `RFC 8866 §5.7 / §9 IPv6 multicast c= rules (base tier)`. Four
+     duplicate `it`s removed (the two describes both tested IPv6 unicast
+     without suffix, IPv6 unicast with /suffix rejection, IPv6 multicast
+     with /numaddr=0 rejection, and IPv6 multicast with /numaddr suffix
+     acceptance — using different addresses but the same base-tier
+     validator and rule). The unique `rejects IPv6 multicast with
+     non-numeric /numaddr` test was preserved in the merged describe.
+- **Renamed `TODO(dedup):` → `XREF:` on 6 cross-file markers.** Earlier
+  reorg commits flagged ST 2110 ↔ IPMX test pairs (PTP version, b=AS,
+  a=group:DUP) as `TODO(dedup)`. The audit confirms these are
+  intentional tier-specific tests, not duplicates. Renamed so the
+  comment reflects what it actually is — a cross-reference between
+  tier files. No semantic change.
 - **`spec/ipmx_spec.lua` reordered by atomic → complex (no test
   changes).** 50 sibling describes regrouped under 13 category sections
   in this order: setup → IPMX baseline markers and a=extmap → leaf

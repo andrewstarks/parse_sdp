@@ -152,6 +152,13 @@ follow-up pruning pass.
   `ipmx_spec.lua`.
 - Suite still 853 / 0 across all four commits.
 
+**Test-suite dedup pass** (follow-up). Cluster audit across 9 candidate
+groups confirmed the suite was already well-deduped. Three real merges
+landed; 6 cross-file `TODO(dedup)` markers renamed to `XREF:` since
+they were never duplicates — they were intentional tier-specific test
+pairs (ST 2110 ↔ IPMX for PTP version, b=AS, a=group:DUP). Test count:
+853 → 849 (4 verified IPv6 multicast c= duplicates removed).
+
 ## Next
 
 Wave 1: cite migrations (E1–E8). Wave 2–5: Direction-A/B fixes and the

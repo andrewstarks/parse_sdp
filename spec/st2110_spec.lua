@@ -786,7 +786,7 @@ describe("ST 2110 validation", function()
 
   -- ── M26 ──────────────────────────────────────────────────────────────────────
 
-  -- TODO(dedup): see also ipmx_spec.lua 'M26 H2: IPMX ts-refclk PTP version (TR-10-1 §10.4)'.
+  -- XREF: see also ipmx_spec.lua 'M26 H2: IPMX ts-refclk PTP version (TR-10-1 §10.4)'.
   describe("M26 H2: ST 2110 mode restricts ts-refclk ptp version to IEEE1588-2008 (§6.1/§8.2)", function()
     local function st2110_with_tsrefclk(ts_value)
       return table.concat({
@@ -1041,7 +1041,7 @@ describe("ST 2110 validation", function()
 
   -- ── Leaf values: b=AS bandwidth (TR-10-7 §11) ───────────────────────────────────
 
-  -- TODO(dedup): see also ipmx_spec.lua 'M25 M5: session-level b=AS validation (TR-10-7 §11)' and 'b=AS bandwidth format' / 'M25 LOW: b=AS:1 lower-bound acceptance'.
+  -- XREF: see also ipmx_spec.lua 'M25 M5: session-level b=AS validation (TR-10-7 §11)' and 'b=AS bandwidth format'.
   describe("M25 M5: b=AS validated at session and media level (TR-10-7 §11)", function()
     -- ST 2110 tier doesn't reject b=AS (TR-10-7 is IPMX-tier), but the value
     -- must still parse as an unsigned integer per RFC 4566 §5.8; b=AS:0 at
@@ -4710,7 +4710,7 @@ describe("ST 2110 validation", function()
 
   -- ── M16: a=group:DUP grouping (ST 2022-7 / RFC 7104) ─────────────────────────
 
-  -- TODO(dedup): see also ipmx_spec.lua 'a=group:DUP grouping — IPMX (TR-10-13 §13)'.
+  -- XREF: see also ipmx_spec.lua 'a=group:DUP grouping — IPMX (TR-10-13 §13)'.
   describe("a=group:DUP grouping (ST 2110-10 §8.5)", function()
     local PTP = "a=ts-refclk:ptp=IEEE1588-2008:00-11-22-FF-FE-33-44-55:0"
     local VFMTP = "a=fmtp:96 sampling=YCbCr-4:2:2; width=1920; height=1080; exactframerate=25; depth=10; TCS=SDR; colorimetry=BT709; PM=2110GPM; SSN=ST2110-20:2022; TP=2110TPN"
