@@ -71,77 +71,6 @@ describe("IPMX validation", function()
   end
 
 
-  -- ── setup ───────────────────────────────────────────────────────────────────────
-
-  -- ── Original test suites (updated fixtures) ──────────────────────────────────
-
-  describe("sdp.parse with 'ipmx' mode", function()
-    -- NOT-SPEC: library
-    it("returns a doc for valid IPMX SDP (localmac ts-refclk, not PTP)", function()
-      local doc, err = sdp.parse(IPMX_VIDEO_SDP, "ipmx")
-      assert.is_nil(err)
-      assert.is_table(doc)
-    end)
-
-    -- M31: removed the unconditional `a=extmap` requirement (cited a
-    -- non-existent "IPMX §6"). ST2110_ONLY_SDP now fails IPMX validation on
-    -- the missing IPMX fmtp marker (TR-10-1 §10.1) instead.
-    it("returns nil+err for ST 2110 SDP missing IPMX fmtp marker", function()
-      local doc, err = sdp.parse(ST2110_ONLY_SDP, "ipmx")
-      assert.is_nil(doc)
-      assert.is_table(err)
-      assert.matches("IPMX", err.message)
-    end)
-
-    -- NOT-SPEC: library
-    it("returns nil+err for generic SDP (no media block)", function()
-      local doc, err = sdp.parse(GENERIC_SDP, "ipmx")
-      assert.is_nil(doc)
-      assert.is_table(err)
-      assert.matches("media block", err.message)
-    end)
-  end)
-
-  describe("doc:validate('ipmx')", function()
-    -- NOT-SPEC: library
-    it("returns true for valid IPMX SDP", function()
-      local doc = sdp.parse(IPMX_VIDEO_SDP)
-      assert.is_table(doc)
-      local ok, err = doc:validate("ipmx")
-      assert.is_nil(err)
-      assert.equal(true, ok)
-    end)
-
-    it("returns nil+err for ST 2110 SDP missing IPMX fmtp marker", function()
-      local doc = sdp.parse(ST2110_ONLY_SDP)
-      assert.is_table(doc)
-      local ok, err = doc:validate("ipmx")
-      assert.is_nil(ok)
-      assert.is_table(err)
-      assert.matches("IPMX", err.message)
-    end)
-
-    it("error includes field_path and spec_ref", function()
-      local doc = sdp.parse(ST2110_ONLY_SDP)
-      assert.is_table(doc)
-      local ok, err = doc:validate("ipmx")
-      assert.is_nil(ok)
-      assert.is_table(err)
-      assert.is_string(err.field_path)
-      assert.is_string(err.spec_ref)
-    end)
-
-    -- NOT-SPEC: library
-    it("returns nil+err for generic SDP (no media block)", function()
-      local doc = sdp.parse(GENERIC_SDP)
-      assert.is_table(doc)
-      local ok, err = doc:validate("ipmx")
-      assert.is_nil(ok)
-      assert.is_table(err)
-      assert.matches("media block", err.message)
-    end)
-  end)
-
   -- ── IPMX baseline markers and a=extmap ──────────────────────────────────────────
 
   -- ── IPMX fmtp marker (TR-10-1 §10.1) ─────────────────────────────────────────
@@ -2734,30 +2663,6 @@ describe("IPMX validation", function()
       local ok, err = doc:validate("ipmx")
       assert.is_nil(err)
       assert.equal(true, ok)
-    end)
-  end)
-
-  -- ── doc-object predicate ────────────────────────────────────────────────────────
-
-  describe("doc:is_ipmx()", function()
-    -- NOT-SPEC: library
-    it("returns true for valid IPMX SDP", function()
-      local doc = sdp.parse(IPMX_VIDEO_SDP)
-      assert.is_table(doc)
-      assert.equal(true, doc:is_ipmx())
-    end)
-
-    it("returns false for ST 2110 SDP without IPMX fmtp marker", function()
-      local doc = sdp.parse(ST2110_ONLY_SDP)
-      assert.is_table(doc)
-      assert.equal(false, doc:is_ipmx())
-    end)
-
-    -- NOT-SPEC: library
-    it("returns false for generic SDP (no media block)", function()
-      local doc = sdp.parse(GENERIC_SDP)
-      assert.is_table(doc)
-      assert.equal(false, doc:is_ipmx())
     end)
   end)
 

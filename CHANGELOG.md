@@ -11,6 +11,45 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ### Changed (test suite reorganization)
 
+- **Extracted all public-API tests from the tier files into a new
+  `spec/library_spec.lua`.** Tier files (`sdp_spec.lua`,
+  `st2110_spec.lua`, `ipmx_spec.lua`) now contain *only*
+  standards-tied tests — every `it` ties to a clause in RFC 4566 /
+  RFC 8866, SMPTE ST 2110, or VSF TR-10. Library-API tests
+  (mode-dispatch sanity, doc-object method existence, predicate
+  behavior, error-table shape, JSON serialization) live in
+  `library_spec.lua`, organized into 13 sections by API method.
+  Moved per file:
+  - **`sdp_spec.lua` → library_spec** (20 tests): `parse_sdp loads
+    without error` describe; entire `sdp — doc object (M6)` describe
+    (11 tests covering doc method existence, validate / is_*
+    predicates, sdp.new sanity); entire `to_json` describe (8
+    tests). The `── Serializer: to_sdp and to_json ──` section
+    header renamed to `── Serializer: doc:to_sdp() (RFC 8866 §5
+    field ordering and round-trip) ──` since `to_json` moved out.
+  - **`st2110_spec.lua` → library_spec** (12 tests): entire
+    `sdp.parse with 'st2110' mode` describe; first 4 tests of
+    `doc:validate('st2110')` (sanity + error-contract); entire
+    `doc:is_st2110()` describe. The localmac variant in `is_st2110`
+    moved as a library predicate test — the underlying *rule*
+    (localmac is an accepted ts-refclk form) remains covered by
+    `ts-refclk value format` describe in st2110_spec.lua.
+  - **`ipmx_spec.lua` → library_spec** (10 tests): entire
+    `sdp.parse with 'ipmx' mode`, `doc:validate('ipmx')`, and
+    `doc:is_ipmx()` describes.
+  Test counts:
+  - `sdp_spec.lua`: 119 → 99 (now 100% standards-tied)
+  - `st2110_spec.lua`: 417 → 405 (now 100% standards-tied)
+  - `ipmx_spec.lua`: 200 → 190 (now 100% standards-tied)
+  - `library_spec.lua`: 0 → 42 (new file)
+  Total it blocks unchanged at 802; full suite still 849 / 0.
+  Tier files now carry **zero** `NOT-SPEC:` markers.
+  README "Project Layout" updated. CLAUDE.md repo-layout block
+  reorganized into three buckets (standards / library / internal
+  helpers). GUIDE.md gains a new section,
+  **"Test Suite Organization"**, explaining the four-bucket split
+  (standards / library API / CLI / internal helpers) with running
+  instructions and the marker convention.
 - **Extracted 35 LPEG primitive tests from `sdp_spec.lua` to a new
   `spec/grammar_spec.lua` file.** The 5 `grammar.*` describes
   (`tokenize_line` / `parse_version` / `parse_origin` / `parse_timing`

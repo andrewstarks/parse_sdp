@@ -13,6 +13,7 @@
 9. [ST 2110 Validation](#st-2110-validation)
 10. [IPMX Validation](#ipmx-validation)
 11. [Serialization](#serialization)
+12. [Test Suite Organization](#test-suite-organization)
 
 ---
 
@@ -969,3 +970,55 @@ covering all `(t=, r=*)` blocks. `session.timing` mirrors the first entry's
 `{start, stop}` for back-compat. `session.time_zones` is a list of
 `{adjustment_time, offset}` pairs. `session.key` and `m.key` carry
 `{method, value?}` per RFC 4566 §5.12.
+
+## Test Suite Organization
+
+The hermetic test suite (`busted spec/`) splits into seven files along a
+single axis: **what kind of code each test exercises.** Every `it` block
+falls into exactly one of four buckets.
+
+| File | Bucket | What it tests |
+| --- | --- | --- |
+| `spec/sdp_spec.lua` | **standards** | RFC 4566 / RFC 8866 — base SDP behavior. Every test ties to a specific clause. |
+| `spec/st2110_spec.lua` | **standards** | SMPTE ST 2110 (-10, -20, -21, -22, -30, -31, -40, -41). Every test cites the section. |
+| `spec/ipmx_spec.lua` | **standards** | VSF TR-10 / IPMX. Every test cites the TR clause. |
+| `spec/library_spec.lua` | **library API** | The public surface — `sdp.parse`, `sdp.new`, `doc:validate`, `doc:is_sdp` / `is_st2110` / `is_ipmx`, `doc:to_json`. Sanity, mode dispatch, predicate behavior, error-table shape. Not tied to any spec. |
+| `spec/cli_spec.lua` | **library API** | The CLI surface — `parse_sdp to_json` / `to_sdp` subcommands, exit codes, `--help`, `--pretty`, `--mode`. Not tied to any spec. |
+| `spec/grammar_spec.lua` | **internal helpers** | The LPEG primitive parsers exposed as `parse_sdp._grammar`. Internal-only (not in the public contract); useful for parser-dev iteration and sharp regression diagnostics. White-box: a refactor that inlined these helpers into `parser.parse` would fail them even with identical public-API behavior. |
+| `spec/errors_spec.lua` | **internal helpers** | The error formatter exposed as `parse_sdp._errors`. Also internal-only and white-box. |
+
+The split exists so that:
+
+- A reader looking at `sdp_spec.lua` / `st2110_spec.lua` / `ipmx_spec.lua`
+  knows every test is grounded in published spec text. There is no need
+  to wonder whether a given check is opinion or convention.
+- A reader looking at `library_spec.lua` / `cli_spec.lua` knows the tests
+  cover the user-facing API contract and can be updated freely when the
+  API evolves (as long as the spec-tied tests still pass).
+- A reader looking at `grammar_spec.lua` / `errors_spec.lua` knows the
+  tests are white-box characterization tests for internal helpers. If
+  the parser or error formatter is ever rewritten, these tests may need
+  to be rewritten or removed with no impact on observable behavior.
+
+Tests in the non-standards files carry an inline comment marker on the
+line above each `it`:
+
+```lua
+  -- NOT-SPEC: library         -- in library_spec / cli_spec
+  -- NOT-SPEC: implementation  -- in grammar_spec / errors_spec
+```
+
+The markers exist so the boundary stays grep-able even if a test is
+moved or copied between files.
+
+### Running tests
+
+```sh
+busted spec/                  # full hermetic suite
+busted spec/sdp_spec.lua      # one file
+busted spec/library_spec.lua  # just the library API tests
+```
+
+There is also an opt-in conformance suite under `spec_conformance/` that
+downloads pinned AMWA fixtures and parses them; see that directory's
+README for details.

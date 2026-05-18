@@ -184,6 +184,24 @@ mirrors parse_sdp.lua's internal `── Grammar ──` section structure
 and makes it easy to drop the file if the parser is ever rewritten.
 CLAUDE.md repo layout updated accordingly.
 
+**Extracted public-API tests to `spec/library_spec.lua`** (42 tests).
+Tier files now contain *only* standards-tied tests — every `it` in
+`sdp_spec.lua` / `st2110_spec.lua` / `ipmx_spec.lua` ties to a
+specific clause in RFC 4566 / RFC 8866, SMPTE ST 2110, or VSF TR-10.
+Public-API tests (mode-dispatch sanity, doc-object methods,
+predicate behavior, error-table shape, JSON serialization) live in
+`library_spec.lua`, organized by API method. README "Project
+Layout" updated, GUIDE.md gains a "Test Suite Organization" section.
+Final test-file split:
+
+- `spec/sdp_spec.lua` (99 tests) — RFC 4566 / RFC 8866
+- `spec/st2110_spec.lua` (405 tests) — SMPTE ST 2110
+- `spec/ipmx_spec.lua` (190 tests) — VSF TR-10 / IPMX
+- `spec/library_spec.lua` (42 tests) — public API (NOT-SPEC: library)
+- `spec/cli_spec.lua` (15 tests) — CLI subcommand (NOT-SPEC: library)
+- `spec/grammar_spec.lua` (35 tests) — LPEG primitives (NOT-SPEC: implementation)
+- `spec/errors_spec.lua` (16 tests) — error formatter (NOT-SPEC: library)
+
 ## Next
 
 Wave 1: cite migrations (E1–E8). Wave 2–5: Direction-A/B fixes and the
