@@ -37,11 +37,14 @@ parse_sdp.lua        single-file library AND CLI executable (dual-purpose)
                      Internal sections (in order): errors · util · grammar ·
                      validate · serialize · st2110 · ipmx · parser · public API · CLI
 spec/
-  sdp_spec.lua       RFC 8866 (base SDP) parser tests
+  sdp_spec.lua       RFC 8866 (base SDP) observable behavior tests
   st2110_spec.lua    ST 2110 validation tests
   ipmx_spec.lua      IPMX validation tests
-  errors_spec.lua    error formatting tests
-  cli_spec.lua       CLI integration tests
+  grammar_spec.lua   LPEG primitive parser tests (white-box;
+                     characterization tests for parse_sdp._grammar;
+                     tagged NOT-SPEC: implementation — see file header)
+  errors_spec.lua    error formatter tests (pure library)
+  cli_spec.lua       CLI integration tests (pure library)
   fixtures/          sample .sdp files used by tests
 examples/
   examples.lua       runnable API walkthrough (lua examples/examples.lua)

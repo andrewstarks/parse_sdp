@@ -176,6 +176,14 @@ markers were collapsed into two buckets:
 
 ST 2110 test file remains at 100% citation coverage.
 
+**Extracted LPEG primitive tests to `spec/grammar_spec.lua`** (35
+tests). sdp_spec.lua now focuses on RFC 8866 observable behavior;
+the LPEG layer characterization tests live in their own file with a
+header explaining the white-box / refactor-fragility tradeoff. This
+mirrors parse_sdp.lua's internal `── Grammar ──` section structure
+and makes it easy to drop the file if the parser is ever rewritten.
+CLAUDE.md repo layout updated accordingly.
+
 ## Next
 
 Wave 1: cite migrations (E1–E8). Wave 2–5: Direction-A/B fixes and the

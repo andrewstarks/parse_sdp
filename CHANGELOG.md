@@ -11,6 +11,20 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ### Changed (test suite reorganization)
 
+- **Extracted 35 LPEG primitive tests from `sdp_spec.lua` to a new
+  `spec/grammar_spec.lua` file.** The 5 `grammar.*` describes
+  (`tokenize_line` / `parse_version` / `parse_origin` / `parse_timing`
+  / `parse_media`) test the `parse_sdp._grammar` internals exposed
+  for spec access only (explicitly not part of the public contract
+  per CLAUDE.md). Splitting them mirrors parse_sdp.lua's internal
+  `── Grammar ──` section structure and makes the white-box /
+  refactor-fragility tradeoff visible at the file level — if the
+  parser is ever rewritten and these tests no longer pin meaningful
+  behavior, the whole file can be removed without touching the
+  observable-behavior tests in `sdp_spec.lua`. File header explains
+  the tradeoff. sdp_spec.lua drops from 154 → 119 tests; all 35
+  relocated cleanly with no test changes. CLAUDE.md repo-layout
+  block updated to mention the new file. Suite still 849 / 0.
 - **Lifted 33 `validation-sanity` tests to "cited" by adding spec
   citations to their describe names; consolidated the remaining
   non-spec markers into two clean buckets.** Citation coverage is
