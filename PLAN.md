@@ -141,7 +141,10 @@ Staged in three commits, one per spec file.
   `sdp_spec.lua` (RFC 8866 §5.7/§9 TTL range, layered numaddr, IPv6
   multicast numaddr, literal address syntax). 22 `it` blocks relocated;
   full suite still 853 / 0.
-- `spec/st2110_spec.lua` — within-file reorder + dedup TODOs pending.
+- `spec/st2110_spec.lua` reordered into 17 category sections (setup,
+  leaf values per topic, field structure, per-encoding fmtp, cross-
+  field, cross-media/session, feature blocks, doc-object). 3 cross-
+  file dedup TODOs added.
 - `spec/ipmx_spec.lua` — cross-tier moves (m= protocol form, a=extmap
   URI RFC 8285, UDP port range) + within-file reorder pending.
 

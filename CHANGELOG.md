@@ -11,6 +11,21 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ### Changed (test suite reorganization)
 
+- **`spec/st2110_spec.lua` reordered by atomic → complex (no test
+  changes).** 56 sibling describes regrouped under 17 category sections
+  in this order: setup → leaf values (ts-refclk, mediaclk, RTP PT
+  range, b=AS, error attribution, then per-encoding atomic forms for
+  -20 video / -30 audio / -31 AM824 / -40 / -41 / extmap) → field
+  structure (m=, c=, session-vs-media placement) → per-encoding fmtp
+  blocks → cross-field within a media block → cross-media / cross-
+  session constraints → feature blocks (JPEG-XS) → doc-object
+  predicate. Section headers added; leading comments preserved with
+  each describe. Three cross-file dedup candidates marked in place
+  with `-- TODO(dedup): see also ipmx_spec.lua ...`:
+  - `a=group:DUP grouping (ST 2110-10 §8.5)` ↔ IPMX DUP describe
+  - `M26 H2 ts-refclk ptp version IEEE1588-2008` ↔ IPMX equivalent
+  - `M25 M5 b=AS validated at session and media level` ↔ IPMX b=AS
+  No test was added, removed, or modified. Suite still 853 / 0.
 - **Hoisted 4 base-tier c= describes from `spec/st2110_spec.lua` to
   `spec/sdp_spec.lua`.** The checks all live in
   `valid_connection_address(..., "base")` (parser hoisted them per audit
