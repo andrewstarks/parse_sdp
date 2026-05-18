@@ -8,7 +8,7 @@ Built with [LPEG](https://www.inf.puc-rio.br/~roberto/lpeg/) for precise, compos
 
 ## Features
 
-- Parses RFC 4566 SDP files into plain Lua tables
+- Parses RFC 8866 SDP files into plain Lua tables (RFC 8866 obsoletes RFC 4566)
 - Validates SMPTE ST 2110 and IPMX media session descriptions
 - Reports exact line and column on parse failure, with a helpful message
 - Round-trip support: parse → mutate → serialize back to valid SDP text

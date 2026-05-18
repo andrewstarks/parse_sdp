@@ -25,17 +25,18 @@ It is built with [LPEG](https://www.inf.puc-rio.br/~roberto/lpeg/). Runtime
 dependencies: LPEG, [dkjson](https://github.com/LuaDist/dkjson), and argparse
 (CLI only — never loaded by `require("parse_sdp")`).
 
-**Strictness is a primary feature.** The library enforces RFC 4566 exactly: required
-fields must be present, optional fields must appear in the correct position, and
-values must conform to their specified formats. SDP files that are "mostly valid"
-but technically non-conformant are rejected with a precise error message. The library
-will never produce an invalid SDP file.
+**Strictness is a primary feature.** The library enforces RFC 8866 (which
+obsoletes RFC 4566) exactly: required fields must be present, optional
+fields must appear in the correct position, and values must conform to
+their specified formats. SDP files that are "mostly valid" but technically
+non-conformant are rejected with a precise error message. The library will
+never produce an invalid SDP file.
 
 Three validation tiers:
 
 | Mode | Standard | Accepts |
 | --- | --- | --- |
-| `"sdp"` (default) | RFC 4566 | Any well-formed SDP |
+| `"sdp"` (default) | RFC 8866 | Any well-formed SDP |
 | `"st2110"` | SMPTE ST 2110 | ST 2110-compliant SDP only |
 | `"ipmx"` | IPMX | IPMX-compliant SDP only |
 
@@ -124,7 +125,7 @@ local sdp = require("parse_sdp")
 
 local text = io.open("session.sdp"):read("*a")
 
--- Parse and validate as RFC 4566
+-- Parse and validate as base SDP (RFC 8866)
 local doc, err = sdp.parse(text)
 if not doc then
   io.stderr:write(string.format(
@@ -230,10 +231,10 @@ if doc:is_st2110() then ... end
 
 #### `doc:to_sdp()`
 
-Converts the doc to a valid RFC 4566 SDP string.
+Converts the doc to a valid RFC 8866 SDP string.
 
-- Line endings are `\r\n` per RFC 4566.
-- Field order follows RFC 4566 §5 exactly.
+- Line endings are `\r\n` per RFC 8866 §5.
+- Field order follows RFC 8866 §5 exactly.
 - Output is not byte-identical to the original input, but it re-parses to an
   equivalent table (functional round-trip).
 
@@ -437,13 +438,13 @@ library a liability rather than a guard.
 ### What we do reject
 
 - **Required fields that are missing or malformed.** Examples:
-  - RFC 4566 §5 required lines (`v=`, `o=`, `s=`, `t=`, `m=`) missing or in the
+  - RFC 8866 §5 required lines (`v=`, `o=`, `s=`, `t=`, `m=`) missing or in the
     wrong order.
   - ST 2110-20 video `a=fmtp` missing `sampling`, `depth`, `width`, `height`,
     `exactframerate`, `colorimetry`, `PM`, or `SSN` — every one of these is a
     "shall be signaled" parameter under §7.2. (TCS lives in §7.3 and is
     optional; receivers assume `SDR` when absent per §7.6.)
-  - Audio `a=rtpmap` missing the channel count field (RFC 4566 §6 — channels
+  - Audio `a=rtpmap` missing the channel count field (RFC 8866 §6 — channels
     are required for audio).
   - Dynamic payload types (96–127) without a corresponding `a=rtpmap` to give
     them meaning (RFC 3551 §6).
@@ -460,7 +461,7 @@ library a liability rather than a guard.
 - **Optional fields whose values are ill-formed when present.** Optional
   parameters that the spec defines a value form or value set for are validated
   when present — absence is fine, malformed presence is not. Examples:
-  - `a=mediaclk:direct=N` where N ≠ 0 (mediaclk is optional in RFC 4566; ST
+  - `a=mediaclk:direct=N` where N ≠ 0 (mediaclk is optional in RFC 8866; ST
     2110-10 §7.3 constrains the value when used).
   - Unrecognized `a=fmtp` flags that overlap a defined name — e.g.
     `interlace=anything` and `segmented=anything` are rejected because ST
