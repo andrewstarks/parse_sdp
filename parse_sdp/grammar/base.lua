@@ -27,7 +27,7 @@
 --   media_section   = m= [i=] [c=] b=* [k=] a=*
 
 local lpeg = require("lpeg")
-local P, R, V, C, Cg, Ct = lpeg.P, lpeg.R, lpeg.V, lpeg.C, lpeg.Cg, lpeg.Ct
+local P, R, S, V, C, Cg, Ct = lpeg.P, lpeg.R, lpeg.S, lpeg.V, lpeg.C, lpeg.Cg, lpeg.Ct
 
 -- Primary patterns shared across rules. These are plain LPeg values rather
 -- than V-rules because they are not candidates for per-tier override.
@@ -59,10 +59,18 @@ local rules = {
       * Cg(Ct(V"p_line" ^ 0), "phones")
       * (Cg(V"c_line", "connection")) ^ -1
       * Cg(Ct(V"b_line" ^ 0), "bandwidths")
-      * (V"t_line" * V"r_line" ^ 0) ^ 1
-      * V"z_line" ^ -1
+      * Cg(Ct(V"time_description" ^ 1), "time_descriptions")
+      * (Cg(V"z_line", "time_zones")) ^ -1
       * V"k_line" ^ -1                       -- RFC 8866 §5.12: parsed and discarded
       * V"a_line" ^ 0,                       -- captured in 2.E
+
+  -- One time description per RFC 8866 §5.9–§5.10: a t= line followed by
+  -- zero or more r= lines. The Ct collects start + stop (from t=) and
+  -- repeats (from r=*) into one descriptor table.
+  time_description = Ct(
+        V"t_line"
+      * Cg(Ct(V"r_line" ^ 0), "repeats")
+    ),
 
   -- Media section (RFC 8866 §5):
   --   m= (required), i=?, c=?, b=*, k=?, a=*
@@ -78,8 +86,8 @@ local rules = {
       * V"a_line" ^ 0                        -- captured in 2.E
     ),
 
-  -- ── Captured line rules (Phase 2.A–2.C) ──────────────────────────────
-  -- Each produces ONE capture (string or table).
+  -- ── Captured line rules (Phase 2.A–2.D) ──────────────────────────────
+  -- Each produces one or more captures consumed by the surrounding Ct.
   v_line = P("v=") * V"v_value" * V"line_end",
   o_line = P("o=") * V"o_value" * V"line_end",
   s_line = P("s=") * V"s_value" * V"line_end",
@@ -89,13 +97,11 @@ local rules = {
   p_line = P("p=") * V"p_value" * V"line_end",
   c_line = P("c=") * V"c_value" * V"line_end",
   b_line = P("b=") * V"b_value" * V"line_end",
+  t_line = P("t=") * V"t_value" * V"line_end",
+  r_line = P("r=") * V"r_value" * V"line_end",
+  z_line = P("z=") * V"z_value" * V"line_end",
 
-  -- ── Placeholder line rules (to be captured in 2.D–2.E) ───────────────
-  -- These match-and-discard via V"value". Document shape is enforced;
-  -- structural sub-fields aren't surfaced into the doc table yet.
-  t_line = P("t=") * V"value" * V"line_end",
-  r_line = P("r=") * V"value" * V"line_end",
-  z_line = P("z=") * V"value" * V"line_end",
+  -- ── Placeholder line rules (to be captured in 2.E) ───────────────────
   k_line = P("k=") * V"value" * V"line_end",
   a_line = P("a=") * V"value" * V"line_end",
   m_line = P("m=") * V"value" * V"line_end",
@@ -152,6 +158,41 @@ local rules = {
       * Cg(V"digits" / tonumber, "value")
     ),
   bw_type = C((1 - P(":") - SP - V"line_end") ^ 1),
+
+  -- t= time-field (RFC 8866 §5.9):  t=<start-time> SP <stop-time>
+  -- start/stop are decimal integers (or 0 for unbounded). Captured as
+  -- Lua numbers. The two Cgs land in the surrounding time_description Ct.
+  t_value =
+        Cg(V"digits" / tonumber, "start") * SP
+      * Cg(V"digits" / tonumber, "stop"),
+
+  -- r= repeat-field (RFC 8866 §5.10):
+  --   r=<repeat-interval> SP <active-duration> SP <offset>+
+  -- Each token is "typed-time" (decimal integer optionally followed by
+  -- d/h/m/s). At least 3 tokens required. Strings preserve the suffix
+  -- (e.g., "7d" stays "7d" rather than being normalized to seconds).
+  r_value = Ct(
+        Cg(V"typed_time", "interval") * SP
+      * Cg(V"typed_time", "duration") * SP
+      * Cg(Ct(V"typed_time" * (SP * V"typed_time") ^ 0), "offsets")
+    ),
+
+  -- z= time-zone-adjustments (RFC 8866 §5.11):
+  --   z=<adj-time> SP <offset> ( SP <adj-time> SP <offset> )*
+  -- Even-numbered token count; minimum one pair. adjustment_time is a
+  -- bare integer (digit string, kept verbatim); offset is signed
+  -- typed-time.
+  z_value = Ct(V"z_pair" * (SP * V"z_pair") ^ 0),
+  z_pair = Ct(
+        Cg(V"digits",            "adjustment_time") * SP
+      * Cg(V"signed_typed_time", "offset")
+    ),
+
+  -- Typed-time sub-grammars (RFC 8866 §5.10): 1*DIGIT optionally followed
+  -- by a single unit char (d/h/m/s). signed variant allows leading +/- for
+  -- the z= offset use.
+  typed_time        = C(R("09") ^ 1 * S("dhms") ^ -1),
+  signed_typed_time = C((P("-") + P("+")) ^ -1 * R("09") ^ 1 * S("dhms") ^ -1),
 
   -- ── Shared sub-leaves ───────────────────────────────────────────────
   -- token: RFC 8866 ABNF "non-ws-string" — one or more VCHAR (any visible

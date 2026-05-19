@@ -65,6 +65,17 @@ parser remains the shipping artifact on `main`.
   media block captures `info` / `connection` / `bandwidths` from
   media-level i=, c=, b= lines. m= itself is captured in 2.E.
   16 new tests.
+- **Phase 2.D:** timing (t), repeat (r), zone (z) leaves with a typed-time
+  sub-grammar. `doc.session.time_descriptions` is now an array of
+  `{start=number, stop=number, repeats=[...]}` per RFC 8866 §5.9.
+  Each `repeats[i] = {interval, duration, offsets=[...]}` per §5.10,
+  with typed-time suffixes (d/h/m/s) preserved verbatim
+  (e.g., `"7d"` stays `"7d"`, not normalized to seconds).
+  `doc.session.time_zones` (optional) is an array of
+  `{adjustment_time, offset}` per §5.11, with signed typed-time
+  supported on offsets. 14 new tests. The 1.0 parser's `parse_repeat`
+  and `parse_timezone` `gmatch` loops are now obsolete in the new
+  grammar path (Phase 8 cutover will retire the 1.0 module).
 
 ### Changed
 

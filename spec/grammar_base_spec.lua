@@ -560,6 +560,167 @@ describe("base SDP grammar — media array shape (Phase 2.C)", function()
 
 end)
 
+describe("base SDP grammar — timing, repeats, time zones (Phase 2.D)", function()
+
+  -- NOT-SPEC: library
+  it("captures doc.session.time_descriptions as an array (RFC 8866 §5.9)", function()
+    local doc = g:match(minimal())
+    assert.is_table(doc.session.time_descriptions)
+    assert.equal(1, #doc.session.time_descriptions)
+  end)
+
+  -- NOT-SPEC: library
+  it("captures t= start and stop as numbers (RFC 8866 §5.9)", function()
+    local doc = g:match(minimal())
+    local td = doc.session.time_descriptions[1]
+    assert.is_number(td.start)
+    assert.is_number(td.stop)
+    assert.equal(0, td.start)
+    assert.equal(0, td.stop)
+  end)
+
+  -- NOT-SPEC: library
+  it("captures non-zero t= values", function()
+    local text = lines_to_sdp({
+      "v=0", "o=- 1 1 IN IP4 127.0.0.1", "s=X",
+      "t=2873397496 2873404696",
+    })
+    local doc = g:match(text)
+    assert.equal(2873397496, doc.session.time_descriptions[1].start)
+    assert.equal(2873404696, doc.session.time_descriptions[1].stop)
+  end)
+
+  -- NOT-SPEC: library
+  it("captures multiple time descriptions (multiple t=)", function()
+    local text = lines_to_sdp({
+      "v=0", "o=- 1 1 IN IP4 127.0.0.1", "s=X",
+      "t=0 0",
+      "t=2873397496 2873404696",
+    })
+    local doc = g:match(text)
+    assert.equal(2, #doc.session.time_descriptions)
+    assert.equal(0,          doc.session.time_descriptions[1].start)
+    assert.equal(2873397496, doc.session.time_descriptions[2].start)
+  end)
+
+  -- NOT-SPEC: library
+  it("empty repeats array when t= has no following r= lines", function()
+    local doc = g:match(minimal())
+    assert.is_table(doc.session.time_descriptions[1].repeats)
+    assert.equal(0, #doc.session.time_descriptions[1].repeats)
+  end)
+
+  -- NOT-SPEC: library
+  it("captures r= with three tokens (interval, duration, one offset)", function()
+    local text = lines_to_sdp({
+      "v=0", "o=- 1 1 IN IP4 127.0.0.1", "s=X",
+      "t=2873397496 2873404696",
+      "r=604800 3600 0",
+    })
+    local doc = g:match(text)
+    local r = doc.session.time_descriptions[1].repeats[1]
+    assert.is_table(r)
+    assert.equal("604800", r.interval)
+    assert.equal("3600",   r.duration)
+    assert.is_table(r.offsets)
+    assert.equal(1, #r.offsets)
+    assert.equal("0", r.offsets[1])
+  end)
+
+  -- NOT-SPEC: library
+  it("captures r= with multiple offsets", function()
+    local text = lines_to_sdp({
+      "v=0", "o=- 1 1 IN IP4 127.0.0.1", "s=X",
+      "t=2873397496 2873404696",
+      "r=604800 3600 0 90000",
+    })
+    local doc = g:match(text)
+    local r = doc.session.time_descriptions[1].repeats[1]
+    assert.equal(2, #r.offsets)
+    assert.equal("0",     r.offsets[1])
+    assert.equal("90000", r.offsets[2])
+  end)
+
+  -- NOT-SPEC: library
+  it("captures typed-time suffix in r= tokens (7d, 1h, 25h)", function()
+    local text = lines_to_sdp({
+      "v=0", "o=- 1 1 IN IP4 127.0.0.1", "s=X",
+      "t=2873397496 2873404696",
+      "r=7d 1h 0 25h",
+    })
+    local doc = g:match(text)
+    local r = doc.session.time_descriptions[1].repeats[1]
+    assert.equal("7d",  r.interval)
+    assert.equal("1h",  r.duration)
+    assert.equal("0",   r.offsets[1])
+    assert.equal("25h", r.offsets[2])
+  end)
+
+  -- NOT-SPEC: library
+  it("rejects t= with non-digit value", function()
+    local text = lines_to_sdp({
+      "v=0", "o=- 1 1 IN IP4 127.0.0.1", "s=X",
+      "t=abc 0",
+    })
+    assert.is_nil(g:match(text))
+  end)
+
+  -- NOT-SPEC: library
+  it("rejects r= with only 2 tokens (RFC 8866 §5.10 requires ≥3)", function()
+    local text = lines_to_sdp({
+      "v=0", "o=- 1 1 IN IP4 127.0.0.1", "s=X",
+      "t=2873397496 2873404696",
+      "r=604800 3600",
+    })
+    assert.is_nil(g:match(text))
+  end)
+
+  -- NOT-SPEC: library
+  it("doc.session.time_zones is nil when no z= line", function()
+    local doc = g:match(minimal())
+    assert.is_nil(doc.session.time_zones)
+  end)
+
+  -- NOT-SPEC: library
+  it("captures z= as an array of pairs (RFC 8866 §5.11)", function()
+    local text = lines_to_sdp({
+      "v=0", "o=- 1 1 IN IP4 127.0.0.1", "s=X",
+      "t=0 0",
+      "z=2882844526 -1h 2898848070 0",
+    })
+    local doc = g:match(text)
+    assert.is_table(doc.session.time_zones)
+    assert.equal(2, #doc.session.time_zones)
+    assert.equal("2882844526", doc.session.time_zones[1].adjustment_time)
+    assert.equal("-1h",        doc.session.time_zones[1].offset)
+    assert.equal("2898848070", doc.session.time_zones[2].adjustment_time)
+    assert.equal("0",          doc.session.time_zones[2].offset)
+  end)
+
+  -- NOT-SPEC: library
+  it("z= offset supports signed typed-time (+ and -)", function()
+    local text = lines_to_sdp({
+      "v=0", "o=- 1 1 IN IP4 127.0.0.1", "s=X",
+      "t=0 0",
+      "z=2882844526 +3600 2898848070 -2h",
+    })
+    local doc = g:match(text)
+    assert.equal("+3600", doc.session.time_zones[1].offset)
+    assert.equal("-2h",   doc.session.time_zones[2].offset)
+  end)
+
+  -- NOT-SPEC: library
+  it("rejects z= with odd number of tokens (must be pairs)", function()
+    local text = lines_to_sdp({
+      "v=0", "o=- 1 1 IN IP4 127.0.0.1", "s=X",
+      "t=0 0",
+      "z=2882844526 -1h 2898848070",
+    })
+    assert.is_nil(g:match(text))
+  end)
+
+end)
+
 describe("base SDP grammar — module exports", function()
 
   -- NOT-SPEC: library
