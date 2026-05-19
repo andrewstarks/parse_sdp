@@ -36,6 +36,12 @@ local P, R, S, V, C, Cc, Cg, Ct, Cmt, Carg =
 -- than V-rules because they are not candidates for per-tier override.
 local SP = P(" ")
 
+-- Accumulator fold functions for the fmtp kv-list (a_fmtp rule). The `%`
+-- operator wants a function f(acc, c1[, c2, ...]) — set_pair folds 2
+-- captures (key, value), set_flag folds 1 (bare flag).
+local function set_pair(t, k, v) t[k] = v;   return t end
+local function set_flag(t, k)    t[k] = true; return t end
+
 -- ── Semantic checks ─────────────────────────────────────────────────────────
 -- Cross-section invariants the grammar alone can't express. Each check
 -- inspects the captured doc and emits findings via errors.record.
@@ -403,6 +409,7 @@ local rules = {
   -- silently downgraded to a generic carrier.
   a_value = Ct(
         V"a_rtpmap"
+      + V"a_fmtp"
       + V"a_mid"
       + V"a_ptime"
       + V"a_maxptime"
@@ -416,8 +423,9 @@ local rules = {
   -- instances of a known attribute fail the match instead of degrading
   -- to the generic shape.
   known_attr_lookahead =
-        (P("rtpmap")    + P("maxptime")  + P("ptime")
-       + P("framerate") + P("quality")   + P("mid"))
+        (P("maxptime")  + P("framerate") + P("rtpmap")
+       + P("quality")   + P("ptime")     + P("fmtp")
+       + P("mid"))
       * (P(":") + V"line_end"),
 
   -- rtpmap (RFC 8866 §6.6):
@@ -433,6 +441,69 @@ local rules = {
       * Cg(V"rfc8866_token",         "encoding")     * P("/")
       * Cg(V"rfc8866_pos_int_num",   "clock_rate")
       * (P("/") * Cg(V"rfc8866_pos_int_num", "channels")) ^ -1,
+
+  -- fmtp (RFC 8866 §6.15):
+  --   fmtp-value = fmt SP format-specific-params
+  --   format-specific-params = byte-string
+  -- The byte-string ABNF is intentionally opaque — codec-specific. The body
+  -- text describes the convention "Format-specific parameters, semicolon
+  -- separated" but does not mandate it; non-k=v forms (DTMF event ranges,
+  -- red/ulpfec PT lists) are real and conformant. So decomposition is
+  -- opportunistic: the kv-list branch commits via `&line_end` and only fires
+  -- if the rest is fully decomposable into k=v / bare-flag tokens; otherwise
+  -- the raw branch captures the entire byte-string as a string.
+  -- Shape:
+  --   decomposable -> { name="fmtp", payload_type, params={...} }
+  --   opaque       -> { name="fmtp", payload_type, raw="..."     }
+  -- params merges k=v (string value) and bare flags (params[flag] = true)
+  -- per the 1.0 convention.
+  a_fmtp = P("fmtp:")
+      * Cg(Cc("fmtp"), "name")
+      * Cg(V"payload_type", "payload_type") * SP
+      * ( V"fmtp_params_branch" + V"fmtp_raw_branch" ),
+
+  -- Kv-list branch: only commits if the remaining bytes fully decompose into
+  -- a non-empty sequence of k=v / flag entries (separated by `;` and optional
+  -- horizontal whitespace) all the way to line_end. The `% set_pair` and
+  -- `% set_flag` accumulators fold each entry into the seed table from
+  -- `Ct(P(""))`. The whole accumulator is wrapped in an anonymous Cg so its
+  -- intermediate values don't leak into the surrounding `a_value` Ct
+  -- (LPeg idiom: idioms.md §18).
+  fmtp_params_branch =
+        Cg(
+            Ct(P(""))
+              * V"fmtp_entry"
+              * (V"fmtp_sep" * V"fmtp_entry") ^ 0
+              * V"fmtp_sep" ^ -1,           -- optional trailing ';'
+            "params"
+          )
+      * #V"line_end",
+
+  fmtp_entry = V"fmtp_kv_pair" + V"fmtp_flag",
+  fmtp_kv_pair =
+      ( C(V"fmtp_key_chars" ^ 1) * V"fmtp_hws" ^ 0
+        * P("=") * V"fmtp_hws" ^ 0
+        * C(V"fmtp_val_chars" ^ 0)
+      ) % set_pair,
+  fmtp_flag    = C(V"fmtp_key_chars" ^ 1) % set_flag,
+  fmtp_sep     = P(";") * V"fmtp_hws" ^ 0,
+  fmtp_hws     = S(" \t"),
+  -- key/flag char set: identifier-like — ALPHA / DIGIT / '_' / '-'. This
+  -- matches the 1.0 parser's `^[%w_%-]+$` flag-token form and the actual
+  -- key shape used by every codec we've inspected (H.264 profile-level-id,
+  -- ST 2110-20 sampling/width/height, ST 2110-22 jxsv profile/level, Opus
+  -- minptime/useinbandfec, etc). Tighter than RFC 8866 §6.15's opaque
+  -- byte-string — but a stricter parse is the whole point of decomposition;
+  -- non-identifier-shaped content falls into the raw branch instead.
+  fmtp_key_chars = R("AZ") + R("az") + R("09") + S("_-"),
+  -- value char set: any byte except ';' and CR/LF (RFC 8866 §9 byte-string
+  -- forbids NUL/CR/LF; the ';' is the convention separator). Whitespace
+  -- inside a value is allowed at the base tier (ST 2110-20 §7.1 narrows).
+  fmtp_val_chars = 1 - S(";\r\n"),
+
+  -- Raw fallback: any non-empty byte-string up to line_end. Captured as
+  -- `raw` because no `params` field is populated.
+  fmtp_raw_branch = Cg(C((1 - V"line_end") ^ 1), "raw"),
 
   -- mid (RFC 5888 §4): identification-tag = RFC 8866 §9 token.
   -- Uniqueness across the SDP is enforced at doc level (check_mid_uniqueness).

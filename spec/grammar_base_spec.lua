@@ -815,9 +815,8 @@ describe("base SDP grammar — media line + attributes (Phase 2.E)", function()
   end)
 
   -- NOT-SPEC: library
-  it("captures media-level a= attributes (rtpmap decomposed, fmtp still a string at this phase)", function()
-    -- Phase 4.A decomposes rtpmap. fmtp decomposition is Phase 4.B; it still
-    -- lands in the generic {name, value=string} carrier here.
+  it("captures media-level a= attributes (rtpmap + fmtp decomposed)", function()
+    -- Phase 4.A decomposes rtpmap; Phase 4.B decomposes fmtp.
     local doc = base.match(minimal(nil, {
       { "m=video 49170 RTP/AVP 96",
         "a=rtpmap:96 H264/90000",
@@ -831,8 +830,11 @@ describe("base SDP grammar — media line + attributes (Phase 2.E)", function()
     assert.equal("H264",   attrs[1].encoding)
     assert.equal(90000,    attrs[1].clock_rate)
     assert.is_nil(attrs[1].value)
-    assert.equal("fmtp",                       attrs[2].name)
-    assert.equal("96 profile-level-id=42801f", attrs[2].value)
+    assert.equal("fmtp",   attrs[2].name)
+    assert.equal(96,       attrs[2].payload_type)
+    assert.equal("42801f", attrs[2].params["profile-level-id"])
+    assert.is_nil(attrs[2].value)
+    assert.is_nil(attrs[2].raw)
     assert.equal("sendonly", attrs[3].name)
     assert.is_nil(attrs[3].value)
   end)
@@ -1458,6 +1460,122 @@ describe("base SDP grammar — Phase 4.A attribute decomposition", function()
     local a = doc.session.attributes[1]
     assert.equal("recvonly", a.name)
     assert.is_nil(a.value)
+  end)
+
+end)
+
+describe("base SDP grammar — Phase 4.B fmtp decomposition (RFC 8866 §6.15)", function()
+
+  -- SPEC: RFC 8866 §6.15
+  it("decomposes single k=v fmtp param", function()
+    local doc = base.match(minimal(nil, {
+      { "m=video 49170 RTP/AVP 96", "a=rtpmap:96 H264/90000",
+        "a=fmtp:96 profile-level-id=42801f" },
+    }))
+    local a = doc.media[1].attributes[2]
+    assert.equal("fmtp", a.name)
+    assert.equal(96,     a.payload_type)
+    assert.is_table(a.params)
+    assert.equal("42801f", a.params["profile-level-id"])
+    assert.is_nil(a.raw)
+    assert.is_nil(a.value)
+  end)
+
+  -- SPEC: RFC 8866 §6.15
+  it("decomposes multiple semicolon-separated k=v params", function()
+    local doc = base.match(minimal(nil, {
+      { "m=video 49170 RTP/AVP 96", "a=rtpmap:96 H264/90000",
+        "a=fmtp:96 profile-level-id=42e016;max-mbps=108000;max-fs=3600" },
+    }))
+    local p = doc.media[1].attributes[2].params
+    assert.equal("42e016", p["profile-level-id"])
+    assert.equal("108000", p["max-mbps"])
+    assert.equal("3600",   p["max-fs"])
+  end)
+
+  -- SPEC: RFC 8866 §6.15 + ST 2110-20:2022 §7.1 bare-flag tokens (interlace,
+  -- segmented). At the base tier we accept bare tokens as flags; ST 2110-20
+  -- narrowing comes in Phase 6.
+  it("decomposes bare-flag tokens as params[flag]=true", function()
+    local doc = base.match(minimal(nil, {
+      { "m=video 49170 RTP/AVP 96", "a=rtpmap:96 raw/90000",
+        "a=fmtp:96 sampling=YCbCr-4:2:2;width=1920;interlace;segmented" },
+    }))
+    local p = doc.media[1].attributes[2].params
+    assert.equal("YCbCr-4:2:2", p.sampling)
+    assert.equal("1920",        p.width)
+    assert.is_true(p.interlace)
+    assert.is_true(p.segmented)
+  end)
+
+  -- SPEC: RFC 8866 §6.15
+  -- DTMF telephone-event uses non-k=v form (RFC 4733); spec ABNF
+  -- (format-specific-params = byte-string) tolerates this. We capture the
+  -- byte-string as raw and do not populate params.
+  it("non-decomposable fmtp (DTMF) lands as raw byte-string", function()
+    local doc = base.match(minimal(nil, {
+      { "m=audio 49172 RTP/AVP 101", "a=rtpmap:101 telephone-event/8000",
+        "a=fmtp:101 0-15,256-511" },
+    }))
+    local a = doc.media[1].attributes[2]
+    assert.equal("fmtp", a.name)
+    assert.equal(101,    a.payload_type)
+    assert.is_nil(a.params)
+    assert.equal("0-15,256-511", a.raw)
+  end)
+
+  -- NOT-SPEC: library — tolerance behavior for the common ';<SP>' form.
+  it("tolerates optional whitespace after ';' between params", function()
+    local doc = base.match(minimal(nil, {
+      { "m=video 49170 RTP/AVP 96", "a=rtpmap:96 H264/90000",
+        "a=fmtp:96 profile-level-id=42e016; max-mbps=108000" },
+    }))
+    local p = doc.media[1].attributes[2].params
+    assert.equal("42e016", p["profile-level-id"])
+    assert.equal("108000", p["max-mbps"])
+  end)
+
+  -- NOT-SPEC: library — RFC 8866 §6.15 doesn't constrain whitespace around
+  -- `=`; ST 2110-20 §7.1 will narrow this in Phase 6.
+  it("tolerates whitespace around '=' at the base tier", function()
+    local doc = base.match(minimal(nil, {
+      { "m=video 49170 RTP/AVP 96", "a=rtpmap:96 H264/90000",
+        "a=fmtp:96 max-mbps = 108000" },
+    }))
+    local p = doc.media[1].attributes[2].params
+    assert.equal("108000", p["max-mbps"])
+  end)
+
+  -- NOT-SPEC: library — trailing semicolons are a common convention; spec
+  -- silent on rejection. Phase 5 will record a soft-syntactic finding
+  -- (sdp.a.fmtp.trailing-semicolon, already in the registry). For 4.B we
+  -- tolerate without emitting.
+  it("tolerates trailing semicolon (Phase 5 will record a finding)", function()
+    local doc = base.match(minimal(nil, {
+      { "m=video 49170 RTP/AVP 96", "a=rtpmap:96 H264/90000",
+        "a=fmtp:96 profile-level-id=42e016;" },
+    }))
+    local p = doc.media[1].attributes[2].params
+    assert.equal("42e016", p["profile-level-id"])
+  end)
+
+  -- SPEC: RFC 8866 §6.15 (PT in fmtp-value)
+  it("rejects fmtp with no payload-type", function()
+    local doc = base.match(minimal(nil, {
+      { "m=video 49170 RTP/AVP 96", "a=rtpmap:96 H264/90000",
+        "a=fmtp: max-mbps=108000" },
+    }))
+    assert.is_nil(doc)
+  end)
+
+  -- SPEC: RFC 8866 §6.15 (format-specific-params = byte-string is `1*...` —
+  -- empty params not allowed)
+  it("rejects fmtp with PT but no params (empty byte-string)", function()
+    local doc = base.match(minimal(nil, {
+      { "m=video 49170 RTP/AVP 96", "a=rtpmap:96 H264/90000",
+        "a=fmtp:96" },
+    }))
+    assert.is_nil(doc)
   end)
 
 end)

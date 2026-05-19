@@ -176,6 +176,42 @@ of Phase 2; was 964 at start of Phase 3).
   decomposed shape, the strict-ABNF rejections (PT=128, ptime:0,
   mid with space), and the mid-uniqueness Cmt. Suite: 1047 green
   (was 1030 at Phase 3 close).
+- **Phase 4.B:** typed decomposition for `a=fmtp` (RFC 8866 §6.15).
+  Per the §6.15 ABNF `fmtp-value = fmt SP format-specific-params`
+  where `format-specific-params = byte-string`, the inner structure
+  is intentionally opaque — codec-specific. The convention is
+  `key=value` semicolon-separated, but non-k=v forms (DTMF event
+  ranges `0-15,256-511`, red/ulpfec PT lists) are real and
+  conformant. Decomposition is therefore **opportunistic**:
+  - The kv-list branch commits via `#line_end` and only fires when
+    the rest is fully decomposable into k=v / bare-flag tokens
+    separated by `;` (with optional surrounding whitespace per the
+    base tier; ST 2110-20 §7.1 will narrow this in Phase 6).
+  - When it commits: shape is `{name="fmtp", payload_type,
+    params={...}}`. params is a hash with string values for k=v
+    pairs and `params[name] = true` for bare-flag tokens
+    (e.g. ST 2110-20 `interlace`, `segmented`).
+  - When it doesn't commit (DTMF, red/ulpfec): shape is
+    `{name="fmtp", payload_type, raw="..."}` — the whole
+    byte-string preserved opaquely.
+  - `params` and `raw` are mutually exclusive; consumers dispatch
+    on which field is present.
+  Implementation uses the LPeg-1.1 `%` accumulator idiom
+  (idioms.md §18) — `Ct(P"") * (pair % set_pair + flag %
+  set_flag)^+ * (sep ...)` folds entries into a seed table
+  directly inside the grammar. The whole accumulator is wrapped
+  in an anonymous `Cg` so intermediate values don't leak into the
+  surrounding `a_value` `Ct`. Key/flag character set is tightened
+  to identifier-like (`ALPHA / DIGIT / _ / -`) to match the 1.0
+  parser's `^[%w_%-]+$` flag form and prevent comma-containing or
+  range-shaped opaque values from being mis-decomposed as flags.
+- 9 new tests in `spec/grammar_base_spec.lua`: single k=v,
+  multiple ;-separated pairs, bare flag tokens, the DTMF raw
+  fallback, whitespace tolerance after `;` and around `=`,
+  trailing-semicolon tolerance (Phase 5 will record the
+  pre-registered `sdp.a.fmtp.trailing-semicolon` finding), and
+  rejections (`a=fmtp:` with no PT, `a=fmtp:96` with no params).
+  Suite: 1056 green.
 
 ### Changed
 
