@@ -528,8 +528,25 @@ ST 2110 check migrates under its new ID.
   if `a=fmtp` precedes `a=rtpmap` for the same PT within a media block,
   the encoding lookup misses; revisit only if a real SDP surfaces this
   ordering (no real ST 2110 sender does).
-- **6.C (remaining)** — other -20 fmtp value-set narrowings, -22 jxsv
-  fmtp parameter sets, -30 audio fmtp where defined, -41 SSN/DIT.
+- **6.C.C (complete)** — ST 2110-20:2022 §7.2 + §7.4.2 raw video
+  required Media Type parameters (sampling, width, height,
+  exactframerate, depth, colorimetry, PM, SSN) plus ST 2110-21:2022
+  §8.1 (TP). 9 new error ids `st2110-20.a.fmtp.<key>-required` in
+  `errors.lua`. Implemented as a post-parse semantic check on the ST
+  2110 tier: walks `doc.media`, builds a per-block raw-PT set from
+  `a=rtpmap` attributes, locates the matching `a=fmtp`, and records a
+  finding for each absent required key in spec order. Registered via
+  the new `overrides.semantic_checks` slot in
+  `parse_sdp.grammar.st2110`. 11 new tests; suite 1166 green. Inherits
+  the same rtpmap-before-fmtp ordering caveat as 6.C.B.
+- **6.C (remaining: 6.C.D + 6.C.E)** — 6.C.D: per-key value-set
+  narrowings (sampling enum, width/height range, depth enum,
+  colorimetry enum, PM enum, SSN pattern, TP enum, TCS enum, RANGE
+  enum, MAXUDP cap, PAR form, flag-only interlace/segmented).
+  6.C.E: cross-parameter SHALLs (SSN-conditional on
+  colorimetry/TCS, PM/MAXUDP, KEY/colorimetry, 4:2:0/interlace,
+  RANGE/BT2100). Also pending: -22 jxsv fmtp parameter sets,
+  -30 audio fmtp where defined, -41 SSN/DIT.
 - **6.D (pending)** — required-attribute presence per media type
   (ts-refclk, mediaclk, ptime).
 - **6.E (pending)** — cross-stream invariants (RFC 7104 group:DUP,

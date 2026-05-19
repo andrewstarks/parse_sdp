@@ -605,6 +605,50 @@ rows ST 2110-20 §7.1 #78–79, ST 2110-22 §5.2 #7 / §6.2 #12, ST 2110-31
 Audit ref: REFACTOR-PLAN.md §5 Phase 6.C; audits/SPEC_INVENTORY.md
 ST 2110-20:2022 §7.1.
 
+- **Phase 6.C.C:** ST 2110-20:2022 §7.2 (raw video required Media Type
+  parameters) + ST 2110-21:2022 §8.1 (required TP for every raw video
+  stream — ST 2110-20:2022 §6.1.1 requires every raw stream to conform
+  to ST 2110-21). The check walks `doc.media`, finds payload types
+  whose `a=rtpmap` encoding is `raw`, locates the matching `a=fmtp`,
+  and verifies every required parameter is present. If no fmtp exists
+  for a raw PT, the first §7.2 key (sampling) is reported missing —
+  §7.2's SHALL on the parameter is necessarily a SHALL on the fmtp
+  itself.
+
+  9 new error ids in `parse_sdp/errors.lua`, one per required key:
+  `st2110-20.a.fmtp.<key>-required` for sampling, width, height,
+  exactframerate, depth, colorimetry, PM, SSN, TP. Each cites its own
+  spec ref (sampling/width/height/exactframerate/colorimetry/PM/SSN →
+  §7.2; depth → §7.4.2; TP → ST 2110-21:2022 §8.1).
+
+  The check is registered as the first entry of the new ST 2110 tier
+  `semantic_checks` list — appended to base's check list by
+  `base.extend`. It's a post-parse doc walk, not a grammar narrowing:
+  required-parameter PRESENCE is a cross-key invariant, not a per-pair
+  syntactic check. (Per-key value-set narrowings — sampling enum, width
+  range, etc. — are still pending and live in 6.C.D.)
+
+  Limitation. The check fires only for PTs that are explicitly bound
+  to `encoding=raw` via a matching `a=rtpmap`. A static PT with no
+  rtpmap, or a raw PT whose rtpmap appears AFTER the fmtp in the media
+  block, is not subject to the check (the same ordering caveat
+  introduced in 6.C.B). RFC 8866 doesn't mandate rtpmap-before-fmtp,
+  but every real ST 2110 sender follows it.
+
+- `spec/grammar_st2110_spec.lua` — 11 new tests (39 in the file).
+  Accept canonical complete raw fmtp; per-required-key reject when
+  omitted (9 tests, one per key, each with its own spec citation);
+  do NOT require -20 params for smpte291 (different essence); do NOT
+  require -20 params for unbound static PT (no rtpmap); base tier
+  still accepts a raw rtpmap with no fmtp at all; ST 2110 tier
+  rejects raw video with no fmtp (sampling-required is the first
+  finding). Two pre-existing Phase 6.B / 6.C.B accept-tests updated
+  to append the new `RAW_FMTP_COMPLETE_PT96` helper so they don't
+  trip the new §7.2 check. Suite: 1166 green.
+
+Audit ref: REFACTOR-PLAN.md §5 Phase 6.C; audits/SPEC_INVENTORY.md
+ST 2110-20:2022 §7.2 / §7.4.2; ST 2110-21:2022 §8.1.
+
 ### Changed
 
 - The inline `errors` table in `parse_sdp.lua` now delegates to

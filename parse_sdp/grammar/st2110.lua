@@ -22,6 +22,59 @@ local P, V, C, Cc, Cg, Cb, Ct, Cmt, Carg =
 
 local SP = P(" ")
 
+-- ── Semantic checks ────────────────────────────────────────────────────────
+-- Cross-section invariants the grammar alone can't express. Each check
+-- inspects the captured doc and emits findings via errors.record. Functions
+-- are appended to base.semantic_checks via the overrides table below.
+
+-- ST 2110-20:2022 §7.2 (required parameters for raw video fmtp) +
+-- ST 2110-21:2022 §8.1 (required TP for every raw video stream). Listed in
+-- spec order so that on fail_on_first=true the first absent key emitted
+-- matches the order a reader sees in §7.2.
+local RAW_VIDEO_REQUIRED_PARAMS = {
+  "sampling", "width", "height", "exactframerate", "depth",
+  "colorimetry", "PM", "SSN", "TP",
+}
+
+-- Walks every media block, finds payload types whose a=rtpmap encoding is
+-- `raw`, locates the matching a=fmtp on that PT, and verifies every required
+-- parameter is present. If no fmtp exists for a raw PT, the first required
+-- key (sampling) is reported missing — the §7.2 SHALL on the parameter
+-- itself is also a SHALL on the fmtp's existence.
+local function check_raw_video_fmtp_required(doc, ctx)
+  for i, m in ipairs(doc.media) do
+    -- Build PT → encoding map from this media block's rtpmap attributes.
+    local raw_pts = {}
+    for _, attr in ipairs(m.attributes) do
+      if attr.name == "rtpmap" and attr.encoding == "raw" then
+        raw_pts[attr.payload_type] = true
+      end
+    end
+    -- Index fmtp attributes by payload type for direct lookup.
+    local fmtp_by_pt = {}
+    for _, attr in ipairs(m.attributes) do
+      if attr.name == "fmtp" then
+        fmtp_by_pt[attr.payload_type] = attr
+      end
+    end
+    for pt in pairs(raw_pts) do
+      local fmtp = fmtp_by_pt[pt]
+      local params = fmtp and fmtp.params or {}
+      for _, key in ipairs(RAW_VIDEO_REQUIRED_PARAMS) do
+        if params[key] == nil then
+          local cont = errors.record(
+            ctx,
+            "st2110-20.a.fmtp." .. key .. "-required",
+            { field_path = string.format(
+                "media[%d].attributes[fmtp:pt=%d]", i, pt) })
+          if not cont then return false end
+        end
+      end
+    end
+  end
+  return true
+end
+
 -- ── rtpmap encoding narrowings (Phase 6.B) ─────────────────────────────────
 --
 -- Each known ST 2110 essence encoding has:
@@ -226,6 +279,10 @@ local overrides = {
             end
             return pos, { key, val }
           end),
+  },
+
+  semantic_checks = {
+    check_raw_video_fmtp_required,
   },
 }
 

@@ -41,11 +41,24 @@ local function finding_for(ctx, id)
   return nil
 end
 
+-- A complete raw video fmtp line containing every ST 2110-20:2022 §7.2 +
+-- §7.4.2 + ST 2110-21:2022 §8.1 required parameter. Acceptance tests that
+-- aren't *about* required-param presence append this so they don't trip
+-- the §7.2 semantic check (Phase 6.C.C).
+local RAW_FMTP_COMPLETE_PT96 =
+    "a=fmtp:96 sampling=YCbCr-4:2:2;width=1920;height=1080;"
+ .. "exactframerate=60000/1001;depth=10;colorimetry=BT709;"
+ .. "PM=2110GPM;SSN=ST2110-20:2022;TP=2110TPN"
+
 describe("ST 2110-20 raw — rtpmap narrowings (ST 2110-20:2022 §7.1)", function()
 
   it("accepts m=video with raw/90000", function()
-    local doc = st2110.match(build("m=video 30000 RTP/AVP 96",
-                                   "a=rtpmap:96 raw/90000"))
+    -- fmtp included so the Phase 6.C.C required-param check doesn't fail
+    -- the match; this test asserts only the rtpmap narrowing.
+    local doc = st2110.match(build_with_fmtp(
+      "m=video 30000 RTP/AVP 96",
+      "a=rtpmap:96 raw/90000",
+      RAW_FMTP_COMPLETE_PT96))
     assert.is_truthy(doc)
   end)
 
@@ -183,9 +196,10 @@ describe("ST 2110-20 raw fmtp — no whitespace around '=' (ST 2110-20:2022 §7.
   local RAW_RTPMAP = "a=rtpmap:96 raw/90000"
 
   it("accepts fmtp with no whitespace around '='", function()
+    -- Use the complete required-param set so the Phase 6.C.C semantic
+    -- check doesn't fire; this test asserts only the whitespace narrowing.
     local doc = st2110.match(build_with_fmtp(
-      RAW_MEDIA, RAW_RTPMAP,
-      "a=fmtp:96 sampling=YCbCr-4:2:2;width=1920;height=1080"))
+      RAW_MEDIA, RAW_RTPMAP, RAW_FMTP_COMPLETE_PT96))
     assert.is_truthy(doc)
   end)
 
@@ -250,5 +264,126 @@ describe("ST 2110-20 raw fmtp — no whitespace around '=' (ST 2110-20:2022 §7.
     assert.is_truthy(base.match(build_with_fmtp(
       RAW_MEDIA, RAW_RTPMAP,
       "a=fmtp:96 sampling = YCbCr-4:2:2")))
+  end)
+end)
+
+-- ───────────────────────────────────────────────────────────────────────────
+-- Phase 6.C.C — ST 2110-20 raw video fmtp required-parameter presence
+-- ST 2110-20:2022 §7.2 lists eight required fmtp parameters: sampling,
+-- depth, width, height, exactframerate, colorimetry, PM, SSN. TP is also
+-- required for every raw video stream per ST 2110-21:2022 §8.1.
+-- Scope: only fires when the surrounding rtpmap encoding is `raw`.
+
+describe("ST 2110-20 raw video fmtp — required parameters", function()
+
+  local RAW_MEDIA  = "m=video 30000 RTP/AVP 96"
+  local RAW_RTPMAP = "a=rtpmap:96 raw/90000"
+
+  -- Canonical complete raw fmtp; per-param tests omit one entry to assert
+  -- the matching `<param>-required` finding fires.
+  local REQUIRED = {
+    sampling       = "YCbCr-4:2:2",
+    width          = "1920",
+    height         = "1080",
+    exactframerate = "60000/1001",
+    depth          = "10",
+    colorimetry    = "BT709",
+    PM             = "2110GPM",
+    SSN            = "ST2110-20:2022",
+    TP             = "2110TPN",
+  }
+
+  -- Stable order matching the 1.0 parser's check order (and §7.2's listing).
+  local REQUIRED_ORDER = {
+    "sampling", "width", "height", "exactframerate", "depth",
+    "colorimetry", "PM", "SSN", "TP",
+  }
+
+  local function fmtp_omitting(key_to_omit)
+    local parts = {}
+    for _, k in ipairs(REQUIRED_ORDER) do
+      if k ~= key_to_omit then
+        parts[#parts + 1] = k .. "=" .. REQUIRED[k]
+      end
+    end
+    return "a=fmtp:96 " .. table.concat(parts, ";")
+  end
+
+  local function fmtp_complete()
+    local parts = {}
+    for _, k in ipairs(REQUIRED_ORDER) do
+      parts[#parts + 1] = k .. "=" .. REQUIRED[k]
+    end
+    return "a=fmtp:96 " .. table.concat(parts, ";")
+  end
+
+  it("accepts raw fmtp with every required parameter present", function()
+    assert.is_truthy(st2110.match(build_with_fmtp(
+      RAW_MEDIA, RAW_RTPMAP, fmtp_complete())))
+  end)
+
+  -- ST 2110-20:2022 §7.2 — sampling, width, height, exactframerate,
+  -- depth (§7.4.2), colorimetry, PM, SSN. TP — ST 2110-21:2022 §8.1.
+  local PER_PARAM_SPEC_REF = {
+    sampling       = "ST 2110-20:2022 §7.2",
+    width          = "ST 2110-20:2022 §7.2",
+    height         = "ST 2110-20:2022 §7.2",
+    exactframerate = "ST 2110-20:2022 §7.2",
+    depth          = "ST 2110-20:2022 §7.4.2",
+    colorimetry    = "ST 2110-20:2022 §7.2",
+    PM             = "ST 2110-20:2022 §7.2",
+    SSN            = "ST 2110-20:2022 §7.2",
+    TP             = "ST 2110-21:2022 §8.1",
+  }
+
+  for _, key in ipairs(REQUIRED_ORDER) do
+    it(("rejects raw fmtp missing '%s' [%s]"):format(key, PER_PARAM_SPEC_REF[key]),
+       function()
+      local doc, ctx = st2110.match(build_with_fmtp(
+        RAW_MEDIA, RAW_RTPMAP, fmtp_omitting(key)))
+      assert.is_nil(doc)
+      assert.is_not_nil(finding_for(ctx,
+        "st2110-20.a.fmtp." .. key .. "-required"))
+    end)
+  end
+
+  -- NOT-SPEC: library — narrowing is scoped to raw via the rtpmap encoding
+  -- recorded in ctx. smpte291 / jxsv / AM824 fmtps have their own required
+  -- sets, not enforced here.
+  it("does NOT require -20 params for smpte291 (different essence)", function()
+    assert.is_truthy(st2110.match(build_with_fmtp(
+      "m=video 30000 RTP/AVP 96",
+      "a=rtpmap:96 smpte291/90000",
+      "a=fmtp:96 DID_SDID={0x41,0x05}")))
+  end)
+
+  -- NOT-SPEC: library — a static-PT fmtp has no rtpmap binding, so the
+  -- raw-encoding lookup misses and the requirement does not fire.
+  it("does NOT require -20 params when PT is unbound (no rtpmap)", function()
+    assert.is_truthy(st2110.match(table.concat({
+      "v=0",
+      "o=- 1 1 IN IP4 192.0.2.1",
+      "s=Test",
+      "t=0 0",
+      "m=video 30000 RTP/AVP 31",        -- PT 31 = H.261, static
+      "c=IN IP4 239.0.0.1/64",
+      "a=fmtp:31 CIF=2",                 -- no rtpmap → no raw binding
+    }, "\r\n") .. "\r\n"))
+  end)
+
+  -- NOT-SPEC: library — base tier carries no ST 2110 requirements.
+  it("base tier accepts raw rtpmap with no fmtp at all", function()
+    assert.is_truthy(base.match(build(RAW_MEDIA, RAW_RTPMAP)))
+  end)
+
+  -- NOT-SPEC: library — ST 2110 tier also requires the fmtp itself to
+  -- exist for raw video (no fmtp means no required params at all).
+  it("rejects raw video with no a=fmtp at all", function()
+    local doc, ctx = st2110.match(build(RAW_MEDIA, RAW_RTPMAP))
+    assert.is_nil(doc)
+    -- The first missing-param finding identifies the failure mode; the
+    -- semantic check records the first absent key in §7.2 order.
+    assert.is_not_nil(finding_for(ctx,
+      "st2110-20.a.fmtp.sampling-required"))
   end)
 end)

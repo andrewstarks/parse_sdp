@@ -515,4 +515,39 @@ M.register("st2110-20.a.fmtp.no-whitespace-around-equals", {
   verified         = true,
 })
 
+-- ── ST 2110-20 raw video required fmtp parameters (Phase 6.C.C) ───────────
+-- ST 2110-20:2022 §7.2 lists eight required Media Type Parameters for raw
+-- video streams: sampling, depth, width, height, exactframerate,
+-- colorimetry, PM, SSN. (depth is normatively defined in §7.4.2 but listed
+-- in the §7.2 required set.) ST 2110-21:2022 §8.1 adds TP as required for
+-- every raw video stream conforming to ST 2110-21 — and ST 2110-20:2022
+-- §6.1.1 requires every raw stream to conform to ST 2110-21.
+--
+-- Each registration below covers one required parameter. Scope: a=fmtp on
+-- a payload type whose a=rtpmap encoding is `raw`.
+local REQUIRED_RAW_PARAMS = {
+  { "sampling",       "ST 2110-20:2022 §7.2"   },
+  { "width",          "ST 2110-20:2022 §7.2"   },
+  { "height",         "ST 2110-20:2022 §7.2"   },
+  { "exactframerate", "ST 2110-20:2022 §7.2"   },
+  { "depth",          "ST 2110-20:2022 §7.4.2" },
+  { "colorimetry",    "ST 2110-20:2022 §7.2"   },
+  { "PM",             "ST 2110-20:2022 §7.2"   },
+  { "SSN",            "ST 2110-20:2022 §7.2"   },
+  { "TP",             "ST 2110-21:2022 §8.1"   },
+}
+
+for _, p in ipairs(REQUIRED_RAW_PARAMS) do
+  local key, ref = p[1], p[2]
+  M.register("st2110-20.a.fmtp." .. key .. "-required", {
+    kind             = "semantic",
+    default_severity = "error",
+    code             = "MISSING_FIELD",
+    message_template =
+      "fmtp for raw video must include required '" .. key .. "' parameter",
+    spec_ref         = ref,
+    verified         = true,
+  })
+end
+
 return M
