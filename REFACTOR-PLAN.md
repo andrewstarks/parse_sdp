@@ -489,6 +489,33 @@ multicast rules). Append top-level `Cmt` for ST 2110 cross-section invariants
 (required attributes per media type, group:DUP symmetry). Every existing
 ST 2110 check migrates under its new ID.
 
+- **6.A (complete)** — composition mechanism in
+  `parse_sdp/grammar/base.lua`: `M.extend(parent, overrides)`,
+  `M.semantic_checks` (explicit list), `M.make_validate_doc(checks)`
+  factory, `M.document_body` (Lua pattern, not V-rule — V-indirection
+  breaks the `%` accumulator inside fmtp's params kv-list). Empty
+  `parse_sdp/grammar/st2110.lua` = `base.extend(base, {})`. Internal
+  entry point only; `sdp.parse(text, "st2110")` remains on the 1.0
+  path until Phase 9. 12 new composition tests; suite 1127 green.
+- **6.B (complete)** — per-encoding rtpmap narrowings expressed as
+  in-grammar overrides. `parse_sdp/grammar/st2110.lua` overrides
+  `a_rtpmap` with a branched form: one branch per recognised essence
+  (raw / jxsv / smpte291 / AM824) plus a default for unknown encodings.
+  Each known-encoding branch ends in a Cmt that reads `Cb"clock_rate"`
+  and `Cb"media"` (surrounding media-section's m= type) and emits
+  findings via `errors.record`. Default branch gated by negative
+  lookahead so malformed known-encoding rtpmaps cannot backtrack to it.
+  8 new check IDs in `errors.lua`, 17 new tests in
+  `spec/grammar_st2110_spec.lua`. Suite 1144 green (modulo pre-existing
+  fmtp flake). L16/L24 union check via AES67 deferred — AES67-2023 is
+  paywalled, would need `verified=false`.
+- **6.C (pending)** — fmtp parameter narrowings per media type, value
+  sets, whitespace-around-= narrowing for -20.
+- **6.D (pending)** — required-attribute presence per media type
+  (ts-refclk, mediaclk, ptime).
+- **6.E (pending)** — cross-stream invariants (RFC 7104 group:DUP,
+  SMPTE ST 2022-7 redundancy coherence).
+
 **Phase 7 — IPMX grammar via `extend(st2110_rules, ...)`.**
 Same pattern, IPMX-specific from TR-10 markdowns. Re-verify each citation
 against the TR-10 part it claims (per CLAUDE.md Spec Verification Protocol).

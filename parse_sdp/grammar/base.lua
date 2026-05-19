@@ -260,27 +260,59 @@ local record_trailing_ws      = record_soft("sdp.line.trailing-whitespace")
 -- accumulator capture" error when nested inside the same Cg as the `%`
 -- accumulator chain that folds entries into params.
 
--- Document-level Cmt callback. Walks the captured doc, runs each semantic
--- check in order, records findings into ctx, and either continues (return
--- pos, doc) or fails the match (return false) per the ctx.fail_on_first
--- policy.
+-- Ordered list of cross-section semantic checks the document-level Cmt
+-- runs after capture. Phase 6 extends this list per tier via M.extend; the
+-- order in which checks execute is the order they appear here.
+local base_semantic_checks = {
+  check_connection_addresses,
+  check_dynamic_pt_rtpmap,
+  check_mid_uniqueness,
+  check_tsrefclk_traceability,
+}
+
+-- Factory producing a document-level Cmt callback bound to a specific
+-- check list. Walks the captured doc, runs each check in order, records
+-- findings into ctx, and either continues (return position, doc) or fails
+-- the match (return false) per ctx.fail_on_first.
 --
 -- Signature follows the LPeg manual's Cmt contract:
 --   f(subject, position, capture1, ..., captureN) → control values
--- The capture pattern is `Ct(body) * Carg(1)`, so captures are [doc, ctx].
-local function validate_doc(_, position, doc, ctx)
-  -- Grammar-only consumers (no extra-arg path) get ctx=nil; default to
-  -- hard-fail-on-first with findings discarded.
-  if ctx == nil then
-    ctx = { findings = {}, fail_on_first = true }
+-- Capture pattern is `document_body * Carg(1)`, so callback receives
+-- [doc, ctx].
+local function make_validate_doc(checks)
+  return function(_, position, doc, ctx)
+    -- Grammar-only consumers (no extra-arg path) get ctx=nil; default to
+    -- hard-fail-on-first with findings discarded.
+    if ctx == nil then
+      ctx = { findings = {}, fail_on_first = true }
+    end
+    for i = 1, #checks do
+      if not checks[i](doc, ctx) then return false end
+    end
+    return position, doc
   end
+end
 
-  if not check_connection_addresses(doc, ctx)   then return false end
-  if not check_dynamic_pt_rtpmap(doc, ctx)      then return false end
-  if not check_mid_uniqueness(doc, ctx)         then return false end
-  if not check_tsrefclk_traceability(doc, ctx)  then return false end
-
-  return position, doc
+-- The Ct body of the `document` rule, as a factory that returns a FRESH
+-- pattern each call. The body contains unresolved V-refs (V"v_line",
+-- V"session_inner", etc.); reusing the same pattern object across two
+-- grammar compilations (`lpeg.P(base.rules)` and `lpeg.P(child.rules)`)
+-- causes intermittent runtime "no previous value for accumulator capture"
+-- errors deep inside fmtp's `%` accumulator chain — symptom of LPeg
+-- rewriting the shared tree's V-resolution on the second compile. Each
+-- grammar must own its own document_body tree.
+--
+-- The V-rule alternative (`V"document_body"` in the rules table) is also
+-- unsafe: it breaks `%` accumulator capture inside leaves because V-rule
+-- indirection interferes with LPeg's compile-time resolution of
+-- `Ct(P("")) * X % fold`.
+local function make_document_body()
+  return Ct(
+        Cg(V"v_line", "version")
+      * Cg(V"o_line", "origin")
+      * Cg(Ct(V"session_inner"), "session")
+      * Cg(Ct(V"media_section" ^ 0), "media")
+    )
 end
 
 local rules = {
@@ -291,15 +323,9 @@ local rules = {
   -- captured: version, origin, session.name, session.connection (Phase 2.A–2.B).
   -- The remaining session and media fields are placeholder pattern matches
   -- until their corresponding sub-commit (2.C–2.E) wraps the leaf in a Cg.
-  document = V"bom_opt" * Cmt(
-      Ct(
-            Cg(V"v_line", "version")
-          * Cg(V"o_line", "origin")
-          * Cg(Ct(V"session_inner"), "session")
-          * Cg(Ct(V"media_section" ^ 0), "media")
-        ) * Carg(1),
-      validate_doc
-    ) * -1,
+  document = V"bom_opt" * Cmt(make_document_body() * Carg(1),
+                              make_validate_doc(base_semantic_checks))
+           * -1,
 
   -- Optional UTF-8 BOM (EF BB BF) at the start of the file. RFC 8866 §6
   -- doesn't require it and SDP charset signaling lives in `a=charset:`;
@@ -968,9 +994,84 @@ local rules = {
                 + Cmt(#P(-1)  * Carg(1), record_missing_newline),
 }
 
+-- Driver that runs `grammar` against `text` with a fresh ctx (or one the
+-- caller supplied via opts.ctx). Shared by M.match and the M.extend
+-- closure so child tiers don't re-implement it.
+local function make_match(grammar)
+  return function(text, opts)
+    opts = opts or {}
+    local ctx = opts.ctx or {
+      findings      = {},
+      policy        = opts.policy,
+      fail_on_first = opts.fail_on_first ~= false,
+    }
+    local doc = grammar:match(text, 1, ctx)
+    return doc, ctx
+  end
+end
+
 local M = {}
-M.rules   = rules
-M.grammar = lpeg.P(rules)
+M.rules              = rules
+M.grammar            = lpeg.P(rules)
+M.semantic_checks    = base_semantic_checks
+M.make_validate_doc  = make_validate_doc
+M.make_document_body = make_document_body
+
+--- Compose a child tier from a parent.
+--
+-- `parent` is a table with the same shape this module exports: `rules`,
+-- `semantic_checks`, `make_validate_doc`. `overrides` carries the child's
+-- contributions:
+--   - `rules`            — table of rule-name → pattern overrides
+--                          (merged into parent.rules; child wins on collision)
+--   - `semantic_checks`  — ordered list of (doc, ctx) → bool functions
+--                          appended to parent.semantic_checks
+--
+-- The child rebuilds the `document` rule so its Cmt validator closes over
+-- the merged check list. Any rule override the child supplies (including
+-- a leaf override that lives below `document`) is in the merged rules table
+-- and gets picked up at lpeg.P(rules) compile time.
+--
+-- Returns a table mirroring base's exports plus `match` and `extend`, so
+-- IPMX in Phase 7 chains with `st2110:extend({...})`-equivalent call.
+function M.extend(parent, overrides)
+  overrides = overrides or {}
+
+  local child_rules = {}
+  for k, v in pairs(parent.rules) do child_rules[k] = v end
+  for k, v in pairs(overrides.rules or {}) do child_rules[k] = v end
+
+  local child_checks = {}
+  for _, c in ipairs(parent.semantic_checks) do
+    child_checks[#child_checks + 1] = c
+  end
+  for _, c in ipairs(overrides.semantic_checks or {}) do
+    child_checks[#child_checks + 1] = c
+  end
+
+  -- Build a fresh document_body for the child via the parent's factory.
+  -- Sharing a single document_body pattern object across two grammar
+  -- compilations is unsafe: LPeg rewrites the tree's V-resolution on the
+  -- second compile, which intermittently corrupts the FIRST grammar's
+  -- match behaviour (manifests as "no previous value for accumulator
+  -- capture" inside fmtp's `%` accumulator).
+  child_rules.document = V"bom_opt"
+    * Cmt(parent.make_document_body() * Carg(1),
+          parent.make_validate_doc(child_checks))
+    * -1
+
+  local child_grammar = lpeg.P(child_rules)
+  local child = {
+    rules              = child_rules,
+    grammar            = child_grammar,
+    semantic_checks    = child_checks,
+    make_validate_doc  = parent.make_validate_doc,
+    make_document_body = parent.make_document_body,
+    extend             = M.extend,
+    match              = make_match(child_grammar),
+  }
+  return child
+end
 
 --- Match `text` against the base SDP grammar.
 --
@@ -991,15 +1092,6 @@ M.grammar = lpeg.P(rules)
 --   ctx.findings for warnings even on success).
 --   On grammar match failure: nil, ctx (ctx.findings may carry the deepest
 --   recorded finding via the tracker).
-function M.match(text, opts)
-  opts = opts or {}
-  local ctx = opts.ctx or {
-    findings      = {},
-    policy        = opts.policy,
-    fail_on_first = opts.fail_on_first ~= false,
-  }
-  local doc = M.grammar:match(text, 1, ctx)
-  return doc, ctx
-end
+M.match = make_match(M.grammar)
 
 return M

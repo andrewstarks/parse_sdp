@@ -392,6 +392,117 @@ Audit ref: `audits/SPEC_INVENTORY.md` row 9 — RFC 7273 §4.8.
 Audit ref: REFACTOR-PLAN.md §3.3 (Soft-syntactic candidates) +
 LPeg-skill `references/idioms.md` §18 (accumulator caveat).
 
+- **Phase 6.A:** compile-time grammar composition mechanism. Refactor of
+  `parse_sdp/grammar/base.lua` to expose the primitives a child tier
+  needs, plus an empty `parse_sdp/grammar/st2110.lua` shell that is
+  internally callable but not yet wired into `sdp.parse()`.
+  - `base.extend(parent, overrides)` — composes a child grammar from a
+    parent. `overrides.rules` table-merges into the parent rules (child
+    wins on collision); `overrides.semantic_checks` appends to the
+    parent's ordered check list. The child rebuilds the `document`
+    rule's Cmt so its validator closes over the merged check list.
+    Returns a table with `rules` / `grammar` / `semantic_checks` /
+    `match` / `extend` / `make_validate_doc` / `document_body`, so the
+    result chains (`child.extend(child, {...})` for Phase 7 IPMX).
+  - `base.semantic_checks` (new export) — the previously-implicit
+    in-order check list `validate_doc` ran. Promoted to an explicit
+    array so `extend` can splice tier checks onto the end.
+  - `base.make_validate_doc(checks)` (new export) — factory that
+    produces a `document_body * Carg(1)` Cmt callback bound to a
+    specific check list. Both base and every child grammar use it.
+  - `base.make_document_body()` (new export) — factory returning the
+    `Ct(Cg(v) * Cg(o) * Cg(session) * Cg(media))` body of the document
+    rule, FRESH per call. Cannot be a V-rule (`V"document_body"` breaks
+    the `%` accumulator inside fmtp's params kv-list — V-rule
+    indirection interferes with LPeg's compile-time resolution of
+    `Ct(P("")) * X % fold`). Originally exposed as a single shared
+    pattern object, but reusing the same pattern across two grammar
+    compilations (base.grammar and a child grammar built via extend)
+    intermittently corrupted base.grammar's match behaviour for the
+    fmtp accumulator chain. The factory ensures each grammar owns its
+    own document_body tree.
+  - `parse_sdp/grammar/st2110.lua` — three-line module:
+    `base.extend(base, {})`. Behaviorally identical to base today; the
+    extension surface is in place for 6.B (leaf narrowings), 6.C (fmtp
+    narrowings), 6.D (required-attribute presence), 6.E (cross-stream
+    invariants). Internal entry point only — public `sdp.parse(text,
+    "st2110")` continues to run the 1.0 validator chain until Phase 9.
+- `spec/grammar_compose_spec.lua` — 12 new tests covering:
+  child-table shape, identity behavior of empty-extend, rule-override
+  precedence, semantic-check list extension and call order, fail-the-
+  match semantics when a child check returns false, base-isolation
+  across extend calls, chaining (grandchild composition), and the
+  `parse_sdp.grammar.st2110` shell. Suite: 1127 green.
+
+Audit ref: REFACTOR-PLAN.md §3.1 (Three composed grammars / option C).
+
+- **Phase 6.B:** ST 2110 rtpmap narrowings per media type, expressed as
+  layered grammar overrides (not a post-parse doc walk). The empty
+  6.A shell now overrides base's `a_rtpmap` rule with a branched form:
+  one branch per recognised essence encoding, plus a default branch
+  gated by negative lookahead so a malformed known-encoding rtpmap
+  (e.g. `raw/48000`) cannot fall through to it. Each known-encoding
+  branch ends in a Cmt that reads `Cb"clock_rate"` and `Cb"media"`
+  (the surrounding media-section's m= type) and records findings via
+  `errors.record`. Per the LPeg-discipline rule in CLAUDE.md and the
+  user's pushback on the first 6.B attempt (which used a `doc.media`
+  walker), the value-set constraints now live in the grammar itself.
+  - **encoding=raw** → `m=video`, clock_rate=90000 (ST 2110-20:2022 §7.1).
+    IDs `st2110-20.a.rtpmap.raw-media-type` /
+    `st2110-20.a.rtpmap.raw-clock-rate`.
+  - **encoding=jxsv** → `m=video`, clock_rate=90000 (ST 2110-22:2022 §6.2
+    + RFC 9134 for the m=video implication; §5.2 for 90 kHz). IDs
+    `st2110-22.a.rtpmap.jxsv-media-type` /
+    `st2110-22.a.rtpmap.jxsv-clock-rate`.
+  - **encoding=smpte291** → `m=video`, clock_rate=90000 (RFC 8331 §4
+    media-type registration; ST 2110-40:2023 §5.3). IDs
+    `st2110-40.a.rtpmap.smpte291-media-type` /
+    `st2110-40.a.rtpmap.smpte291-clock-rate`.
+  - **encoding=AM824** → `m=audio`, clock_rate ∈ {44100, 48000, 96000}
+    (ST 2110-31:2022 §6.1). IDs
+    `st2110-31.a.rtpmap.am824-media-type` /
+    `st2110-31.a.rtpmap.am824-clock-rate-set`.
+
+  Each ID is registered in `parse_sdp/errors.lua` with verified=true
+  and the per-clause spec_ref. The semantic check uses `errors.record`
+  so the fail-on-first / policy plumbing applies. Encodings not
+  recognized by ST 2110 (e.g. `H264`, `L16`) pass through unchecked
+  per CLAUDE.md's strictness principle (silence ≠ rejection).
+
+  L16/L24 media-type and clock-rate constraints — implied by ST 2110-30
+  §6.2.1 via reference to AES67-2013 §7.1 — are deferred. AES67-2023 is
+  paywalled and unverifiable from disk (audit row 11), so the union
+  check would need `verified=false`. Tracked for 6.B follow-up.
+
+- `spec/grammar_st2110_spec.lua` — 17 new tests. Per encoding: accept
+  the well-formed case, reject the wrong media-type, reject the wrong
+  clock-rate (or set element). For raw, an extra test confirms the
+  base tier still accepts the same input the ST 2110 tier rejects.
+  Two final tests verify non-ST-2110 encodings (H264, L16) pass
+  through. Suite: 1144 green (modulo a separate flake; see note).
+
+**Note (pre-existing flakiness):** the suite intermittently reports 2
+errors in `spec/grammar_base_spec.lua` for the
+`sdp.a.fmtp.trailing-semicolon` cases — *"no previous value for
+accumulator capture"* from inside the `Cg(Ct(P("")) * fmtp_entry * …,
+"params")` chain at ~45% rate. Not introduced by 6.A or 6.B —
+reproduces on the unchanged Phase 5 commit. Full investigation,
+attempted workarounds, and what was ruled out in
+[audits/FMTP_ACCUMULATOR_FLAKE.md](audits/FMTP_ACCUMULATOR_FLAKE.md).
+Status: not yet a sendable upstream report; no standalone-Lua repro
+exists, so the case for it being an LPeg bug specifically is not
+established.
+
+- The Phase 6.A `inherits base.semantic_checks unchanged at the shell
+  stage` assertion in `grammar_compose_spec.lua` was rewritten to
+  `inherits every base check in order, then appends ST 2110 checks` —
+  asserts the inheritance shape without coupling to the per-phase
+  count of appended checks.
+
+Audit ref: REFACTOR-PLAN.md §5 Phase 6.B; audits/SPEC_INVENTORY.md
+rows ST 2110-20 §7.1 #78–79, ST 2110-22 §5.2 #7 / §6.2 #12, ST 2110-31
+§6.1 #31/#36, ST 2110-40 §5.3 #13.
+
 ### Changed
 
 - The inline `errors` table in `parse_sdp.lua` now delegates to

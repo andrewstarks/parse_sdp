@@ -39,17 +39,27 @@ and runs them through the parser. See
 
 ## Current State
 
-1115 hermetic tests passing. Every validation check is grounded in explicit
+1144 hermetic tests passing. Every validation check is grounded in explicit
 spec text; no opinion-based checks remain.
 
 The grammar-first refactor on branch `refactor/grammar-first` is **in
-progress** (Phases 4 + 5 complete — all compound attributes decomposed,
-RFC 7273 §4.8 traceability-mix check landed, soft-syntactic findings
-emit during the parse for CRLF/whitespace/BOM/fmtp deviations; phases
-6–10 remain). Tracking and
+progress** (Phases 4 + 5 complete; Phases 6.A + 6.B landed — `base.extend`
+composition mechanism, `parse_sdp.grammar.st2110` shell, and per-encoding
+rtpmap narrowings (raw / jxsv / smpte291 / AM824) expressed as in-grammar
+overrides; phases 6.C–10 remain). Tracking and
 design live in [REFACTOR-PLAN.md](REFACTOR-PLAN.md). The 1.0 parser at
 `parse_sdp.lua` remains the shipping artifact on `main`; the new grammar
 under `parse_sdp/grammar/` is internal-only until Phase 9 cutover.
+
+**Known flake (pre-existing):** the `sdp.a.fmtp.trailing-semicolon` tests
+in `spec/grammar_base_spec.lua` intermittently fail (~45%) with *"no
+previous value for accumulator capture"* under busted. Present on the
+Phase 5 commit pre-6.A — not introduced by the composition refactor or
+the 6.B narrowings. Full investigation, repro, and what was ruled out
+in [audits/FMTP_ACCUMULATOR_FLAKE.md](audits/FMTP_ACCUMULATOR_FLAKE.md).
+Status: **not yet ready to send upstream** — the bug only reproduces
+under busted+full-spec-file conditions, with no standalone-Lua repro,
+so the case that it's an LPeg bug specifically is not established.
 
 The test suite is split along a single axis — *what kind of code each
 test exercises*. Refactor-era files (`grammar_base_spec`,

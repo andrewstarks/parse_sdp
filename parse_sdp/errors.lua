@@ -406,4 +406,96 @@ M.register("sdp.c.ipv6-unicast.suffix-not-allowed", {
   verified         = true,
 })
 
+-- ── ST 2110 rtpmap narrowings per media type (Phase 6.B) ───────────────────
+-- Each ST 2110 essence has a defined encoding-name × media-type × clock-rate
+-- triple. Cited against primary spec text via the Phase-3 audit
+-- (audits/SPEC_INVENTORY.md). These narrowings are scoped to a media block
+-- whose rtpmap encoding matches the listed name; an SDP without that
+-- encoding does not invoke the check.
+
+-- ST 2110-20:2022 §7.1 — uncompressed video.
+-- "The video streams described in this standard shall be declared in the
+-- SDP using the Media Type name video and the Media Subtype name raw."
+M.register("st2110-20.a.rtpmap.raw-media-type", {
+  kind             = "semantic",
+  default_severity = "error",
+  code             = "INVALID_VALUE",
+  message_template = "rtpmap encoding 'raw' requires m=video",
+  spec_ref         = "ST 2110-20:2022 §7.1",
+  verified         = true,
+})
+-- ST 2110-20:2022 §7.1 + §6.1.3 — "The RTP Clock rate ... shall be 90 kHz"
+-- and "The rtpmap clause of the SDP shall indicate the 90 kHz RTP Clock rate."
+M.register("st2110-20.a.rtpmap.raw-clock-rate", {
+  kind             = "semantic",
+  default_severity = "error",
+  code             = "INVALID_VALUE",
+  message_template = "rtpmap clock rate must be 90000 for encoding 'raw'",
+  spec_ref         = "ST 2110-20:2022 §7.1",
+  verified         = true,
+})
+
+-- ST 2110-22:2022 §6.2 — "The subtype name shall be the name registered for
+-- the payload format." RFC 9134 registers `video/jxsv`, so jxsv lives under
+-- the video media type by definition.
+M.register("st2110-22.a.rtpmap.jxsv-media-type", {
+  kind             = "semantic",
+  default_severity = "error",
+  code             = "INVALID_VALUE",
+  message_template = "rtpmap encoding 'jxsv' requires m=video",
+  spec_ref         = "ST 2110-22:2022 §6.2 / RFC 9134",
+  verified         = true,
+})
+-- ST 2110-22:2022 §5.2 — "The RTP Timestamp Clock rate shall be 90 kHz."
+M.register("st2110-22.a.rtpmap.jxsv-clock-rate", {
+  kind             = "semantic",
+  default_severity = "error",
+  code             = "INVALID_VALUE",
+  message_template = "rtpmap clock rate must be 90000 for encoding 'jxsv'",
+  spec_ref         = "ST 2110-22:2022 §5.2",
+  verified         = true,
+})
+
+-- ST 2110-40 / RFC 8331 — ANC data. RFC 8331 §4 registers `video/smpte291`,
+-- making `m=video` the only legal SDP media-type for smpte291 streams.
+M.register("st2110-40.a.rtpmap.smpte291-media-type", {
+  kind             = "semantic",
+  default_severity = "error",
+  code             = "INVALID_VALUE",
+  message_template = "rtpmap encoding 'smpte291' requires m=video",
+  spec_ref         = "RFC 8331 §4",
+  verified         = true,
+})
+-- ST 2110-40:2023 §5.3 — "The RTP Clock rate shall be 90 kHz."
+M.register("st2110-40.a.rtpmap.smpte291-clock-rate", {
+  kind             = "semantic",
+  default_severity = "error",
+  code             = "INVALID_VALUE",
+  message_template = "rtpmap clock rate must be 90000 for encoding 'smpte291'",
+  spec_ref         = "ST 2110-40:2023 §5.3",
+  verified         = true,
+})
+
+-- ST 2110-31:2022 §6.1 — "Streams under this standard shall be signaled in
+-- the SDP using the media type 'audio' and the media subtype 'AM824'."
+M.register("st2110-31.a.rtpmap.am824-media-type", {
+  kind             = "semantic",
+  default_severity = "error",
+  code             = "INVALID_VALUE",
+  message_template = "rtpmap encoding 'AM824' requires m=audio",
+  spec_ref         = "ST 2110-31:2022 §6.1",
+  verified         = true,
+})
+-- ST 2110-31:2022 §6.1 — "The <clock-rate> parameter shall take one of the
+-- values 44100, 48000, or 96000."
+M.register("st2110-31.a.rtpmap.am824-clock-rate-set", {
+  kind             = "semantic",
+  default_severity = "error",
+  code             = "INVALID_VALUE",
+  message_template =
+    "rtpmap clock rate for 'AM824' must be one of {44100, 48000, 96000}",
+  spec_ref         = "ST 2110-31:2022 §6.1",
+  verified         = true,
+})
+
 return M
