@@ -168,6 +168,52 @@ local function check_dynamic_pt_rtpmap(doc, ctx)
   return true
 end
 
+-- RFC 7273 §4.6 (gps/gal/glonass are traceable to UTC) + §4.7 (`:traceable`
+-- suffix on ntp/ptp/private indicates traceable). All other ts-refclk forms
+-- (specific NTP servers, specific PTP grandmasters, `local`, bare `private`,
+-- clksrc-ext such as `localmac=`) are non-traceable. The Phase 4.C structured
+-- shape makes this a direct field lookup — no string-substring heuristics.
+local TSREFCLK_TRACEABLE_BARE = { gps = true, gal = true, glonass = true }
+local function tsrefclk_is_traceable(attr)
+  if attr.traceable then return true end
+  if TSREFCLK_TRACEABLE_BARE[attr.source] then return true end
+  return false
+end
+
+-- RFC 7273 §4.8: "Traceable time sources MUST NOT be mixed with non-traceable
+-- time sources at any given level." Checks each level (session, every media)
+-- independently — mixing across levels is permitted.
+local function check_tsrefclk_traceability(doc, ctx)
+  local function check_level(attrs, path)
+    local saw_traceable, saw_non = false, false
+    for _, attr in ipairs(attrs) do
+      if attr.name == "ts-refclk" then
+        if tsrefclk_is_traceable(attr) then
+          saw_traceable = true
+        else
+          saw_non = true
+        end
+      end
+    end
+    if saw_traceable and saw_non then
+      return errors.record(ctx, "sdp.a.ts-refclk.traceable-mix",
+                           { field_path = path })
+    end
+    return true
+  end
+
+  if not check_level(doc.session.attributes, "session.attributes") then
+    return false
+  end
+  for i, m in ipairs(doc.media) do
+    if not check_level(m.attributes,
+                       string.format("media[%d].attributes", i)) then
+      return false
+    end
+  end
+  return true
+end
+
 -- RFC 5888 §4: "The identification-tag MUST be unique within an SDP session
 -- description." Walks every media block's attribute list, collects mid tags,
 -- and records a finding on the first duplicate.
@@ -205,9 +251,10 @@ local function validate_doc(_, position, doc, ctx)
     ctx = { findings = {}, fail_on_first = true }
   end
 
-  if not check_connection_addresses(doc, ctx) then return false end
-  if not check_dynamic_pt_rtpmap(doc, ctx) then return false end
-  if not check_mid_uniqueness(doc, ctx) then return false end
+  if not check_connection_addresses(doc, ctx)   then return false end
+  if not check_dynamic_pt_rtpmap(doc, ctx)      then return false end
+  if not check_mid_uniqueness(doc, ctx)         then return false end
+  if not check_tsrefclk_traceability(doc, ctx)  then return false end
 
   return position, doc
 end

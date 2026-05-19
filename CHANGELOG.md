@@ -329,6 +329,25 @@ REFACTOR-PLAN.md §5 is decomposed. The base SDP grammar produces
 a rich, fully-typed doc table — no consumer needs to re-parse a
 captured string. 64 new tests across Phase 4 (1030 → 1094).
 
+- **Carry-over from Phase 3** (audit-driven): `RFC 7273 §4.8`
+  cross-attribute check — *"Traceable time sources MUST NOT be
+  mixed with non-traceable time sources at any given level."*
+  Lives at the base tier in `validate_doc` alongside the
+  existing dynamic-PT / mid-uniqueness / c=-value-form checks,
+  because RFC 7273 is a generic IETF SDP attribute spec (not
+  ST 2110-specific) and Phase 4.C's structured ts-refclk shape
+  makes the traceability classification a direct field lookup
+  (no string-substring heuristic). New registry entry
+  `sdp.a.ts-refclk.traceable-mix`. Each level (session, every
+  media block) is checked independently; mix across levels is
+  permitted per the spec. Traceability classification: §4.6
+  (gps/gal/glonass) and §4.7 (`:traceable` suffix on ntp/ptp/
+  private) — all other forms (specific NTP/PTP, `local`, bare
+  `private`, clksrc-ext including `localmac=`) are
+  non-traceable. 7 new tests. Suite: 1101 green.
+
+Audit ref: `audits/SPEC_INVENTORY.md` row 9 — RFC 7273 §4.8.
+
 ### Changed
 
 - The inline `errors` table in `parse_sdp.lua` now delegates to

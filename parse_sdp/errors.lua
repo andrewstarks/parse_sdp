@@ -296,6 +296,15 @@ M.register("sdp.a.mid.duplicate-tag", {
   verified         = true,
 })
 
+M.register("sdp.a.ts-refclk.traceable-mix", {
+  kind             = "semantic",
+  default_severity = "error",
+  code             = "INVALID_VALUE",
+  message_template = "ts-refclk: traceable and non-traceable sources cannot be mixed at the same level",
+  spec_ref         = "RFC 7273 §4.8",
+  verified         = true,
+})
+
 -- ── c= connection-address checks (RFC 8866 §5.7 / §9) ──────────────────────
 
 M.register("sdp.c.address.invalid-ipv4", {

@@ -2102,6 +2102,86 @@ describe("base SDP grammar — Phase 4.E rtcp-mux (RFC 5761 §5.1.3)", function(
 
 end)
 
+describe("base SDP grammar — ts-refclk traceable-mix (RFC 7273 §4.8)", function()
+
+  -- SPEC: RFC 7273 §4.8 — "Traceable time sources MUST NOT be mixed with
+  -- non-traceable time sources at any given level." Traceability per §4.6
+  -- (gps/gal/glonass are traceable to UTC) and §4.7 (':traceable' suffix on
+  -- ntp/ptp/private).
+
+  it("accepts two non-traceable ts-refclks at media level", function()
+    local doc = base.match(minimal(nil, {
+      { "m=audio 49172 RTP/AVP 0",
+        "a=ts-refclk:ptp=IEEE1588-2008:00-1D-9A-FF-FE-2C-32-0F:0",
+        "a=ts-refclk:ntp=192.0.2.1" },
+    }))
+    assert.is_truthy(doc)
+  end)
+
+  it("accepts two traceable ts-refclks at media level", function()
+    local doc = base.match(minimal(nil, {
+      { "m=audio 49172 RTP/AVP 0",
+        "a=ts-refclk:gps",
+        "a=ts-refclk:ptp=IEEE1588-2008:traceable" },
+    }))
+    assert.is_truthy(doc)
+  end)
+
+  it("rejects traceable + non-traceable mix at media level", function()
+    local doc, ctx = base.match(minimal(nil, {
+      { "m=audio 49172 RTP/AVP 0",
+        "a=ts-refclk:gps",
+        "a=ts-refclk:ntp=192.0.2.1" },
+    }))
+    assert.is_nil(doc)
+    assert.equal(1, #ctx.findings)
+    assert.equal("sdp.a.ts-refclk.traceable-mix", ctx.findings[1].id)
+    assert.equal("media[1].attributes", ctx.findings[1].field_path)
+  end)
+
+  it("rejects traceable + non-traceable mix at session level", function()
+    local doc, ctx = base.match(lines_to_sdp({
+      "v=0", "o=- 1 1 IN IP4 127.0.0.1", "s=X", "t=0 0",
+      "a=ts-refclk:ptp=IEEE1588-2008:traceable",
+      "a=ts-refclk:localmac=AA-BB-CC-DD-EE-FF",
+    }))
+    assert.is_nil(doc)
+    assert.equal("sdp.a.ts-refclk.traceable-mix", ctx.findings[1].id)
+    assert.equal("session.attributes", ctx.findings[1].field_path)
+  end)
+
+  -- RFC 7273 §4.8: the rule is per-level. Mix ACROSS levels is permitted.
+  it("accepts traceable at one media level, non-traceable at another (different levels)", function()
+    local doc = base.match(minimal(nil, {
+      { "m=audio 49172 RTP/AVP 0", "a=ts-refclk:gps" },
+      { "m=video 49170 RTP/AVP 0", "a=ts-refclk:ntp=192.0.2.1" },
+    }))
+    assert.is_truthy(doc)
+  end)
+
+  -- gps/gal/glonass are traceable to UTC (§4.6). private alone is
+  -- non-traceable; private:traceable is traceable (§4.7).
+  it("classifies private (no suffix) as non-traceable", function()
+    local doc, ctx = base.match(minimal(nil, {
+      { "m=audio 49172 RTP/AVP 0",
+        "a=ts-refclk:gal",
+        "a=ts-refclk:private" },
+    }))
+    assert.is_nil(doc)
+    assert.equal("sdp.a.ts-refclk.traceable-mix", ctx.findings[1].id)
+  end)
+
+  it("classifies private:traceable as traceable", function()
+    local doc = base.match(minimal(nil, {
+      { "m=audio 49172 RTP/AVP 0",
+        "a=ts-refclk:gps",
+        "a=ts-refclk:private:traceable" },
+    }))
+    assert.is_truthy(doc)
+  end)
+
+end)
+
 describe("base SDP grammar — module exports", function()
 
   -- NOT-SPEC: library
