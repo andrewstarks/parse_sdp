@@ -1832,3 +1832,63 @@ describe("ST 2110-30 / -31 audio channel-order [ST 2110-30:2025 §6.2.2]",
       "a=fmtp:96 channel-order=SMPTE2110.(AES3)")))
   end)
 end)
+
+-- ───────────────────────────────────────────────────────────────────────────
+-- Phase 6.C.I — ST 2110-31:2022 §6.1: AM824 rtpmap channel count must be
+-- even. AM824 transports AES3 signals; each AES3 signal contains two
+-- sequences of AES3 Subframes, so <nchan> is always an even integer.
+
+describe("ST 2110-31 AM824 rtpmap channel parity [ST 2110-31:2022 §6.1]",
+    function()
+
+  local function am824_sdp(rtpmap_line)
+    return table.concat({
+      "v=0",
+      "o=- 1 1 IN IP4 192.0.2.1",
+      "s=Test",
+      "t=0 0",
+      "a=ts-refclk:ptp=IEEE1588-2008:00-11-22-FF-FE-33-44-55:0",
+      "m=audio 30000 RTP/AVP 96",
+      "c=IN IP4 239.0.0.1/64",
+      rtpmap_line,
+      "a=ptime:1",
+      "a=mediaclk:direct=0",
+    }, "\r\n") .. "\r\n"
+  end
+
+  -- Accept cases: every even channel count (sample the bounds + a middle).
+  for _, ch in ipairs({ "2", "4", "8", "16", "32", "64" }) do
+    it(("accepts AM824 channels=%s (even)"):format(ch), function()
+      assert.is_truthy(st2110.match(am824_sdp(
+        "a=rtpmap:96 AM824/48000/" .. ch)))
+    end)
+  end
+
+  -- Reject cases: every odd channel count.
+  for _, ch in ipairs({ "1", "3", "5", "7", "15" }) do
+    it(("rejects AM824 channels=%s (odd)"):format(ch), function()
+      local doc, ctx = st2110.match(am824_sdp(
+        "a=rtpmap:96 AM824/48000/" .. ch))
+      assert.is_nil(doc)
+      assert.is_not_nil(finding_for(ctx,
+        "st2110-31.a.rtpmap.am824-channels-must-be-even"))
+    end)
+  end
+
+  -- NOT-SPEC: library — narrowing is AM824-only.
+  it("does NOT enforce parity on L24 (different encoding)", function()
+    assert.is_truthy(st2110.match(am824_sdp(
+      "a=rtpmap:96 L24/48000/1")))
+  end)
+
+  it("does NOT enforce parity on L16 (different encoding)", function()
+    assert.is_truthy(st2110.match(am824_sdp(
+      "a=rtpmap:96 L16/48000/1")))
+  end)
+
+  -- NOT-SPEC: base tier carries no -31 narrowing.
+  it("base tier accepts AM824 with odd channels", function()
+    assert.is_truthy(base.match(am824_sdp(
+      "a=rtpmap:96 AM824/48000/3")))
+  end)
+end)

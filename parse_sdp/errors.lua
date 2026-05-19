@@ -945,4 +945,22 @@ M.register("st2110-31.a.fmtp.channel-order-aes3-requires-am824", {
   verified         = true,
 })
 
+-- ── ST 2110-31 AM824 rtpmap channel-count parity (Phase 6.C.I) ────────────
+-- ST 2110-31:2022 §6.1: "the number of AES3 Subframe sequences <nchan>
+-- expressed in the SDP object shall always be an even number." AM824
+-- transports AES3 signals, and each AES3 signal contains two sequences of
+-- AES3 Subframes, so the SDP channel count must be even. This check is
+-- registered under the rtpmap namespace because <nchan> appears in
+-- a=rtpmap, not a=fmtp.
+M.register("st2110-31.a.rtpmap.am824-channels-must-be-even", {
+  kind             = "semantic",
+  default_severity = "error",
+  code             = "INVALID_VALUE",
+  message_template =
+    "AM824 rtpmap channel count must be an even number"
+    .. " (each AES3 signal carries two subframe sequences)",
+  spec_ref         = "ST 2110-31:2022 §6.1",
+  verified         = true,
+})
+
 return M

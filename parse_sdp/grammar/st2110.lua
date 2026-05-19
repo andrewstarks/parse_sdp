@@ -679,6 +679,31 @@ local function validate_channel_order(value, encoding)
   return true
 end
 
+-- ST 2110-31:2022 §6.1 (Phase 6.C.I): the rtpmap `<nchan>` field for
+-- AM824 streams must be even. AM824 transports AES3 signals; each AES3
+-- signal contains two sequences of AES3 Subframes, so the SDP channel
+-- count is always even-numbered. Walks doc.media for rtpmap PTs with
+-- encoding=AM824 and verifies channels-mod-2 == 0. Channels-presence
+-- (required for all audio rtpmap per RFC 3551 §6) is a separate concern
+-- that belongs to Phase 6.D.
+local function check_am824_rtpmap_channels_even(doc, ctx)
+  for i, m in ipairs(doc.media) do
+    for _, attr in ipairs(m.attributes) do
+      if attr.name == "rtpmap" and attr.encoding == "AM824"
+          and attr.channels ~= nil and (attr.channels % 2) ~= 0 then
+        local cont = errors.record(ctx,
+          "st2110-31.a.rtpmap.am824-channels-must-be-even",
+          { field_path = string.format(
+              "media[%d].attributes[rtpmap:pt=%d]",
+              i, attr.payload_type),
+            context    = { channels = attr.channels } })
+        if not cont then return false end
+      end
+    end
+  end
+  return true
+end
+
 local function check_audio_fmtp_channel_order(doc, ctx)
   for _, e in ipairs(each_audio_fmtp(doc)) do
     local co = e.params["channel-order"]
@@ -961,6 +986,7 @@ local overrides = {
     check_jxsv_fmtp_values,
     check_jxsv_fmtp_cross_param,
     check_audio_fmtp_channel_order,
+    check_am824_rtpmap_channels_even,
   },
 }
 

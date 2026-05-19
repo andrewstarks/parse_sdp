@@ -944,6 +944,35 @@ Audit ref: REFACTOR-PLAN.md §5 Phase 6.C; RFC 9134 §7.1.
 Audit ref: REFACTOR-PLAN.md §5 Phase 6.C; ST 2110-30:2025 §6.2.2;
 ST 2110-31:2022 §6.2 Table 2; RFC 3190 §6.
 
+- **Phase 6.C.I:** ST 2110-31:2022 §6.1 AM824 rtpmap channel-count
+  parity. *"the number of AES3 Subframe sequences `<nchan>` expressed
+  in the SDP object shall always be an even number."* AM824
+  transports AES3 signals; each AES3 signal contains two sequences
+  of AES3 Subframes, so `<nchan>` is always even.
+
+  This is a 1.0-parity port: `parse_sdp.lua:2222-2227` enforces the
+  same SHALL, but the grammar tier hadn't picked it up — the Phase
+  6.B rtpmap narrowings covered clock-rate-set and media-type but
+  not channel parity. Closing the regression.
+
+  1 new error id: `st2110-31.a.rtpmap.am824-channels-must-be-even`
+  (registered under the rtpmap namespace because `<nchan>` appears
+  on the `a=rtpmap` line, not `a=fmtp`).
+
+  New tier-level semantic check `check_am824_rtpmap_channels_even`
+  that walks `doc.media` for rtpmap PTs with encoding=AM824 and
+  asserts `channels % 2 == 0` when channels is present. The
+  channels-presence SHALL (required for all audio rtpmap per
+  RFC 3551 §6) is a separate concern that belongs to Phase 6.D.
+
+  14 new tests: 6 accept (even channels {2, 4, 8, 16, 32, 64}),
+  5 reject (odd channels {1, 3, 5, 7, 15}), L24 and L16 non-AM824
+  with odd channels accepted (narrowing is AM824-only), base-tier
+  accepts AM824 with odd channels (no -31 narrowing in base).
+  Suite: 1481 green.
+
+Audit ref: REFACTOR-PLAN.md §5 Phase 6.C; ST 2110-31:2022 §6.1.
+
 ### Changed
 
 - The inline `errors` table in `parse_sdp.lua` now delegates to
