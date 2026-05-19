@@ -658,10 +658,23 @@ AM824 channel parity.
   OPTIONAL (default 1). 5 new tests; suite 1511 green. Flagged for
   audit-folder follow-up: candidate to remove 1.0's L16/L24
   channels-required check.
-- **6.D.D (pending)** — Audio packet-payload-fit cross-attribute
-  check (channels × bytes-per-sample × samples-per-packet fits in
-  Standard UDP Size Limit). L16/L24 only; AM824 deferred because
-  -31 has no UDP-size SHALL.
+- **6.D.D (complete)** — ST 2110-30:2025 §6.2.1 audio packet-
+  payload-fit (L16/L24 only). 1 new error id
+  `st2110-30.audio.packet-payload-fit`. Computes
+  `needed = channels × bytes_per_sample × samples_per_packet`
+  (where `samples_per_packet = round(clock_rate × ptime / 1000)`
+  per AES67 §8.1) and rejects when needed > 1448 octets
+  (1460 UDP - 12 RTP header). RFC 3551 §6's `channels=1` default
+  applied when channels is absent on rtpmap. AM824 deferred (same
+  reason as 6.D.B). 9 new tests; suite 1520 green.
+
+**Phase 6.D is now closed.** Grammar tier matches 1.0 parity on
+every well-grounded per-encoding required-attribute and cross-
+attribute SHALL. Three out-of-parity flags carry forward for
+separate audit follow-up: 1.0 enforces MAXUDP-forbidden on AM824,
+channels-required on L16/L24, and packet-payload-fit on AM824 —
+none of these are grounded in -30 / -31 primary text.
+
 - **6.E (pending)** — cross-stream invariants (RFC 7104 group:DUP,
   SMPTE ST 2022-7 redundancy coherence).
 

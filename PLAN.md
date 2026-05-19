@@ -39,14 +39,15 @@ and runs them through the parser. See
 
 ## Current State
 
-1511 hermetic tests passing. Every validation check is grounded in explicit
+1520 hermetic tests passing. Every validation check is grounded in explicit
 spec text; no opinion-based checks remain.
 
 The grammar-first refactor on branch `refactor/grammar-first` is **in
-progress**. Phases 4 + 5 complete; **Phase 6.C is fully closed**;
-Phase 6.D is now in progress: 6.D.A (ts-refclk + mediaclk presence),
-6.D.B (L16/L24 MAXUDP-forbidden), and 6.D.C (AM824 channels-required)
-have shipped.
+progress**. Phases 4 + 5 complete; **Phases 6.C and 6.D are fully
+closed**. 6.D covers ts-refclk + mediaclk presence (6.D.A), L16/L24
+MAXUDP-forbidden (6.D.B), AM824 rtpmap channels-required (6.D.C), and
+L16/L24 packet-payload-fit (6.D.D). Phase 6.E remains (cross-stream
+invariants).
 The grammar tier covers:
 
 - ST 2110-20 raw video: §7.1 no-whitespace-around-=, §7.2/§7.4.2

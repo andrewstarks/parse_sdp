@@ -1032,6 +1032,32 @@ M.register("st2110-41.a.fmtp.maxudp-forbidden", {
 -- attribute, so a session-level mediaclk does not cover a media block
 -- that lacks its own.
 
+-- ── Phase 6.D.D — ST 2110-30 audio packet-payload-fit ───────────────────
+-- ST 2110-30:2025 §6.2.1: "The Standard UDP Datagram Size Limit as
+-- defined in SMPTE ST 2110-10 shall be used." ST 2110-10:2022 §6.4 sets
+-- that Limit at 1460 octets (UDP payload). After subtracting the RTP
+-- fixed header (12 octets per RFC 3550), the RTP payload available for
+-- audio samples is 1448 octets per packet.
+--
+-- For PCM audio the packet payload is channels × bytes_per_sample ×
+-- samples_per_packet, where samples_per_packet = round(clock_rate *
+-- ptime / 1000) per AES67 §8.1. A combination exceeding 1448 octets
+-- violates §6.2.1's SHALL.
+--
+-- Scope is L16 / L24 only (matching 6.D.B). AM824 is deferred because
+-- ST 2110-31 has no UDP-size SHALL of its own.
+M.register("st2110-30.audio.packet-payload-fit", {
+  kind             = "semantic",
+  default_severity = "error",
+  code             = "INVALID_VALUE",
+  message_template =
+    "audio packet RTP payload exceeds the Standard UDP Size Limit"
+    .. " (channels × bytes-per-sample × samples-per-packet must fit"
+    .. " in 1448 octets = 1460 UDP - 12 RTP); reduce ptime or channels",
+  spec_ref         = "ST 2110-30:2025 §6.2.1",
+  verified         = true,
+})
+
 -- ── Phase 6.D.C — ST 2110-31 AM824 rtpmap channels-required ─────────────
 -- ST 2110-31:2022 §6.1: "The number of AES3 Subframe sequences multiplexed
 -- within the payload shall be signaled in the SDP object on the a=rtpmap

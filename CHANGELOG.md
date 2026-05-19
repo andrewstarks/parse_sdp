@@ -1136,6 +1136,52 @@ Audit ref: ST 2110-31:2022 §6.1 (line 502 in pdftotext extract); RFC
 `smpte_standards_internal/st2110-31-2022.pdf`, `aes67-2013-f.pdf`. Out-
 of-parity-flag: 1.0 parser's L16 / L24 channels-required limb.
 
+- **Phase 6.D.D:** ST 2110-30:2025 §6.2.1 audio packet-payload-fit
+  (L16 / L24 only).
+
+  1 new error id `st2110-30.audio.packet-payload-fit`. §6.2.1's
+  "Standard UDP Datagram Size Limit ... shall be used" combined with
+  ST 2110-10:2022 §6.4 (Standard Limit = 1460 octets UDP payload)
+  and the 12-octet RTP fixed header (RFC 3550 §5.1) yields an RTP
+  payload limit of 1448 octets per audio packet.
+
+  Per AES67-2013 §8.1, `samples_per_packet = round(clock_rate × ptime
+  / 1000)`. The check computes
+  `needed = channels × bytes_per_sample × samples_per_packet`
+  (where `bytes_per_sample` = 2 for L16, 3 for L24) and emits the
+  finding when `needed > 1448`. RFC 3551 §6's `channels = 1` default
+  is applied when the rtpmap channels field is absent.
+
+  New tier-level semantic check `check_audio_packet_payload_fit`
+  walks `doc.media`, finds `a=ptime`, and iterates rtpmap attributes
+  whose encoding is in `{L16, L24}`. Skips quietly when ptime is
+  absent (separate ptime-required SHALL from AES67 §8.1 left for a
+  later slice). AM824 intentionally excluded, matching 6.D.B scope.
+
+  9 new tests in `spec/grammar_st2110_spec.lua`: positive (L24/48k/2
+  ptime=1, L16/48k/2 ptime=1, L24/48k/2 ptime=5 at boundary 1440 B,
+  L24/48k default-channels=1), reject (L24/48k/2 ptime=6 → 1728 B,
+  L24/48k/64 ptime=1 → 9216 B, L16/48k/8 ptime=2 → 1536 B),
+  intentional skips (no-ptime, AM824 over-sized). Suite: 1520 green.
+
+**Phase 6.D is now closed.** Coverage summary across the four slices:
+
+- 6.D.A: ST 2110-10 §8.2 + §8.3 ts-refclk + mediaclk presence
+- 6.D.B: ST 2110-30 §6.2.1 L16/L24 MAXUDP-forbidden
+- 6.D.C: ST 2110-31 §6.1 AM824 rtpmap channels-required
+- 6.D.D: ST 2110-30 §6.2.1 L16/L24 packet-payload-fit
+
+The grammar tier now matches 1.0 parity on every well-grounded
+per-encoding required-attribute and cross-attribute SHALL. Three
+out-of-parity flags carry forward for separate audit follow-up:
+
+1. 1.0 enforces MAXUDP-forbidden on AM824 (no -31 SHALL grounds it)
+2. 1.0 enforces channels-required on L16/L24 (no -30 SHALL grounds it)
+3. 1.0 enforces packet-payload-fit on AM824 (no -31 SHALL grounds it)
+
+Audit ref: REFACTOR-PLAN.md §5 Phase 6.D; ST 2110-30:2025 §6.2.1 +
+ST 2110-10:2022 §6.4 + RFC 3550 §5.1 + AES67-2013 §8.1.
+
 ### Changed
 
 - The inline `errors` table in `parse_sdp.lua` now delegates to

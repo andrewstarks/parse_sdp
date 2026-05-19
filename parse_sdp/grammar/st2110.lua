@@ -814,6 +814,52 @@ local function check_audio_maxudp_forbidden(doc, ctx)
   return true
 end
 
+-- Phase 6.D.D — ST 2110-30:2025 §6.2.1 audio packet-payload-fit.
+-- §6.2.1 requires "The Standard UDP Datagram Size Limit as defined in
+-- SMPTE ST 2110-10 shall be used". ST 2110-10:2022 §6.4 sets that limit
+-- at 1460 octets. With the 12-octet RTP fixed header (RFC 3550), the
+-- RTP payload available for audio samples is 1448 octets.
+--
+-- Walk doc.media, find audio rtpmap PTs whose encoding is L16 or L24,
+-- pair with the media-block's a=ptime, compute the required payload
+-- size, and emit a finding when it exceeds the limit. AM824 is
+-- intentionally excluded (6.D.D scope matches 6.D.B).
+local PCM_BYTES_PER_SAMPLE = { L16 = 2, L24 = 3 }
+local AUDIO_PACKET_PAYLOAD_LIMIT = 1448  -- 1460 (UDP) - 12 (RTP header)
+
+local function check_audio_packet_payload_fit(doc, ctx)
+  for i, m in ipairs(doc.media) do
+    local ptime
+    for _, attr in ipairs(m.attributes) do
+      if attr.name == "ptime" then ptime = attr.value end
+    end
+    if ptime then
+      for _, attr in ipairs(m.attributes) do
+        local bps = attr.name == "rtpmap"
+            and PCM_BYTES_PER_SAMPLE[attr.encoding] or nil
+        if bps and attr.clock_rate then
+          local channels = attr.channels or 1
+          local samples = math.floor(attr.clock_rate * ptime / 1000 + 0.5)
+          local needed  = channels * bps * samples
+          if needed > AUDIO_PACKET_PAYLOAD_LIMIT then
+            local cont = errors.record(ctx,
+              "st2110-30.audio.packet-payload-fit",
+              { field_path = string.format(
+                  "media[%d].attributes[rtpmap:pt=%d]",
+                  i - 1, attr.payload_type),
+                context    = { channels = channels, bps = bps,
+                               samples_per_packet = samples,
+                               needed = needed,
+                               limit = AUDIO_PACKET_PAYLOAD_LIMIT } })
+            if not cont then return false end
+          end
+        end
+      end
+    end
+  end
+  return true
+end
+
 local function check_audio_fmtp_channel_order(doc, ctx)
   for _, e in ipairs(each_audio_fmtp(doc)) do
     local co = e.params["channel-order"]
@@ -1149,6 +1195,7 @@ local overrides = {
     check_ts_refclk_presence,
     check_mediaclk_presence,
     check_audio_maxudp_forbidden,
+    check_audio_packet_payload_fit,
   },
 }
 

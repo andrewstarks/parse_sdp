@@ -2375,3 +2375,113 @@ describe("ST 2110-31 — AM824 rtpmap channels-required (Phase 6.D.C)",
   end)
 end)
 
+-- ── Phase 6.D.D — ST 2110-30:2025 §6.2.1 audio packet-payload-fit ───────
+--
+-- §6.2.1: "The Standard UDP Datagram Size Limit as defined in SMPTE ST
+--          2110-10 shall be used."
+-- ST 2110-10:2022 §6.4 sets that Limit at 1460 octets. With the 12-octet
+-- RTP fixed header (RFC 3550), the RTP payload available for audio
+-- samples is 1448 octets. For PCM audio:
+--   needed = channels × bytes_per_sample × samples_per_packet
+--   samples_per_packet = round(clock_rate × ptime / 1000)   (AES67 §8.1)
+--
+-- L16/L24 only; AM824 is deferred (matching 6.D.B scope — ST 2110-31
+-- has no UDP-size SHALL of its own).
+
+describe("ST 2110-30 — audio packet-payload-fit (Phase 6.D.D)", function()
+
+  local function audio_sdp_with_ptime(rtpmap_line, ptime_line)
+    return table.concat({
+      "v=0",
+      "o=- 1 1 IN IP4 192.0.2.1",
+      "s=Test",
+      "t=0 0",
+      "m=audio 30000 RTP/AVP 96",
+      "c=IN IP4 239.0.0.1/64",
+      rtpmap_line,
+      ptime_line,
+      "a=ts-refclk:localmac=00-11-22-33-44-55",
+      "a=mediaclk:sender",
+    }, "\r\n") .. "\r\n"
+  end
+
+  it("accepts L24/48000/2 ptime=1 (288 B payload, well within 1448)", function()
+    -- 2 ch × 3 B × 48 samples = 288 B
+    assert.is_truthy(st2110.match(audio_sdp_with_ptime(
+      "a=rtpmap:96 L24/48000/2", "a=ptime:1")))
+  end)
+
+  it("accepts L16/48000/2 ptime=1 (192 B payload)", function()
+    assert.is_truthy(st2110.match(audio_sdp_with_ptime(
+      "a=rtpmap:96 L16/48000/2", "a=ptime:1")))
+  end)
+
+  it("accepts L24/48000/2 ptime=5 at boundary (1440 B ≤ 1448)", function()
+    -- 2 ch × 3 B × 240 samples = 1440 B
+    assert.is_truthy(st2110.match(audio_sdp_with_ptime(
+      "a=rtpmap:96 L24/48000/2", "a=ptime:5")))
+  end)
+
+  it("rejects L24/48000/2 ptime=6 (1728 B > 1448)", function()
+    -- 2 ch × 3 B × 288 samples = 1728 B
+    local doc, ctx = st2110.match(audio_sdp_with_ptime(
+      "a=rtpmap:96 L24/48000/2", "a=ptime:6"))
+    assert.is_nil(doc)
+    local f = finding_for(ctx, "st2110-30.audio.packet-payload-fit")
+    assert.is_not_nil(f)
+    assert.equal("ST 2110-30:2025 §6.2.1", f.spec_ref)
+  end)
+
+  it("rejects L24/48000/64 ptime=1 (9216 B way over 1448)", function()
+    -- 64 ch × 3 B × 48 samples = 9216 B
+    local doc, ctx = st2110.match(audio_sdp_with_ptime(
+      "a=rtpmap:96 L24/48000/64", "a=ptime:1"))
+    assert.is_nil(doc)
+    assert.is_not_nil(finding_for(ctx, "st2110-30.audio.packet-payload-fit"))
+  end)
+
+  it("rejects L16/48000/8 ptime=2 (1536 B > 1448)", function()
+    -- 8 ch × 2 B × 96 samples = 1536 B
+    local doc, ctx = st2110.match(audio_sdp_with_ptime(
+      "a=rtpmap:96 L16/48000/8", "a=ptime:2"))
+    assert.is_nil(doc)
+    assert.is_not_nil(finding_for(ctx, "st2110-30.audio.packet-payload-fit"))
+  end)
+
+  it("treats absent channels as 1 (L24/48000 default ptime=1 → 144 B)", function()
+    -- RFC 3551 §6: channels defaults to 1 when omitted on L16/L24.
+    -- 1 ch × 3 B × 48 samples = 144 B, well within 1448.
+    assert.is_truthy(st2110.match(audio_sdp_with_ptime(
+      "a=rtpmap:96 L24/48000", "a=ptime:1")))
+  end)
+
+  -- NOT-SPEC: library — check needs both rtpmap clock_rate AND ptime to
+  -- run. Without ptime, samples-per-packet is undefined; the check skips.
+  -- (Whether ptime presence is itself required is a separate SHALL —
+  -- AES67 §8.1 requires it for -30 streams; 1.0 enforces; grammar tier
+  -- will pick up in a separate slice.)
+  it("does NOT fire when ptime is absent", function()
+    assert.is_truthy(st2110.match(table.concat({
+      "v=0",
+      "o=- 1 1 IN IP4 192.0.2.1",
+      "s=Test",
+      "t=0 0",
+      "m=audio 30000 RTP/AVP 96",
+      "c=IN IP4 239.0.0.1/64",
+      "a=rtpmap:96 L24/48000/64",          -- 64ch but no ptime → skip
+      "a=ts-refclk:localmac=00-11-22-33-44-55",
+      "a=mediaclk:sender",
+    }, "\r\n") .. "\r\n"))
+  end)
+
+  -- ── INTENTIONAL non-parity with 1.0 ──────────────────────────────────
+  -- ST 2110-31 has no UDP-size SHALL; the 1.0 parser's AM824 packet-fit
+  -- check is conjecture-based per the 6.D.B finding. Grammar tier skips.
+  it("does NOT fire on AM824 stream with over-large payload", function()
+    -- 64 ch × 4 B × 48 samples = 12288 B — would overflow if checked.
+    assert.is_truthy(st2110.match(audio_sdp_with_ptime(
+      "a=rtpmap:96 AM824/48000/64", "a=ptime:1")))
+  end)
+end)
+
+
