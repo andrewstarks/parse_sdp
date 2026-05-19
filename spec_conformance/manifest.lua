@@ -60,7 +60,7 @@ return {
       expect_spec_ref = "ST 2110-40:2023 §7",
     },
 
-    -- ── nmos-testing: ST 2022-6 mux (parses as RFC 4566 only) ──
+    -- ── nmos-testing: ST 2022-6 mux (parses as RFC 8866 only) ──
     {
       id = "nmos-testing:mux.sdp",
       source = "nmos_testing",

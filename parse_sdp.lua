@@ -1,5 +1,5 @@
 #!/usr/bin/env lua
---- parse_sdp — RFC 4566 / ST 2110 / IPMX SDP parser, validator, and serializer.
+--- parse_sdp — RFC 8866 / ST 2110 / IPMX SDP parser, validator, and serializer.
 -- Single-file library and CLI executable.  `require("parse_sdp")` loads the
 -- library; running it directly activates the argparse CLI.
 -- @module parse_sdp
@@ -63,7 +63,7 @@ end
 
 local version_pat = P("0") * -P(1)
 
---- Parse a v= field value; only "0" is valid per RFC 4566.
+--- Parse a v= field value; only "0" is valid per RFC 8866.
 -- @param s string  Field value string.
 -- @return string  "0" on success.
 -- @return nil, number  nil + failure column on invalid value.
@@ -193,7 +193,7 @@ end
 
 --- Parse a k= field value per RFC 8866 §5.12.
 -- Form: <method> | <method>:<encryption key>. Methods include "prompt",
--- "clear", "base64", "uri" (per RFC 4566); other tokens accepted
+-- "clear", "base64", "uri" (per RFC 8866); other tokens accepted
 -- structurally (the spec lists these but does not strictly forbid others).
 local _key_method = (P(1) - P(":") - SP - line_end) ^ 1
 local _key_method_only = C(_key_method) * -P(1)
@@ -429,7 +429,7 @@ local function ser_media_block(m)
   return table.concat(parts)
 end
 
---- Serialize an SDP document table to an RFC 4566 text string.
+--- Serialize an SDP document table to an RFC 8866 text string.
 -- Field order follows RFC 8866 §5.  All lines use CRLF endings.
 -- The caller is responsible for ensuring doc is structurally valid; no validation
 -- is performed here.
@@ -546,14 +546,14 @@ local _group_value_pat =
 
 local function valid_mid_value(v)
   if not _rfc4566_token_pat:match(v or "") then
-    return nil, "a=mid value must be an RFC 4566 token (alphanumeric plus !#$%&'*+-.^_`|~)"
+    return nil, "a=mid value must be an RFC 8866 token (alphanumeric plus !#$%&'*+-.^_`|~)"
   end
   return true
 end
 
 local function valid_group_value(v)
   if not _group_value_pat:match(v or "") then
-    return nil, "a=group value must be <semantics> *(SP <identification-tag>), each an RFC 4566 token"
+    return nil, "a=group value must be <semantics> *(SP <identification-tag>), each an RFC 8866 token"
   end
   return true
 end
@@ -1384,7 +1384,7 @@ local function fmtp_params(value)
 end
 
 --- Validate an SDP document against SMPTE ST 2110 requirements.
--- Runs RFC 4566 validation first, then for each media block checks:
+-- Runs RFC 8866 validation first, then for each media block checks:
 -- ts-refclk (session or media level), mediaclk, rtpmap, fmtp, and
 -- media-type-specific fmtp parameters (sampling for video,
 -- channel-order for audio).
@@ -2201,7 +2201,7 @@ function st2110.validate(doc)
       -- says "Other sampling frequencies … are out of scope of this standard."
       -- "Out of scope" is not "forbidden" (no "shall not"), so any well-formed
       -- positive rate is accepted (M30 G5 — conformance principle).
-      -- Channel count is part of RFC 4566 rtpmap grammar (RFC 3551 §6); zero or
+      -- Channel count is part of RFC 8866 rtpmap grammar (RFC 3551 §6); zero or
       -- missing makes the stream undefined. Spec does not impose an upper bound.
       local ch_s = (rtpmap.value or ""):match("^%d+%s+%S+/%d+/(%d+)$")
       if not ch_s then
@@ -2401,7 +2401,7 @@ function st2110.validate(doc)
   end
 
   -- RFC 5888 §5: a=group value grammar (semantics + identification-tags),
-  -- both required to be RFC 4566 tokens. Validate every a=group attribute
+  -- both required to be RFC 8866 tokens. Validate every a=group attribute
   -- regardless of semantics, before any DUP-specific checks.
   local has_group = false
   for _, attr in ipairs(doc.session.attributes or {}) do
@@ -3371,7 +3371,7 @@ end
 
 --- Parse SDP text into a raw document table (no metatable attached).
 -- Enforces RFC 8866 §5 field ordering strictly.  Optionally runs ST 2110
--- or IPMX validation after a successful RFC 4566 parse.
+-- or IPMX validation after a successful RFC 8866 parse.
 -- @param text string  Raw SDP text (CRLF or LF line endings).
 -- @param mode string  Optional: "st2110" or "ipmx" for extended validation.
 -- @return table  Raw SDP document table on success.
@@ -3647,7 +3647,7 @@ function mt:validate(mode)
   return fn(self)
 end
 
---- Test whether the document is a valid RFC 4566 SDP.
+--- Test whether the document is a valid RFC 8866 SDP.
 -- @return boolean
 function mt:is_sdp()    return validate.sdp(self) == true end
 
@@ -3665,7 +3665,7 @@ function mt:to_json()
   return dkjson.encode(self)
 end
 
---- Serialize the document back to RFC 4566 SDP text.
+--- Serialize the document back to RFC 8866 SDP text.
 -- @return string  SDP text with CRLF line endings.
 function mt:to_sdp()
   return serialize.to_sdp(self)
@@ -3725,7 +3725,7 @@ if arg and arg[0] and arg[0]:match("parse_sdp") then
     return io.read("*a")
   end
 
-  local ap = argparse("parse_sdp", "Parse, validate, and serialize SDP (RFC 4566 / ST 2110 / IPMX).")
+  local ap = argparse("parse_sdp", "Parse, validate, and serialize SDP (RFC 8866 / ST 2110 / IPMX).")
   ap:epilog(table.concat({
     "Examples:",
     "  parse_sdp to_json session.sdp",
@@ -3737,7 +3737,7 @@ if arg and arg[0] and arg[0]:match("parse_sdp") then
 
   local cmd_parse = ap:command("to_json", "Parse and validate an SDP file; output JSON.")
   cmd_parse:argument("file", "Path to .sdp file. Reads stdin if omitted."):args("?")
-  cmd_parse:option("--mode", "Validation tier: 'st2110' or 'ipmx'. Defaults to RFC 4566 only.")
+  cmd_parse:option("--mode", "Validation tier: 'st2110' or 'ipmx'. Defaults to RFC 8866 only.")
   cmd_parse:flag("--pretty", "Pretty-print JSON output with indentation.")
 
   local cmd_ser = ap:command("to_sdp", "Convert a JSON SDP document back to SDP text.")

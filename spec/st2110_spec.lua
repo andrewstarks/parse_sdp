@@ -4577,7 +4577,7 @@ describe("ST 2110 validation", function()
     end)
 
     -- RFC 5888 §4: mid-attribute = "a=mid:" identification-tag, where
-    -- identification-tag is a `token` per RFC 4566 (alphanumeric plus
+    -- identification-tag is a `token` per RFC 8866 (alphanumeric plus
     -- !#$%&'*+-.^_`|~). Forward slash, parens, colon etc. are forbidden.
     -- Validate in isolation (no a=group line, which would catch the same
     -- malformation first via its own token check).

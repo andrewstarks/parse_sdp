@@ -29,7 +29,7 @@ section("1. Parsing — sdp.parse(text)")
 -- ─────────────────────────────────────────────────────────────────────────────
 
 -- sdp.parse(text) returns a doc table on success, or nil + error table on failure.
--- No mode argument means RFC 4566 validation only.
+-- No mode argument means RFC 8866 validation only.
 
 local text = read("examples/generic/valid/03_typical_conference.sdp")
 local doc, err = sdp.parse(text)
@@ -69,14 +69,14 @@ section("2. Validation modes — sdp.parse(text, mode)")
 -- ─────────────────────────────────────────────────────────────────────────────
 
 -- The same file can be validated against different tiers by passing a mode.
--- "st2110" validates ST 2110-10/20/30/40/41 rules on top of RFC 4566.
--- "ipmx" validates IPMX rules (which first run ST 2110, which first runs RFC 4566).
+-- "st2110" validates ST 2110-10/20/30/40/41 rules on top of RFC 8866.
+-- "ipmx" validates IPMX rules (which first run ST 2110, which first runs RFC 8866).
 
 local ipmx_text = read("examples/ipmx/valid/02_typical.sdp")
 
-subsection("Parse with no mode  →  RFC 4566 only")
+subsection("Parse with no mode  →  RFC 8866 only")
 local d1 = sdp.parse(ipmx_text)
-print("  sdp.parse(text)           →  " .. (d1 and "doc  (RFC 4566 valid)" or "nil"))
+print("  sdp.parse(text)           →  " .. (d1 and "doc  (RFC 8866 valid)" or "nil"))
 
 subsection("Parse with mode='st2110'")
 local d2 = sdp.parse(ipmx_text, "st2110")
@@ -110,7 +110,7 @@ print("  doc:is_sdp()    →  " .. tostring(mdoc:is_sdp()))
 print("  doc:is_st2110() →  " .. tostring(mdoc:is_st2110()))
 print("  doc:is_ipmx()   →  " .. tostring(mdoc:is_ipmx()))
 
-subsection("doc:to_sdp()  →  SDP text (CRLF, RFC 4566 field order)")
+subsection("doc:to_sdp()  →  SDP text (CRLF, RFC 8866 field order)")
 local serialized = mdoc:to_sdp()
 print("  First 4 lines of output:")
 local n = 0
@@ -176,7 +176,7 @@ local function show_error(label, text, mode)
 end
 
 show_error(
-  "generic/invalid/02_wrong_order.sdp  (RFC 4566 field ordering)",
+  "generic/invalid/02_wrong_order.sdp  (RFC 8866 field ordering)",
   read("examples/generic/invalid/02_wrong_order.sdp"))
 
 show_error(
@@ -215,7 +215,7 @@ local function sweep(files, mode, expect_ok)
   end
 end
 
-subsection("generic  (RFC 4566 only)")
+subsection("generic  (RFC 8866 only)")
 print("  valid:")
 sweep({
   "examples/generic/valid/01_simple_audio.sdp",
@@ -232,7 +232,7 @@ sweep({
   "examples/generic/invalid/04_bad_version.sdp",
 }, nil, false)
 
-subsection("st2110  (ST 2110-10/20/30/40/41 + RFC 4566)")
+subsection("st2110  (ST 2110-10/20/30/40/41 + RFC 8866)")
 print("  valid:")
 sweep({
   "examples/st2110/valid/01_simple_video.sdp",
@@ -256,7 +256,7 @@ sweep({
   "examples/st2110/invalid/08_missing_ssn.sdp",
 }, "st2110", false)
 
-subsection("ipmx  (IPMX + ST 2110 + RFC 4566)")
+subsection("ipmx  (IPMX + ST 2110 + RFC 8866)")
 print("  valid:")
 sweep({
   "examples/ipmx/valid/01_simple_video.sdp",

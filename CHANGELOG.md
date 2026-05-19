@@ -42,6 +42,13 @@ parser remains the shipping artifact on `main`.
   subsections — fmtp cites now point to §6.15, framerate cites to §6.13,
   rtpmap to §6.6. Test assertions and citation-label test names updated
   to match.
+- **All RFC 4566 prose / docstring / comment / CLI-help references
+  migrated to RFC 8866** (file headers, public-API docstrings,
+  examples runner, test descriptions, spec_conformance comments).
+  Two SMPTE spec quotes (ST 2110-10 §6.2 in parse_sdp.lua, ST
+  2110-41:2024 §5.3 in spec/st2110_spec.lua) keep "IETF RFC 4566"
+  verbatim because that's what the SMPTE text says; the rockspec's
+  "RFC 8866 obsoletes RFC 4566" historical note also stays.
 
 ### Fixed
 

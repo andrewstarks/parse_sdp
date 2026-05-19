@@ -5,7 +5,7 @@
 -- method existence, return shape, mode-dispatch sanity, predicate behavior,
 -- JSON serialization. None of these tests assert compliance with a published
 -- standard — those live in:
---   spec/sdp_spec.lua     — RFC 4566 / 8866 base SDP
+--   spec/sdp_spec.lua     — RFC 8866 / 8866 base SDP
 --   spec/st2110_spec.lua  — SMPTE ST 2110
 --   spec/ipmx_spec.lua    — VSF TR-10 / IPMX
 -- Tests for internal helpers (LPEG primitives, error formatter) live in:
@@ -368,7 +368,7 @@ end)
 
 describe("library: doc:is_st2110() predicate", function()
   -- NOT-SPEC: library
-  it("returns false for plain RFC 4566 SDP", function()
+  it("returns false for plain RFC 8866 SDP", function()
     local doc = sdp.parse(MINIMAL_SDP)
     assert.is_false(doc:is_st2110())
   end)
@@ -406,7 +406,7 @@ end)
 
 describe("library: doc:is_ipmx() predicate", function()
   -- NOT-SPEC: library
-  it("returns false for plain RFC 4566 SDP", function()
+  it("returns false for plain RFC 8866 SDP", function()
     local doc = sdp.parse(MINIMAL_SDP)
     assert.is_false(doc:is_ipmx())
   end)
