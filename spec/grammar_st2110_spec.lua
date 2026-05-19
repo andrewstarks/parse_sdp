@@ -1682,3 +1682,153 @@ describe("ST 2110-22 jxsv fmtp — cross-parameter SHALLs", function()
       .. ";segmented;colorimetry=BT2100;RANGE=FULLPROTECT")))
   end)
 end)
+
+-- ───────────────────────────────────────────────────────────────────────────
+-- Phase 6.C.H — ST 2110-30 / -31 audio channel-order syntax. Optional fmtp
+-- parameter on L16 / L24 / AM824 audio. RFC 3190 §6 form
+-- `<convention>.<order>`; SMPTE2110 convention requires
+-- `(<group>[,<group>...])` with each group from §6.2.2 Table 1, or a
+-- Unn track symbol (U01–U64), or AES3 (AM824 only per ST 2110-31 §6.2).
+
+describe("ST 2110-30 / -31 audio channel-order [ST 2110-30:2025 §6.2.2]",
+    function()
+
+  local function audio_sdp(rtpmap_line, fmtp_line)
+    return table.concat({
+      "v=0",
+      "o=- 1 1 IN IP4 192.0.2.1",
+      "s=Test",
+      "t=0 0",
+      "a=ts-refclk:ptp=IEEE1588-2008:00-11-22-FF-FE-33-44-55:0",
+      "m=audio 30000 RTP/AVP 96",
+      "c=IN IP4 239.0.0.1/64",
+      rtpmap_line,
+      fmtp_line,
+      "a=ptime:1",
+      "a=mediaclk:direct=0",
+    }, "\r\n") .. "\r\n"
+  end
+
+  -- ── Accept cases (SMPTE2110 convention, every Table 1 group) ─────────
+  for _, group in ipairs({ "M", "DM", "ST", "LtRt", "51", "71", "222", "SGRP" }) do
+    it(("accepts L24 channel-order SMPTE2110.(%s)"):format(group), function()
+      assert.is_truthy(st2110.match(audio_sdp(
+        "a=rtpmap:96 L24/48000/2",
+        ("a=fmtp:96 channel-order=SMPTE2110.(%s)"):format(group))))
+    end)
+  end
+
+  it("accepts SMPTE2110.(ST,M) — multiple groups", function()
+    assert.is_truthy(st2110.match(audio_sdp(
+      "a=rtpmap:96 L24/48000/3",
+      "a=fmtp:96 channel-order=SMPTE2110.(ST,M)")))
+  end)
+
+  -- Unn tokens — sample the range bounds.
+  for _, tok in ipairs({ "U01", "U64" }) do
+    it(("accepts SMPTE2110.(%s) — Unn track symbol"):format(tok),
+        function()
+      assert.is_truthy(st2110.match(audio_sdp(
+        "a=rtpmap:96 L24/48000/1",
+        ("a=fmtp:96 channel-order=SMPTE2110.(%s)"):format(tok))))
+    end)
+  end
+
+  -- ── AES3 — AM824-only (ST 2110-31:2022 §6.2 Table 2) ─────────────────
+  it("accepts AES3 group on AM824", function()
+    assert.is_truthy(st2110.match(audio_sdp(
+      "a=rtpmap:96 AM824/48000/2",
+      "a=fmtp:96 channel-order=SMPTE2110.(AES3)")))
+  end)
+
+  it("rejects AES3 group on L24 (AES3 requires AM824)", function()
+    local doc, ctx = st2110.match(audio_sdp(
+      "a=rtpmap:96 L24/48000/2",
+      "a=fmtp:96 channel-order=SMPTE2110.(AES3)"))
+    assert.is_nil(doc)
+    assert.is_not_nil(finding_for(ctx,
+      "st2110-31.a.fmtp.channel-order-aes3-requires-am824"))
+  end)
+
+  it("rejects AES3 group on L16", function()
+    local doc, ctx = st2110.match(audio_sdp(
+      "a=rtpmap:96 L16/48000/2",
+      "a=fmtp:96 channel-order=SMPTE2110.(AES3)"))
+    assert.is_nil(doc)
+    assert.is_not_nil(finding_for(ctx,
+      "st2110-31.a.fmtp.channel-order-aes3-requires-am824"))
+  end)
+
+  -- ── Reject malformations under SMPTE2110 convention ──────────────────
+  it("rejects unknown group symbol BOGUS", function()
+    local doc, ctx = st2110.match(audio_sdp(
+      "a=rtpmap:96 L24/48000/2",
+      "a=fmtp:96 channel-order=SMPTE2110.(BOGUS)"))
+    assert.is_nil(doc)
+    assert.is_not_nil(finding_for(ctx,
+      "st2110-30.a.fmtp.channel-order-invalid"))
+  end)
+
+  it("rejects out-of-range Unn (U00)", function()
+    local doc, ctx = st2110.match(audio_sdp(
+      "a=rtpmap:96 L24/48000/1",
+      "a=fmtp:96 channel-order=SMPTE2110.(U00)"))
+    assert.is_nil(doc)
+    assert.is_not_nil(finding_for(ctx,
+      "st2110-30.a.fmtp.channel-order-invalid"))
+  end)
+
+  it("rejects out-of-range Unn (U65)", function()
+    local doc, ctx = st2110.match(audio_sdp(
+      "a=rtpmap:96 L24/48000/1",
+      "a=fmtp:96 channel-order=SMPTE2110.(U65)"))
+    assert.is_nil(doc)
+    assert.is_not_nil(finding_for(ctx,
+      "st2110-30.a.fmtp.channel-order-invalid"))
+  end)
+
+  it("rejects missing parentheses under SMPTE2110 convention", function()
+    local doc, ctx = st2110.match(audio_sdp(
+      "a=rtpmap:96 L24/48000/2",
+      "a=fmtp:96 channel-order=SMPTE2110.ST"))
+    assert.is_nil(doc)
+    assert.is_not_nil(finding_for(ctx,
+      "st2110-30.a.fmtp.channel-order-invalid"))
+  end)
+
+  it("rejects RFC 3190 form without dot separator", function()
+    local doc, ctx = st2110.match(audio_sdp(
+      "a=rtpmap:96 L24/48000/2",
+      "a=fmtp:96 channel-order=NoDotHere"))
+    assert.is_nil(doc)
+    assert.is_not_nil(finding_for(ctx,
+      "st2110-30.a.fmtp.channel-order-invalid"))
+  end)
+
+  -- ── Non-SMPTE2110 conventions: §6.2.2 is silent (accept structurally) ─
+  it("accepts non-SMPTE2110 convention with arbitrary order (spec silent)",
+      function()
+    -- NOT-SPEC: §6.2.2 only constrains the SMPTE2110 convention. Any
+    -- structurally-valid RFC 3190 form is accepted otherwise.
+    assert.is_truthy(st2110.match(audio_sdp(
+      "a=rtpmap:96 L24/48000/2",
+      "a=fmtp:96 channel-order=Custom.MyArbitraryToken")))
+  end)
+
+  -- ── Channel-order absent: optional (no SHALL on presence) ────────────
+  it("accepts audio fmtp without channel-order (optional)", function()
+    -- NOT-SPEC: §6.2.2 defines channel-order as optional with absence
+    -- interpreted as "Undefined".
+    assert.is_truthy(st2110.match(audio_sdp(
+      "a=rtpmap:96 L24/48000/2",
+      "a=fmtp:96 dummy=value")))
+  end)
+
+  -- ── NOT-SPEC: base tier carries no channel-order narrowing ───────────
+  it("base tier accepts AES3 on L24 (no -30/-31 narrowing in base)",
+      function()
+    assert.is_truthy(base.match(audio_sdp(
+      "a=rtpmap:96 L24/48000/2",
+      "a=fmtp:96 channel-order=SMPTE2110.(AES3)")))
+  end)
+end)

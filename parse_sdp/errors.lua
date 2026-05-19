@@ -912,4 +912,37 @@ M.register("st2110-22.a.fmtp.bt2100-range-fullprotect-forbidden", {
   verified         = true,
 })
 
+-- ── ST 2110-30 audio channel-order syntax (Phase 6.C.H) ───────────────────
+-- ST 2110-30:2025 §6.2.2: "If channel order is signaled in the SDP, the
+-- syntax of IETF RFC 3190 for the parameter channel-order shall be used."
+-- RFC 3190 §6: `<convention>.<order>`. When convention is `SMPTE2110`,
+-- the order SHALL be `(<group>[,<group>...])` with each group from
+-- ST 2110-30 §6.2.2 Table 1 ({M, DM, ST, LtRt, 51, 71, 222, SGRP}) or a
+-- Unn track symbol (U01–U64). Spec is silent on other conventions —
+-- accept structurally. Applies to L16, L24, AM824 audio.
+M.register("st2110-30.a.fmtp.channel-order-invalid", {
+  kind             = "semantic",
+  default_severity = "error",
+  code             = "INVALID_VALUE",
+  message_template =
+    "fmtp 'channel-order' must follow RFC 3190 syntax;"
+    .. " SMPTE2110 convention requires (group[,group...]) with"
+    .. " known group symbols",
+  spec_ref         = "ST 2110-30:2025 §6.2.2",
+  verified         = true,
+})
+
+-- ST 2110-31:2022 §6.2 Table 2 defines the AES3 channel-order group as
+-- AM824-only ("The symbol AES3 is defined for use with AM824 streams").
+-- Signaling AES3 on L16 / L24 PCM audio is invalid.
+M.register("st2110-31.a.fmtp.channel-order-aes3-requires-am824", {
+  kind             = "semantic",
+  default_severity = "error",
+  code             = "INVALID_VALUE",
+  message_template =
+    "channel-order group 'AES3' is defined only for AM824 streams",
+  spec_ref         = "ST 2110-31:2022 §6.2",
+  verified         = true,
+})
+
 return M

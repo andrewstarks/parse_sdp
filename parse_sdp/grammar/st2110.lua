@@ -598,6 +598,106 @@ local JXSV_CROSS_PARAM_CHECKS = {
   check_jxsv_bt2100_range,
 }
 
+-- ── ST 2110-30 / -31 audio channel-order syntax (Phase 6.C.H) ─────────────
+-- Returns a list of (media_index, payload_type, encoding, params) tuples
+-- across every audio rtpmap PT in the document (L16, L24, AM824). Mirrors
+-- each_fmtp_for_encoding but multiplexes the three audio encodings into
+-- one walk so the channel-order check doesn't run three separate doc walks.
+local AUDIO_ENCODINGS = { L16 = true, L24 = true, AM824 = true }
+
+local function each_audio_fmtp(doc)
+  local out = {}
+  for i, m in ipairs(doc.media) do
+    local audio_pts = {}
+    for _, attr in ipairs(m.attributes) do
+      if attr.name == "rtpmap" and AUDIO_ENCODINGS[attr.encoding] then
+        audio_pts[attr.payload_type] = attr.encoding
+      end
+    end
+    local fmtp_by_pt = {}
+    for _, attr in ipairs(m.attributes) do
+      if attr.name == "fmtp" then
+        fmtp_by_pt[attr.payload_type] = attr
+      end
+    end
+    for pt, enc in pairs(audio_pts) do
+      local fmtp = fmtp_by_pt[pt]
+      out[#out + 1] = {
+        media_index  = i,
+        payload_type = pt,
+        encoding     = enc,
+        params       = (fmtp and fmtp.params) or {},
+      }
+    end
+  end
+  return out
+end
+
+-- ST 2110-30 §6.2.2 Table 1 group symbol set (M, DM, ST, LtRt, 51, 71,
+-- 222, SGRP). AES3 is added per ST 2110-31:2022 §6.2 Table 2 — AM824 only.
+local AUDIO_CHANNEL_GROUPS = {
+  ["M"]    = true, ["DM"]   = true, ["ST"]   = true, ["LtRt"] = true,
+  ["51"]   = true, ["71"]   = true, ["222"]  = true, ["SGRP"] = true,
+}
+
+-- Validate a single channel-order value against §6.2.2 + RFC 3190. Returns
+-- (true, nil) on accept, or (false, err_id) when the value violates a
+-- specific SHALL. err_id distinguishes the two normative sources (-30 vs
+-- -31) so audit grep can target either.
+local function validate_channel_order(value, encoding)
+  local convention, order = value:match("^([^.%s]+)%.(%S+)$")
+  if not convention or order == "" then
+    return false, "st2110-30.a.fmtp.channel-order-invalid"
+  end
+  if convention ~= "SMPTE2110" then
+    -- §6.2.2 only constrains the SMPTE2110 convention. Other tokens are
+    -- structurally valid RFC 3190 forms; accept them.
+    return true
+  end
+  local groups_str = order:match("^%((.+)%)$")
+  if not groups_str then
+    return false, "st2110-30.a.fmtp.channel-order-invalid"
+  end
+  for grp in groups_str:gmatch("[^,]+") do
+    local g = grp:match("^%s*(.-)%s*$")
+    if g == "" then
+      return false, "st2110-30.a.fmtp.channel-order-invalid"
+    elseif AUDIO_CHANNEL_GROUPS[g] then
+      -- known §6.2.2 Table 1 symbol — accept
+    elseif g == "AES3" then
+      if encoding ~= "AM824" then
+        return false, "st2110-31.a.fmtp.channel-order-aes3-requires-am824"
+      end
+    else
+      local nn = g:match("^U(%d%d)$")
+      local n  = nn and tonumber(nn)
+      if not n or n < 1 or n > 64 then
+        return false, "st2110-30.a.fmtp.channel-order-invalid"
+      end
+    end
+  end
+  return true
+end
+
+local function check_audio_fmtp_channel_order(doc, ctx)
+  for _, e in ipairs(each_audio_fmtp(doc)) do
+    local co = e.params["channel-order"]
+    if co ~= nil and co ~= true then
+      local ok, err_id = validate_channel_order(tostring(co), e.encoding)
+      if not ok then
+        local path = string.format(
+          "media[%d].attributes[fmtp:pt=%d]",
+          e.media_index, e.payload_type)
+        local cont = errors.record(ctx, err_id,
+          { field_path = path,
+            context    = { encoding = e.encoding, value = co } })
+        if not cont then return false end
+      end
+    end
+  end
+  return true
+end
+
 local function check_jxsv_fmtp_cross_param(doc, ctx)
   for _, e in ipairs(each_fmtp_for_encoding(doc, "jxsv")) do
     local path = string.format(
@@ -860,6 +960,7 @@ local overrides = {
     check_jxsv_fmtp_required,
     check_jxsv_fmtp_values,
     check_jxsv_fmtp_cross_param,
+    check_audio_fmtp_channel_order,
   },
 }
 

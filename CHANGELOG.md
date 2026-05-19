@@ -907,6 +907,43 @@ RFC 9134 rows 31–58 + ST 2110-22:2022 rows 7, 9, 11–13, 20–26.
 
 Audit ref: REFACTOR-PLAN.md §5 Phase 6.C; RFC 9134 §7.1.
 
+- **Phase 6.C.H:** ST 2110-30 / -31 audio `channel-order` fmtp
+  syntax. Optional `a=fmtp` parameter on L16 / L24 / AM824 audio:
+  *"If channel order is signaled in the SDP, the syntax of IETF
+  RFC 3190 for the parameter channel-order shall be used."*
+  (§6.2.2). RFC 3190 form `<convention>.<order>`. When the
+  convention is `SMPTE2110`, the order SHALL be
+  `(<group>[,<group>...])` with each group from §6.2.2 Table 1
+  ({M, DM, ST, LtRt, 51, 71, 222, SGRP}) or a Unn track symbol
+  (U01–U64). The `AES3` group is permitted only on AM824 per
+  ST 2110-31:2022 §6.2 Table 2. Other conventions accepted
+  structurally — §6.2.2 is silent on their internals.
+
+  2 new error ids:
+  - `st2110-30.a.fmtp.channel-order-invalid` (RFC 3190 syntax,
+    SMPTE2110 form, unknown group symbol, out-of-range Unn).
+  - `st2110-31.a.fmtp.channel-order-aes3-requires-am824` (AES3
+    group on non-AM824 encoding).
+
+  Implemented as a new tier-level semantic check
+  `check_audio_fmtp_channel_order` with a per-encoding helper
+  walker `each_audio_fmtp(doc)` that multiplexes L16/L24/AM824
+  rtpmap PTs in one pass. 22 new tests covering every group
+  symbol (8), Unn range bounds, AES3 across encodings (3
+  accept/reject), syntax malformations (5), non-SMPTE2110
+  passthrough, channel-order absence (optional), and base-tier
+  sanity. Suite: 1467 green.
+
+  Scope note: ST 2110-30's other fmtp-adjacent checks (MAXUDP-
+  forbidden on audio, packet-payload-fit calculation) are
+  cross-attribute / cross-layer (RTP-payload-aware) rather than
+  per-key fmtp narrowings. They live more naturally in Phase 6.D
+  (per-encoding required-attribute / cross-attribute checks) and
+  are deferred there.
+
+Audit ref: REFACTOR-PLAN.md §5 Phase 6.C; ST 2110-30:2025 §6.2.2;
+ST 2110-31:2022 §6.2 Table 2; RFC 3190 §6.
+
 ### Changed
 
 - The inline `errors` table in `parse_sdp.lua` now delegates to
