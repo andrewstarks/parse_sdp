@@ -76,6 +76,21 @@ parser remains the shipping artifact on `main`.
   supported on offsets. 14 new tests. The 1.0 parser's `parse_repeat`
   and `parse_timezone` `gmatch` loops are now obsolete in the new
   grammar path (Phase 8 cutover will retire the 1.0 module).
+- **Phase 2.E (Phase 2 close):** media (m) + attributes (a) leaves.
+  m= captures land *flat* at each media-block top level —
+  `{media, port=number, port_count=number?, proto, fmts=[]}` per
+  RFC 8866 §5.14. a= produces `{name, value=string?}` per §5.13
+  (flag attributes have no `value` key). The base grammar leaves
+  attribute *values* as strings; per-attribute decomposition for
+  rtpmap / fmtp / ts-refclk / source-filter / group / mid / ssrc
+  / etc. lands in Phase 4. 11 new tests including a full round-trip
+  doc-shape integration test against a realistic SDP.
+
+Phase 2 close: the new base grammar produces a fully captured RFC 8866
+doc table for every primitive line type. 60 new tests in
+`spec/grammar_base_spec.lua`. The grammar still isn't wired into
+`sdp.parse()` — that's Phase 9 — so the 1.0 parser remains the
+shipping artifact for `require("parse_sdp")` callers.
 
 ### Changed
 

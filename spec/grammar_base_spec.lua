@@ -45,7 +45,7 @@ describe("base SDP grammar — document shape (RFC 8866 §5)", function()
     assert.is_truthy(g:match(minimal(nil, {
       { "m=video 49170 RTP/AVP 96" },
       { "m=audio 49172 RTP/AVP 0"  },
-      { "m=text  49174 RTP/AVP 96" },
+      { "m=text 49174 RTP/AVP 96"  },
     })))
   end)
 
@@ -717,6 +717,191 @@ describe("base SDP grammar — timing, repeats, time zones (Phase 2.D)", functio
       "z=2882844526 -1h 2898848070",
     })
     assert.is_nil(g:match(text))
+  end)
+
+end)
+
+describe("base SDP grammar — media line + attributes (Phase 2.E)", function()
+
+  -- NOT-SPEC: library
+  it("captures m= fields flat at media-block top level (RFC 8866 §5.14)", function()
+    local doc = g:match(minimal(nil, {
+      { "m=video 49170 RTP/AVP 96" },
+    }))
+    local m = doc.media[1]
+    assert.equal("video",    m.media)
+    assert.equal(49170,      m.port)
+    assert.is_number(m.port)
+    assert.equal("RTP/AVP",  m.proto)
+    assert.is_table(m.fmts)
+    assert.equal(1, #m.fmts)
+    assert.equal("96", m.fmts[1])
+    assert.is_nil(m.port_count)
+  end)
+
+  -- NOT-SPEC: library
+  it("captures m= port_count when present (port/count form)", function()
+    local doc = g:match(minimal(nil, {
+      { "m=video 49170/2 RTP/AVP 96" },
+    }))
+    assert.equal(49170, doc.media[1].port)
+    assert.equal(2,     doc.media[1].port_count)
+    assert.is_number(doc.media[1].port_count)
+  end)
+
+  -- NOT-SPEC: library
+  it("captures m= with multiple format tokens", function()
+    local doc = g:match(minimal(nil, {
+      { "m=video 49170 RTP/AVP 96 97 98" },
+    }))
+    assert.same({"96", "97", "98"}, doc.media[1].fmts)
+  end)
+
+  -- NOT-SPEC: library
+  it("captures proto with slashes verbatim", function()
+    local doc = g:match(minimal(nil, {
+      { "m=video 49170 RTP/SAVP 96" },
+    }))
+    assert.equal("RTP/SAVP", doc.media[1].proto)
+  end)
+
+  -- NOT-SPEC: library
+  it("rejects m= missing the fmt token (RFC 8866 §5.14 requires ≥1 fmt)", function()
+    local text = lines_to_sdp({
+      "v=0", "o=- 1 1 IN IP4 127.0.0.1", "s=X", "t=0 0",
+      "m=video 49170 RTP/AVP",
+    })
+    assert.is_nil(g:match(text))
+  end)
+
+  -- NOT-SPEC: library
+  it("rejects m= with non-digit port", function()
+    local text = lines_to_sdp({
+      "v=0", "o=- 1 1 IN IP4 127.0.0.1", "s=X", "t=0 0",
+      "m=video abc RTP/AVP 96",
+    })
+    assert.is_nil(g:match(text))
+  end)
+
+  -- NOT-SPEC: library
+  it("captures session-level a= as array of {name, value} (RFC 8866 §5.13)", function()
+    local text = lines_to_sdp({
+      "v=0", "o=- 1 1 IN IP4 127.0.0.1", "s=X", "t=0 0",
+      "a=tool:libsdp 1.0",
+      "a=type:broadcast",
+      "a=recvonly",
+    })
+    local doc = g:match(text)
+    assert.is_table(doc.session.attributes)
+    assert.equal(3, #doc.session.attributes)
+    assert.equal("tool",         doc.session.attributes[1].name)
+    assert.equal("libsdp 1.0",   doc.session.attributes[1].value)
+    assert.equal("type",         doc.session.attributes[2].name)
+    assert.equal("broadcast",    doc.session.attributes[2].value)
+    -- Flag attribute (no colon): name only, no value field.
+    assert.equal("recvonly",     doc.session.attributes[3].name)
+    assert.is_nil(doc.session.attributes[3].value)
+  end)
+
+  -- NOT-SPEC: library
+  it("captures media-level a= attributes (rtpmap/fmtp stay as strings at base tier)", function()
+    local doc = g:match(minimal(nil, {
+      { "m=video 49170 RTP/AVP 96",
+        "a=rtpmap:96 H264/90000",
+        "a=fmtp:96 profile-level-id=42801f",
+        "a=sendonly" },
+    }))
+    local attrs = doc.media[1].attributes
+    assert.equal(3, #attrs)
+    assert.equal("rtpmap",                    attrs[1].name)
+    assert.equal("96 H264/90000",             attrs[1].value)
+    assert.equal("fmtp",                      attrs[2].name)
+    assert.equal("96 profile-level-id=42801f", attrs[2].value)
+    assert.equal("sendonly", attrs[3].name)
+    assert.is_nil(attrs[3].value)
+  end)
+
+  -- NOT-SPEC: library
+  it("session.attributes and media.attributes are empty arrays when absent", function()
+    local doc = g:match(minimal(nil, { { "m=video 49170 RTP/AVP 96" } }))
+    assert.is_table(doc.session.attributes)
+    assert.equal(0, #doc.session.attributes)
+    assert.is_table(doc.media[1].attributes)
+    assert.equal(0, #doc.media[1].attributes)
+  end)
+
+  -- NOT-SPEC: library
+  it("attribute values may contain colons (only the first split point counts)", function()
+    local doc = g:match(minimal(nil, {
+      { "m=video 49170 RTP/AVP 96",
+        "a=ts-refclk:ptp=IEEE1588-2008:00-1D-9A-FF-FE-2C-32-0F:0" },
+    }))
+    local a = doc.media[1].attributes[1]
+    assert.equal("ts-refclk", a.name)
+    assert.equal("ptp=IEEE1588-2008:00-1D-9A-FF-FE-2C-32-0F:0", a.value)
+  end)
+
+end)
+
+describe("base SDP grammar — full round-trip doc shape (Phase 2 end)", function()
+
+  -- NOT-SPEC: library
+  it("produces a complete, structured doc for a realistic SDP", function()
+    local text = lines_to_sdp({
+      "v=0",
+      "o=alice 2890844526 2890844527 IN IP4 192.0.2.1",
+      "s=Realistic Session",
+      "i=A test session",
+      "u=http://example.com/info",
+      "e=alice@example.com",
+      "p=+1 555 1234",
+      "c=IN IP4 224.2.17.12/127",
+      "b=AS:5000",
+      "t=2873397496 2873404696",
+      "r=604800 3600 0 90000",
+      "z=2882844526 -1h 2898848070 0",
+      "a=tool:libsdp 1.0",
+      "m=video 49170 RTP/AVP 96",
+      "i=Camera 1",
+      "c=IN IP4 239.1.1.1/127",
+      "b=AS:4500000",
+      "a=rtpmap:96 H264/90000",
+      "a=sendonly",
+      "m=audio 49172 RTP/AVP 0",
+      "a=rtpmap:0 PCMU/8000",
+    })
+    local doc = g:match(text)
+    assert.is_table(doc)
+
+    -- Top level
+    assert.equal("0", doc.version)
+    assert.equal("alice",       doc.origin.username)
+    assert.equal("2890844526",  doc.origin.sess_id)
+
+    -- Session
+    assert.equal("Realistic Session", doc.session.name)
+    assert.equal("A test session",    doc.session.info)
+    assert.equal("http://example.com/info", doc.session.uri)
+    assert.equal(1, #doc.session.emails)
+    assert.equal(1, #doc.session.phones)
+    assert.equal("224.2.17.12/127", doc.session.connection.address)
+    assert.equal(1, #doc.session.bandwidths)
+    assert.equal(5000, doc.session.bandwidths[1].value)
+    assert.equal(1, #doc.session.time_descriptions)
+    assert.equal(2873397496, doc.session.time_descriptions[1].start)
+    assert.equal(1, #doc.session.time_descriptions[1].repeats)
+    assert.equal(2, #doc.session.time_zones)
+    assert.equal(1, #doc.session.attributes)
+
+    -- Media
+    assert.equal(2, #doc.media)
+    assert.equal("video", doc.media[1].media)
+    assert.equal(49170,   doc.media[1].port)
+    assert.equal("Camera 1", doc.media[1].info)
+    assert.equal("239.1.1.1/127", doc.media[1].connection.address)
+    assert.equal(2, #doc.media[1].attributes)
+    assert.equal("audio", doc.media[2].media)
+    assert.equal(1, #doc.media[2].attributes)
   end)
 
 end)

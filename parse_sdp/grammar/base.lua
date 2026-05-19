@@ -62,7 +62,7 @@ local rules = {
       * Cg(Ct(V"time_description" ^ 1), "time_descriptions")
       * (Cg(V"z_line", "time_zones")) ^ -1
       * V"k_line" ^ -1                       -- RFC 8866 §5.12: parsed and discarded
-      * V"a_line" ^ 0,                       -- captured in 2.E
+      * Cg(Ct(V"a_line" ^ 0), "attributes"),
 
   -- One time description per RFC 8866 §5.9–§5.10: a t= line followed by
   -- zero or more r= lines. The Ct collects start + stop (from t=) and
@@ -75,15 +75,16 @@ local rules = {
   -- Media section (RFC 8866 §5):
   --   m= (required), i=?, c=?, b=*, k=?, a=*
   -- Wrapped in Ct so each media block lands as one table in doc.media[i].
-  -- m= itself is captured in 2.E; today it's a placeholder match (no fields
-  -- yet from m=, but i/c/b are captured).
+  -- The m= fields (media, port, port_count, proto, fmts) land *flat* at the
+  -- media-block top level rather than nested under "m" — to match the 1.0
+  -- doc shape and avoid one level of indirection.
   media_section = Ct(
         V"m_line"
       * (Cg(V"i_line", "info")) ^ -1
       * (Cg(V"c_line", "connection")) ^ -1
       * Cg(Ct(V"b_line" ^ 0), "bandwidths")
       * V"k_line" ^ -1
-      * V"a_line" ^ 0                        -- captured in 2.E
+      * Cg(Ct(V"a_line" ^ 0), "attributes")
     ),
 
   -- ── Captured line rules (Phase 2.A–2.D) ──────────────────────────────
@@ -100,11 +101,14 @@ local rules = {
   t_line = P("t=") * V"t_value" * V"line_end",
   r_line = P("r=") * V"r_value" * V"line_end",
   z_line = P("z=") * V"z_value" * V"line_end",
+  a_line = P("a=") * V"a_value" * V"line_end",
+  m_line = P("m=") * V"m_value" * V"line_end",
 
-  -- ── Placeholder line rules (to be captured in 2.E) ───────────────────
+  -- ── Placeholder line rule ────────────────────────────────────────────
+  -- k= is obsolete per RFC 8866 §5.12 and never produces a capture —
+  -- the grammar parses the line so the parser advances past it and the
+  -- value is discarded.
   k_line = P("k=") * V"value" * V"line_end",
-  a_line = P("a=") * V"value" * V"line_end",
-  m_line = P("m=") * V"value" * V"line_end",
 
   -- ── Captured value rules ─────────────────────────────────────────────
   -- v= MUST be "0" (RFC 8866 §5.1; only value defined for SDP version).
@@ -193,6 +197,39 @@ local rules = {
   -- the z= offset use.
   typed_time        = C(R("09") ^ 1 * S("dhms") ^ -1),
   signed_typed_time = C((P("-") + P("+")) ^ -1 * R("09") ^ 1 * S("dhms") ^ -1),
+
+  -- m= media-field (RFC 8866 §5.14):
+  --   m=<media> <port>[/<port_count>] <proto> <fmt>+
+  -- The captures are FLAT (not wrapped in a sub-Ct) so they land at the
+  -- top level of the media_section Ct alongside info / connection / etc.
+  -- media: RFC 8866 §5.14 defines audio/video/text/application/message;
+  --   parser accepts any token (registry strictness deferred per PLAN.md
+  --   Known Deferred Items).
+  -- proto: any token (covers "RTP/AVP", "RTP/SAVP", "udp", etc.).
+  -- port_count: present iff "/" follows the port; captured as number.
+  -- fmts: array of payload-type or format-name tokens.
+  m_value =
+        Cg(V"token",            "media")  * SP
+      * Cg(V"digits" / tonumber, "port")
+      * (P("/") * Cg(V"digits" / tonumber, "port_count")) ^ -1
+      * SP
+      * Cg(V"token",            "proto")  * SP
+      * Cg(Ct(V"token" * (SP * V"token") ^ 0), "fmts"),
+
+  -- a= attribute (RFC 8866 §5.13):
+  --   a=<attribute>            -- flag form, no colon
+  --   a=<attribute>:<value>    -- key-value form
+  -- At the base tier, every a= line lands as {name, value?} with the
+  -- value kept as a single string. Per-attribute decomposition (rtpmap,
+  -- fmtp, ts-refclk, source-filter, group, mid, ssrc, etc.) is Phase 4.
+  -- This means today's doc.media[i].attributes is the 1.0 shape — a
+  -- list of {name, value=string} pairs.
+  a_value = Ct(
+        Cg(V"attr_name", "name")
+      * (P(":") * Cg(V"attr_value", "value")) ^ -1
+    ),
+  attr_name  = C((1 - P(":") - SP - V"line_end") ^ 1),
+  attr_value = C((1 - V"line_end") ^ 1),
 
   -- ── Shared sub-leaves ───────────────────────────────────────────────
   -- token: RFC 8866 ABNF "non-ws-string" — one or more VCHAR (any visible
