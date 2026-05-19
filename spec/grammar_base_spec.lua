@@ -250,6 +250,138 @@ describe("base SDP grammar — captured doc shape (Phase 2.A)", function()
 
 end)
 
+describe("base SDP grammar — origin and connection captures (Phase 2.B)", function()
+
+  -- NOT-SPEC: library
+  it("captures doc.origin as a table with six fields (RFC 8866 §5.2)", function()
+    local doc = g:match(minimal())
+    assert.is_table(doc.origin)
+    assert.equal("-",            doc.origin.username)
+    assert.equal("1234567890",   doc.origin.sess_id)
+    assert.equal("1",            doc.origin.sess_version)
+    assert.equal("IN",           doc.origin.net_type)
+    assert.equal("IP4",          doc.origin.addr_type)
+    assert.equal("192.0.2.1",    doc.origin.unicast_address)
+  end)
+
+  -- NOT-SPEC: library
+  it("captures IPv6 origin (addr_type = IP6)", function()
+    local text = lines_to_sdp({
+      "v=0",
+      "o=alice 2890844526 2890844527 IN IP6 2001:db8::1",
+      "s=X",
+      "t=0 0",
+    })
+    local doc = g:match(text)
+    assert.equal("alice",       doc.origin.username)
+    assert.equal("2890844526",  doc.origin.sess_id)
+    assert.equal("2890844527",  doc.origin.sess_version)
+    assert.equal("IP6",         doc.origin.addr_type)
+    assert.equal("2001:db8::1", doc.origin.unicast_address)
+  end)
+
+  -- NOT-SPEC: library
+  it("keeps sess_id and sess_version as strings (preserves NTP-range precision)", function()
+    -- 18446744073709551615 is 2^64 - 1, exceeds Lua 5.5 safe-integer range
+    -- on a 32-bit lua_Integer build.
+    local text = lines_to_sdp({
+      "v=0",
+      "o=u 18446744073709551615 18446744073709551614 IN IP4 192.0.2.1",
+      "s=X",
+      "t=0 0",
+    })
+    local doc = g:match(text)
+    assert.is_string(doc.origin.sess_id)
+    assert.equal("18446744073709551615", doc.origin.sess_id)
+    assert.equal("18446744073709551614", doc.origin.sess_version)
+  end)
+
+  -- NOT-SPEC: library
+  it("rejects o= with non-IN net_type (RFC 8866 §5.2 defines only IN)", function()
+    local text = lines_to_sdp({
+      "v=0", "o=- 1 1 XX IP4 192.0.2.1", "s=X", "t=0 0",
+    })
+    assert.is_nil(g:match(text))
+  end)
+
+  -- NOT-SPEC: library
+  it("rejects o= with unknown addr_type", function()
+    local text = lines_to_sdp({
+      "v=0", "o=- 1 1 IN IP9 192.0.2.1", "s=X", "t=0 0",
+    })
+    assert.is_nil(g:match(text))
+  end)
+
+  -- NOT-SPEC: library
+  it("rejects o= with non-digit sess_id", function()
+    local text = lines_to_sdp({
+      "v=0", "o=- abc 1 IN IP4 192.0.2.1", "s=X", "t=0 0",
+    })
+    assert.is_nil(g:match(text))
+  end)
+
+  -- NOT-SPEC: library
+  it("rejects o= with too few tokens", function()
+    local text = lines_to_sdp({
+      "v=0", "o=- 1 1 IN IP4", "s=X", "t=0 0",
+    })
+    assert.is_nil(g:match(text))
+  end)
+
+  -- NOT-SPEC: library
+  it("session.connection is nil when c= is absent", function()
+    local doc = g:match(minimal())
+    assert.is_nil(doc.session.connection)
+  end)
+
+  -- NOT-SPEC: library
+  it("captures session.connection when c= is present (RFC 8866 §5.7)", function()
+    local text = lines_to_sdp({
+      "v=0", "o=- 1 1 IN IP4 192.0.2.1", "s=X",
+      "c=IN IP4 224.0.0.1/127",
+      "t=0 0",
+    })
+    local doc = g:match(text)
+    assert.is_table(doc.session.connection)
+    assert.equal("IN",              doc.session.connection.net_type)
+    assert.equal("IP4",             doc.session.connection.addr_type)
+    -- /TTL suffix stays as part of the address string at this tier; Phase 3
+    -- adds the decomposition + value-form validation.
+    assert.equal("224.0.0.1/127",   doc.session.connection.address)
+  end)
+
+  -- NOT-SPEC: library
+  it("captures IPv6 connection address", function()
+    local text = lines_to_sdp({
+      "v=0", "o=- 1 1 IN IP6 2001:db8::1", "s=X",
+      "c=IN IP6 ff00::1",
+      "t=0 0",
+    })
+    local doc = g:match(text)
+    assert.equal("IP6",     doc.session.connection.addr_type)
+    assert.equal("ff00::1", doc.session.connection.address)
+  end)
+
+  -- NOT-SPEC: library
+  it("rejects c= with wrong net_type", function()
+    local text = lines_to_sdp({
+      "v=0", "o=- 1 1 IN IP4 192.0.2.1", "s=X",
+      "c=ZZ IP4 224.0.0.1/127", "t=0 0",
+    })
+    assert.is_nil(g:match(text))
+  end)
+
+  -- NOT-SPEC: library
+  it("rejects c= missing the address token", function()
+    local text = lines_to_sdp({
+      "v=0", "o=- 1 1 IN IP4 192.0.2.1", "s=X",
+      "c=IN IP4", "t=0 0",
+    })
+    assert.is_nil(g:match(text))
+  end)
+
+end)
+
 describe("base SDP grammar — module exports", function()
 
   -- NOT-SPEC: library

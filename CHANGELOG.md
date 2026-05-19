@@ -46,6 +46,15 @@ parser remains the shipping artifact on `main`.
   parse-and-discard per §5.12. Remaining session and media fields
   are still matched-and-discarded placeholders, to be Cg-wrapped in
   2.B–2.E. 7 new tests in `spec/grammar_base_spec.lua`.
+- **Phase 2.B:** origin (o) + connection (c) leaves with structured
+  captures. `doc.origin` is a six-field table (username, sess_id,
+  sess_version, net_type, addr_type, unicast_address); sess_id and
+  sess_version stay as strings to preserve NTP-range precision.
+  `doc.session.connection` (optional) is a three-field table
+  (net_type, addr_type, address); the address string includes any
+  `/TTL` or `/<numaddrs>` suffix verbatim (decomposition + value-form
+  validation lives in Phase 3 with the findings context). nettype
+  tightened to literal "IN", addrtype to "IP4"|"IP6". 12 new tests.
 
 ### Changed
 

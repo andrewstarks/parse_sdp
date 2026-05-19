@@ -27,19 +27,23 @@
 --   media_section   = m= [i=] [c=] b=* [k=] a=*
 
 local lpeg = require("lpeg")
-local P, V, C, Cg, Ct = lpeg.P, lpeg.V, lpeg.C, lpeg.Cg, lpeg.Ct
+local P, R, V, C, Cg, Ct = lpeg.P, lpeg.R, lpeg.V, lpeg.C, lpeg.Cg, lpeg.Ct
+
+-- Primary patterns shared across rules. These are plain LPeg values rather
+-- than V-rules because they are not candidates for per-tier override.
+local SP = P(" ")
 
 local rules = {
   -- Start rule.
   "document",
 
   -- Top-level captured document. Fields are added one Cg per phase; today
-  -- captured: version, session.name (Phase 2.A). The remaining session and
-  -- media fields are placeholder pattern matches until their corresponding
-  -- sub-commit (2.B–2.E) wraps the leaf in a Cg.
+  -- captured: version, origin, session.name, session.connection (Phase 2.A–2.B).
+  -- The remaining session and media fields are placeholder pattern matches
+  -- until their corresponding sub-commit (2.C–2.E) wraps the leaf in a Cg.
   document = Ct(
         Cg(V"v_line", "version")
-      * V"o_line"
+      * Cg(V"o_line", "origin")
       * Cg(Ct(V"session_inner"), "session")
       * V"media_section" ^ 0
     ) * -1,
@@ -53,7 +57,7 @@ local rules = {
       * V"u_line" ^ -1
       * V"e_line" ^ 0
       * V"p_line" ^ 0
-      * V"c_line" ^ -1
+      * (Cg(V"c_line", "connection")) ^ -1
       * V"b_line" ^ 0
       * (V"t_line" * V"r_line" ^ 0) ^ 1
       * V"z_line" ^ -1
@@ -70,20 +74,20 @@ local rules = {
       * V"k_line" ^ -1
       * V"a_line" ^ 0,
 
-  -- ── Captured line rules (Phase 2.A) ──────────────────────────────────
-  -- Each produces ONE capture.
+  -- ── Captured line rules (Phase 2.A–2.B) ──────────────────────────────
+  -- Each produces ONE capture (string or table).
   v_line = P("v=") * V"v_value" * V"line_end",
+  o_line = P("o=") * V"o_value" * V"line_end",
   s_line = P("s=") * V"s_value" * V"line_end",
+  c_line = P("c=") * V"c_value" * V"line_end",
 
-  -- ── Placeholder line rules (to be captured in 2.B–2.E) ───────────────
+  -- ── Placeholder line rules (to be captured in 2.C–2.E) ───────────────
   -- These match-and-discard via V"value". Document shape is enforced;
   -- structural sub-fields aren't surfaced into the doc table yet.
-  o_line = P("o=") * V"value" * V"line_end",
   i_line = P("i=") * V"value" * V"line_end",
   u_line = P("u=") * V"value" * V"line_end",
   e_line = P("e=") * V"value" * V"line_end",
   p_line = P("p=") * V"value" * V"line_end",
-  c_line = P("c=") * V"value" * V"line_end",
   b_line = P("b=") * V"value" * V"line_end",
   t_line = P("t=") * V"value" * V"line_end",
   r_line = P("r=") * V"value" * V"line_end",
@@ -95,11 +99,49 @@ local rules = {
   -- ── Captured value rules ─────────────────────────────────────────────
   -- v= MUST be "0" (RFC 8866 §5.1; only value defined for SDP version).
   v_value = C(P("0")),
+
   -- s= is a non-empty text string. RFC 8866 §5.3 RECOMMENDS "s= " or "s=-"
   -- when there's no meaningful name; the parser accepts either.
   s_value = C((1 - V"line_end") ^ 1),
 
-  -- ── Shared leaves ───────────────────────────────────────────────────
+  -- o= origin (RFC 8866 §5.2):
+  --   o=<username> <sess-id> <sess-version> <nettype> <addrtype> <unicast-address>
+  -- Per ABNF, username is non-ws-string; sess-id and sess-version are
+  -- decimal integers (kept as strings to preserve NTP-range precision);
+  -- nettype is "IN"; addrtype is "IP4" or "IP6"; unicast-address is a
+  -- non-ws-string (its internal address-form check belongs to Phase 3).
+  o_value = Ct(
+        Cg(V"token",    "username")       * SP
+      * Cg(V"digits",   "sess_id")        * SP
+      * Cg(V"digits",   "sess_version")   * SP
+      * Cg(V"nettype",  "net_type")       * SP
+      * Cg(V"addrtype", "addr_type")      * SP
+      * Cg(V"token",    "unicast_address")
+    ),
+
+  -- c= connection (RFC 8866 §5.7):
+  --   c=<nettype> <addrtype> <connection-address>
+  -- connection-address is kept whole (including any /TTL or /<numaddrs>
+  -- suffix per §5.7). Internal address-form validation lives in Phase 3
+  -- where the findings context can attribute it to the right spec clause.
+  c_value = Ct(
+        Cg(V"nettype",  "net_type")  * SP
+      * Cg(V"addrtype", "addr_type") * SP
+      * Cg(V"token",    "address")
+    ),
+
+  -- ── Shared sub-leaves ───────────────────────────────────────────────
+  -- token: RFC 8866 ABNF "non-ws-string" — one or more VCHAR (any visible
+  --   non-whitespace char up to the next SP or CRLF).
+  -- digits: one or more ASCII digits, captured as string.
+  -- nettype: RFC 8866 §5.2 / §5.7 defines only "IN".
+  -- addrtype: RFC 8866 §5.2 / §5.7 defines "IP4" and "IP6".
+  token    = C((1 - SP - V"line_end") ^ 1),
+  digits   = C(R("09") ^ 1),
+  nettype  = C(P("IN")),
+  addrtype = C(P("IP4") + P("IP6")),
+
+  -- ── Bottom leaves ───────────────────────────────────────────────────
   -- value: any non-empty run of bytes up to (but not including) the next
   --   line terminator. Used by lines whose values aren't yet decomposed.
   -- line_end: CRLF per RFC 8866 §9 ABNF. Phase 5 will add a soft-syntactic
