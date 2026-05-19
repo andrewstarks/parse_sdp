@@ -20,6 +20,8 @@ local errors = require("parse_sdp.errors")
 local P, V, C, Cc, Cg, Cb, Ct, Cmt, Carg =
   lpeg.P, lpeg.V, lpeg.C, lpeg.Cc, lpeg.Cg, lpeg.Cb, lpeg.Ct, lpeg.Cmt, lpeg.Carg
 
+local patterns = require("parse_sdp.grammar.patterns")
+
 local SP = P(" ")
 
 -- ── Semantic checks ────────────────────────────────────────────────────────
@@ -116,13 +118,11 @@ local function gcd(a, b)
 end
 
 -- §7.2: width / height "Permitted values are integers between 1 and 32767
--- inclusive." Same form for both — single builder, two keys.
-local function make_pixel_dim_validator()
-  return function(v)
-    if not v:match("^%d+$") then return false end
-    local n = tonumber(v)
-    return n ~= nil and n >= 1 and n <= 32767
-  end
+-- inclusive." `patterns.pos_int` guarantees POS-DIGIT *DIGIT form (no
+-- leading zero, ≥ 1); the bound check adds the upper limit.
+local function validate_pixel_dim(v)
+  if not patterns.pos_int:match(v) then return false end
+  return tonumber(v) <= 32767
 end
 
 -- §7.2: "non-integer rates shall be signaled as a ratio of two integer
@@ -130,34 +130,26 @@ end
 -- utilizing the numerically smallest numerator value possible." Lowest-terms
 -- requirement → gcd(n, d) == 1. Integer form: positive non-zero decimal.
 local function validate_exactframerate(v)
-  -- N/D fraction form.
-  local n_str, d_str = v:match("^(%d+)/(%d+)$")
+  local n_str, d_str = patterns.fraction:match(v)
   if n_str then
-    local n, d = tonumber(n_str), tonumber(d_str)
-    if not n or not d or n == 0 or d == 0 then return false end
-    return gcd(n, d) == 1
+    return gcd(tonumber(n_str), tonumber(d_str)) == 1
   end
-  -- Integer form.
-  if not v:match("^%d+$") then return false end
-  local n = tonumber(v)
-  return n ~= nil and n > 0
+  -- Integer form (no fraction).
+  return patterns.pos_int:match(v) ~= nil
 end
 
 -- §7.3 + §6.4: positive integer no greater than the Extended UDP Size Limit
 -- of 8960 octets.
 local function validate_maxudp(v)
-  if not v:match("^%d+$") then return false end
-  local n = tonumber(v)
-  return n ~= nil and n >= 1 and n <= 8960
+  if not patterns.pos_int:match(v) then return false end
+  return tonumber(v) <= 8960
 end
 
 -- §7.3: W:H, both positive integers, in lowest terms.
 local function validate_par(v)
-  local w_str, h_str = v:match("^(%d+):(%d+)$")
+  local w_str, h_str = patterns.ratio:match(v)
   if not w_str then return false end
-  local w, h = tonumber(w_str), tonumber(h_str)
-  if not w or not h or w == 0 or h == 0 then return false end
-  return gcd(w, h) == 1
+  return gcd(tonumber(w_str), tonumber(h_str)) == 1
 end
 
 -- §7.2: SSN identifies the spec revision; defined values are ST2110-20:2017
@@ -167,8 +159,8 @@ local function validate_ssn(v)
 end
 
 local RAW_VIDEO_VALUE_VALIDATORS = {
-  width          = make_pixel_dim_validator(),
-  height         = make_pixel_dim_validator(),
+  width          = validate_pixel_dim,
+  height         = validate_pixel_dim,
   exactframerate = validate_exactframerate,
   MAXUDP         = validate_maxudp,
   PAR            = validate_par,
@@ -473,14 +465,11 @@ local JXSV_ENUM_KEYS = {
 -- ST2110-22:2019 or ST2110-22:2022 per ST 2110-22:2022 §7.2 Table 2.
 
 local function validate_positive_integer(v)
-  if not v:match("^%d+$") then return false end
-  local n = tonumber(v)
-  return n ~= nil and n > 0
+  return patterns.pos_int:match(v) ~= nil
 end
 
 local function validate_integer(v)
-  if not v:match("^%-?%d+$") then return false end
-  return tonumber(v) ~= nil
+  return patterns.int:match(v) ~= nil
 end
 
 local function validate_ssn22(v)
@@ -488,8 +477,8 @@ local function validate_ssn22(v)
 end
 
 local JXSV_VALUE_VALIDATORS = {
-  width          = make_pixel_dim_validator(),
-  height         = make_pixel_dim_validator(),
+  width          = validate_pixel_dim,
+  height         = validate_pixel_dim,
   exactframerate = validate_exactframerate,
   depth          = validate_positive_integer,
   MAXUDP         = validate_maxudp,

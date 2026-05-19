@@ -29,6 +29,7 @@
 local lpeg      = require("lpeg")
 local errors    = require("parse_sdp.errors")
 local addresses = require("parse_sdp.grammar.addresses")
+local patterns  = require("parse_sdp.grammar.patterns")
 local P, R, S, V, C, Cc, Cg, Cb, Ct, Cmt, Carg =
   lpeg.P, lpeg.R, lpeg.S, lpeg.V, lpeg.C, lpeg.Cc, lpeg.Cg, lpeg.Cb, lpeg.Ct, lpeg.Cmt, lpeg.Carg
 
@@ -979,13 +980,17 @@ local rules = {
   -- non-zero-real      = zero-based-integer "." *DIGIT POS-DIGIT
   --                       ; "0" or POS-DIGIT *DIGIT, then ".", then *DIGIT,
   --                       ; ending on POS-DIGIT (so "1.0" is invalid)
-  -- The *DIGIT POS-DIGIT tail uses `(DIGIT * #DIGIT)^0 * POS-DIGIT` because
-  -- LPeg's `^0` is greedy and non-backtracking: a plain `DIGIT^0 * POS-DIGIT`
-  -- would let the repetition consume the final digit and starve POS-DIGIT.
-  -- The `#DIGIT` look-ahead only consumes a digit when another follows.
+  -- The integer pieces (rfc8866_pos_int, rfc8866_zero_based_int) are
+  -- aliases to the shared `parse_sdp.grammar.patterns` module so st2110 /
+  -- ipmx value-validators and the base grammar draw from one source.
+  -- The *DIGIT POS-DIGIT tail in nonzero_real uses
+  -- `(DIGIT * #DIGIT)^0 * POS-DIGIT` because LPeg's `^0` is greedy and
+  -- non-backtracking: a plain `DIGIT^0 * POS-DIGIT` would let the
+  -- repetition consume the final digit and starve POS-DIGIT. The
+  -- `#DIGIT` look-ahead only consumes a digit when another follows.
   -- _num variants apply tonumber via the / operator at the leaf.
-  rfc8866_pos_int          = R("19") * R("09") ^ 0,
-  rfc8866_zero_based_int   = P("0") + V"rfc8866_pos_int",
+  rfc8866_pos_int          = patterns.pos_int_raw,
+  rfc8866_zero_based_int   = patterns.zero_based_int_raw,
   rfc8866_nonzero_real     =
         V"rfc8866_zero_based_int" * P(".")
       * (R("09") * #R("09")) ^ 0 * R("19"),

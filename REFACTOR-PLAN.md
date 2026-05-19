@@ -750,6 +750,22 @@ separate follow-up.
   respective encoding sections. Test-only commit, no logic
   change. Deferred to a later session; pending work tracked in
   this bullet so a future agent picks it up.
+- **6.J (complete)** — shared numeric-value-form patterns +
+  validator sweep. New `parse_sdp/grammar/patterns.lua` module
+  exposes `pos_int_raw` / `zero_based_int_raw` / `int_raw`
+  (composable) and `pos_int` / `int` / `fraction` / `ratio`
+  (anchored for whole-string validation). `base.lua`'s
+  `rfc8866_pos_int` and `rfc8866_zero_based_int` V-rules alias
+  the shared primitives; `st2110.lua`'s 6 value validators
+  (`validate_pixel_dim`, `validate_exactframerate`,
+  `validate_maxudp`, `validate_par`, `validate_positive_integer`,
+  `validate_integer`) rewritten to use them. Dropped the
+  `make_pixel_dim_validator` factory (no-arg, returned identical
+  closure on every call). Net wins: 4 fewer closure allocations
+  at load, 7 inline `:match` strings collapsed, stricter
+  leading-zero rejection (POS-DIGIT *DIGIT instead of `%d+`). 21
+  new tests in `spec/grammar_patterns_spec.lua`; suite 1567 green.
+  Phase 7 (IPMX) inherits the shared patterns by `require`.
 
 **Phase 7 — IPMX grammar via `extend(st2110_rules, ...)`.**
 Same pattern, IPMX-specific from TR-10 markdowns. Re-verify each citation

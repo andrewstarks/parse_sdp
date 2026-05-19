@@ -1476,6 +1476,78 @@ Audit ref: REFACTOR-PLAN.md §5 Phase 6.G.
 
 Audit ref: REFACTOR-PLAN.md §5 Phase 6.H.
 
+- **Phase 6.J:** shared numeric-value-form patterns + validator sweep.
+
+  Triggered by a code review on `make_pixel_dim_validator()` —
+  a no-arg factory returning an identical closure on every call,
+  called 4 times (`width` + `height` for raw + jxsv). Vestigial
+  premature flexibility from someone who expected to parameterize
+  bounds later and never did. Also surfaced a wider pattern: 7
+  inline `:match("^%d+$")` and `:match("^(%d+)/(%d+)$")` checks
+  scattered across the value validators in `st2110.lua`, each
+  doing essentially the same "is this a clean POS-DIGIT *DIGIT?"
+  job.
+
+  **New shared module `parse_sdp/grammar/patterns.lua`** exposes
+  reusable LPeg primitives for RFC 8866 §9 numeric ABNF:
+  - `pos_int_raw` — POS-DIGIT *DIGIT, unanchored (composable)
+  - `zero_based_int_raw` — "0" / POS-DIGIT *DIGIT
+  - `int_raw` — optional "-" prefix + zero-based-integer
+  - `pos_int` / `int` — anchored standalone forms (`* P(-1)`)
+    for whole-string value validation
+  - `fraction` — anchored `<pos-int>/<pos-int>`, captures (n, d)
+  - `ratio` — anchored `<pos-int>:<pos-int>`, captures (w, h)
+
+  **Why LPeg patterns over `math.tointeger(v)`?** Lua's converter
+  is too permissive for spec-conformant POS-DIGIT *DIGIT: it
+  accepts hex literals (`0x780`), scientific notation (`1e3`),
+  leading/trailing whitespace, and signs (`+100`). The LPeg
+  patterns enforce the exact ABNF shape (no leading zero, no
+  prefix, decimal only). See the new
+  `spec/grammar_patterns_spec.lua` for the full accept/reject
+  matrix per pattern.
+
+  **base.lua aliasing.** The `rfc8866_pos_int` and
+  `rfc8866_zero_based_int` V-rules in `parse_sdp/grammar/base.lua`
+  now alias `patterns.pos_int_raw` and `patterns.zero_based_int_raw`
+  — one source of truth for the integer ABNF across the codebase.
+  The deeper `rfc8866_nonzero_real` and friends continue to
+  reference these V-rules via `V"…"` for grammar composition.
+
+  **st2110.lua sweep.** All 6 affected validators rewritten to use
+  the shared patterns; the `make_pixel_dim_validator` factory
+  removed (replaced by a plain `validate_pixel_dim`). Wins:
+
+  - 4 fewer closure allocations at module load.
+  - 7 inline pattern strings collapsed to named constants with
+    one source of truth.
+  - Stricter than the old `^%d+$`: rejects leading zeros (e.g.
+    "0010" was previously accepted as a width).
+  - Stricter than the old `^(%d+)/(%d+)$` for exactframerate:
+    "0/0" and similar zero-denominator forms now rejected at the
+    pattern layer (the `n == 0 or d == 0` check was redundant
+    once `pos_int_raw` excluded zero-starting strings).
+
+  Validators sharing the same patterns: `validate_pixel_dim`
+  (width / height ≤ 32767), `validate_maxudp` (1..8960),
+  `validate_positive_integer` (jxsv), `validate_integer` (jxsv
+  CMAX — any signed integer), `validate_exactframerate` (fraction
+  or integer fallback), `validate_par` (W:H ratio).
+
+  21 new tests in `spec/grammar_patterns_spec.lua`: per-pattern
+  accept / reject matrix covering the LPeg behavior, the `vs.
+  tonumber` trap cases (hex / scientific / signs / whitespace),
+  the leading-zero rejection, and the captures returned by
+  `fraction` and `ratio`. Suite: 1567 green (up from 1546).
+
+  Forward-compat: Phase 7 IPMX validators get these patterns for
+  free via `require("parse_sdp.grammar.patterns")`. The shared
+  module also gives any future TR-10 / IPMX rule-table the same
+  hoisted `rfc8866_pos_int_raw` etc. that base.lua now references.
+
+Audit ref: REFACTOR-PLAN.md §5 Phase 6.J; RFC 8866 §9 ABNF
+verified for the integer / zero-based-integer grammar.
+
 The grammar tier now matches 1.0 parity on every well-grounded
 per-encoding required-attribute and cross-attribute SHALL. Three
 out-of-parity flags carry forward for separate audit follow-up:
