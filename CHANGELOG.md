@@ -503,6 +503,50 @@ Audit ref: REFACTOR-PLAN.md §5 Phase 6.B; audits/SPEC_INVENTORY.md
 rows ST 2110-20 §7.1 #78–79, ST 2110-22 §5.2 #7 / §6.2 #12, ST 2110-31
 §6.1 #31/#36, ST 2110-40 §5.3 #13.
 
+- **Phase 6.C.A:** `fmtp_params_branch` rewritten off the `%` accumulator
+  to dissolve the long-standing trailing-semicolon flake.
+
+  Old shape:
+
+  ```lua
+  Cg(
+      Ct(P(""))
+        * V"fmtp_entry"
+        * (V"fmtp_sep" * V"fmtp_entry") ^ 0
+        * V"fmtp_trailing_sep_record" ^ -1,
+      "params")
+  ```
+
+  The `%` operator inside `fmtp_entry` folded each entry into the seed
+  table. Under specific busted-harness conditions LPeg's `accumulatorcap`
+  raised "no previous value for accumulator capture" at ~45% rate —
+  present back through the Phase 5 commit and investigation-resistant
+  to standalone-Lua repro (full record in
+  [audits/FMTP_ACCUMULATOR_FLAKE.md](audits/FMTP_ACCUMULATOR_FLAKE.md)).
+
+  New shape:
+
+  ```lua
+  Cg(
+      Ct(V"fmtp_entry" * (V"fmtp_sep" * V"fmtp_entry") ^ 0)
+        / fmtp_entries_to_params,
+      "params")
+    * V"fmtp_trailing_sep_record" ^ -1
+  ```
+
+  Each entry now captures a `{key, value}` or `{flag, true}` sub-table,
+  and a function capture flattens the list into the
+  `{key = value, flag = true, …}` shape the doc contract exposes. The
+  optional trailing-`;` Cmt moves OUTSIDE the params Cg, so a `^-1`
+  Cmt+Carg tail can no longer interact with the params capture's
+  internal state.
+
+  30 fresh `busted spec/` runs and 30 fresh
+  `--filter "trailing semicolon"` runs went 30/30 green; previous rate
+  ~45%. Doc-shape contract preserved (params is still a flat key/value
+  table); existing tests unchanged. `set_pair` / `set_flag` Lua locals
+  removed; replaced by a single `fmtp_entries_to_params` transform.
+
 ### Changed
 
 - The inline `errors` table in `parse_sdp.lua` now delegates to

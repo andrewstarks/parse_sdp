@@ -36,11 +36,20 @@ local P, R, S, V, C, Cc, Cg, Ct, Cmt, Carg =
 -- than V-rules because they are not candidates for per-tier override.
 local SP = P(" ")
 
--- Accumulator fold functions for the fmtp kv-list (a_fmtp rule). The `%`
--- operator wants a function f(acc, c1[, c2, ...]) — set_pair folds 2
--- captures (key, value), set_flag folds 1 (bare flag).
-local function set_pair(t, k, v) t[k] = v;   return t end
-local function set_flag(t, k)    t[k] = true; return t end
+-- Transform a captured list of fmtp entries — each a `{key, value}` or
+-- `{flag, true}` sub-table — into the flat `{key = value, flag = true, …}`
+-- params table the doc-shape contract exposes. Replaces an earlier
+-- `Ct(P("")) * (entry % fold)` chain that triggered LPeg 1.1.0's
+-- "no previous value for accumulator capture" intermittently under
+-- specific harness conditions (see audits/FMTP_ACCUMULATOR_FLAKE.md).
+local function fmtp_entries_to_params(entries)
+  local t = {}
+  for i = 1, #entries do
+    local e = entries[i]
+    t[e[1]] = e[2]
+  end
+  return t
+end
 
 -- ── Semantic checks ─────────────────────────────────────────────────────────
 -- Cross-section invariants the grammar alone can't express. Each check
@@ -587,27 +596,30 @@ local rules = {
       * Cg(V"payload_type", "payload_type") * SP
       * ( V"fmtp_params_branch" + V"fmtp_raw_branch" ),
 
-  -- Kv-list branch: only commits if the remaining bytes fully decompose into
-  -- a non-empty sequence of k=v / flag entries (separated by `;` and optional
-  -- horizontal whitespace) all the way to line_end. The `% set_pair` and
-  -- `% set_flag` accumulators fold each entry into the seed table from
-  -- `Ct(P(""))`. The whole accumulator is wrapped in an anonymous Cg so its
-  -- intermediate values don't leak into the surrounding `a_value` Ct
-  -- (LPeg idiom: idioms.md §18).
-  -- The kv-list inside Cg("params") uses the `%` accumulator (idioms.md §18)
-  -- to fold each entry into a seed table. The optional trailing-';' detector
-  -- is a Cmt that consumes the `;` itself AND the following whitespace, and
-  -- records the finding side-effectfully — placing it inside the `^-1` means
-  -- it only fires when a trailing ';' is actually present in the input
-  -- (handles both `foo=bar;` and `foo=bar; ` / `foo=bar;\t` forms).
+  -- Kv-list branch: only commits if the remaining bytes fully decompose
+  -- into a non-empty sequence of k=v / flag entries (separated by `;` and
+  -- optional horizontal whitespace) all the way to line_end. Each entry
+  -- captures a 2-element sub-table — `{key, value}` for kv pairs and
+  -- `{flag, true}` for bare flags. The outer `Ct(...) / fmtp_entries_to_params`
+  -- transforms that list of pairs into the `{key = value, flag = true, …}`
+  -- shape the doc contract exposes.
+  --
+  -- An earlier shape used LPeg 1.1.0's `%` accumulator
+  -- (`Ct(P("")) * (entry % set_pair) * …`). That tripped LPeg's "no previous
+  -- value for accumulator capture" intermittently under specific test-harness
+  -- conditions (audits/FMTP_ACCUMULATOR_FLAKE.md); the function-capture form
+  -- avoids the runtime path that error fires from.
+  --
+  -- The optional trailing-';' detector lives OUTSIDE the params Cg now so a
+  -- `^-1` Cmt(...; Carg(1), …) tail can't interact with the params capture's
+  -- internal state.
   fmtp_params_branch =
         Cg(
-            Ct(P(""))
-              * V"fmtp_entry"
-              * (V"fmtp_sep" * V"fmtp_entry") ^ 0
-              * V"fmtp_trailing_sep_record" ^ -1,
+            Ct(V"fmtp_entry" * (V"fmtp_sep" * V"fmtp_entry") ^ 0)
+              / fmtp_entries_to_params,
             "params"
           )
+      * V"fmtp_trailing_sep_record" ^ -1
       * #V"line_end_chars",
 
   fmtp_trailing_sep_record =
@@ -619,13 +631,13 @@ local rules = {
             return pos
           end),
 
-  fmtp_entry = V"fmtp_kv_pair" + V"fmtp_flag",
-  fmtp_kv_pair =
-      ( C(V"fmtp_key_chars" ^ 1) * V"fmtp_hws" ^ 0
-        * P("=") * V"fmtp_hws" ^ 0
-        * C(V"fmtp_val_chars" ^ 0)
-      ) % set_pair,
-  fmtp_flag    = C(V"fmtp_key_chars" ^ 1) % set_flag,
+  fmtp_entry   = V"fmtp_kv_pair" + V"fmtp_flag",
+  fmtp_kv_pair = Ct(
+      C(V"fmtp_key_chars" ^ 1) * V"fmtp_hws" ^ 0
+      * P("=") * V"fmtp_hws" ^ 0
+      * C(V"fmtp_val_chars" ^ 0)
+    ),
+  fmtp_flag    = Ct(C(V"fmtp_key_chars" ^ 1) * Cc(true)),
   fmtp_sep     = P(";") * V"fmtp_hws" ^ 0,
   fmtp_hws     = S(" \t"),
   -- key/flag char set: identifier-like — ALPHA / DIGIT / '_' / '-'. This

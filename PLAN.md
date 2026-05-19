@@ -51,15 +51,16 @@ design live in [REFACTOR-PLAN.md](REFACTOR-PLAN.md). The 1.0 parser at
 `parse_sdp.lua` remains the shipping artifact on `main`; the new grammar
 under `parse_sdp/grammar/` is internal-only until Phase 9 cutover.
 
-**Known flake (pre-existing):** the `sdp.a.fmtp.trailing-semicolon` tests
-in `spec/grammar_base_spec.lua` intermittently fail (~45%) with *"no
-previous value for accumulator capture"* under busted. Present on the
-Phase 5 commit pre-6.A — not introduced by the composition refactor or
-the 6.B narrowings. Full investigation, repro, and what was ruled out
-in [audits/FMTP_ACCUMULATOR_FLAKE.md](audits/FMTP_ACCUMULATOR_FLAKE.md).
-Status: **not yet ready to send upstream** — the bug only reproduces
-under busted+full-spec-file conditions, with no standalone-Lua repro,
-so the case that it's an LPeg bug specifically is not established.
+**Former flake (resolved in 6.C.A):** the `sdp.a.fmtp.trailing-semicolon`
+tests in `spec/grammar_base_spec.lua` previously flaked at ~45% with
+*"no previous value for accumulator capture"*. The 6.C.A rewrite
+replaced `fmtp_params_branch`'s `Ct(P("")) * (entry % set_pair) * …`
+chain with `Ct(entry * (sep * entry)^0) / fmtp_entries_to_params`,
+sidestepping LPeg's accumulator-capture runtime path. 30 fresh full-suite
+runs and 30 fresh `--filter "trailing semicolon"` runs went 30/30 green
+afterward. The root cause was not definitively isolated; see
+[audits/FMTP_ACCUMULATOR_FLAKE.md](audits/FMTP_ACCUMULATOR_FLAKE.md) for
+the investigation record.
 
 The test suite is split along a single axis — *what kind of code each
 test exercises*. Refactor-era files (`grammar_base_spec`,

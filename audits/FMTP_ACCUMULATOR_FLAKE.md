@@ -1,9 +1,22 @@
 # Intermittent "no previous value for accumulator capture"
 
-> **Status: not yet ready for upstream report.** The bug reproduces only
-> under one specific harness condition and I have not been able to isolate
-> the trigger. Until there is a minimal repro that does not require the
-> full test harness, this should not be sent to LPeg upstream as a bug.
+> **Status: resolved in our codebase by avoiding the `%` operator on this
+> rule shape (commit reworking `fmtp_params_branch`). Not yet sent
+> upstream.** The cause was never definitively isolated to LPeg vs.
+> busted vs. our grammar usage; the fix below sidesteps it regardless.
+>
+> Replacing the `Ct(P("")) * (entry % set_pair)` chain with
+> `Ct(entry * (sep * entry)^0) / fmtp_entries_to_params` — i.e. capture
+> the entries as a list of 2-element sub-tables and transform that list
+> to a flat params table in a function capture — eliminated the
+> intermittent failure. 30 fresh `busted spec/` runs went 30/30 green;
+> 30 fresh runs of the previously flaky `--filter "trailing semicolon"`
+> against the full `grammar_base_spec.lua` also went 30/30. The previous
+> rate was ~45%.
+>
+> The original investigation below is preserved so a future minimal
+> repro effort has a starting point. It still wouldn't be a clean
+> upstream LPeg report without a busted-free repro.
 
 ## Environment
 
