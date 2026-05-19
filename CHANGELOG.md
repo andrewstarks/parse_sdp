@@ -292,6 +292,42 @@ of Phase 2; was 964 at start of Phase 3).
 - 12 new tests in `spec/grammar_base_spec.lua` covering the
   decomposed shapes and the ABNF-strict rejections (e.g.
   source-filter with no source addresses). Suite: 1084 green.
+- **Phase 4.E (Phase 4 close):** typed decomposition for the four
+  RTCP-adjacent attributes.
+  - `a=extmap` (RFC 8285 §8):
+    `{name, id, direction?, uri, attributes?}`. id is the 1*5
+    DIGIT local identifier (captured as a number); direction ∈
+    {sendonly, recvonly, sendrecv, inactive} when the `/dir`
+    suffix is present; attributes is the optional
+    extensionattributes byte-string (free-form, opaque at base
+    tier — extension-specific narrowing belongs to per-extension
+    code if needed).
+  - `a=rtcp-fb` (RFC 4585 §4.2):
+    `{name, payload_type, feedback_type, parameters?}`.
+    payload_type is type-polymorphic — the literal string `"*"`
+    for the wildcard form, or a number for numeric fmt
+    (consumers dispatch on type). The full ack/nack-specific
+    param subgrammar is **not** enforced at base tier; the
+    remainder of the line (after the feedback-type token) is
+    captured verbatim as `parameters` for downstream
+    interpretation.
+  - `a=rtcp` (RFC 3605 §2.1):
+    `{name, port, net_type?, addr_type?, address?}`. port is a
+    decimal POS-DIGIT *DIGIT (RFC 8866 §9 integer). The optional
+    triple mirrors the `c=` line.
+  - `a=rtcp-mux` (RFC 5761 §5.1.3): pure flag attribute,
+    `{name="rtcp-mux"}`. The grammar uses `#line_end` after the
+    bare name so `a=rtcp-mux:foo` fails the match (was silently
+    accepted as a generic carrier through Phase 4.D).
+- `known_attr_lookahead` extended with extmap, rtcp-fb, rtcp-mux,
+  rtcp — ordered so `rtcp-mux` and `rtcp-fb` bind before bare
+  `rtcp`. New leaves: `extmap_direction`, `rtcp_fb_pt`.
+- 10 new tests in `spec/grammar_base_spec.lua`. Suite: 1094 green.
+
+Phase 4 close: every compound attribute named in
+REFACTOR-PLAN.md §5 is decomposed. The base SDP grammar produces
+a rich, fully-typed doc table — no consumer needs to re-parse a
+captured string. 64 new tests across Phase 4 (1030 → 1094).
 
 ### Changed
 

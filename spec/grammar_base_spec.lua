@@ -1962,6 +1962,146 @@ describe("base SDP grammar — Phase 4.D msid (RFC 8830 §2)", function()
 
 end)
 
+describe("base SDP grammar — Phase 4.E extmap (RFC 8285 §8)", function()
+
+  -- SPEC: RFC 8285 §8 — mapentry SP extensionname
+  it("decomposes extmap with id + URI (no direction, no attributes)", function()
+    local doc = base.match(minimal(nil, {
+      { "m=audio 49172 RTP/AVP 0",
+        "a=extmap:1 urn:ietf:params:rtp-hdrext:ssrc-audio-level" },
+    }))
+    local a = doc.media[1].attributes[1]
+    assert.equal("extmap", a.name)
+    assert.equal(1,        a.id)
+    assert.is_number(a.id)
+    assert.is_nil(a.direction)
+    assert.equal("urn:ietf:params:rtp-hdrext:ssrc-audio-level", a.uri)
+    assert.is_nil(a.attributes)
+  end)
+
+  -- SPEC: RFC 8285 §8 — mapentry = "extmap:" 1*5DIGIT ["/" direction]
+  it("decomposes extmap with id/direction prefix", function()
+    local doc = base.match(minimal(nil, {
+      { "m=audio 49172 RTP/AVP 0",
+        "a=extmap:5/sendonly urn:example:hdrext" },
+    }))
+    local a = doc.media[1].attributes[1]
+    assert.equal(5,          a.id)
+    assert.equal("sendonly", a.direction)
+    assert.equal("urn:example:hdrext", a.uri)
+  end)
+
+  -- SPEC: RFC 8285 §8 — [SP extensionattributes]
+  it("decomposes extmap with trailing extensionattributes (byte-string)", function()
+    local doc = base.match(minimal(nil, {
+      { "m=audio 49172 RTP/AVP 0",
+        "a=extmap:3/recvonly urn:example:hdrext attr1=val1 attr2" },
+    }))
+    local a = doc.media[1].attributes[1]
+    assert.equal(3,          a.id)
+    assert.equal("recvonly", a.direction)
+    assert.equal("urn:example:hdrext", a.uri)
+    assert.equal("attr1=val1 attr2", a.attributes)
+  end)
+
+end)
+
+describe("base SDP grammar — Phase 4.E rtcp-fb (RFC 4585 §4.2)", function()
+
+  -- SPEC: RFC 4585 §4.2 — payload type can be "*" wildcard
+  it("decomposes rtcp-fb with wildcard PT", function()
+    local doc = base.match(minimal(nil, {
+      { "m=video 49170 RTP/AVP 0",
+        "a=rtcp-fb:* ccm fir" },
+    }))
+    local a = doc.media[1].attributes[1]
+    assert.equal("rtcp-fb", a.name)
+    assert.equal("*",       a.payload_type)
+    assert.equal("ccm",     a.feedback_type)
+    assert.equal("fir",     a.parameters)
+  end)
+
+  -- SPEC: RFC 4585 §4.2 — numeric payload type
+  it("decomposes rtcp-fb with numeric PT and no parameters", function()
+    local doc = base.match(minimal(nil, {
+      { "m=video 49170 RTP/AVP 96", "a=rtpmap:96 H264/90000",
+        "a=rtcp-fb:96 nack" },
+    }))
+    local a = doc.media[1].attributes[2]
+    assert.equal(96,     a.payload_type)
+    assert.is_number(a.payload_type)
+    assert.equal("nack", a.feedback_type)
+    assert.is_nil(a.parameters)
+  end)
+
+  -- SPEC: RFC 4585 §4.2 — rtcp-fb-nack-param "pli"/"sli"/etc.
+  it("decomposes rtcp-fb with parameters", function()
+    local doc = base.match(minimal(nil, {
+      { "m=video 49170 RTP/AVP 96", "a=rtpmap:96 H264/90000",
+        "a=rtcp-fb:96 nack pli" },
+    }))
+    local a = doc.media[1].attributes[2]
+    assert.equal(96, a.payload_type)
+    assert.equal("nack", a.feedback_type)
+    assert.equal("pli",  a.parameters)
+  end)
+
+end)
+
+describe("base SDP grammar — Phase 4.E rtcp (RFC 3605 §2.1)", function()
+
+  -- SPEC: RFC 3605 §2.1 — minimal form: just port
+  it("decomposes rtcp with port only", function()
+    local doc = base.match(minimal(nil, {
+      { "m=audio 49172 RTP/AVP 0",
+        "a=rtcp:53020" },
+    }))
+    local a = doc.media[1].attributes[1]
+    assert.equal("rtcp", a.name)
+    assert.equal(53020,  a.port)
+    assert.is_number(a.port)
+    assert.is_nil(a.net_type)
+    assert.is_nil(a.addr_type)
+    assert.is_nil(a.address)
+  end)
+
+  -- SPEC: RFC 3605 §2.1 — port + nettype SP addrtype SP connection-address
+  it("decomposes rtcp with port + nettype/addrtype/address", function()
+    local doc = base.match(minimal(nil, {
+      { "m=audio 49172 RTP/AVP 0",
+        "a=rtcp:53020 IN IP4 192.0.2.1" },
+    }))
+    local a = doc.media[1].attributes[1]
+    assert.equal(53020,     a.port)
+    assert.equal("IN",      a.net_type)
+    assert.equal("IP4",     a.addr_type)
+    assert.equal("192.0.2.1", a.address)
+  end)
+
+end)
+
+describe("base SDP grammar — Phase 4.E rtcp-mux (RFC 5761 §5.1.3)", function()
+
+  -- SPEC: RFC 5761 §5.1.3 — flag attribute, no value
+  it("captures rtcp-mux as a flag attribute (no value)", function()
+    local doc = base.match(minimal(nil, {
+      { "m=audio 49172 RTP/AVP 0", "a=rtcp-mux" },
+    }))
+    local a = doc.media[1].attributes[1]
+    assert.equal("rtcp-mux", a.name)
+    assert.is_nil(a.value)
+  end)
+
+  -- SPEC: RFC 5761 §5.1.3 — rtcp-mux is flag-only (no ':<value>' form)
+  it("rejects rtcp-mux with a value (RFC 5761 §5.1.3 is flag-only)", function()
+    local doc = base.match(minimal(nil, {
+      { "m=audio 49172 RTP/AVP 0", "a=rtcp-mux:foo" },
+    }))
+    assert.is_nil(doc)
+  end)
+
+end)
+
 describe("base SDP grammar — module exports", function()
 
   -- NOT-SPEC: library

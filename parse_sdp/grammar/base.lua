@@ -418,6 +418,10 @@ local rules = {
       + V"a_ssrc"
       + V"a_msid"
       + V"a_mid"
+      + V"a_extmap"
+      + V"a_rtcp_fb"
+      + V"a_rtcp_mux"
+      + V"a_rtcp"
       + V"a_ptime"
       + V"a_maxptime"
       + V"a_framerate"
@@ -429,14 +433,15 @@ local rules = {
   -- end-of-line. Used as a negative lookahead in a_generic so malformed
   -- instances of a known attribute fail the match instead of degrading
   -- to the generic shape. Order: longer-prefix patterns before their
-  -- shorter siblings (matters for "ssrc-group" vs "ssrc", and the
-  -- "maxptime" vs "ptime" group).
+  -- shorter siblings (matters for "ssrc-group" vs "ssrc", "rtcp-mux" /
+  -- "rtcp-fb" vs "rtcp", and the "maxptime" vs "ptime" group).
   known_attr_lookahead =
         (P("source-filter") + P("ssrc-group") + P("ts-refclk")
        + P("maxptime")      + P("framerate")  + P("mediaclk")
+       + P("rtcp-mux")      + P("rtcp-fb")    + P("extmap")
        + P("rtpmap")        + P("quality")    + P("group")
        + P("ptime")         + P("msid")       + P("ssrc")
-       + P("fmtp")          + P("mid"))
+       + P("rtcp")          + P("fmtp")       + P("mid"))
       * (P(":") + V"line_end"),
 
   -- rtpmap (RFC 8866 §6.6):
@@ -583,6 +588,68 @@ local rules = {
       * Cg(Cc("msid"), "name")
       * Cg(V"non_ws_token", "msid_id")
       * (SP * Cg(V"non_ws_token", "appdata")) ^ -1,
+
+  -- extmap (RFC 8285 §8):
+  --   extmap-value        = mapentry SP extensionname [SP extensionattributes]
+  --   mapentry            = "extmap:" 1*5DIGIT ["/" direction]
+  --   extensionname       = URI
+  --   extensionattributes = byte-string
+  --   direction           = "sendonly" / "recvonly" / "sendrecv" / "inactive"
+  -- The 1*5 DIGIT range bounds the local-id to 1..99999; we capture it as a
+  -- number. URI form validation is out of scope at the base tier.
+  a_extmap = P("extmap:")
+      * Cg(Cc("extmap"), "name")
+      * Cg(C(R("09") ^ 1) / tonumber, "id")
+      * (P("/") * Cg(V"extmap_direction", "direction")) ^ -1
+      * SP
+      * Cg(V"non_ws_token", "uri")
+      * (SP * Cg(C((1 - V"line_end") ^ 1), "attributes")) ^ -1,
+
+  extmap_direction = C(P("sendonly") + P("recvonly")
+                     + P("sendrecv") + P("inactive")),
+
+  -- rtcp-fb (RFC 4585 §4.2):
+  --   rtcp-fb-syntax = "a=rtcp-fb:" rtcp-fb-pt SP rtcp-fb-val CRLF
+  --   rtcp-fb-pt     = "*" / fmt        ; fmt is a payload-type integer
+  --   rtcp-fb-val    = "ack" rtcp-fb-ack-param
+  --                  / "nack" rtcp-fb-nack-param
+  --                  / "trr-int" SP 1*DIGIT
+  --                  / rtcp-fb-id rtcp-fb-param
+  -- We decompose into {payload_type, feedback_type, parameters?}. The
+  -- payload_type is a number for numeric fmt, or the string "*" for the
+  -- wildcard form (consumers dispatch on type). The full feedback subgrammar
+  -- (ack/nack-specific param sets) is not enforced at the base tier — that
+  -- belongs to a tiered narrowing if needed; here we capture parameters
+  -- verbatim as the rest of the line.
+  a_rtcp_fb = P("rtcp-fb:")
+      * Cg(Cc("rtcp-fb"), "name")
+      * Cg(V"rtcp_fb_pt", "payload_type") * SP
+      * Cg(V"rfc8866_token", "feedback_type")
+      * (SP * Cg(C((1 - V"line_end") ^ 1), "parameters")) ^ -1,
+
+  -- Either the string "*" (captured as a literal) OR a numeric payload-type
+  -- (captured as a number via tonumber). Type-polymorphic by design.
+  rtcp_fb_pt = C(P("*")) + V"payload_type",
+
+  -- rtcp (RFC 3605 §2.1):
+  --   rtcp-attribute = "a=rtcp:" port  [nettype space addrtype space
+  --                                     connection-address] CRLF
+  -- port is a decimal integer (RFC 8866 §9 integer = POS-DIGIT *DIGIT).
+  -- The optional nettype/addrtype/connection-address triple mirrors the
+  -- c= line form; we capture each as a separate field for symmetry.
+  a_rtcp = P("rtcp:")
+      * Cg(Cc("rtcp"), "name")
+      * Cg(V"rfc8866_pos_int_num", "port")
+      * (SP * Cg(V"nettype",  "net_type")
+            * SP * Cg(V"addrtype", "addr_type")
+            * SP * Cg(V"token",    "address")) ^ -1,
+
+  -- rtcp-mux (RFC 5761 §5.1.3): flag attribute, no value. The `#line_end`
+  -- guard makes the rule reject "a=rtcp-mux:<anything>" — known_attr_lookahead
+  -- then blocks a_generic from claiming it.
+  a_rtcp_mux = P("rtcp-mux")
+      * Cg(Cc("rtcp-mux"), "name")
+      * #V"line_end",
 
   -- ts-refclk (RFC 7273 §4.8):
   --   clksrc = ntp / ptp / gps / gal / glonass / local / private / clksrc-ext
