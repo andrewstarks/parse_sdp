@@ -245,6 +245,62 @@ local function check_mid_uniqueness(doc, ctx)
   return true
 end
 
+-- Phase 6.E.A — RFC 5888 §6 group-requires-mid-on-all-media + §9.2
+-- group-references-port-zero-mid. Both checks iterate session-level
+-- a=group attributes; sharing one function keeps the doc walk in one
+-- place. The checks are independent (either may fire alone, both may
+-- fire together) and report distinct error IDs.
+--
+-- §6:  "All of the 'm' lines of a session description that uses 'group'
+--       MUST be identified with a 'mid' attribute whether they appear in
+--       the group line(s) or not." Conditional on any a=group present.
+-- §9.2: "'a=group' lines MUST NOT contain identification-tags that
+--        correspond to 'm' lines with the port set to zero."
+local function check_group_attribute_invariants(doc, ctx)
+  local groups = {}
+  for _, attr in ipairs(doc.session.attributes) do
+    if attr.name == "group" then groups[#groups + 1] = attr end
+  end
+  if #groups == 0 then return true end
+
+  -- §6: every m= must have an a=mid (semantics-independent).
+  for i, m in ipairs(doc.media) do
+    local has_mid = false
+    for _, attr in ipairs(m.attributes) do
+      if attr.name == "mid" then has_mid = true; break end
+    end
+    if not has_mid then
+      local cont = errors.record(ctx,
+        "sdp.a.group.requires-mid-on-all-media",
+        { field_path = string.format("media[%d]", i - 1) })
+      if not cont then return false end
+    end
+  end
+
+  -- §9.2: collect mid → media-port, then reject any group tag whose mid
+  -- resolves to a port-0 media block.
+  local mid_to_port = {}
+  for _, m in ipairs(doc.media) do
+    for _, attr in ipairs(m.attributes) do
+      if attr.name == "mid" then mid_to_port[attr.tag] = m.port end
+    end
+  end
+  for gi, g in ipairs(groups) do
+    for _, tag in ipairs(g.tags) do
+      if mid_to_port[tag] == 0 then
+        local cont = errors.record(ctx,
+          "sdp.a.group.references-port-zero-mid",
+          { field_path = string.format(
+              "session.attributes[group][%d]", gi - 1),
+            context    = { tag = tag } })
+        if not cont then return false end
+      end
+    end
+  end
+
+  return true
+end
+
 -- Soft-syntactic finding recorders (Phase 5). Each runs in a Cmt callback
 -- inside the grammar, records the finding via errors.record, and either
 -- continues the match (return pos) or fails it (return false) per ctx.policy
@@ -276,6 +332,7 @@ local base_semantic_checks = {
   check_connection_addresses,
   check_dynamic_pt_rtpmap,
   check_mid_uniqueness,
+  check_group_attribute_invariants,
   check_tsrefclk_traceability,
 }
 

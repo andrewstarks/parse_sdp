@@ -2435,3 +2435,141 @@ describe("base SDP grammar — module exports", function()
   end)
 
 end)
+
+-- ── Phase 6.E.A — RFC 5888 group attribute cross-stream invariants ──────
+--
+-- §6:  "All of the 'm' lines of a session description that uses 'group'
+--       MUST be identified with a 'mid' attribute whether they appear in
+--       the group line(s) or not."
+-- §9.2: "'a=group' lines MUST NOT contain identification-tags that
+--        correspond to 'm' lines with the port set to zero."
+
+describe("base SDP grammar — group attribute invariants (Phase 6.E.A)",
+    function()
+
+  local function finding_for(ctx, id)
+    for _, f in ipairs(ctx.findings or {}) do
+      if f.id == id then return f end
+    end
+    return nil
+  end
+
+  describe("§6 — every m= requires a=mid when a=group is present", function()
+
+    it("accepts when all media blocks carry a=mid", function()
+      assert.is_truthy(base.match(lines_to_sdp({
+        "v=0", "o=- 1 1 IN IP4 127.0.0.1", "s=X", "t=0 0",
+        "a=group:DUP a b",
+        "m=video 30000 RTP/AVP 96",
+        "a=rtpmap:96 H264/90000",
+        "a=mid:a",
+        "m=video 30002 RTP/AVP 96",
+        "a=rtpmap:96 H264/90000",
+        "a=mid:b",
+      })))
+    end)
+
+    it("does not fire when no a=group is present (mid is optional)", function()
+      -- Without a=group, the §6 conditional doesn't trigger; missing
+      -- a=mid is fine.
+      assert.is_truthy(base.match(lines_to_sdp({
+        "v=0", "o=- 1 1 IN IP4 127.0.0.1", "s=X", "t=0 0",
+        "m=video 30000 RTP/AVP 96",
+        "a=rtpmap:96 H264/90000",
+      })))
+    end)
+
+    it("rejects when a=group present but a media block lacks a=mid", function()
+      local doc, ctx = base.match(lines_to_sdp({
+        "v=0", "o=- 1 1 IN IP4 127.0.0.1", "s=X", "t=0 0",
+        "a=group:DUP a b",
+        "m=video 30000 RTP/AVP 96",
+        "a=rtpmap:96 H264/90000",
+        "a=mid:a",
+        "m=video 30002 RTP/AVP 96",
+        "a=rtpmap:96 H264/90000",
+        -- no a=mid here
+      }))
+      assert.is_nil(doc)
+      local f = finding_for(ctx, "sdp.a.group.requires-mid-on-all-media")
+      assert.is_not_nil(f)
+      assert.equal("media[1]", f.field_path)
+      assert.equal("RFC 5888 §6", f.spec_ref)
+    end)
+
+    it("fires regardless of whether m= block appears in any group tag", function()
+      -- §6 wording is explicit: "whether they appear in the group line(s)
+      -- or not." So a third m= block not referenced by the group must
+      -- still carry a=mid.
+      local doc, ctx = base.match(lines_to_sdp({
+        "v=0", "o=- 1 1 IN IP4 127.0.0.1", "s=X", "t=0 0",
+        "a=group:DUP a b",
+        "m=video 30000 RTP/AVP 96",
+        "a=rtpmap:96 H264/90000",
+        "a=mid:a",
+        "m=video 30002 RTP/AVP 96",
+        "a=rtpmap:96 H264/90000",
+        "a=mid:b",
+        "m=audio 30004 RTP/AVP 96",
+        "a=rtpmap:96 L24/48000/2",
+        -- no a=mid on the third block
+      }))
+      assert.is_nil(doc)
+      local f = finding_for(ctx, "sdp.a.group.requires-mid-on-all-media")
+      assert.is_not_nil(f)
+      assert.equal("media[2]", f.field_path)
+    end)
+  end)
+
+  describe("§9.2 — a=group must not reference port-0 m= lines", function()
+
+    it("accepts when all referenced mids have non-zero ports", function()
+      assert.is_truthy(base.match(lines_to_sdp({
+        "v=0", "o=- 1 1 IN IP4 127.0.0.1", "s=X", "t=0 0",
+        "a=group:DUP a b",
+        "m=video 30000 RTP/AVP 96",
+        "a=rtpmap:96 H264/90000",
+        "a=mid:a",
+        "m=video 30002 RTP/AVP 96",
+        "a=rtpmap:96 H264/90000",
+        "a=mid:b",
+      })))
+    end)
+
+    it("rejects a group tag whose mid resolves to a port=0 m=", function()
+      local doc, ctx = base.match(lines_to_sdp({
+        "v=0", "o=- 1 1 IN IP4 127.0.0.1", "s=X", "t=0 0",
+        "a=group:DUP a b",
+        "m=video 30000 RTP/AVP 96",
+        "a=rtpmap:96 H264/90000",
+        "a=mid:a",
+        "m=video 0 RTP/AVP 96",            -- refused / inactive
+        "a=rtpmap:96 H264/90000",
+        "a=mid:b",
+      }))
+      assert.is_nil(doc)
+      local f = finding_for(ctx, "sdp.a.group.references-port-zero-mid")
+      assert.is_not_nil(f)
+      assert.equal("RFC 5888 §9.2", f.spec_ref)
+    end)
+
+    it("does NOT fire on a port=0 m= line that no group references", function()
+      -- The §9.2 prohibition is conditional on the mid being tagged in
+      -- an a=group line. A port=0 block whose mid no group references
+      -- is fine.
+      assert.is_truthy(base.match(lines_to_sdp({
+        "v=0", "o=- 1 1 IN IP4 127.0.0.1", "s=X", "t=0 0",
+        "a=group:DUP a c",                 -- references a + c only
+        "m=video 30000 RTP/AVP 96",
+        "a=rtpmap:96 H264/90000",
+        "a=mid:a",
+        "m=video 0 RTP/AVP 96",            -- mid b not in any group
+        "a=rtpmap:96 H264/90000",
+        "a=mid:b",
+        "m=video 30004 RTP/AVP 96",
+        "a=rtpmap:96 H264/90000",
+        "a=mid:c",
+      })))
+    end)
+  end)
+end)

@@ -1171,6 +1171,40 @@ of-parity-flag: 1.0 parser's L16 / L24 channels-required limb.
 - 6.D.C: ST 2110-31 §6.1 AM824 rtpmap channels-required
 - 6.D.D: ST 2110-30 §6.2.1 L16/L24 packet-payload-fit
 
+- **Phase 6.E.A:** RFC 5888 group attribute cross-stream invariants
+  (base SDP tier).
+
+  2 new error ids:
+  - `sdp.a.group.requires-mid-on-all-media` — RFC 5888 §6: "All of the
+    'm' lines of a session description that uses 'group' MUST be
+    identified with a 'mid' attribute whether they appear in the
+    group line(s) or not." Conditional MUST triggered by presence of
+    any session-level `a=group`. Semantics-independent (LS, FID, DUP,
+    …). 1.0-parity port.
+  - `sdp.a.group.references-port-zero-mid` — RFC 5888 §9.2: "`a=group`
+    lines MUST NOT contain identification-tags that correspond to 'm'
+    lines with the port set to zero." Closes a 1.0 gap: 1.0 did not
+    enforce this; the new check makes the grammar tier strictly more
+    conformant.
+
+  New base-tier semantic check `check_group_attribute_invariants` in
+  [parse_sdp/grammar/base.lua](parse_sdp/grammar/base.lua) (added to
+  `base_semantic_checks` between `check_mid_uniqueness` and
+  `check_tsrefclk_traceability`). Single function does one doc walk
+  for both passes: collects all session-level `a=group` attributes,
+  then runs the §6 pass (every media block must have `a=mid`) and the
+  §9.2 pass (build `mid → port` map; reject group tags pointing at
+  port-0 mids).
+
+  7 new tests in `spec/grammar_base_spec.lua` covering §6 positive
+  (every block has mid), no-group skip, reject (missing mid),
+  third-block-not-referenced reject, and §9.2 positive (non-zero
+  ports), reject (port-0 referenced), and skip (port-0 not in any
+  group). Suite: 1527 green.
+
+Audit ref: REFACTOR-PLAN.md §5 Phase 6.E; RFC 5888 §6 + §9.2
+verified against primary text via WebFetch.
+
 The grammar tier now matches 1.0 parity on every well-grounded
 per-encoding required-attribute and cross-attribute SHALL. Three
 out-of-parity flags carry forward for separate audit follow-up:

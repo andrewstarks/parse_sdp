@@ -1032,6 +1032,40 @@ M.register("st2110-41.a.fmtp.maxudp-forbidden", {
 -- attribute, so a session-level mediaclk does not cover a media block
 -- that lacks its own.
 
+-- ── Phase 6.E.A — RFC 5888 group attribute cross-stream invariants ──────
+-- RFC 5888 §6: "All of the 'm' lines of a session description that uses
+-- 'group' MUST be identified with a 'mid' attribute whether they appear
+-- in the group line(s) or not." Conditional MUST: triggered by presence
+-- of any session-level a=group. Semantics-independent (LS, FID, DUP, …).
+M.register("sdp.a.group.requires-mid-on-all-media", {
+  kind             = "semantic",
+  default_severity = "error",
+  code             = "MISSING_FIELD",
+  message_template =
+    "media block lacks a=mid required when session contains a=group"
+    .. " (RFC 5888 §6 requires every m= line to carry an identification"
+    .. " tag whether or not it appears in a group line)",
+  spec_ref         = "RFC 5888 §6",
+  verified         = true,
+})
+
+-- RFC 5888 §9.2: "SIP entities refuse media streams by setting the port
+-- to zero in the corresponding 'm' line. 'a=group' lines MUST NOT
+-- contain identification-tags that correspond to 'm' lines with the
+-- port set to zero." A port-0 m= signals a refused / inactive stream;
+-- including its mid in a group is incoherent.
+M.register("sdp.a.group.references-port-zero-mid", {
+  kind             = "semantic",
+  default_severity = "error",
+  code             = "INVALID_VALUE",
+  message_template =
+    "a=group references a mid whose m= line has port=0"
+    .. " (port 0 marks the stream as refused / inactive; RFC 5888 §9.2"
+    .. " forbids grouping refused streams)",
+  spec_ref         = "RFC 5888 §9.2",
+  verified         = true,
+})
+
 -- ── Phase 6.D.D — ST 2110-30 audio packet-payload-fit ───────────────────
 -- ST 2110-30:2025 §6.2.1: "The Standard UDP Datagram Size Limit as
 -- defined in SMPTE ST 2110-10 shall be used." ST 2110-10:2022 §6.4 sets

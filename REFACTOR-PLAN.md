@@ -675,8 +675,20 @@ separate audit follow-up: 1.0 enforces MAXUDP-forbidden on AM824,
 channels-required on L16/L24, and packet-payload-fit on AM824 —
 none of these are grounded in -30 / -31 primary text.
 
-- **6.E (pending)** — cross-stream invariants (RFC 7104 group:DUP,
-  SMPTE ST 2022-7 redundancy coherence).
+- **6.E.A (complete)** — RFC 5888 group attribute cross-stream
+  invariants (base SDP tier). 2 new error ids
+  `sdp.a.group.requires-mid-on-all-media` (§6 parity port) and
+  `sdp.a.group.references-port-zero-mid` (§9.2, 1.0-gap close).
+  New base-tier semantic check `check_group_attribute_invariants`
+  does one doc walk for both passes. 7 new tests; suite 1527 green.
+- **6.E.B (pending)** — ST 2110-10 §8.5 group:DUP coherence (st2110
+  tier). Re-scoping in progress: see "DUP-leg coherence audit"
+  conversation note about whether the chain §8.5 → ST 2022-7 §6
+  (RTP-identity SHALL) sufficiently grounds the SDP-level "DUP
+  legs must match in media-type / rtpmap / PT / fmtp" derived
+  checks. If the chain holds, 6.E.B ports the full 1.0 cross-
+  stream check set (7 checks); if not, ports only the directly-
+  grounded address-coherence SHALL.
 
 **Phase 7 — IPMX grammar via `extend(st2110_rules, ...)`.**
 Same pattern, IPMX-specific from TR-10 markdowns. Re-verify each citation
