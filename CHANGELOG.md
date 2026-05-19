@@ -92,6 +92,15 @@ doc table for every primitive line type. 60 new tests in
 `sdp.parse()` — that's Phase 9 — so the 1.0 parser remains the
 shipping artifact for `require("parse_sdp")` callers.
 
+- **Phase 3.A:** findings-context plumbing. Document rule wrapped in a
+  `Cmt(Ct(body) * Carg(1), validate_doc)`; a new `base.match(text, opts)`
+  wrapper creates a ctx with `{findings, policy, fail_on_first}` and
+  threads it through. The Cmt callback is a no-op scaffold — actual
+  cross-section checks land in Phase 3.B and 3.C — but the wiring,
+  default-policy honoring, and ctx return semantics are in place. 7
+  new tests covering wrapper behavior; the 80 existing capture tests
+  now go through `base.match()` instead of `g:match()`.
+
 ### Changed
 
 - The inline `errors` table in `parse_sdp.lua` now delegates to

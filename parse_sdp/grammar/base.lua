@@ -26,12 +26,37 @@
 --                     (t= r=*)+ [z=] [k=] a=*
 --   media_section   = m= [i=] [c=] b=* [k=] a=*
 
-local lpeg = require("lpeg")
-local P, R, S, V, C, Cg, Ct = lpeg.P, lpeg.R, lpeg.S, lpeg.V, lpeg.C, lpeg.Cg, lpeg.Ct
+local lpeg   = require("lpeg")
+local errors = require("parse_sdp.errors")
+local P, R, S, V, C, Cg, Ct, Cmt, Carg =
+  lpeg.P, lpeg.R, lpeg.S, lpeg.V, lpeg.C, lpeg.Cg, lpeg.Ct, lpeg.Cmt, lpeg.Carg
 
 -- Primary patterns shared across rules. These are plain LPeg values rather
 -- than V-rules because they are not candidates for per-tier override.
 local SP = P(" ")
+
+-- Document-level Cmt callback. Phase 3 wires in semantic / cross-section
+-- checks; Phase 3.A ships an empty scaffold that threads Carg(1) into the
+-- callback so subsequent sub-commits can record findings via errors.record.
+--
+-- Signature follows the LPeg manual's Cmt contract:
+--   f(subject, position, capture1, ..., captureN) → control values
+-- The capture pattern here is `Ct(<body>) * Carg(1)`, so the captures are
+-- [doc, ctx]. Returning `pos, doc` keeps the doc capture and consumes the
+-- empty Carg, so callers see only `doc` as the match result.
+local function validate_doc(subject, position, doc, ctx)
+  -- Grammar-only consumers (g:match(text) with no extra arg) get ctx=nil.
+  -- A default ctx still records findings but the caller never sees them;
+  -- hard-fail-on-first remains the implicit policy.
+  if ctx == nil then
+    ctx = { findings = {}, fail_on_first = true }
+  end
+
+  -- Phase 3.B+ adds cross-section checks here. For 3.A the scaffold is a
+  -- no-op: doc passes through unchanged.
+
+  return position, doc
+end
 
 local rules = {
   -- Start rule.
@@ -41,11 +66,14 @@ local rules = {
   -- captured: version, origin, session.name, session.connection (Phase 2.A–2.B).
   -- The remaining session and media fields are placeholder pattern matches
   -- until their corresponding sub-commit (2.C–2.E) wraps the leaf in a Cg.
-  document = Ct(
-        Cg(V"v_line", "version")
-      * Cg(V"o_line", "origin")
-      * Cg(Ct(V"session_inner"), "session")
-      * Cg(Ct(V"media_section" ^ 0), "media")
+  document = Cmt(
+      Ct(
+            Cg(V"v_line", "version")
+          * Cg(V"o_line", "origin")
+          * Cg(Ct(V"session_inner"), "session")
+          * Cg(Ct(V"media_section" ^ 0), "media")
+        ) * Carg(1),
+      validate_doc
     ) * -1,
 
   -- Session-level inner section: s= through a=*. Phase 2.A captures only
@@ -254,5 +282,35 @@ local rules = {
 local M = {}
 M.rules   = rules
 M.grammar = lpeg.P(rules)
+
+--- Match `text` against the base SDP grammar.
+--
+-- @param text  string  The SDP text to parse.
+-- @param opts  table?  Optional. Fields:
+--                        - policy (table) — id → severity overrides for the
+--                          registry. Validated against the registry; unknown
+--                          ids raise (caller bug).
+--                        - fail_on_first (bool) — true (default) stops at
+--                          the first error-severity finding. false collects
+--                          everything; caller inspects ctx.findings.
+--                        - ctx (table) — supply your own context object,
+--                          ignoring policy / fail_on_first above. Lets a
+--                          caller share one findings buffer across multiple
+--                          matches.
+-- @return  doc | nil, ctx
+--   On success: the captured doc table, plus the ctx (so the caller can read
+--   ctx.findings for warnings even on success).
+--   On grammar match failure: nil, ctx (ctx.findings may carry the deepest
+--   recorded finding via the tracker).
+function M.match(text, opts)
+  opts = opts or {}
+  local ctx = opts.ctx or {
+    findings      = {},
+    policy        = opts.policy,
+    fail_on_first = opts.fail_on_first ~= false,
+  }
+  local doc = M.grammar:match(text, 1, ctx)
+  return doc, ctx
+end
 
 return M
