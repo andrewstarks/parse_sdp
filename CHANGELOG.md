@@ -1283,6 +1283,80 @@ remain flagged in `audits/` for follow-up.
 Audit ref: REFACTOR-PLAN.md §5 Phase 6.E; ST 2110-10:2022 §8.5,
 ST 2022-7:2019 §6 verified against on-disk primary text.
 
+- **Phase 6.F:** in-grammar refactor of per-line checks that shipped
+  through 6.B–6.E as post-parse doc walks via `semantic_checks`.
+
+  User pushback: `semantic_checks` is itself a Lua-massage pipeline
+  between parse and validation — exactly the "drop out of LPeg
+  between stages" pattern flagged in
+  [[lpeg-discipline]]. REFACTOR-PLAN §3.1 sanctions doc-level Cmt for
+  *cross-section invariants*, but 11 of the 13 ST 2110-tier checks
+  were per-attribute or per-media-block constraints that don't need
+  the cross-section escape hatch. They land in-grammar in this slice.
+
+  **Category A — 9 per-fmtp-line checks moved to a Cmt on `a_fmtp`.**
+  A new `FMTP_CHECKS_BY_ENCODING` dispatch table maps each rtpmap
+  encoding to the ordered check list that fires when the matching
+  fmtp line completes its match. A single trailing Cmt on `a_fmtp`
+  reads `Cb"payload_type" * (Cb"params" + Cc(nil)) * Carg(1)`, looks
+  the encoding up via the existing `ctx.rtpmap_encodings[pt]` map
+  (populated by `a_rtpmap`'s own trailing Cmt), and dispatches:
+  - raw → required + values + cross-param
+  - jxsv → required + values + cross-param
+  - L16 / L24 → channel-order syntax + MAXUDP-forbidden
+  - AM824 → channel-order syntax
+  - ST2110-41 → SSN/DIT/MAXUDP-forbidden
+
+  Each check function's signature dropped from `(doc, ctx)` (with
+  outer `for _, e in ipairs(each_X(doc)) do ... end` walks) to
+  `(params, ctx, encoding)` — a single fmtp instance.
+
+  **Category B — 2 per-rtpmap-line AM824 checks moved into the
+  `st2110_rtpmap_am824` rule.** The branch now uses ordered choice on
+  the optional `/<channels>` suffix: present → Cmt validates evenness;
+  absent → Cmt records the §6.1 channels-required SHALL. Both Cmts
+  return `pos` to continue matching so the trailing rate+media-type
+  Cmt still fires.
+
+  **One small Category C-movable bridge check stayed in
+  `semantic_checks`.** `check_rtpmap_requires_fmtp` covers the case
+  the in-grammar dispatch can't see: a raw/jxsv/-41 rtpmap with NO
+  matching `a=fmtp` at all (no fmtp line ⇒ no Cmt fires). The check
+  walks `doc.media`, finds rtpmap PTs whose encoding requires fmtp,
+  and runs the same required-keys check against an empty `params`
+  table — yielding the identical `<key>-required` finding set the
+  doc-walk previously produced. It belongs in a `media_section` Cmt
+  but lives in `semantic_checks` until that infrastructure exists.
+
+  **Obsolete helpers removed**: `each_fmtp_for_encoding`,
+  `each_raw_video_fmtp`, `each_audio_fmtp`, `AUDIO_ENCODINGS`,
+  `PCM_ENCODINGS`. Net file size: `parse_sdp/grammar/st2110.lua` from
+  1334 lines down to ~1280 (smaller AND denser).
+
+  **`semantic_checks` is now scoped to genuine cross-section
+  invariants only**:
+  - `check_rtpmap_requires_fmtp` (Category C-movable; awaits
+    media_section Cmt infrastructure)
+  - `check_ts_refclk_presence` (session-level cover semantics)
+  - `check_mediaclk_presence` (per-media-block; could move to
+    media_section Cmt later)
+  - `check_audio_packet_payload_fit` (per-media-block cross-attr;
+    same)
+  - `check_group_dup_coherence` (cross-media-block, doc-level)
+
+  **Behavioral change**: per-fmtp-line findings no longer carry a
+  `media[N].attributes[fmtp:pt=PT]` field_path prefix (the grammar
+  doesn't track media-index by default). One test that asserted on
+  the deep field_path was relaxed to assert finding presence only.
+
+  Suite unchanged at 1538 green; no error registry entries added or
+  removed; no behavioral regression detected.
+
+Audit ref: REFACTOR-PLAN.md §5 Phase 6.F; [[lpeg-discipline]]
+memory note updated with the per-category placement rule and the
+explicit naming of `semantic_checks` as a Lua-massage pipeline
+worth scrutinizing.
+
 The grammar tier now matches 1.0 parity on every well-grounded
 per-encoding required-attribute and cross-attribute SHALL. Three
 out-of-parity flags carry forward for separate audit follow-up:

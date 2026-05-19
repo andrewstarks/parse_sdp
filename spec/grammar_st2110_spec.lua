@@ -2335,8 +2335,12 @@ describe("ST 2110-31 — AM824 rtpmap channels-required (Phase 6.D.C)",
     assert.equal("ST 2110-31:2022 §6.1", f.spec_ref)
   end)
 
-  it("reports the offending media index on a multi-block SDP", function()
+  it("rejects when one block of two omits the channels field", function()
     -- First block has channels (passes); second omits them.
+    -- Phase 6.F: check is now in-grammar on st2110_rtpmap_am824, so
+    -- field_path no longer carries the media-index prefix (the grammar
+    -- doesn't track which media block it's inside). The byte position
+    -- in the captured Cmt is what locates the failure.
     local doc, ctx = st2110.match(table.concat({
       "v=0",
       "o=- 1 1 IN IP4 192.0.2.1",
@@ -2354,9 +2358,8 @@ describe("ST 2110-31 — AM824 rtpmap channels-required (Phase 6.D.C)",
       "a=mediaclk:sender",
     }, "\r\n") .. "\r\n")
     assert.is_nil(doc)
-    local f = finding_for(ctx, "st2110-31.a.rtpmap.am824-channels-required")
-    assert.is_not_nil(f)
-    assert.equal("media[1].attributes[rtpmap:pt=97]", f.field_path)
+    assert.is_not_nil(finding_for(ctx,
+      "st2110-31.a.rtpmap.am824-channels-required"))
   end)
 
   -- ── INTENTIONAL non-parity with 1.0 ──────────────────────────────────

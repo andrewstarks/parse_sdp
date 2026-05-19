@@ -701,6 +701,23 @@ flags from 6.D (audio MAXUDP / channels-required / packet-fit
 limbs for AM824 or L16/L24) remain flagged in `audits/` for
 separate follow-up.
 
+- **6.F (complete)** — in-grammar refactor. 11 of 13 ST 2110-tier
+  checks moved out of `semantic_checks` (the doc-walk
+  Lua-massage-between-stages slot) and into LPeg `Cmt` callbacks
+  on the actual grammar rules. Per-fmtp-line dispatch via a new
+  `FMTP_CHECKS_BY_ENCODING` table + a trailing Cmt on `a_fmtp`
+  (Category A: 9 checks). Per-rtpmap-line checks for AM824
+  channels-required + channels-even merged into the
+  `st2110_rtpmap_am824` branch (Category B: 2 checks). One small
+  bridge check `check_rtpmap_requires_fmtp` stays in
+  `semantic_checks` (covers the "rtpmap present, no fmtp at all"
+  case the in-grammar dispatch can't see) until `media_section`
+  Cmt infrastructure exists. Net code reduction: ~50 lines.
+  Tradeoff: per-fmtp findings lose the `media[N].attributes[...]`
+  field_path prefix (grammar doesn't track media-index). Suite
+  unchanged at 1538 green. Updates [[lpeg-discipline]] memory
+  with the per-category placement rule.
+
 **Phase 7 — IPMX grammar via `extend(st2110_rules, ...)`.**
 Same pattern, IPMX-specific from TR-10 markdowns. Re-verify each citation
 against the TR-10 part it claims (per CLAUDE.md Spec Verification Protocol).
