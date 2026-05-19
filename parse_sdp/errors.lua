@@ -963,4 +963,61 @@ M.register("st2110-31.a.rtpmap.am824-channels-must-be-even", {
   verified         = true,
 })
 
+-- ── ST 2110-41 Fast Metadata fmtp narrowings (Phase 6.C.J) ────────────────
+-- ST 2110-41:2024 §6 (Required Parameters) requires SSN, and §6 also
+-- defines DIT as optional with a constrained value form (uppercase hex
+-- tokens, comma-separated, no '0x' prefix, no whitespace). §5.4 forbids
+-- MAXUDP on ST 2110-41 streams ("The total length of the UDP packet …
+-- shall be less than or equal to the Standard UDP Size Limit").
+
+M.register("st2110-41.a.fmtp.SSN-required", {
+  kind             = "semantic",
+  default_severity = "error",
+  code             = "MISSING_FIELD",
+  message_template =
+    "fmtp for ST 2110-41 must include required 'SSN' parameter",
+  spec_ref         = "ST 2110-41:2024 §6",
+  verified         = true,
+})
+
+-- §6 defines only one SSN value: ST2110-41:2024.
+M.register("st2110-41.a.fmtp.SSN-invalid-value", {
+  kind             = "semantic",
+  default_severity = "error",
+  code             = "INVALID_VALUE",
+  message_template =
+    "fmtp 'SSN' must be ST2110-41:2024 (the only revision defined)",
+  spec_ref         = "ST 2110-41:2024 §6",
+  verified         = true,
+})
+
+-- §6: "The hexadecimal values shall not include the leading '0x' and any
+-- alphabetic characters shall be uppercase. Whitespace characters shall
+-- not appear in the comma-separated list of values."
+M.register("st2110-41.a.fmtp.DIT-invalid-value", {
+  kind             = "semantic",
+  default_severity = "error",
+  code             = "INVALID_VALUE",
+  message_template =
+    "fmtp 'DIT' must be comma-separated uppercase hex tokens"
+    .. " (no '0x' prefix, no whitespace)",
+  spec_ref         = "ST 2110-41:2024 §6",
+  verified         = true,
+})
+
+-- §5.4: "The total length of the UDP packet that encompasses each RTP
+-- Packet shall be less than or equal to the Standard UDP Size Limit
+-- defined in SMPTE ST 2110-10." MAXUDP signals operation beyond that
+-- limit (ST 2110-10:2022 §6.4), so its presence violates §5.4.
+M.register("st2110-41.a.fmtp.maxudp-forbidden", {
+  kind             = "semantic",
+  default_severity = "error",
+  code             = "INVALID_VALUE",
+  message_template =
+    "MAXUDP must not be signaled on ST 2110-41 streams"
+    .. " (§5.4 limits UDP size to the Standard UDP Size Limit)",
+  spec_ref         = "ST 2110-41:2024 §5.4",
+  verified         = true,
+})
+
 return M

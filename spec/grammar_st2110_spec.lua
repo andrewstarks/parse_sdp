@@ -1892,3 +1892,122 @@ describe("ST 2110-31 AM824 rtpmap channel parity [ST 2110-31:2022 §6.1]",
       "a=rtpmap:96 AM824/48000/3")))
   end)
 end)
+
+-- ───────────────────────────────────────────────────────────────────────────
+-- Phase 6.C.J — ST 2110-41 Fast Metadata fmtp.
+-- §6: SSN required (`ST2110-41:2024` only); DIT optional with comma-
+-- separated uppercase hex tokens. §5.4: MAXUDP forbidden.
+
+describe("ST 2110-41 fmtp [ST 2110-41:2024 §6 + §5.4]", function()
+
+  local function st2110_41_sdp(fmtp_line)
+    return table.concat({
+      "v=0",
+      "o=- 1 1 IN IP4 192.0.2.1",
+      "s=Test",
+      "t=0 0",
+      "a=ts-refclk:ptp=IEEE1588-2008:00-11-22-FF-FE-33-44-55:0",
+      "m=video 30000 RTP/AVP 96",
+      "c=IN IP4 239.0.0.1/64",
+      "a=rtpmap:96 ST2110-41/27000000",  -- Data-Item-defined rate per §5.3
+      fmtp_line,
+      "a=mediaclk:direct=0",
+    }, "\r\n") .. "\r\n"
+  end
+
+  -- ── SSN: required + value form [§6] ──────────────────────────────────
+  describe("SSN required [§6]", function()
+    it("accepts SSN=ST2110-41:2024", function()
+      assert.is_truthy(st2110.match(st2110_41_sdp(
+        "a=fmtp:96 SSN=ST2110-41:2024")))
+    end)
+    it("rejects fmtp without SSN", function()
+      local doc, ctx = st2110.match(st2110_41_sdp(
+        "a=fmtp:96 DIT=100,2000A1"))
+      assert.is_nil(doc)
+      assert.is_not_nil(finding_for(ctx,
+        "st2110-41.a.fmtp.SSN-required"))
+    end)
+    it("rejects SSN=ST2110-41:2019 (no such revision)", function()
+      local doc, ctx = st2110.match(st2110_41_sdp(
+        "a=fmtp:96 SSN=ST2110-41:2019"))
+      assert.is_nil(doc)
+      assert.is_not_nil(finding_for(ctx,
+        "st2110-41.a.fmtp.SSN-invalid-value"))
+    end)
+    it("rejects SSN=ST2110-20:2022 (wrong subtype)", function()
+      local doc, ctx = st2110.match(st2110_41_sdp(
+        "a=fmtp:96 SSN=ST2110-20:2022"))
+      assert.is_nil(doc)
+      assert.is_not_nil(finding_for(ctx,
+        "st2110-41.a.fmtp.SSN-invalid-value"))
+    end)
+  end)
+
+  -- ── DIT: optional + value form [§6] ──────────────────────────────────
+  describe("DIT optional value form [§6]", function()
+    it("accepts DIT=100", function()
+      assert.is_truthy(st2110.match(st2110_41_sdp(
+        "a=fmtp:96 SSN=ST2110-41:2024;DIT=100")))
+    end)
+    it("accepts DIT=100,2000A1,1013FC,3FFF00 (multiple tokens)", function()
+      assert.is_truthy(st2110.match(st2110_41_sdp(
+        "a=fmtp:96 SSN=ST2110-41:2024;DIT=100,2000A1,1013FC,3FFF00")))
+    end)
+    it("rejects DIT=0x100 (forbidden '0x' prefix)", function()
+      local doc, ctx = st2110.match(st2110_41_sdp(
+        "a=fmtp:96 SSN=ST2110-41:2024;DIT=0x100"))
+      assert.is_nil(doc)
+      assert.is_not_nil(finding_for(ctx,
+        "st2110-41.a.fmtp.DIT-invalid-value"))
+    end)
+    it("rejects DIT=100a (lowercase hex)", function()
+      local doc, ctx = st2110.match(st2110_41_sdp(
+        "a=fmtp:96 SSN=ST2110-41:2024;DIT=100a"))
+      assert.is_nil(doc)
+      assert.is_not_nil(finding_for(ctx,
+        "st2110-41.a.fmtp.DIT-invalid-value"))
+    end)
+    it("rejects DIT=100, 200 (whitespace in list)", function()
+      -- Note: the embedded whitespace breaks the kv-pair parse before the
+      -- semantic check even runs at the base tier — but the assertion is
+      -- on the eventual rejection by the ST 2110 tier, not the path.
+      local doc, ctx = st2110.match(st2110_41_sdp(
+        "a=fmtp:96 SSN=ST2110-41:2024;DIT=100, 200"))
+      assert.is_nil(doc)
+      -- Either the base-tier ws rejection OR the -41 DIT-invalid finding
+      -- is acceptable; both indicate the value form was caught.
+      assert.is_not_nil(
+        finding_for(ctx, "st2110-41.a.fmtp.DIT-invalid-value")
+        or finding_for(ctx, "sdp.a.fmtp.trailing-semicolon"))
+    end)
+  end)
+
+  -- ── MAXUDP forbidden [§5.4] ──────────────────────────────────────────
+  describe("MAXUDP forbidden [§5.4]", function()
+    it("rejects MAXUDP when signaled", function()
+      local doc, ctx = st2110.match(st2110_41_sdp(
+        "a=fmtp:96 SSN=ST2110-41:2024;MAXUDP=1500"))
+      assert.is_nil(doc)
+      assert.is_not_nil(finding_for(ctx,
+        "st2110-41.a.fmtp.maxudp-forbidden"))
+    end)
+    -- NOT-SPEC: MAXUDP-forbidden fires only on -41. On -20 it's a value
+    -- check (already covered in 6.C.D.2), not forbidden.
+    it("does NOT fire MAXUDP-forbidden on raw video", function()
+      -- The -20 raw video MAXUDP value check is permissive when value is
+      -- valid; the -41 maxudp-forbidden finding must NOT fire here.
+      local doc = st2110.match(build_with_fmtp(
+        "m=video 30000 RTP/AVP 96",
+        "a=rtpmap:96 raw/90000",
+        RAW_FMTP_COMPLETE_PT96 .. ";MAXUDP=1500"))
+      assert.is_truthy(doc)
+    end)
+  end)
+
+  -- ── NOT-SPEC: base tier carries no -41 narrowing ─────────────────────
+  it("base tier accepts ST 2110-41 fmtp with no SSN", function()
+    assert.is_truthy(base.match(st2110_41_sdp(
+      "a=fmtp:96 DIT=100")))
+  end)
+end)

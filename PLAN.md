@@ -39,39 +39,35 @@ and runs them through the parser. See
 
 ## Current State
 
-1321 hermetic tests passing. Every validation check is grounded in explicit
+1493 hermetic tests passing. Every validation check is grounded in explicit
 spec text; no opinion-based checks remain.
 
 The grammar-first refactor on branch `refactor/grammar-first` is **in
-progress**. Phases 4 + 5 complete; 6.A + 6.B + 6.C (all sub-phases
-6.C.A–6.C.E) landed — `base.extend` composition mechanism,
-`parse_sdp.grammar.st2110` shell, per-encoding rtpmap narrowings
-(raw / jxsv / smpte291 / AM824) expressed as in-grammar overrides,
-`fmtp_params_branch` rewritten off the `%` accumulator, and the full
-ST 2110-20 raw video fmtp check chain (§7.1 no-whitespace-around-=;
-§7.2 + §7.4.2 + ST 2110-21:2022 §8.1 required-parameter presence;
-seven enum value-sets; six non-enum value forms + two flag-only;
-seven cross-parameter SHALLs from §6.2.5 / §6.3.3 / §7.2 / §7.3 /
-§7.4.1). The grammar tier is now at parity with the 1.0 parser's
-raw video fmtp coverage. Remaining work in 6.C is *spec-conformant
-gap-close*, not new strictness, plus encoding-specific fmtp ports:
+progress**. Phases 4 + 5 complete; **Phase 6.C is fully closed** —
+all ten sub-phases (6.C.A through 6.C.J) ship coverage at or above
+1.0 parity for every ST 2110 encoding's `a=fmtp` constraints. The
+grammar tier covers:
 
-- ~~**6.C.F**~~ — DONE. Five §6.2.5 Table 3 / §7.6 cross-param
-  SHALLs ported; grammar tier now strictly more conformant than
-  1.0 for ST 2110-20 raw video fmtp.
-- **-22 jxsv fmtp** — substantial 1.0 check block (parse_sdp.lua
-  :1788-1970) to port.
-- **-30 L16/L24 fmtp** — minimal; channel-order syntax only.
-- **-31 AM824 fmtp** — already covered at rtpmap/attribute level
-  in earlier phases; little additional fmtp-layer work.
-- **-41 SSN / DIT** — distinct shape from -20; smaller port at
-  parse_sdp.lua:1751-1786.
+- ST 2110-20 raw video: §7.1 no-whitespace-around-=, §7.2/§7.4.2
+  required-param presence + -21 §8.1 TP, 7 enum value-sets, 6
+  non-enum value forms, 2 flag-only, 7 cross-parameter SHALLs +
+  5 1.0-gap-close SHALLs from §6.2.5 Table 3 + §7.6.
+- ST 2110-22 jxsv: 4 required-param presence, 16 value-form /
+  flag-only narrowings (RFC 9134-aligned enums for colorimetry /
+  TCS / sampling, correcting 1.0 mismatches), 2 cross-param SHALLs.
+- ST 2110-30 / -31 audio: channel-order RFC 3190 syntax + SMPTE2110
+  group set + AES3-requires-AM824.
+- ST 2110-31 AM824: rtpmap channel parity (§6.1).
+- ST 2110-41 Fast Metadata: required SSN with value form, optional
+  DIT with hex-token value form, MAXUDP forbidden.
 
-Phases 6.D–10 also remain. Tracking and design live in
-[REFACTOR-PLAN.md](REFACTOR-PLAN.md). The 1.0 parser at
-`parse_sdp.lua` remains the shipping artifact on `main`; the new
-grammar under `parse_sdp/grammar/` is internal-only until Phase 9
-cutover.
+Phases 6.D–10 remain (per-encoding required-attribute presence at the
+media-block level — ts-refclk, mediaclk, ptime; cross-stream
+invariants; serializer rewrite; public API stabilization; migration
+cutover). Tracking and design live in [REFACTOR-PLAN.md](REFACTOR-PLAN.md).
+The 1.0 parser at `parse_sdp.lua` remains the shipping artifact on
+`main`; the new grammar under `parse_sdp/grammar/` is internal-only
+until Phase 9 cutover.
 
 **Former flake (resolved in 6.C.A):** the `sdp.a.fmtp.trailing-semicolon`
 tests in `spec/grammar_base_spec.lua` previously flaked at ~45% with

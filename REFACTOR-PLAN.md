@@ -588,35 +588,46 @@ ST 2110 check migrates under its new ID.
   parentheticals `(depth=16f)`), not explicit SHALL prose. 39 new
   tests; suite 1321 green. The grammar tier is now strictly more
   conformant than 1.0 for ST 2110-20 raw video fmtp.
+- **6.C.G.1 (complete)** — ST 2110-22 jxsv fmtp required-param
+  presence (4 params from §7.2 + RFC 9134) and per-key value
+  narrowings (16 value-form/flag-only error ids). Notable RFC
+  9134 vs 1.0 enum corrections for colorimetry (3 legacy values
+  added, ALPHA removed), TCS (narrowed to 4 values), and
+  sampling (UNSPECIFIED added). Generalized
+  `each_raw_video_fmtp` to `each_fmtp_for_encoding(doc, enc)`.
+  133 new tests; suite 1437 green.
+- **6.C.G.2 (complete)** — ST 2110-22 jxsv cross-parameter
+  SHALLs from RFC 9134 §7.1: segmented-requires-interlace and
+  BT2100/RANGE narrowing. 2 new error ids, 1 new semantic check.
+  8 new tests; suite 1445 green. Closes the jxsv fmtp port.
+- **6.C.H (complete)** — ST 2110-30 / -31 audio channel-order
+  RFC 3190 syntax check on L16 / L24 / AM824. 2 new error ids
+  (`-30` channel-order-invalid for syntax/group-symbol failures;
+  `-31` channel-order-aes3-requires-am824 for the
+  cross-encoding SHALL). New `each_audio_fmtp(doc)` helper.
+  22 new tests; suite 1467 green.
+- **6.C.I (complete)** — ST 2110-31:2022 §6.1 AM824 rtpmap
+  channel-count parity (1.0-parity port that 6.B missed).
+  1 new error id, 1 new semantic check. 14 new tests; suite
+  1481 green.
+- **6.C.J (complete)** — ST 2110-41:2024 Fast Metadata fmtp
+  (SSN required + value form, DIT optional with hex-token
+  value form, MAXUDP forbidden per §5.4). 4 new error ids,
+  1 new semantic check. 12 new tests; suite 1493 green.
 
-- **6.C remaining — encoding-specific fmtp porting** (separate
-  from -20 and from 6.C.F; each represents a distinct shape, not
-  a uniform "parallel to -20" port):
-  - **-22 jxsv** — substantial 1.0 check block at
-    `parse_sdp.lua:1788-1970`. Required params (width, height,
-    TP, packetmode), optional value-form params (sampling, TCS,
-    colorimetry, RANGE, exactframerate, depth, transmode,
-    profile, level, sublevel), and flag constraints
-    (interlace/segmented bare-flag, segmented-requires-interlace).
-    Closest in structure to the -20 work just completed; biggest
-    single port.
-  - **-30 L16/L24 audio fmtp** — minimal: only `channel-order`
-    syntax validation (RFC 3190 + SMPTE2110 convention via
-    `valid_channel_order`). No required-param presence, no
-    cross-param SHALLs at the fmtp layer. Small slice.
-  - **-31 AM824 fmtp** — already covered at the rtpmap and
-    attribute level (channel parity, clock-rate set, ptime
-    Table 1) in earlier phases. No additional fmtp-layer
-    narrowing beyond what -30's `channel-order` provides for
-    AM824 (AES3-special group symbols per §6.2 Table 2 may
-    warrant a small extension).
-  - **-41 SSN / DIT** — at `parse_sdp.lua:1751-1786`. SSN
-    required with form `ST2110-41:YYYY`; DIT optional with
-    comma-separated uppercase hex tokens (no `0x` prefix, no
-    whitespace); MAXUDP forbidden (§5.4 limits UDP to Standard
-    size). Distinct shape from -20; smaller port.
+**Phase 6.C is now closed.** The grammar tier matches or
+exceeds 1.0 parity for every ST 2110 encoding's `a=fmtp`
+constraints (-20, -22, -30, -31, -41). Several spec-conformant
+1.0-gap closes landed: §6.2.5 Table 3 4:2:0/depth, §7.6
+TCS/depth=16f coupling, RFC 9134 enum corrections for jxsv,
+AM824 channel parity.
+
 - **6.D (pending)** — required-attribute presence per media type
-  (ts-refclk, mediaclk, ptime).
+  (ts-refclk, mediaclk, ptime). Includes the -30 audio
+  MAXUDP-forbidden and packet-payload-fit checks (cross-attribute,
+  RTP-payload-aware) that 6.C deferred as out-of-fmtp-scope, and
+  the audio rtpmap channel-count presence (RFC 3551 §6) for all
+  audio encodings.
 - **6.E (pending)** — cross-stream invariants (RFC 7104 group:DUP,
   SMPTE ST 2022-7 redundancy coherence).
 

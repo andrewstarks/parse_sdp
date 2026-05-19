@@ -679,6 +679,67 @@ local function validate_channel_order(value, encoding)
   return true
 end
 
+-- ── ST 2110-41 Fast Metadata fmtp narrowings (Phase 6.C.J) ────────────────
+-- ST 2110-41:2024 fmtp shape is distinct from the -20 family: SSN is the
+-- only required parameter, DIT is optional with a tight value form, and
+-- MAXUDP is forbidden. The rtpmap encoding token is `ST2110-41` (the
+-- IANA media-subtype name; ST 2110-41:2024 §6).
+
+-- §6: SSN value is `ST2110-41:YYYY`; only 2024 is defined.
+local function validate_ssn41(v) return v == "ST2110-41:2024" end
+
+-- §6: "comma-separated uppercase hex tokens; no leading '0x'; no whitespace".
+-- LPeg pattern mirrors the 1.0 parser's _dit_pat: Lua string-patterns don't
+-- support quantified groups, so `(,token)*` isn't expressible as `string.match`.
+local _dit_hex_upper = lpeg.R("09", "AF") ^ 1
+local _dit_pat       = _dit_hex_upper
+                     * (lpeg.P(",") * _dit_hex_upper) ^ 0
+                     * lpeg.P(-1)
+
+local function validate_dit(v)
+  return _dit_pat:match(v) ~= nil
+end
+
+local function check_st2110_41_fmtp(doc, ctx)
+  for _, e in ipairs(each_fmtp_for_encoding(doc, "ST2110-41")) do
+    local path = string.format(
+      "media[%d].attributes[fmtp:pt=%d]", e.media_index, e.payload_type)
+
+    -- §6: SSN required.
+    if e.params.SSN == nil then
+      local cont = errors.record(ctx,
+        "st2110-41.a.fmtp.SSN-required", { field_path = path })
+      if not cont then return false end
+    elseif type(e.params.SSN) == "string"
+        and not validate_ssn41(e.params.SSN) then
+      local cont = errors.record(ctx,
+        "st2110-41.a.fmtp.SSN-invalid-value",
+        { field_path = path, context = { value = e.params.SSN } })
+      if not cont then return false end
+    end
+
+    -- §6: DIT optional; when present, must match the hex-token form.
+    local dit = e.params.DIT
+    if dit ~= nil and dit ~= true then
+      if type(dit) ~= "string" or not validate_dit(dit) then
+        local cont = errors.record(ctx,
+          "st2110-41.a.fmtp.DIT-invalid-value",
+          { field_path = path, context = { value = dit } })
+        if not cont then return false end
+      end
+    end
+
+    -- §5.4: MAXUDP forbidden on ST 2110-41 streams.
+    if e.params.MAXUDP ~= nil then
+      local cont = errors.record(ctx,
+        "st2110-41.a.fmtp.maxudp-forbidden",
+        { field_path = path, context = { value = e.params.MAXUDP } })
+      if not cont then return false end
+    end
+  end
+  return true
+end
+
 -- ST 2110-31:2022 §6.1 (Phase 6.C.I): the rtpmap `<nchan>` field for
 -- AM824 streams must be even. AM824 transports AES3 signals; each AES3
 -- signal contains two sequences of AES3 Subframes, so the SDP channel
@@ -987,6 +1048,7 @@ local overrides = {
     check_jxsv_fmtp_cross_param,
     check_audio_fmtp_channel_order,
     check_am824_rtpmap_channels_even,
+    check_st2110_41_fmtp,
   },
 }
 

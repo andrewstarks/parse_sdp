@@ -973,6 +973,54 @@ ST 2110-31:2022 §6.2 Table 2; RFC 3190 §6.
 
 Audit ref: REFACTOR-PLAN.md §5 Phase 6.C; ST 2110-31:2022 §6.1.
 
+- **Phase 6.C.J:** ST 2110-41:2024 (Fast Metadata) fmtp narrowings.
+  Distinct shape from the -20 family: SSN is the only required
+  parameter, DIT is optional with a tight value form, MAXUDP is
+  forbidden.
+
+  4 new error ids:
+  - `st2110-41.a.fmtp.SSN-required` — §6 names SSN as required.
+  - `st2110-41.a.fmtp.SSN-invalid-value` — §6 defines only
+    `ST2110-41:2024` (no other revisions exist).
+  - `st2110-41.a.fmtp.DIT-invalid-value` — §6 value form: comma-
+    separated uppercase hex tokens; no `0x` prefix; no whitespace.
+  - `st2110-41.a.fmtp.maxudp-forbidden` — §5.4 limits UDP packet
+    length to the Standard UDP Size Limit; MAXUDP signals operation
+    beyond that limit (ST 2110-10:2022 §6.4), so its presence
+    violates §5.4.
+
+  Implemented as a new tier-level semantic check
+  `check_st2110_41_fmtp` scoped to PTs whose rtpmap encoding is
+  `ST2110-41`. SSN validator is a literal string match. DIT
+  validator is an LPeg pattern mirroring the 1.0 parser's
+  `_dit_pat`: `R("09","AF")^1 * (P(",") * ...)^0 * P(-1)`. Lua
+  string-patterns don't support quantified groups, so the
+  comma-separated form isn't expressible as `string.match`.
+
+  12 new tests; suite 1493 green.
+
+  **Phase 6.C is now closed.** Coverage summary across all ten
+  sub-phases:
+  - 6.C.A: fmtp_params_branch %-accumulator rewrite (flake fix)
+  - 6.C.B: §7.1 no-whitespace-around-= (ctx-based encoding lookup)
+  - 6.C.C: §7.2 + §7.4.2 + -21 §8.1 required-param presence
+  - 6.C.D.1 + .2: 7 enum value-sets + 6 non-enum forms + 2 flag-only
+  - 6.C.E: 7 cross-parameter SHALLs (1.0 parity)
+  - 6.C.F: 5 cross-parameter SHALLs (1.0-gap close)
+  - 6.C.G.1 + .2: jxsv presence + 16 value-form/flag-only + 2 cross-
+    param (with RFC 9134 enum corrections vs 1.0)
+  - 6.C.H: -30/-31 audio channel-order syntax
+  - 6.C.I: -31 AM824 channel-parity (1.0-parity port)
+  - 6.C.J: -41 SSN/DIT/MAXUDP
+
+  Grammar tier ST 2110 fmtp coverage is now at or above 1.0 parser
+  parity across every encoding (-20 / -22 / -30 / -31 / -41), with
+  several spec-conformant 1.0-gap closes (depth/sampling/TCS
+  combinations from §6.2.5 Table 3 and §7.6; RFC 9134 enum
+  corrections for jxsv).
+
+Audit ref: REFACTOR-PLAN.md §5 Phase 6.C; ST 2110-41:2024 §5.4 + §6.
+
 ### Changed
 
 - The inline `errors` table in `parse_sdp.lua` now delegates to
