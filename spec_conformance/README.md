@@ -91,3 +91,10 @@ licensed under the Apache License, Version 2.0. See:
 
 Fixtures are downloaded into a gitignored cache directory at test time. No
 upstream content is checked into this repository.
+
+## On Authorship
+
+This project was developed with significant AI assistance (Claude / Claude
+Code). The design, architecture decisions, testing, and review were
+human-driven; AI handled the implementation. You are invited to judge it on
+whether it works, is understandable, and is well made.
