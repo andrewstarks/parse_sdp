@@ -255,6 +255,122 @@ local function check_raw_video_fmtp_values(doc, ctx)
   return true
 end
 
+-- ── Cross-parameter SHALLs for raw video fmtp (Phase 6.C.E) ──────────────
+-- Each helper below evaluates a single cross-parameter constraint on a raw
+-- video fmtp's params table. Helpers return true to continue or false to
+-- short-circuit the surrounding loop (under fail_on_first=true the first
+-- recorded finding fails the match). Ordered to match the 1.0 parser's
+-- check order for deterministic fail_on_first behaviour.
+
+-- §7.2 SSN-conditional. Forward direction only — reverse ("SSN=:2022
+-- without :2022-only values forbidden") deferred per PLAN.md known items.
+local function check_ssn_conditional(params, ctx, path)
+  local trigger
+  if params.TCS         == "ST2115LOGS3" then trigger = "TCS=ST2115LOGS3" end
+  if params.colorimetry == "ALPHA"       then trigger = "colorimetry=ALPHA" end
+  if trigger and tostring(params.SSN or "") ~= "ST2110-20:2022" then
+    local cont = errors.record(ctx,
+      "st2110-20.a.fmtp.ssn-required-for-2022-only-values",
+      { field_path = path, context = { trigger = trigger } })
+    if not cont then return false end
+  end
+  return true
+end
+
+-- §7.3: BT2100 colorimetry permits only NARROW and FULL — FULLPROTECT
+-- forbidden. Per-key RANGE value-set is in 6.C.D.1.
+local function check_bt2100_range(params, ctx, path)
+  if params.colorimetry == "BT2100" and params.RANGE == "FULLPROTECT" then
+    local cont = errors.record(ctx,
+      "st2110-20.a.fmtp.bt2100-range-fullprotect-forbidden",
+      { field_path = path })
+    if not cont then return false end
+  end
+  return true
+end
+
+-- §7.3: segmented requires interlace also present.
+local function check_segmented_requires_interlace(params, ctx, path)
+  if params.segmented and not params.interlace then
+    local cont = errors.record(ctx,
+      "st2110-20.a.fmtp.segmented-requires-interlace",
+      { field_path = path })
+    if not cont then return false end
+  end
+  return true
+end
+
+-- §6.3.3: PM=2110BPM forbids MAXUDP (Block Packing Mode is incompatible
+-- with the Extended UDP Size Limit).
+local function check_bpm_forbids_maxudp(params, ctx, path)
+  if params.PM == "2110BPM" and params.MAXUDP ~= nil then
+    local cont = errors.record(ctx,
+      "st2110-20.a.fmtp.bpm-with-maxudp-forbidden",
+      { field_path = path })
+    if not cont then return false end
+  end
+  return true
+end
+
+-- §7.4.1: sampling=KEY requires colorimetry=ALPHA AND forbids TCS.
+-- Two separate registered IDs so an audit can target either independently.
+local function check_key_sampling(params, ctx, path)
+  if params.sampling == "KEY" then
+    if params.colorimetry ~= "ALPHA" then
+      local cont = errors.record(ctx,
+        "st2110-20.a.fmtp.key-requires-alpha-colorimetry",
+        { field_path = path })
+      if not cont then return false end
+    end
+    if params.TCS ~= nil then
+      local cont = errors.record(ctx,
+        "st2110-20.a.fmtp.key-forbids-tcs",
+        { field_path = path })
+      if not cont then return false end
+    end
+  end
+  return true
+end
+
+-- §6.2.5: 4:2:0 sampling applies to progressive scan only — must not be
+-- combined with the interlace flag. Detected via the `-4:2:0` suffix on
+-- any sampling token (YCbCr-4:2:0 / CLYCbCr-4:2:0 / ICtCp-4:2:0).
+local function check_420_progressive_only(params, ctx, path)
+  local s = params.sampling
+  if s and type(s) == "string" and s:match("^[%w]+%-4:2:0$") then
+    if params.interlace then
+      local cont = errors.record(ctx,
+        "st2110-20.a.fmtp.subsampling-420-with-interlace-forbidden",
+        { field_path = path })
+      if not cont then return false end
+    end
+  end
+  return true
+end
+
+-- Tier-level driver: walks every raw video fmtp and runs each cross-param
+-- helper in turn. Order matches 1.0's check sequence so fail_on_first
+-- behaviour is stable across the tiers.
+local RAW_VIDEO_CROSS_PARAM_CHECKS = {
+  check_ssn_conditional,
+  check_bt2100_range,
+  check_segmented_requires_interlace,
+  check_bpm_forbids_maxudp,
+  check_key_sampling,
+  check_420_progressive_only,
+}
+
+local function check_raw_video_fmtp_cross_param(doc, ctx)
+  for _, e in ipairs(each_raw_video_fmtp(doc)) do
+    local path = string.format(
+      "media[%d].attributes[fmtp:pt=%d]", e.media_index, e.payload_type)
+    for _, fn in ipairs(RAW_VIDEO_CROSS_PARAM_CHECKS) do
+      if not fn(e.params, ctx, path) then return false end
+    end
+  end
+  return true
+end
+
 -- ── rtpmap encoding narrowings (Phase 6.B) ─────────────────────────────────
 --
 -- Each known ST 2110 essence encoding has:
@@ -464,6 +580,7 @@ local overrides = {
   semantic_checks = {
     check_raw_video_fmtp_required,
     check_raw_video_fmtp_values,
+    check_raw_video_fmtp_cross_param,
   },
 }
 

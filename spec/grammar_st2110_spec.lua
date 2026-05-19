@@ -401,6 +401,13 @@ describe("ST 2110-20 raw video fmtp — enum value sets", function()
 
   -- Build the complete raw fmtp line with one parameter overridden to an
   -- arbitrary value. Used to assert per-key value-set narrowing.
+  --
+  -- The default set is balanced for cross-parameter compatibility: when
+  -- testing an enum value that has a cross-param SHALL (KEY needs ALPHA;
+  -- 4:2:0 forbids interlace — n/a here since defaults don't carry it),
+  -- companion params are adjusted so the SOLE check under test is the
+  -- per-key enum value-set. Otherwise the 6.C.E cross-param checks would
+  -- mask the value-set acceptance test.
   local function fmtp_with(key, val)
     local parts = {
       "sampling=YCbCr-4:2:2",
@@ -413,6 +420,16 @@ describe("ST 2110-20 raw video fmtp — enum value sets", function()
       "SSN=ST2110-20:2022",
       "TP=2110TPN",
     }
+    -- Cross-param companion adjustments per §7.4.1: KEY sampling requires
+    -- colorimetry=ALPHA AND forbids TCS. Pair the override accordingly so
+    -- the only check under test is sampling's own value-set membership.
+    if key == "sampling" and val == "KEY" then
+      for i, p in ipairs(parts) do
+        if p:sub(1, 12) == "colorimetry=" then
+          parts[i] = "colorimetry=ALPHA"
+        end
+      end
+    end
     -- Replace the line for the named key in place; if optional (TCS / RANGE),
     -- append.
     local replaced = false
@@ -751,5 +768,266 @@ describe("ST 2110-20 raw video fmtp — flag-only [ST 2110-20:2022 §7.3]", func
     assert.is_truthy(base.match(build_with_fmtp(
       RAW_MEDIA, RAW_RTPMAP,
       RAW_FMTP_COMPLETE_PT96 .. ";interlace=anything")))
+  end)
+end)
+
+-- ───────────────────────────────────────────────────────────────────────────
+-- Phase 6.C.E — ST 2110-20 raw video fmtp cross-parameter SHALLs.
+-- Seven constraints that evaluate a relationship across two or more fmtp
+-- parameter values. Ported from the 1.0 parser at parse_sdp.lua:2063-2158
+-- to preserve refactor parity.
+
+describe("ST 2110-20 raw video fmtp — cross-parameter SHALLs", function()
+
+  local RAW_MEDIA  = "m=video 30000 RTP/AVP 96"
+  local RAW_RTPMAP = "a=rtpmap:96 raw/90000"
+
+  -- Build fmtp from a params table; preserves order via REQUIRED_ORDER
+  -- (matches §7.2 listing) and appends any unknown keys at the end.
+  local PARAM_ORDER = {
+    "sampling", "width", "height", "exactframerate", "depth",
+    "colorimetry", "PM", "SSN", "TP", "TCS", "RANGE", "MAXUDP", "PAR",
+  }
+  local FLAG_KEYS = { "interlace", "segmented" }
+
+  local function fmtp_from(params)
+    local parts = {}
+    for _, k in ipairs(PARAM_ORDER) do
+      local v = params[k]
+      if v ~= nil then parts[#parts + 1] = k .. "=" .. tostring(v) end
+    end
+    for _, k in ipairs(FLAG_KEYS) do
+      if params[k] then parts[#parts + 1] = k end
+    end
+    return "a=fmtp:96 " .. table.concat(parts, ";")
+  end
+
+  -- Canonical complete params (mirrors RAW_FMTP_COMPLETE_PT96 but as a
+  -- table so per-test overrides are obvious).
+  local function defaults()
+    return {
+      sampling       = "YCbCr-4:2:2",
+      width          = "1920",
+      height         = "1080",
+      exactframerate = "60000/1001",
+      depth          = "10",
+      colorimetry    = "BT709",
+      PM             = "2110GPM",
+      SSN            = "ST2110-20:2022",
+      TP             = "2110TPN",
+    }
+  end
+
+  -- Apply overrides to defaults() and return a complete params table.
+  local function with(overrides)
+    local p = defaults()
+    for k, v in pairs(overrides) do p[k] = v end
+    return p
+  end
+
+  -- ── §7.2 SSN-conditional ─────────────────────────────────────────────
+  describe("SSN conditional [ST 2110-20:2022 §7.2]", function()
+    it("accepts colorimetry=ALPHA + SSN=ST2110-20:2022 (the only allowed pairing)",
+        function()
+      -- KEY sampling required to make ALPHA legal — §7.4.1 (covered below).
+      assert.is_truthy(st2110.match(build_with_fmtp(
+        RAW_MEDIA, RAW_RTPMAP, fmtp_from(with({
+          sampling = "KEY", colorimetry = "ALPHA",
+          SSN = "ST2110-20:2022",
+        })))))
+    end)
+    it("accepts TCS=ST2115LOGS3 + SSN=ST2110-20:2022", function()
+      assert.is_truthy(st2110.match(build_with_fmtp(
+        RAW_MEDIA, RAW_RTPMAP, fmtp_from(with({
+          TCS = "ST2115LOGS3", SSN = "ST2110-20:2022",
+        })))))
+    end)
+    it("rejects colorimetry=ALPHA + SSN=ST2110-20:2017 (ALPHA undefined in :2017)",
+        function()
+      local doc, ctx = st2110.match(build_with_fmtp(
+        RAW_MEDIA, RAW_RTPMAP, fmtp_from(with({
+          sampling = "KEY", colorimetry = "ALPHA",
+          SSN = "ST2110-20:2017",
+        }))))
+      assert.is_nil(doc)
+      assert.is_not_nil(finding_for(ctx,
+        "st2110-20.a.fmtp.ssn-required-for-2022-only-values"))
+    end)
+    it("rejects TCS=ST2115LOGS3 + SSN=ST2110-20:2017", function()
+      local doc, ctx = st2110.match(build_with_fmtp(
+        RAW_MEDIA, RAW_RTPMAP, fmtp_from(with({
+          TCS = "ST2115LOGS3", SSN = "ST2110-20:2017",
+        }))))
+      assert.is_nil(doc)
+      assert.is_not_nil(finding_for(ctx,
+        "st2110-20.a.fmtp.ssn-required-for-2022-only-values"))
+    end)
+  end)
+
+  -- ── §7.3 BT2100 + FULLPROTECT forbidden ──────────────────────────────
+  describe("BT2100 colorimetry + RANGE=FULLPROTECT [ST 2110-20:2022 §7.3]",
+      function()
+    it("accepts BT2100 + RANGE=NARROW", function()
+      assert.is_truthy(st2110.match(build_with_fmtp(
+        RAW_MEDIA, RAW_RTPMAP, fmtp_from(with({
+          colorimetry = "BT2100", RANGE = "NARROW",
+        })))))
+    end)
+    it("accepts BT2100 + RANGE=FULL", function()
+      assert.is_truthy(st2110.match(build_with_fmtp(
+        RAW_MEDIA, RAW_RTPMAP, fmtp_from(with({
+          colorimetry = "BT2100", RANGE = "FULL",
+        })))))
+    end)
+    it("rejects BT2100 + RANGE=FULLPROTECT", function()
+      local doc, ctx = st2110.match(build_with_fmtp(
+        RAW_MEDIA, RAW_RTPMAP, fmtp_from(with({
+          colorimetry = "BT2100", RANGE = "FULLPROTECT",
+        }))))
+      assert.is_nil(doc)
+      assert.is_not_nil(finding_for(ctx,
+        "st2110-20.a.fmtp.bt2100-range-fullprotect-forbidden"))
+    end)
+    -- NOT-SPEC: non-BT2100 colorimetry is unaffected.
+    it("accepts BT709 + RANGE=FULLPROTECT (other colorimetries unrestricted)",
+        function()
+      assert.is_truthy(st2110.match(build_with_fmtp(
+        RAW_MEDIA, RAW_RTPMAP, fmtp_from(with({
+          colorimetry = "BT709", RANGE = "FULLPROTECT",
+        })))))
+    end)
+  end)
+
+  -- ── §7.3 segmented requires interlace ────────────────────────────────
+  describe("'segmented' requires 'interlace' [ST 2110-20:2022 §7.3]", function()
+    it("accepts segmented + interlace (both present)", function()
+      assert.is_truthy(st2110.match(build_with_fmtp(
+        RAW_MEDIA, RAW_RTPMAP, fmtp_from(with({
+          interlace = true, segmented = true,
+        })))))
+    end)
+    it("rejects segmented without interlace", function()
+      local doc, ctx = st2110.match(build_with_fmtp(
+        RAW_MEDIA, RAW_RTPMAP, fmtp_from(with({ segmented = true }))))
+      assert.is_nil(doc)
+      assert.is_not_nil(finding_for(ctx,
+        "st2110-20.a.fmtp.segmented-requires-interlace"))
+    end)
+    -- NOT-SPEC: interlace alone is fine.
+    it("accepts interlace without segmented", function()
+      assert.is_truthy(st2110.match(build_with_fmtp(
+        RAW_MEDIA, RAW_RTPMAP, fmtp_from(with({ interlace = true })))))
+    end)
+  end)
+
+  -- ── §6.3.3 PM=2110BPM forbids MAXUDP ─────────────────────────────────
+  describe("PM=2110BPM forbids MAXUDP [ST 2110-20:2022 §6.3.3]", function()
+    it("accepts PM=2110GPM with MAXUDP=1500", function()
+      assert.is_truthy(st2110.match(build_with_fmtp(
+        RAW_MEDIA, RAW_RTPMAP, fmtp_from(with({
+          PM = "2110GPM", MAXUDP = "1500",
+        })))))
+    end)
+    it("accepts PM=2110BPM without MAXUDP", function()
+      assert.is_truthy(st2110.match(build_with_fmtp(
+        RAW_MEDIA, RAW_RTPMAP, fmtp_from(with({ PM = "2110BPM" })))))
+    end)
+    it("rejects PM=2110BPM with MAXUDP=1500", function()
+      local doc, ctx = st2110.match(build_with_fmtp(
+        RAW_MEDIA, RAW_RTPMAP, fmtp_from(with({
+          PM = "2110BPM", MAXUDP = "1500",
+        }))))
+      assert.is_nil(doc)
+      assert.is_not_nil(finding_for(ctx,
+        "st2110-20.a.fmtp.bpm-with-maxudp-forbidden"))
+    end)
+  end)
+
+  -- ── §7.4.1 KEY sampling ──────────────────────────────────────────────
+  describe("sampling=KEY [ST 2110-20:2022 §7.4.1]", function()
+    it("accepts sampling=KEY with colorimetry=ALPHA + no TCS", function()
+      assert.is_truthy(st2110.match(build_with_fmtp(
+        RAW_MEDIA, RAW_RTPMAP, fmtp_from(with({
+          sampling = "KEY", colorimetry = "ALPHA",
+        })))))
+    end)
+    it("rejects sampling=KEY with colorimetry=BT709 (must be ALPHA)",
+        function()
+      local doc, ctx = st2110.match(build_with_fmtp(
+        RAW_MEDIA, RAW_RTPMAP, fmtp_from(with({
+          sampling = "KEY", colorimetry = "BT709",
+        }))))
+      assert.is_nil(doc)
+      assert.is_not_nil(finding_for(ctx,
+        "st2110-20.a.fmtp.key-requires-alpha-colorimetry"))
+    end)
+    it("rejects sampling=KEY when TCS is signaled", function()
+      -- Pair with the required ALPHA colorimetry so the KEY-requires-ALPHA
+      -- check passes and we isolate the TCS prohibition.
+      local doc, ctx = st2110.match(build_with_fmtp(
+        RAW_MEDIA, RAW_RTPMAP, fmtp_from(with({
+          sampling = "KEY", colorimetry = "ALPHA", TCS = "SDR",
+        }))))
+      assert.is_nil(doc)
+      assert.is_not_nil(finding_for(ctx,
+        "st2110-20.a.fmtp.key-forbids-tcs"))
+    end)
+  end)
+
+  -- ── §6.2.5 4:2:0 sampling progressive only ───────────────────────────
+  describe("4:2:0 sampling forbids interlace [ST 2110-20:2022 §6.2.5]",
+      function()
+    it("accepts 4:2:0 sampling progressive (no interlace)", function()
+      assert.is_truthy(st2110.match(build_with_fmtp(
+        RAW_MEDIA, RAW_RTPMAP, fmtp_from(with({
+          sampling = "YCbCr-4:2:0",
+        })))))
+    end)
+    it("rejects YCbCr-4:2:0 + interlace", function()
+      local doc, ctx = st2110.match(build_with_fmtp(
+        RAW_MEDIA, RAW_RTPMAP, fmtp_from(with({
+          sampling = "YCbCr-4:2:0", interlace = true,
+        }))))
+      assert.is_nil(doc)
+      assert.is_not_nil(finding_for(ctx,
+        "st2110-20.a.fmtp.subsampling-420-with-interlace-forbidden"))
+    end)
+    it("rejects CLYCbCr-4:2:0 + interlace", function()
+      local doc, ctx = st2110.match(build_with_fmtp(
+        RAW_MEDIA, RAW_RTPMAP, fmtp_from(with({
+          sampling = "CLYCbCr-4:2:0", interlace = true,
+        }))))
+      assert.is_nil(doc)
+      assert.is_not_nil(finding_for(ctx,
+        "st2110-20.a.fmtp.subsampling-420-with-interlace-forbidden"))
+    end)
+    it("rejects ICtCp-4:2:0 + interlace", function()
+      local doc, ctx = st2110.match(build_with_fmtp(
+        RAW_MEDIA, RAW_RTPMAP, fmtp_from(with({
+          sampling = "ICtCp-4:2:0", interlace = true,
+        }))))
+      assert.is_nil(doc)
+      assert.is_not_nil(finding_for(ctx,
+        "st2110-20.a.fmtp.subsampling-420-with-interlace-forbidden"))
+    end)
+    -- NOT-SPEC: 4:2:2 / 4:4:4 are unrestricted by §6.2.5.
+    it("accepts 4:2:2 sampling + interlace (not 4:2:0)", function()
+      assert.is_truthy(st2110.match(build_with_fmtp(
+        RAW_MEDIA, RAW_RTPMAP, fmtp_from(with({
+          sampling = "YCbCr-4:2:2", interlace = true,
+        })))))
+    end)
+  end)
+
+  -- NOT-SPEC: library — base tier carries no cross-parameter narrowing.
+  it("base tier accepts all cross-param violations together", function()
+    -- Aggregate violations: sampling=KEY+TCS, PM=BPM+MAXUDP, BT2100+FULLPROTECT,
+    -- segmented without interlace, 4:2:0 with interlace. Base tier passes.
+    assert.is_truthy(base.match(build_with_fmtp(
+      RAW_MEDIA, RAW_RTPMAP,
+      "a=fmtp:96 sampling=YCbCr-4:2:0;width=1920;height=1080;"
+      .. "exactframerate=60;depth=10;colorimetry=BT2100;PM=2110BPM;"
+      .. "SSN=ST2110-20:2017;TP=2110TPN;TCS=ST2115LOGS3;"
+      .. "RANGE=FULLPROTECT;MAXUDP=1500;interlace;segmented")))
   end)
 end)

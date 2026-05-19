@@ -719,6 +719,75 @@ ST 2110-21:2022 §8.1.
 Audit ref: REFACTOR-PLAN.md §5 Phase 6.C; audits/SPEC_INVENTORY.md
 ST 2110-20:2022 §7.2 / §7.3; ST 2110-10 §6.4.
 
+- **Phase 6.C.E:** ST 2110-20:2022 cross-parameter SHALLs for raw video
+  fmtp. Seven constraints, each evaluating a relationship across two
+  or more fmtp parameter values, ported from the 1.0 parser at
+  `parse_sdp.lua:2063-2158` per [[feedback_refactor_parity]] (new
+  grammar tier must be ≥ 1.0 strict).
+
+  1. **§7.2 SSN-conditional** — colorimetry=ALPHA or TCS=ST2115LOGS3
+     must be paired with SSN=ST2110-20:2022 (a :2022-only value
+     requires the :2022 SSN). Forward direction only; reverse
+     remains deferred per PLAN.md known items.
+  2. **§7.3 BT2100 RANGE narrowing** — colorimetry=BT2100 with
+     RANGE=FULLPROTECT forbidden ("only NARROW and FULL are
+     permitted").
+  3. **§7.3 segmented requires interlace** — bare `segmented`
+     without `interlace` forbidden (PsF requires interlace too).
+  4. **§6.3.3 BPM forbids MAXUDP** — PM=2110BPM with MAXUDP present
+     forbidden ("The Extended UDP size limit … shall not be used in
+     the Block Packing Mode").
+  5. **§7.4.1 KEY requires ALPHA** — sampling=KEY with colorimetry≠
+     ALPHA forbidden ("the Key stream shall signal the colorimetry
+     value 'ALPHA'").
+  6. **§7.4.1 KEY forbids TCS** — sampling=KEY with any TCS value
+     forbidden ("shall not signal a TCS value").
+  7. **§6.2.5 4:2:0 progressive only** — any `*-4:2:0` sampling with
+     interlace forbidden ("The 4:2:0 sampling system shall only be
+     applied to progressive scan images transmitted in a progressive
+     manner").
+
+  7 new error ids in `errors.lua`:
+  `st2110-20.a.fmtp.ssn-required-for-2022-only-values`,
+  `bt2100-range-fullprotect-forbidden`,
+  `segmented-requires-interlace`,
+  `bpm-with-maxudp-forbidden`,
+  `key-requires-alpha-colorimetry`,
+  `key-forbids-tcs`,
+  `subsampling-420-with-interlace-forbidden`.
+
+  Implemented as a third tier-level semantic check
+  `check_raw_video_fmtp_cross_param` alongside the §7.2 presence
+  check (6.C.C) and value-form check (6.C.D). All three reuse the
+  shared `each_raw_video_fmtp(doc)` helper. The check is broken into
+  six per-constraint helper functions (§7.4.1's two SHALLs share a
+  function) ordered to match the 1.0 parser's check sequence for
+  deterministic fail_on_first behaviour.
+
+  29 new tests covering accept and reject cases for every
+  constraint, plus a base-tier sanity test verifying that all seven
+  violations together still pass the base tier. The 6.C.D.1
+  per-key enum-acceptance helper was updated: when testing
+  `sampling=KEY`, the helper now pairs it with `colorimetry=ALPHA`
+  so the §7.4.1 cross-param check doesn't mask the enum value-set
+  acceptance. Suite: 1282 green.
+
+  **Audit-row gaps deferred to a follow-up slice (6.C.F).** Five
+  additional cross-parameter SHALLs are inventoried in
+  `audits/SPEC_INVENTORY.md` (rows 61, 115, 116, 117, 118) but
+  NOT enforced by the 1.0 parser:
+  - §6.2.5 Table 3: 4:2:0 sampling forbids depth ∈ {16, 16f}
+  - §7.6: TCS=LINEAR / BT2100LINPQ / BT2100LINHLG / ST2065-1 each
+    require depth=16f
+
+  These are stricter-than-1.0 improvements; per
+  [[feedback_conformance_principle]] each requires primary-source
+  re-verification against the on-disk spec markdown before landing.
+  Tracked in REFACTOR-PLAN.md for a separate 6.C.F slice.
+
+Audit ref: REFACTOR-PLAN.md §5 Phase 6.C; audits/SPEC_INVENTORY.md
+ST 2110-20:2022 §6.2.5 / §6.3.3 / §7.2 / §7.3 / §7.4.1.
+
 ### Changed
 
 - The inline `errors` table in `parse_sdp.lua` now delegates to

@@ -637,4 +637,106 @@ for _, key in ipairs(FLAG_ONLY_RAW_PARAMS) do
   })
 end
 
+-- ── ST 2110-20 raw video fmtp cross-parameter SHALLs (Phase 6.C.E) ────────
+-- Each entry below names a cross-parameter constraint: a SHALL or SHALL-NOT
+-- that evaluates a RELATIONSHIP between two or more fmtp parameter values
+-- (or between a value and the presence/absence of another). Per-key
+-- presence and value-set narrowings live in 6.C.C / 6.C.D.
+
+-- §7.2 SSN-conditional (JT-NM Tested — AMWA sdpoker Issue #11): a
+-- :2022-only value (TCS=ST2115LOGS3 or colorimetry=ALPHA) must be paired
+-- with SSN=ST2110-20:2022. Reverse direction ("SSN=:2022 without
+-- :2022-only values forbidden") is deferred per PLAN.md known items.
+M.register("st2110-20.a.fmtp.ssn-required-for-2022-only-values", {
+  kind             = "semantic",
+  default_severity = "error",
+  code             = "INVALID_VALUE",
+  message_template =
+    "SSN must be ST2110-20:2022 when a :2022-only value is signaled"
+    .. " (TCS=ST2115LOGS3 or colorimetry=ALPHA)",
+  spec_ref         = "ST 2110-20:2022 §7.2",
+  verified         = true,
+})
+
+-- §7.3: "When the colorimetry value is BT2100, only the NARROW and FULL
+-- values are permitted." Implies RANGE=FULLPROTECT is forbidden with
+-- colorimetry=BT2100. Per-key RANGE value-set is already enforced in
+-- 6.C.D.1; this is the additional cross-parameter narrowing.
+M.register("st2110-20.a.fmtp.bt2100-range-fullprotect-forbidden", {
+  kind             = "semantic",
+  default_severity = "error",
+  code             = "INVALID_VALUE",
+  message_template =
+    "RANGE=FULLPROTECT is not permitted with colorimetry=BT2100"
+    .. " (only NARROW and FULL are permitted)",
+  spec_ref         = "ST 2110-20:2022 §7.3",
+  verified         = true,
+})
+
+-- §7.3: "Signaling of [segmented] without the interlace parameter is
+-- forbidden." (PsF requires interlace to be set as well.)
+M.register("st2110-20.a.fmtp.segmented-requires-interlace", {
+  kind             = "semantic",
+  default_severity = "error",
+  code             = "INVALID_VALUE",
+  message_template =
+    "fmtp 'segmented' requires 'interlace' to also be present",
+  spec_ref         = "ST 2110-20:2022 §7.3",
+  verified         = true,
+})
+
+-- §6.3.3: "The Extended UDP size limit defined in SMPTE ST 2110-10 shall
+-- not be used in the Block Packing Mode." MAXUDP signals operation
+-- beyond the Standard UDP limit, so its presence with PM=2110BPM
+-- violates §6.3.3.
+M.register("st2110-20.a.fmtp.bpm-with-maxudp-forbidden", {
+  kind             = "semantic",
+  default_severity = "error",
+  code             = "INVALID_VALUE",
+  message_template =
+    "MAXUDP must not be signaled with PM=2110BPM"
+    .. " (Block Packing Mode forbids Extended UDP size)",
+  spec_ref         = "ST 2110-20:2022 §6.3.3",
+  verified         = true,
+})
+
+-- §7.4.1: "the Key stream shall signal the colorimetry value 'ALPHA', and
+-- shall not signal a TCS value." Two distinct SHALLs on sampling=KEY,
+-- registered as two separate IDs so an audit can grep each independently.
+M.register("st2110-20.a.fmtp.key-requires-alpha-colorimetry", {
+  kind             = "semantic",
+  default_severity = "error",
+  code             = "INVALID_VALUE",
+  message_template =
+    "sampling=KEY requires colorimetry=ALPHA",
+  spec_ref         = "ST 2110-20:2022 §7.4.1",
+  verified         = true,
+})
+
+M.register("st2110-20.a.fmtp.key-forbids-tcs", {
+  kind             = "semantic",
+  default_severity = "error",
+  code             = "INVALID_VALUE",
+  message_template =
+    "sampling=KEY must not signal a TCS value",
+  spec_ref         = "ST 2110-20:2022 §7.4.1",
+  verified         = true,
+})
+
+-- §6.2.5: "The 4:2:0 sampling system shall only be applied to progressive
+-- scan images transmitted in a progressive manner. This sampling system
+-- does not apply to PsF or interlaced video essence." Scoped to raw
+-- video only: §6.2.5 is in the §6 RTP-payload chapter; jxsv inherits the
+-- §7 sampling value set but not §6 packaging constraints (RFC 9134 §7.1).
+M.register("st2110-20.a.fmtp.subsampling-420-with-interlace-forbidden", {
+  kind             = "semantic",
+  default_severity = "error",
+  code             = "INVALID_VALUE",
+  message_template =
+    "4:2:0 sampling must not be combined with interlace"
+    .. " (progressive scan only)",
+  spec_ref         = "ST 2110-20:2022 §6.2.5",
+  verified         = true,
+})
+
 return M

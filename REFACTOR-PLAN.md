@@ -557,12 +557,31 @@ ST 2110 check migrates under its new ID.
   `check_raw_video_fmtp_values` semantic check extended with
   per-key validator functions ported from the 1.0 parser's
   predicates. 33 new tests; suite 1259 green.
-- **6.C (remaining: 6.C.E)** — cross-parameter SHALLs
-  (SSN-conditional on colorimetry/TCS, PM/MAXUDP forbid pair,
-  KEY/colorimetry coupling, 4:2:0/interlace forbid pair,
-  RANGE/BT2100 narrowing, segmented-requires-interlace). Also
-  pending: -22 jxsv fmtp parameter sets, -30 audio fmtp where
-  defined, -41 SSN/DIT.
+- **6.C.E (complete)** — seven raw video fmtp cross-parameter
+  SHALLs ported from the 1.0 parser at `parse_sdp.lua:2063-2158`:
+  §7.2 SSN-conditional (forward direction); §7.3 BT2100 RANGE
+  narrowing (FULLPROTECT forbidden); §7.3 segmented-requires-
+  interlace; §6.3.3 BPM forbids MAXUDP; §7.4.1 KEY-requires-ALPHA;
+  §7.4.1 KEY-forbids-TCS; §6.2.5 4:2:0-progressive-only.
+  7 new error ids `st2110-20.a.fmtp.<constraint>`. Implemented as
+  a third tier-level semantic check
+  `check_raw_video_fmtp_cross_param` alongside the
+  presence-check (6.C.C) and value-form check (6.C.D), all sharing
+  `each_raw_video_fmtp(doc)`. 29 new tests; suite 1282 green.
+  Cross-param coverage now at parity with 1.0.
+- **6.C.F (pending — stricter-than-1.0)** — five cross-parameter
+  SHALLs inventoried in `audits/SPEC_INVENTORY.md` rows 61, 115,
+  116, 117, 118 that the 1.0 parser does NOT enforce: §6.2.5
+  Table 3 (4:2:0 sampling forbids depth ∈ {16, 16f}) and §7.6 prose
+  (TCS=LINEAR / BT2100LINPQ / BT2100LINHLG / ST2065-1 each require
+  depth=16f). Each needs primary-source re-verification against the
+  on-disk ST 2110-20:2022 markdown before landing per the
+  conformance principle. This is a stricter-than-1.0 improvement
+  pass — opportunistic; not blocking 6.D.
+- **6.C (remaining: -22/-30/-41 fmtp narrowings, separate from -20)**
+  — jxsv fmtp parameter sets, -30 audio fmtp where defined, -41
+  SSN/DIT. These are encoding-specific fmtp narrowings parallel
+  to the -20 work just completed.
 - **6.D (pending)** — required-attribute presence per media type
   (ts-refclk, mediaclk, ptime).
 - **6.E (pending)** — cross-stream invariants (RFC 7104 group:DUP,
