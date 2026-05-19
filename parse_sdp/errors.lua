@@ -550,4 +550,32 @@ for _, p in ipairs(REQUIRED_RAW_PARAMS) do
   })
 end
 
+-- ── ST 2110-20 raw video fmtp value-set narrowings — enums (Phase 6.C.D.1) ─
+-- ST 2110-20:2022 enumerates the permitted value set for each Media Type
+-- parameter listed below. The corresponding error id fires when the
+-- parameter is PRESENT on a raw video fmtp with a value outside the set;
+-- absence is the *-required check's job.
+local ENUM_RAW_PARAMS = {
+  { "sampling",    "ST 2110-20:2022 §7.2"   },
+  { "depth",       "ST 2110-20:2022 §7.4.2" },
+  { "colorimetry", "ST 2110-20:2022 §7.5"   },
+  { "PM",          "ST 2110-20:2022 §6.3"   },  -- §7.2 names PM; §6.3 defines values
+  { "TP",          "ST 2110-21:2022 §8.1"   },
+  { "TCS",         "ST 2110-20:2022 §7.6"   },
+  { "RANGE",       "ST 2110-20:2022 §7.3"   },
+}
+
+for _, p in ipairs(ENUM_RAW_PARAMS) do
+  local key, ref = p[1], p[2]
+  M.register("st2110-20.a.fmtp." .. key .. "-invalid-value", {
+    kind             = "semantic",
+    default_severity = "error",
+    code             = "INVALID_VALUE",
+    message_template =
+      "fmtp '" .. key .. "' value not in the permitted set",
+    spec_ref         = ref,
+    verified         = true,
+  })
+end
+
 return M

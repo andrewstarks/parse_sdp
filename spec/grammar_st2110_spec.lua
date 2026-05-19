@@ -387,3 +387,114 @@ describe("ST 2110-20 raw video fmtp — required parameters", function()
       "st2110-20.a.fmtp.sampling-required"))
   end)
 end)
+
+-- ───────────────────────────────────────────────────────────────────────────
+-- Phase 6.C.D.1 — ST 2110-20 raw video fmtp enum value-set narrowings.
+-- For each of seven enum-typed parameters (sampling, depth, colorimetry, PM,
+-- TP, TCS, RANGE) verify the parser accepts the permitted set and rejects
+-- a value outside the set, recording the matching -invalid-value finding.
+
+describe("ST 2110-20 raw video fmtp — enum value sets", function()
+
+  local RAW_MEDIA  = "m=video 30000 RTP/AVP 96"
+  local RAW_RTPMAP = "a=rtpmap:96 raw/90000"
+
+  -- Build the complete raw fmtp line with one parameter overridden to an
+  -- arbitrary value. Used to assert per-key value-set narrowing.
+  local function fmtp_with(key, val)
+    local parts = {
+      "sampling=YCbCr-4:2:2",
+      "width=1920",
+      "height=1080",
+      "exactframerate=60000/1001",
+      "depth=10",
+      "colorimetry=BT709",
+      "PM=2110GPM",
+      "SSN=ST2110-20:2022",
+      "TP=2110TPN",
+    }
+    -- Replace the line for the named key in place; if optional (TCS / RANGE),
+    -- append.
+    local replaced = false
+    for i, p in ipairs(parts) do
+      if p:sub(1, #key + 1) == (key .. "=") then
+        parts[i] = key .. "=" .. val
+        replaced = true
+        break
+      end
+    end
+    if not replaced then
+      parts[#parts + 1] = key .. "=" .. val
+    end
+    return "a=fmtp:96 " .. table.concat(parts, ";")
+  end
+
+  -- Permitted value sets, lifted from RAW_VIDEO_ENUM_VALUES in
+  -- parse_sdp/grammar/st2110.lua. Tests pick the first element from each
+  -- set for an accept case and a single fixed out-of-set string for reject.
+  local ENUM_VALUES = {
+    sampling    = { "YCbCr-4:4:4", "YCbCr-4:2:2", "YCbCr-4:2:0",
+                    "CLYCbCr-4:4:4", "CLYCbCr-4:2:2", "CLYCbCr-4:2:0",
+                    "ICtCp-4:4:4", "ICtCp-4:2:2", "ICtCp-4:2:0",
+                    "RGB", "XYZ", "KEY" },
+    depth       = { "8", "10", "12", "16", "16f" },
+    colorimetry = { "BT601", "BT709", "BT2020", "BT2100",
+                    "ST2065-1", "ST2065-3", "XYZ", "ALPHA", "UNSPECIFIED" },
+    PM          = { "2110GPM", "2110BPM" },
+    TP          = { "2110TPN", "2110TPNL", "2110TPW" },
+    TCS         = { "SDR", "PQ", "HLG", "LINEAR",
+                    "BT2100LINPQ", "BT2100LINHLG",
+                    "ST2065-1", "ST428-1", "DENSITY",
+                    "ST2115LOGS3", "UNSPECIFIED" },
+    RANGE       = { "NARROW", "FULLPROTECT", "FULL" },
+  }
+
+  local SPEC_REF = {
+    sampling    = "ST 2110-20:2022 §7.2",
+    depth       = "ST 2110-20:2022 §7.4.2",
+    colorimetry = "ST 2110-20:2022 §7.5",
+    PM          = "ST 2110-20:2022 §6.3",
+    TP          = "ST 2110-21:2022 §8.1",
+    TCS         = "ST 2110-20:2022 §7.6",
+    RANGE       = "ST 2110-20:2022 §7.3",
+  }
+
+  local KEY_ORDER = {
+    "sampling", "depth", "colorimetry", "PM", "TP", "TCS", "RANGE",
+  }
+
+  for _, key in ipairs(KEY_ORDER) do
+    describe(("'%s' [%s]"):format(key, SPEC_REF[key]), function()
+      for _, v in ipairs(ENUM_VALUES[key]) do
+        it(("accepts %s=%s"):format(key, v), function()
+          assert.is_truthy(st2110.match(build_with_fmtp(
+            RAW_MEDIA, RAW_RTPMAP, fmtp_with(key, v))))
+        end)
+      end
+
+      it(("rejects %s=BOGUS"):format(key), function()
+        local doc, ctx = st2110.match(build_with_fmtp(
+          RAW_MEDIA, RAW_RTPMAP, fmtp_with(key, "BOGUS")))
+        assert.is_nil(doc)
+        assert.is_not_nil(finding_for(ctx,
+          "st2110-20.a.fmtp." .. key .. "-invalid-value"))
+      end)
+
+      -- NOT-SPEC: library — base tier carries no value-set narrowing.
+      it(("base tier accepts %s=BOGUS"):format(key), function()
+        assert.is_truthy(base.match(build_with_fmtp(
+          RAW_MEDIA, RAW_RTPMAP, fmtp_with(key, "BOGUS"))))
+      end)
+    end)
+  end
+
+  -- NOT-SPEC: library — narrowing is scoped to raw. A non-raw essence
+  -- with an out-of-set value passes the ST 2110 tier (no -20 SHALL
+  -- applies to smpte291 fmtp).
+  it("does NOT validate sampling values on non-raw essences", function()
+    assert.is_truthy(st2110.match(build_with_fmtp(
+      "m=video 30000 RTP/AVP 96",
+      "a=rtpmap:96 smpte291/90000",
+      "a=fmtp:96 sampling=BOGUS;DID_SDID={0x41,0x05}")))
+  end)
+end)

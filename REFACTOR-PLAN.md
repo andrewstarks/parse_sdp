@@ -539,14 +539,24 @@ ST 2110 check migrates under its new ID.
   the new `overrides.semantic_checks` slot in
   `parse_sdp.grammar.st2110`. 11 new tests; suite 1166 green. Inherits
   the same rtpmap-before-fmtp ordering caveat as 6.C.B.
-- **6.C (remaining: 6.C.D + 6.C.E)** — 6.C.D: per-key value-set
-  narrowings (sampling enum, width/height range, depth enum,
-  colorimetry enum, PM enum, SSN pattern, TP enum, TCS enum, RANGE
-  enum, MAXUDP cap, PAR form, flag-only interlace/segmented).
-  6.C.E: cross-parameter SHALLs (SSN-conditional on
-  colorimetry/TCS, PM/MAXUDP, KEY/colorimetry, 4:2:0/interlace,
-  RANGE/BT2100). Also pending: -22 jxsv fmtp parameter sets,
-  -30 audio fmtp where defined, -41 SSN/DIT.
+- **6.C.D.1 (complete)** — seven raw video fmtp enum value-set
+  narrowings (sampling §7.2 — 12 values; depth §7.4.2 — 5;
+  colorimetry §7.5 — 9; PM §6.3 — 2; TP ST 2110-21:2022 §8.1 — 3;
+  TCS §7.6 — 11 incl. `ST2115LOGS3`; RANGE §7.3 — 3). 7 new error
+  ids `st2110-20.a.fmtp.<key>-invalid-value`. Implemented as a
+  second tier-level semantic check `check_raw_video_fmtp_values`
+  alongside the §7.2 presence check, with a shared
+  `each_raw_video_fmtp` helper. Value sets lifted verbatim from
+  the 1.0 parser's VALID_* constants. 60 new tests; suite 1226 green.
+- **6.C (remaining: 6.C.D.2 + 6.C.E)** — 6.C.D.2: non-enum value
+  forms for raw video fmtp (width / height integer 1..32767;
+  exactframerate integer or N/D in lowest terms; MAXUDP integer
+  ≤8960; PAR W:H in lowest terms; SSN pattern `ST2110-20:YYYY`);
+  flag-only `interlace` / `segmented`. 6.C.E: cross-parameter
+  SHALLs (SSN-conditional on colorimetry/TCS, PM/MAXUDP,
+  KEY/colorimetry, 4:2:0/interlace, RANGE/BT2100). Also pending:
+  -22 jxsv fmtp parameter sets, -30 audio fmtp where defined,
+  -41 SSN/DIT.
 - **6.D (pending)** — required-attribute presence per media type
   (ts-refclk, mediaclk, ptime).
 - **6.E (pending)** — cross-stream invariants (RFC 7104 group:DUP,

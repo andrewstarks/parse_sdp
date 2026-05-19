@@ -36,21 +36,19 @@ local RAW_VIDEO_REQUIRED_PARAMS = {
   "colorimetry", "PM", "SSN", "TP",
 }
 
--- Walks every media block, finds payload types whose a=rtpmap encoding is
--- `raw`, locates the matching a=fmtp on that PT, and verifies every required
--- parameter is present. If no fmtp exists for a raw PT, the first required
--- key (sampling) is reported missing — the §7.2 SHALL on the parameter
--- itself is also a SHALL on the fmtp's existence.
-local function check_raw_video_fmtp_required(doc, ctx)
+-- Shared helper: returns a list of {media_index, pt, params_or_empty} tuples,
+-- one per raw rtpmap PT in the document. params is the fmtp params table for
+-- the matching PT or {} when no fmtp is present. Used by every raw-video
+-- semantic check so the doc walk stays in one place.
+local function each_raw_video_fmtp(doc)
+  local out = {}
   for i, m in ipairs(doc.media) do
-    -- Build PT → encoding map from this media block's rtpmap attributes.
     local raw_pts = {}
     for _, attr in ipairs(m.attributes) do
       if attr.name == "rtpmap" and attr.encoding == "raw" then
         raw_pts[attr.payload_type] = true
       end
     end
-    -- Index fmtp attributes by payload type for direct lookup.
     local fmtp_by_pt = {}
     for _, attr in ipairs(m.attributes) do
       if attr.name == "fmtp" then
@@ -59,16 +57,94 @@ local function check_raw_video_fmtp_required(doc, ctx)
     end
     for pt in pairs(raw_pts) do
       local fmtp = fmtp_by_pt[pt]
-      local params = fmtp and fmtp.params or {}
-      for _, key in ipairs(RAW_VIDEO_REQUIRED_PARAMS) do
-        if params[key] == nil then
-          local cont = errors.record(
-            ctx,
-            "st2110-20.a.fmtp." .. key .. "-required",
-            { field_path = string.format(
-                "media[%d].attributes[fmtp:pt=%d]", i, pt) })
-          if not cont then return false end
-        end
+      out[#out + 1] = {
+        media_index = i,
+        payload_type = pt,
+        params = (fmtp and fmtp.params) or {},
+      }
+    end
+  end
+  return out
+end
+
+-- Walks every media block, finds payload types whose a=rtpmap encoding is
+-- `raw`, locates the matching a=fmtp on that PT, and verifies every required
+-- parameter is present. If no fmtp exists for a raw PT, the first required
+-- key (sampling) is reported missing — the §7.2 SHALL on the parameter
+-- itself is also a SHALL on the fmtp's existence.
+local function check_raw_video_fmtp_required(doc, ctx)
+  for _, e in ipairs(each_raw_video_fmtp(doc)) do
+    for _, key in ipairs(RAW_VIDEO_REQUIRED_PARAMS) do
+      if e.params[key] == nil then
+        local cont = errors.record(
+          ctx,
+          "st2110-20.a.fmtp." .. key .. "-required",
+          { field_path = string.format(
+              "media[%d].attributes[fmtp:pt=%d]",
+              e.media_index, e.payload_type) })
+        if not cont then return false end
+      end
+    end
+  end
+  return true
+end
+
+-- ST 2110-20:2022 / ST 2110-21:2022 — enum value sets for raw video fmtp
+-- parameters. Each table maps the literal string value to true. Lifted
+-- verbatim from the 1.0 parser's VALID_* constants (parse_sdp.lua:769–791,
+-- :1073, :1146) so the grammar tier accepts the same set of values.
+local RAW_VIDEO_ENUM_VALUES = {
+  sampling = {
+    ["YCbCr-4:4:4"]   = true, ["YCbCr-4:2:2"]   = true, ["YCbCr-4:2:0"]   = true,
+    ["CLYCbCr-4:4:4"] = true, ["CLYCbCr-4:2:2"] = true, ["CLYCbCr-4:2:0"] = true,
+    ["ICtCp-4:4:4"]   = true, ["ICtCp-4:2:2"]   = true, ["ICtCp-4:2:0"]   = true,
+    ["RGB"]           = true, ["XYZ"]           = true, ["KEY"]           = true,
+  },
+  depth = {
+    ["8"]  = true, ["10"] = true, ["12"] = true,
+    ["16"] = true, ["16f"] = true,
+  },
+  -- §7.5: BT601, BT709, BT2020, BT2100, ST2065-1, ST2065-3, UNSPECIFIED,
+  -- XYZ (§7.5), ALPHA (KEY-essence companion per §7.5).
+  colorimetry = {
+    ["BT601"]    = true, ["BT709"]    = true, ["BT2020"]      = true,
+    ["BT2100"]   = true, ["ST2065-1"] = true, ["ST2065-3"]    = true,
+    ["XYZ"]      = true, ["ALPHA"]    = true, ["UNSPECIFIED"] = true,
+  },
+  PM = { ["2110GPM"] = true, ["2110BPM"] = true },
+  TP = { ["2110TPN"] = true, ["2110TPNL"] = true, ["2110TPW"] = true },
+  -- §7.6: 11 permitted TCS values; ST2115LOGS3 added in the 2022 revision.
+  TCS = {
+    ["SDR"]         = true, ["PQ"]         = true, ["HLG"]      = true,
+    ["LINEAR"]      = true, ["BT2100LINPQ"] = true, ["BT2100LINHLG"] = true,
+    ["ST2065-1"]    = true, ["ST428-1"]    = true, ["DENSITY"]  = true,
+    ["ST2115LOGS3"] = true, ["UNSPECIFIED"] = true,
+  },
+  RANGE = { ["NARROW"] = true, ["FULLPROTECT"] = true, ["FULL"] = true },
+}
+
+-- Enum keys validated by check_raw_video_fmtp_values. Order is stable for
+-- fail_on_first=true determinism: each fmtp's keys are checked in this order
+-- so the first finding is predictable across runs.
+local RAW_VIDEO_ENUM_KEYS = {
+  "sampling", "depth", "colorimetry", "PM", "TP", "TCS", "RANGE",
+}
+
+-- For every raw video fmtp, validate every PRESENT enum-typed parameter
+-- against its permitted set. Absent parameters are the *-required check's
+-- concern. Each violation records the corresponding -invalid-value finding.
+local function check_raw_video_fmtp_values(doc, ctx)
+  for _, e in ipairs(each_raw_video_fmtp(doc)) do
+    for _, key in ipairs(RAW_VIDEO_ENUM_KEYS) do
+      local val = e.params[key]
+      if val ~= nil and not RAW_VIDEO_ENUM_VALUES[key][val] then
+        local cont = errors.record(
+          ctx,
+          "st2110-20.a.fmtp." .. key .. "-invalid-value",
+          { field_path = string.format(
+              "media[%d].attributes[fmtp:pt=%d]",
+              e.media_index, e.payload_type) })
+        if not cont then return false end
       end
     end
   end
@@ -283,6 +359,7 @@ local overrides = {
 
   semantic_checks = {
     check_raw_video_fmtp_required,
+    check_raw_video_fmtp_values,
   },
 }
 

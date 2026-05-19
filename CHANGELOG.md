@@ -649,6 +649,41 @@ ST 2110-20:2022 §7.1.
 Audit ref: REFACTOR-PLAN.md §5 Phase 6.C; audits/SPEC_INVENTORY.md
 ST 2110-20:2022 §7.2 / §7.4.2; ST 2110-21:2022 §8.1.
 
+- **Phase 6.C.D.1:** ST 2110-20:2022 enum value-set narrowings for seven
+  raw video fmtp parameters: `sampling` (§7.2 — 12 values), `depth`
+  (§7.4.2 — 5 values), `colorimetry` (§7.5 — 9 values), `PM` (§6.3 —
+  2 values), `TP` (ST 2110-21:2022 §8.1 — 3 values), `TCS` (§7.6 —
+  11 values, including 2022 addition `ST2115LOGS3`), `RANGE` (§7.3 —
+  3 values). 7 new error ids `st2110-20.a.fmtp.<key>-invalid-value`,
+  each carrying its own spec ref.
+
+  Implemented as a second tier-level semantic check
+  `check_raw_video_fmtp_values` alongside the §7.2 presence check.
+  Both walk `doc.media` for raw rtpmap PTs; a shared
+  `each_raw_video_fmtp(doc)` helper extracts the (media_index, pt,
+  params) tuple list so the two checks don't repeat the doc walk.
+  Each value check fires only when the parameter is PRESENT —
+  absence is the *-required check's concern.
+
+  Value sets lifted verbatim from the 1.0 parser's `VALID_SAMPLING` /
+  `VALID_DEPTH` / `VALID_COLORIMETRY` / `VALID_PM` / `VALID_TP` /
+  `VALID_TCS` / `VALID_RANGE` constants. Grammar-tier accepts the
+  exact same set as the 1.0 parser.
+
+  60 new tests in `spec/grammar_st2110_spec.lua` (one accept per
+  permitted value per key — 50 — plus per-key reject of `BOGUS` — 7 —
+  plus base-tier accepts-BOGUS confirmation per key — 7 — plus a
+  non-raw scope sanity check). Suite: 1226 green.
+
+  Per-key value-form narrowings for non-enum parameters (`width`,
+  `height`, `exactframerate`, `MAXUDP`, `PAR`, `SSN`) require Lua
+  predicates (integer range, gcd, pattern match); they land in
+  6.C.D.2.
+
+Audit ref: REFACTOR-PLAN.md §5 Phase 6.C; audits/SPEC_INVENTORY.md
+ST 2110-20:2022 §7.2 / §7.3 / §7.4.2 / §7.5 / §7.6 / §6.3;
+ST 2110-21:2022 §8.1.
+
 ### Changed
 
 - The inline `errors` table in `parse_sdp.lua` now delegates to
