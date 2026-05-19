@@ -851,16 +851,22 @@ describe("base SDP grammar — media line + attributes (Phase 2.E)", function()
   end)
 
   -- NOT-SPEC: library
-  it("attribute values may contain colons (only the first split point counts)", function()
+  it("attribute values may contain colons (ts-refclk now fully decomposed, Phase 4.C)", function()
     -- Static PT 0 dodges the dynamic-PT-requires-rtpmap check; we're
     -- testing colon handling in attribute values here, not semantic checks.
+    -- Phase 4.C decomposes ts-refclk into typed fields (was a generic
+    -- string value through Phase 4.B).
     local doc = base.match(minimal(nil, {
       { "m=audio 49172 RTP/AVP 0",
         "a=ts-refclk:ptp=IEEE1588-2008:00-1D-9A-FF-FE-2C-32-0F:0" },
     }))
     local a = doc.media[1].attributes[1]
     assert.equal("ts-refclk", a.name)
-    assert.equal("ptp=IEEE1588-2008:00-1D-9A-FF-FE-2C-32-0F:0", a.value)
+    assert.equal("ptp", a.source)
+    assert.equal("IEEE1588-2008", a.version)
+    assert.equal("00-1D-9A-FF-FE-2C-32-0F", a.grandmaster)
+    assert.equal("0", a.domain)
+    assert.is_nil(a.value)
   end)
 
 end)
@@ -1576,6 +1582,213 @@ describe("base SDP grammar — Phase 4.B fmtp decomposition (RFC 8866 §6.15)", 
         "a=fmtp:96" },
     }))
     assert.is_nil(doc)
+  end)
+
+end)
+
+describe("base SDP grammar — Phase 4.C ts-refclk decomposition (RFC 7273 §4.8)", function()
+
+  -- SPEC: RFC 7273 §4.8
+  it("decomposes ntp= with hostport address", function()
+    local doc = base.match(minimal(nil, {
+      { "m=audio 49172 RTP/AVP 0",
+        "a=ts-refclk:ntp=192.0.2.1" },
+    }))
+    local a = doc.media[1].attributes[1]
+    assert.equal("ts-refclk", a.name)
+    assert.equal("ntp",       a.source)
+    assert.equal("192.0.2.1", a.address)
+    assert.is_nil(a.traceable)
+    assert.is_nil(a.value)
+  end)
+
+  -- SPEC: RFC 7273 §4.8 ntp-server-addr = hostport / "/traceable/"
+  it("decomposes ntp=/traceable/ as traceable, no address", function()
+    local doc = base.match(minimal(nil, {
+      { "m=audio 49172 RTP/AVP 0",
+        "a=ts-refclk:ntp=/traceable/" },
+    }))
+    local a = doc.media[1].attributes[1]
+    assert.equal("ntp", a.source)
+    assert.is_true(a.traceable)
+    assert.is_nil(a.address)
+  end)
+
+  -- SPEC: RFC 7273 §4.8 + ST 2110-10:2017 §8.2 (bare-number domain form
+  -- used in practice; RFC 7273 ABNF specifies 'domain-nmbr=N' but every
+  -- real-world ST 2110 SDP uses ':N' bare; base tier accepts both).
+  it("decomposes ptp=version:gmid:domain (bare-number domain)", function()
+    local doc = base.match(minimal(nil, {
+      { "m=audio 49172 RTP/AVP 0",
+        "a=ts-refclk:ptp=IEEE1588-2008:00-1D-9A-FF-FE-2C-32-0F:127" },
+    }))
+    local a = doc.media[1].attributes[1]
+    assert.equal("ts-refclk",     a.name)
+    assert.equal("ptp",           a.source)
+    assert.equal("IEEE1588-2008", a.version)
+    assert.equal("00-1D-9A-FF-FE-2C-32-0F", a.grandmaster)
+    assert.equal("127",           a.domain)
+    assert.is_nil(a.traceable)
+  end)
+
+  -- SPEC: RFC 7273 §4.8 — ptp domain is optional
+  it("decomposes ptp=version:gmid with no domain", function()
+    local doc = base.match(minimal(nil, {
+      { "m=audio 49172 RTP/AVP 0",
+        "a=ts-refclk:ptp=IEEE1588-2008:00-1D-9A-FF-FE-2C-32-0F" },
+    }))
+    local a = doc.media[1].attributes[1]
+    assert.equal("ptp", a.source)
+    assert.equal("00-1D-9A-FF-FE-2C-32-0F", a.grandmaster)
+    assert.is_nil(a.domain)
+  end)
+
+  -- SPEC: RFC 7273 §4.8 ptp-server = ... / "traceable"
+  it("decomposes ptp=version:traceable", function()
+    local doc = base.match(minimal(nil, {
+      { "m=audio 49172 RTP/AVP 0",
+        "a=ts-refclk:ptp=IEEE1588-2008:traceable" },
+    }))
+    local a = doc.media[1].attributes[1]
+    assert.equal("ptp",           a.source)
+    assert.equal("IEEE1588-2008", a.version)
+    assert.is_true(a.traceable)
+    assert.is_nil(a.grandmaster)
+    assert.is_nil(a.domain)
+  end)
+
+  -- SPEC: RFC 7273 §4.8 bare clock-source names
+  it("decomposes bare clock-source names (gps, gal, glonass, local)", function()
+    for _, src in ipairs({ "gps", "gal", "glonass", "local" }) do
+      local doc = base.match(minimal(nil, {
+        { "m=audio 49172 RTP/AVP 0", "a=ts-refclk:" .. src },
+      }))
+      assert.is_truthy(doc, "failed to parse a=ts-refclk:" .. src)
+      assert.equal(src, doc.media[1].attributes[1].source)
+    end
+  end)
+
+  -- SPEC: RFC 7273 §4.8 private [":traceable"]
+  it("decomposes 'private' with optional :traceable suffix", function()
+    local doc = base.match(minimal(nil, {
+      { "m=audio 49172 RTP/AVP 0", "a=ts-refclk:private" },
+    }))
+    assert.equal("private", doc.media[1].attributes[1].source)
+    assert.is_nil(doc.media[1].attributes[1].traceable)
+
+    local doc2 = base.match(minimal(nil, {
+      { "m=audio 49172 RTP/AVP 0", "a=ts-refclk:private:traceable" },
+    }))
+    assert.equal("private", doc2.media[1].attributes[1].source)
+    assert.is_true(doc2.media[1].attributes[1].traceable)
+  end)
+
+  -- SPEC: RFC 7273 §4.8 clksrc-ext (which ST 2110-10 §8.2 uses for
+  -- 'localmac' — not promoted to a recognized clock source at the base
+  -- tier; Phase 6 ST 2110 will narrow).
+  it("clksrc-ext form: localmac=<mac> lands as source/value", function()
+    local doc = base.match(minimal(nil, {
+      { "m=audio 49172 RTP/AVP 0",
+        "a=ts-refclk:localmac=AA-BB-CC-DD-EE-FF" },
+    }))
+    local a = doc.media[1].attributes[1]
+    assert.equal("ts-refclk",         a.name)
+    assert.equal("localmac",          a.source)
+    assert.equal("AA-BB-CC-DD-EE-FF", a.value)
+  end)
+
+end)
+
+describe("base SDP grammar — Phase 4.C mediaclk decomposition (RFC 7273 §5.4)", function()
+
+  -- SPEC: RFC 7273 §5.4 mediaclock = sender / ...
+  it("decomposes mediaclk:sender", function()
+    local doc = base.match(minimal(nil, {
+      { "m=audio 49172 RTP/AVP 0", "a=mediaclk:sender" },
+    }))
+    local a = doc.media[1].attributes[1]
+    assert.equal("mediaclk", a.name)
+    assert.equal("sender",   a.mode)
+    assert.is_nil(a.offset)
+    assert.is_nil(a.rate)
+  end)
+
+  -- SPEC: RFC 7273 §5.4 direct [ "=" 1*DIGIT ]
+  it("decomposes mediaclk:direct (bare form, no offset)", function()
+    local doc = base.match(minimal(nil, {
+      { "m=audio 49172 RTP/AVP 0", "a=mediaclk:direct" },
+    }))
+    local a = doc.media[1].attributes[1]
+    assert.equal("direct", a.mode)
+    assert.is_nil(a.offset)
+  end)
+
+  -- SPEC: RFC 7273 §5.4
+  it("decomposes mediaclk:direct=0", function()
+    local doc = base.match(minimal(nil, {
+      { "m=audio 49172 RTP/AVP 0", "a=mediaclk:direct=0" },
+    }))
+    local a = doc.media[1].attributes[1]
+    assert.equal("direct", a.mode)
+    assert.equal(0, a.offset)
+    assert.is_number(a.offset)
+    assert.is_nil(a.rate)
+  end)
+
+  -- SPEC: RFC 7273 §5.4 rate = "rate=" integer "/" integer
+  it("decomposes mediaclk:direct=0 rate=1/48000", function()
+    local doc = base.match(minimal(nil, {
+      { "m=audio 49172 RTP/AVP 0", "a=mediaclk:direct=0 rate=1/48000" },
+    }))
+    local a = doc.media[1].attributes[1]
+    assert.equal("direct", a.mode)
+    assert.equal(0,        a.offset)
+    assert.is_table(a.rate)
+    assert.equal(1,     a.rate.num)
+    assert.equal(48000, a.rate.den)
+  end)
+
+  -- SPEC: RFC 7273 §5.4 ieee1722-streamid = "IEEE1722=" avb-stream-id (EUI64)
+  it("decomposes mediaclk:IEEE1722=<eui64>", function()
+    local doc = base.match(minimal(nil, {
+      { "m=audio 49172 RTP/AVP 0",
+        "a=mediaclk:IEEE1722=00-11-22-FF-FE-33-44-55" },
+    }))
+    local a = doc.media[1].attributes[1]
+    assert.equal("IEEE1722", a.mode)
+    assert.equal("00-11-22-FF-FE-33-44-55", a.stream_id)
+  end)
+
+  -- SPEC: RFC 7273 §5.4 mediaclock-ext = mediaclock-param-name [...]
+  it("mediaclock-ext: unknown <token>=<value> lands as mode/value", function()
+    local doc = base.match(minimal(nil, {
+      { "m=audio 49172 RTP/AVP 0", "a=mediaclk:foo=bar" },
+    }))
+    local a = doc.media[1].attributes[1]
+    assert.equal("foo", a.mode)
+    assert.equal("bar", a.value)
+  end)
+
+  -- SPEC: RFC 7273 §5.4 [ media-clkid SP ] mediaclock
+  it("decomposes optional id= prefix", function()
+    local doc = base.match(minimal(nil, {
+      { "m=audio 49172 RTP/AVP 0",
+        "a=mediaclk:id=base64tag sender" },
+    }))
+    local a = doc.media[1].attributes[1]
+    assert.equal("base64tag", a.id)
+    assert.equal("sender",    a.mode)
+  end)
+
+  -- SPEC: RFC 7273 §5.4 media-clkid = "id=" [ "src:" ] media-clktag
+  it("decomposes id=src:<tag> form, preserving src: prefix inline", function()
+    local doc = base.match(minimal(nil, {
+      { "m=audio 49172 RTP/AVP 0",
+        "a=mediaclk:id=src:base64tag sender" },
+    }))
+    local a = doc.media[1].attributes[1]
+    assert.equal("src:base64tag", a.id)
+    assert.equal("sender",        a.mode)
   end)
 
 end)

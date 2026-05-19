@@ -212,6 +212,44 @@ of Phase 2; was 964 at start of Phase 3).
   pre-registered `sdp.a.fmtp.trailing-semicolon` finding), and
   rejections (`a=fmtp:` with no PT, `a=fmtp:96` with no params).
   Suite: 1056 green.
+- **Phase 4.C:** typed decomposition for `a=ts-refclk` and
+  `a=mediaclk` per RFC 7273 §4.8 / §5.4.
+  - **ts-refclk variants** all share `{name="ts-refclk", source=...}`:
+    `source="ntp"` adds `address` (hostport) OR `traceable=true`
+    (for `ntp=/traceable/`); `source="ptp"` adds `version`,
+    plus either `grandmaster` (EUI-64) and optional `domain`,
+    OR `traceable=true` (for `ptp=<version>:traceable`);
+    bare names `gps`/`gal`/`glonass`/`local` use only `source`;
+    `private [":traceable"]` adds optional `traceable=true`.
+    Anything else falls through to the RFC 7273 §4.8 `clksrc-ext`
+    form: `{source="<token>", value="<byte-string>"?}` — which
+    is where `localmac=<mac>` lands at the base tier (ST 2110-10
+    §8.2 elevates it to a recognized clock source; Phase 6 will
+    promote it).
+  - **mediaclk variants** all share `{name="mediaclk", mode=...}`:
+    `mode="sender"` is parameterless; `mode="direct"` adds
+    optional `offset` (number) and optional `rate={num, den}`
+    per `direct [ "=" 1*DIGIT ] [SP rate]`; `mode="IEEE1722"`
+    adds `stream_id` (EUI-64). The optional `id=<base64tag>`
+    prefix (RFC 7273 §5.4 `media-clkid`) is captured as a
+    separate `id` field with any `src:` marker preserved inline.
+    `mediaclock-ext` falls through as `{mode="<token>",
+    value="<byte-string>"?}`.
+  - PTP domain accepts both the RFC 7273 ABNF `domain-nmbr=N`
+    form **and** the bare-`:N` form ST 2110-10:2017 §8.2 examples
+    use (every real-world ST 2110 SDP uses the bare form). Phase 5
+    may add a soft-syntactic finding for the non-ABNF form;
+    Phase 6 narrows.
+  - Each branch ends with a `#line_end` look-ahead so the
+    ordered choice only commits on a branch that consumes
+    exactly to EOL — preventing e.g. `tsr_bare`'s `P"local"`
+    from claiming the `local` prefix of `localmac=...`.
+- New leaves added (composable for Phase 6 ST 2110 narrowing):
+  `eui64_str` (8 hex octets `-`-separated), `hex_octet`,
+  `mediaclk_offset_num`, `rate_pair`.
+- 16 new tests in `spec/grammar_base_spec.lua`. RFC 7273 saved
+  permanently as markdown per the spec-storage rule. Suite: 1072
+  green.
 
 ### Changed
 

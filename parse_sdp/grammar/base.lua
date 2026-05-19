@@ -410,6 +410,8 @@ local rules = {
   a_value = Ct(
         V"a_rtpmap"
       + V"a_fmtp"
+      + V"a_ts_refclk"
+      + V"a_mediaclk"
       + V"a_mid"
       + V"a_ptime"
       + V"a_maxptime"
@@ -421,11 +423,12 @@ local rules = {
   -- Look-ahead: a known compound-attribute name followed by ":" or
   -- end-of-line. Used as a negative lookahead in a_generic so malformed
   -- instances of a known attribute fail the match instead of degrading
-  -- to the generic shape.
+  -- to the generic shape. Longer names first (matters for "maxptime"
+  -- vs "ptime" / "ts-refclk" vs "mediaclk").
   known_attr_lookahead =
-        (P("maxptime")  + P("framerate") + P("rtpmap")
-       + P("quality")   + P("ptime")     + P("fmtp")
-       + P("mid"))
+        (P("ts-refclk") + P("maxptime")  + P("framerate")
+       + P("mediaclk")  + P("rtpmap")    + P("quality")
+       + P("ptime")     + P("fmtp")      + P("mid"))
       * (P(":") + V"line_end"),
 
   -- rtpmap (RFC 8866 §6.6):
@@ -510,6 +513,103 @@ local rules = {
   a_mid = P("mid:")
       * Cg(Cc("mid"), "name")
       * Cg(V"rfc8866_token", "tag"),
+
+  -- ts-refclk (RFC 7273 §4.8):
+  --   clksrc = ntp / ptp / gps / gal / glonass / local / private / clksrc-ext
+  -- The base tier covers the recognized variants and falls back to the
+  -- generic `clksrc-ext` form (clksrc-param-name ["=" byte-string]) for
+  -- anything else — including `localmac=<mac>`, which ST 2110-10 §8.2
+  -- defines as an extension and the Phase 6 ST 2110 tier will promote
+  -- to a recognized form.
+  -- Each branch ends with `#V"line_end"` so the choice only commits on a
+  -- branch that consumes exactly up to end-of-line — otherwise control
+  -- falls through to the next alternative.
+  a_ts_refclk = P("ts-refclk:")
+      * Cg(Cc("ts-refclk"), "name")
+      * ( V"tsr_ntp" + V"tsr_ptp" + V"tsr_private"
+        + V"tsr_bare" + V"tsr_ext" ),
+
+  tsr_ntp = P("ntp=") * Cg(Cc("ntp"), "source")
+      * ( P("/traceable/") * Cg(Cc(true), "traceable") * #V"line_end"
+        + Cg(C((1 - V"line_end") ^ 1), "address") ),
+
+  tsr_ptp = P("ptp=") * Cg(Cc("ptp"), "source")
+      * Cg(C(V"rfc8866_token_char" ^ 1), "version")
+      * P(":")
+      * V"tsr_ptp_server",
+
+  tsr_ptp_server =
+        P("traceable") * Cg(Cc(true), "traceable") * #V"line_end"
+      + Cg(V"eui64_str", "grandmaster")
+          * (P(":") * Cg(C((1 - V"line_end") ^ 1), "domain")) ^ -1
+          * #V"line_end",
+
+  tsr_private = P("private") * Cg(Cc("private"), "source")
+      * (P(":traceable") * Cg(Cc(true), "traceable")) ^ -1
+      * #V"line_end",
+
+  -- Bare clock-source names: gps, gal, glonass, local. The `&line_end`
+  -- guard prevents this branch from claiming a prefix-overlapping ext
+  -- token (e.g. "local" inside "localmac=...").
+  tsr_bare = Cg(C(P("glonass") + P("gps") + P("gal") + P("local")),
+                "source")
+      * #V"line_end",
+
+  -- Generic clksrc-ext fallback: <token>[=<byte-string>].
+  tsr_ext = Cg(C(V"rfc8866_token_char" ^ 1), "source")
+      * (P("=") * Cg(C((1 - V"line_end") ^ 1), "value")) ^ -1
+      * #V"line_end",
+
+  -- mediaclk (RFC 7273 §5.4):
+  --   media-clksrc = "mediaclk:" [media-clkid SP] mediaclock
+  --   media-clkid  = "id=" [ "src:" ] media-clktag
+  --   mediaclock   = sender / direct / ieee1722-streamid / mediaclock-ext
+  --   direct       = "direct" [ "=" 1*DIGIT ] [SP rate]
+  --   rate         = "rate=" integer "/" integer
+  -- The optional `id=` prefix is decomposed into doc.id (the `src:`
+  -- marker, if present, is preserved inline in the captured string).
+  a_mediaclk = P("mediaclk:")
+      * Cg(Cc("mediaclk"), "name")
+      * (V"mediaclk_id_prefix") ^ -1
+      * V"mediaclk_body",
+
+  mediaclk_id_prefix = P("id=")
+      * Cg(C((1 - SP - V"line_end") ^ 1), "id") * SP,
+
+  mediaclk_body = V"mc_sender" + V"mc_direct" + V"mc_ieee1722" + V"mc_ext",
+
+  mc_sender = P("sender") * Cg(Cc("sender"), "mode") * #V"line_end",
+
+  -- direct: bare or with =offset and/or " rate=N/N". Offset ABNF is
+  -- 1*DIGIT (RFC 7273 §5.4) — looser than RFC 8866 §9 integer because
+  -- it permits leading zeros; captured as a number via tonumber.
+  mc_direct = P("direct") * Cg(Cc("direct"), "mode")
+      * (P("=") * Cg(V"mediaclk_offset_num", "offset")) ^ -1
+      * (SP * P("rate=") * Cg(V"rate_pair", "rate")) ^ -1
+      * #V"line_end",
+
+  mediaclk_offset_num = C(R("09") ^ 1) / tonumber,
+
+  rate_pair = Ct(
+        Cg(V"rfc8866_pos_int_num", "num")
+      * P("/")
+      * Cg(V"rfc8866_pos_int_num", "den")
+    ),
+
+  mc_ieee1722 = P("IEEE1722=") * Cg(Cc("IEEE1722"), "mode")
+      * Cg(V"eui64_str", "stream_id")
+      * #V"line_end",
+
+  mc_ext = Cg(C(V"rfc8866_token_char" ^ 1), "mode")
+      * (P("=") * Cg(C((1 - V"line_end") ^ 1), "value")) ^ -1
+      * #V"line_end",
+
+  -- EUI-64: 8 hex octets separated by '-' (RFC 7273 §4.8 EUI64 = 7(2HEXDIG
+  -- "-") 2HEXDIG). Used by ts-refclk:ptp grandmaster and mediaclk:IEEE1722
+  -- stream-id.
+  eui64_str = C(V"hex_octet" * (P("-") * V"hex_octet") ^ 7),
+  hex_octet = (R("09") + R("AF") + R("af"))
+            * (R("09") + R("AF") + R("af")),
 
   -- ptime (RFC 8866 §6.4) / maxptime (§6.5) / framerate (§6.13):
   -- value = non-zero-int-or-real.
