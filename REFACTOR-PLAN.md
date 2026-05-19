@@ -569,19 +569,58 @@ ST 2110 check migrates under its new ID.
   presence-check (6.C.C) and value-form check (6.C.D), all sharing
   `each_raw_video_fmtp(doc)`. 29 new tests; suite 1282 green.
   Cross-param coverage now at parity with 1.0.
-- **6.C.F (pending — stricter-than-1.0)** — five cross-parameter
-  SHALLs inventoried in `audits/SPEC_INVENTORY.md` rows 61, 115,
-  116, 117, 118 that the 1.0 parser does NOT enforce: §6.2.5
-  Table 3 (4:2:0 sampling forbids depth ∈ {16, 16f}) and §7.6 prose
-  (TCS=LINEAR / BT2100LINPQ / BT2100LINHLG / ST2065-1 each require
-  depth=16f). Each needs primary-source re-verification against the
-  on-disk ST 2110-20:2022 markdown before landing per the
-  conformance principle. This is a stricter-than-1.0 improvement
-  pass — opportunistic; not blocking 6.D.
-- **6.C (remaining: -22/-30/-41 fmtp narrowings, separate from -20)**
-  — jxsv fmtp parameter sets, -30 audio fmtp where defined, -41
-  SSN/DIT. These are encoding-specific fmtp narrowings parallel
-  to the -20 work just completed.
+- **6.C.F (pending — 1.0-gap close, not strictness creep)** —
+  five cross-parameter SHALLs that are normatively in
+  ST 2110-20:2022 but the 1.0 parser does NOT enforce. Inventoried
+  at `audits/SPEC_INVENTORY.md` rows 61, 115, 116, 117, 118:
+  - §6.2.5 Table 3 — 4:2:0 sampling permits only depth ∈ {8, 10,
+    12}; depth ∈ {16, 16f} not in the defined-value table.
+  - §7.6 LINEAR row — TCS=LINEAR is defined with `(depth=16f)`.
+  - §7.6 BT2100LINPQ row — TCS=BT2100LINPQ is defined with
+    `(depth=16f)`.
+  - §7.6 BT2100LINHLG row — TCS=BT2100LINHLG is defined with
+    `(depth=16f)`.
+  - §7.6 ST2065-1 row — TCS=ST2065-1 is defined with `(depth=16f)`.
+
+  Verification status (completed 2026-05-19): all five audit rows
+  exist as cited; primary spec text on disk (`st2110-20-2022.md`
+  / PDF) supports each constraint; 1.0 parser confirmed not to
+  enforce any of them. The SHALL grounding is via CLAUDE.md
+  strictness polarity #3 — *defined value forms* — rather than
+  explicit SHALL prose. Per the principle: when the spec defines
+  a value set or a name/value pairing and an SDP signals a value
+  outside the defined set, the validator rejects.
+
+  Framing note: NOT "stricter-than-1.0" in the sense of going
+  beyond the spec; "spec-conformant gaps in 1.0" is the accurate
+  framing. The 1.0 parser is incomplete here, not lax.
+
+- **6.C remaining — encoding-specific fmtp porting** (separate
+  from -20 and from 6.C.F; each represents a distinct shape, not
+  a uniform "parallel to -20" port):
+  - **-22 jxsv** — substantial 1.0 check block at
+    `parse_sdp.lua:1788-1970`. Required params (width, height,
+    TP, packetmode), optional value-form params (sampling, TCS,
+    colorimetry, RANGE, exactframerate, depth, transmode,
+    profile, level, sublevel), and flag constraints
+    (interlace/segmented bare-flag, segmented-requires-interlace).
+    Closest in structure to the -20 work just completed; biggest
+    single port.
+  - **-30 L16/L24 audio fmtp** — minimal: only `channel-order`
+    syntax validation (RFC 3190 + SMPTE2110 convention via
+    `valid_channel_order`). No required-param presence, no
+    cross-param SHALLs at the fmtp layer. Small slice.
+  - **-31 AM824 fmtp** — already covered at the rtpmap and
+    attribute level (channel parity, clock-rate set, ptime
+    Table 1) in earlier phases. No additional fmtp-layer
+    narrowing beyond what -30's `channel-order` provides for
+    AM824 (AES3-special group symbols per §6.2 Table 2 may
+    warrant a small extension).
+  - **-41 SSN / DIT** — at `parse_sdp.lua:1751-1786`. SSN
+    required with form `ST2110-41:YYYY`; DIT optional with
+    comma-separated uppercase hex tokens (no `0x` prefix, no
+    whitespace); MAXUDP forbidden (§5.4 limits UDP to Standard
+    size). Distinct shape from -20; smaller port.
 - **6.D (pending)** — required-attribute presence per media type
   (ts-refclk, mediaclk, ptime).
 - **6.E (pending)** — cross-stream invariants (RFC 7104 group:DUP,

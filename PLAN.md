@@ -52,10 +52,22 @@ ST 2110-20 raw video fmtp check chain (§7.1 no-whitespace-around-=;
 §7.2 + §7.4.2 + ST 2110-21:2022 §8.1 required-parameter presence;
 seven enum value-sets; six non-enum value forms + two flag-only;
 seven cross-parameter SHALLs from §6.2.5 / §6.3.3 / §7.2 / §7.3 /
-§7.4.1). The grammar tier is now at parity with the 1.0 parser's raw
-video fmtp coverage. Phase 6.C.F (stricter-than-1.0 audit-row gaps:
-§6.2.5 Table 3 4:2:0 depth restriction, §7.6 TCS depth=16f coupling)
-and Phases 6.D–10 remain. Tracking and design live in
+§7.4.1). The grammar tier is now at parity with the 1.0 parser's
+raw video fmtp coverage. Remaining work in 6.C is *spec-conformant
+gap-close*, not new strictness, plus encoding-specific fmtp ports:
+
+- **6.C.F** — five §6.2.5 Table 3 / §7.6 cross-param SHALLs that
+  are normatively in the spec but the 1.0 parser does NOT enforce
+  (defined-value-form grounding per CLAUDE.md polarity #3).
+- **-22 jxsv fmtp** — substantial 1.0 check block (parse_sdp.lua
+  :1788-1970) to port.
+- **-30 L16/L24 fmtp** — minimal; channel-order syntax only.
+- **-31 AM824 fmtp** — already covered at rtpmap/attribute level
+  in earlier phases; little additional fmtp-layer work.
+- **-41 SSN / DIT** — distinct shape from -20; smaller port at
+  parse_sdp.lua:1751-1786.
+
+Phases 6.D–10 also remain. Tracking and design live in
 [REFACTOR-PLAN.md](REFACTOR-PLAN.md). The 1.0 parser at
 `parse_sdp.lua` remains the shipping artifact on `main`; the new
 grammar under `parse_sdp/grammar/` is internal-only until Phase 9

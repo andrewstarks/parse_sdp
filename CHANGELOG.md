@@ -772,18 +772,22 @@ ST 2110-20:2022 §7.2 / §7.3; ST 2110-10 §6.4.
   so the §7.4.1 cross-param check doesn't mask the enum value-set
   acceptance. Suite: 1282 green.
 
-  **Audit-row gaps deferred to a follow-up slice (6.C.F).** Five
+  **1.0-gap close deferred to a follow-up slice (6.C.F).** Five
   additional cross-parameter SHALLs are inventoried in
   `audits/SPEC_INVENTORY.md` (rows 61, 115, 116, 117, 118) but
   NOT enforced by the 1.0 parser:
-  - §6.2.5 Table 3: 4:2:0 sampling forbids depth ∈ {16, 16f}
+  - §6.2.5 Table 3: 4:2:0 sampling defined-value set permits only
+    depth ∈ {8, 10, 12}; values outside the table are not defined.
   - §7.6: TCS=LINEAR / BT2100LINPQ / BT2100LINHLG / ST2065-1 each
-    require depth=16f
+    defined with `(depth=16f)` parenthetical in the row prose.
 
-  These are stricter-than-1.0 improvements; per
-  [[feedback_conformance_principle]] each requires primary-source
-  re-verification against the on-disk spec markdown before landing.
-  Tracked in REFACTOR-PLAN.md for a separate 6.C.F slice.
+  These are 1.0-gap closes (the constraints are in the spec; 1.0
+  is incomplete, not lax), grounded by CLAUDE.md strictness
+  polarity #3 (defined value forms) rather than explicit SHALL
+  prose. Verification status as of this commit (2026-05-19): all
+  five audit rows confirmed against `st2110-20-2022.md`, and the
+  1.0 parser confirmed not to enforce any of them. Tracked in
+  REFACTOR-PLAN.md for a separate 6.C.F slice.
 
 Audit ref: REFACTOR-PLAN.md §5 Phase 6.C; audits/SPEC_INVENTORY.md
 ST 2110-20:2022 §6.2.5 / §6.3.3 / §7.2 / §7.3 / §7.4.1.
