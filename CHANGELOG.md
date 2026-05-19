@@ -1653,6 +1653,53 @@ verified for the integer / zero-based-integer grammar.
 
 Audit ref: REFACTOR-PLAN.md §5 Phase 6.K.
 
+- **Phase 6.L:** `validate_channel_order` LPeg sweep — last of the
+  inline-regex validators in `parse_sdp/grammar/st2110.lua`.
+
+  Same anti-pattern as the Phase 6.J validator sweep, applied to the
+  one validator that 6.J missed: 5 inline `string.match` / `gmatch`
+  calls implementing ST 2110-30 §6.2.2 + ST 2110-31 §6.2 Table 2 +
+  RFC 3190 channel-order syntax. Replaced with a small LPeg grammar
+  that captures the group symbols and dispatches the
+  AES3-on-AM824 cross-encoding check in Lua (the only piece that
+  can't live in the grammar — it depends on a runtime argument).
+
+  The new grammar is exactly the spec's syntax:
+
+  ```text
+  channel_order = convention "." order
+  -- For SMPTE2110:
+  order   = "(" group *("," group) ")"
+  group   = "M" | "DM" | "ST" | "LtRt" | "51" | "71" | "222"
+          | "SGRP"     ; ST 2110-30 §6.2.2 Table 1
+          | "AES3"     ; ST 2110-31 §6.2 Table 2 (AM824 only)
+          | "U" Udd    ; Undefined group (Udd = 01..64)
+  Udd     = "0"[1-9] | [1-5][0-9] | "6"[0-4]
+  ```
+
+  Wins:
+
+  - 5 inline `string.match` / `gmatch` calls collapsed.
+  - The Udd range check (01..64) is now enforced by pure pattern
+    algebra (the three sub-ranges as an ordered choice) instead of
+    a separate `tonumber` + `>= 1 and <= 64` check.
+  - Stricter than the old `gmatch` + `^%s*(.-)%s*$` trim loop:
+    no whitespace allowed inside the `(...)` parens, matching the
+    literal form in the §6.2.2 examples (`SMPTE2110.(51,ST)`).
+    No existing tests used internal whitespace, so the strictness
+    bump is a free spec-correctness gain.
+  - `AUDIO_CHANNEL_GROUPS` constant table deleted — the symbol set
+    is enumerated inline in the LPeg pattern (single source of
+    truth, ordered-choice friendly: longer prefixes first so
+    `"DM"` doesn't get pre-empted by `"M"`).
+
+  Net file size change: minor; the LPeg pattern is denser than the
+  match-loop it replaces but adds explanatory grammar comments.
+
+  Suite unchanged at 1569 green — accept / reject set preserved.
+
+Audit ref: REFACTOR-PLAN.md §5 Phase 6.L; [[lpeg-discipline]].
+
 The grammar tier now matches 1.0 parity on every well-grounded
 per-encoding required-attribute and cross-attribute SHALL. Three
 out-of-parity flags carry forward for separate audit follow-up:

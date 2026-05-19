@@ -17,8 +17,8 @@ local lpeg   = require("lpeg")
 local base   = require("parse_sdp.grammar.base")
 local errors = require("parse_sdp.errors")
 
-local P, V, C, Cc, Cg, Cb, Ct, Cmt, Carg =
-  lpeg.P, lpeg.V, lpeg.C, lpeg.Cc, lpeg.Cg, lpeg.Cb, lpeg.Ct, lpeg.Cmt, lpeg.Carg
+local P, R, V, C, Cc, Cg, Cb, Ct, Cmt, Carg =
+  lpeg.P, lpeg.R, lpeg.V, lpeg.C, lpeg.Cc, lpeg.Cg, lpeg.Cb, lpeg.Ct, lpeg.Cmt, lpeg.Carg
 
 local patterns = require("parse_sdp.grammar.patterns")
 
@@ -546,47 +546,74 @@ local JXSV_CROSS_PARAM_CHECKS = {
 -- 6.F to dispatch via the per-fmtp Cmt on a_fmtp). The previous
 -- each_audio_fmtp helper went away with the doc-walk removal.
 
--- ST 2110-30 §6.2.2 Table 1 group symbol set (M, DM, ST, LtRt, 51, 71,
--- 222, SGRP). AES3 is added per ST 2110-31:2022 §6.2 Table 2 — AM824 only.
-local AUDIO_CHANNEL_GROUPS = {
-  ["M"]    = true, ["DM"]   = true, ["ST"]   = true, ["LtRt"] = true,
-  ["51"]   = true, ["71"]   = true, ["222"]  = true, ["SGRP"] = true,
-}
+-- Validate a channel-order value against ST 2110-30 §6.2.2 + ST 2110-31
+-- §6.2 Table 2 + RFC 3190. Pure-LPeg structural parse; the AES3-on-AM824
+-- cross-encoding check is the only piece that needs Lua (it depends on
+-- the runtime `encoding` argument).
+--
+-- Grammar (no whitespace inside `(...)` per the spec's literal form):
+--   channel_order   = convention "." order
+--   convention      = 1*(non-dot non-WS char)
+--   For SMPTE2110:
+--     order         = "(" group *("," group) ")"
+--     group         = "M" | "DM" | "ST" | "LtRt" | "51" | "71" | "222"
+--                   | "SGRP"                                  ; §6.2.2 Table 1
+--                   | "AES3"                                  ; -31 §6.2 Table 2
+--                   | "U" Udd                                 ; Undefined group
+--     Udd           = "0"[1-9] | [1-5][0-9] | "6"[0-4]        ; 01..64
+--   For any other convention: accepted without further structural check
+--   (§6.2.2 only constrains the SMPTE2110 convention).
+--
+-- Returns (true, nil) on accept, or (false, err_id) on reject. err_id
+-- distinguishes the two normative sources (-30 vs -31) so an audit grep
+-- can target either.
 
--- Validate a single channel-order value against §6.2.2 + RFC 3190. Returns
--- (true, nil) on accept, or (false, err_id) when the value violates a
--- specific SHALL. err_id distinguishes the two normative sources (-30 vs
--- -31) so audit grep can target either.
+-- "01".."64" — three disjoint sub-ranges captured by LPeg's ordered choice.
+local _udd = P("0") * R("19")            -- 01..09
+           + R("15") * R("09")           -- 10..59
+           + P("6")  * R("04")           -- 60..64
+
+local _channel_group =
+      P("AES3")                          -- alternation order: longer first
+    + P("LtRt")
+    + P("SGRP")
+    + P("DM")
+    + P("ST")
+    + P("222") + P("51") + P("71")
+    + P("M")
+    + P("U") * _udd
+
+-- Returns array of captured group symbol-strings on match, nil on fail.
+-- Anchored: must consume the whole order body.
+local _smpte2110_order_pat =
+      P("(")
+    * Ct(C(_channel_group) * (P(",") * C(_channel_group)) ^ 0)
+    * P(")")
+    * P(-1)
+
+-- Splits "<convention>.<order>" → (convention_str, order_str). Returns
+-- nil when no '.' is present or either side is empty / contains whitespace.
+local _channel_order_split_pat =
+      C((1 - lpeg.S(". \t\r\n")) ^ 1)
+    * P(".")
+    * C((1 - lpeg.S(" \t\r\n")) ^ 1)
+    * P(-1)
+
 local function validate_channel_order(value, encoding)
-  local convention, order = value:match("^([^.%s]+)%.(%S+)$")
-  if not convention or order == "" then
+  local convention, order = _channel_order_split_pat:match(value)
+  if not convention then
     return false, "st2110-30.a.fmtp.channel-order-invalid"
   end
   if convention ~= "SMPTE2110" then
-    -- §6.2.2 only constrains the SMPTE2110 convention. Other tokens are
-    -- structurally valid RFC 3190 forms; accept them.
     return true
   end
-  local groups_str = order:match("^%((.+)%)$")
-  if not groups_str then
+  local groups = _smpte2110_order_pat:match(order)
+  if not groups then
     return false, "st2110-30.a.fmtp.channel-order-invalid"
   end
-  for grp in groups_str:gmatch("[^,]+") do
-    local g = grp:match("^%s*(.-)%s*$")
-    if g == "" then
-      return false, "st2110-30.a.fmtp.channel-order-invalid"
-    elseif AUDIO_CHANNEL_GROUPS[g] then
-      -- known §6.2.2 Table 1 symbol — accept
-    elseif g == "AES3" then
-      if encoding ~= "AM824" then
-        return false, "st2110-31.a.fmtp.channel-order-aes3-requires-am824"
-      end
-    else
-      local nn = g:match("^U(%d%d)$")
-      local n  = nn and tonumber(nn)
-      if not n or n < 1 or n > 64 then
-        return false, "st2110-30.a.fmtp.channel-order-invalid"
-      end
+  for _, g in ipairs(groups) do
+    if g == "AES3" and encoding ~= "AM824" then
+      return false, "st2110-31.a.fmtp.channel-order-aes3-requires-am824"
     end
   end
   return true

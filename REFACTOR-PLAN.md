@@ -787,6 +787,17 @@ separate follow-up.
   `loc.context` overload bug fixed (string-only highlight path).
   Suite 1569 green (up from 1567). Phase 7 IPMX inherits the
   full slot machinery.
+- **6.L (complete)** — `validate_channel_order` LPeg sweep
+  (last inline-regex validator in st2110.lua). Replaced 5
+  `string.match` / `gmatch` calls with a small LPeg grammar
+  encoding ST 2110-30 §6.2.2 + ST 2110-31 §6.2 Table 2 + RFC
+  3190 channel-order syntax. The AES3-on-AM824 cross-encoding
+  check stays in Lua (it depends on a runtime argument). Udd
+  range 01..64 enforced by three sub-range alternatives in pure
+  pattern algebra. `AUDIO_CHANNEL_GROUPS` constant deleted.
+  Suite unchanged at 1569 green. Closes the "code review"
+  thread that started with the `make_pixel_dim_validator`
+  factory and produced 6.J + 6.L.
 
 **Phase 7 — IPMX grammar via `extend(st2110_rules, ...)`.**
 Same pattern, IPMX-specific from TR-10 markdowns. Re-verify each citation

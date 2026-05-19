@@ -43,7 +43,7 @@ and runs them through the parser. See
 spec text; no opinion-based checks remain.
 
 The grammar-first refactor on branch `refactor/grammar-first` is **in
-progress**. Phases 4 + 5 complete; **Phase 6 (all of 6.A–6.K except
+progress**. Phases 4 + 5 complete; **Phase 6 (all of 6.A–6.L except
 the deferred 6.I) is now closed.** The grammar tier matches or
 exceeds the 1.0 parser on every check grounded in primary spec text.
 Three 1.0-over-strict flags from 6.D (audio MAXUDP-forbidden on
@@ -58,7 +58,9 @@ the in-grammar treatment to base SDP's `check_connection_addresses`.
 from. 6.K added a `media_section_checks` slot parallel to
 `semantic_checks`, migrated 5 per-block checks into it, and
 recovered the `media[N]` field_path prefix on every in-grammar
-finding via the new `ctx.media_index` plumbing.
+finding via the new `ctx.media_index` plumbing. 6.L finished the
+LPeg sweep by rewriting `validate_channel_order` (the last inline-
+regex validator) as a small LPeg grammar.
 
 Phases 7–10 remain (IPMX tier via `extend(st2110_rules, ...)`,
 serializer rewrite, public API stabilization, migration cutover).
