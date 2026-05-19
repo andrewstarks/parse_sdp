@@ -1064,6 +1064,40 @@ Audit ref: REFACTOR-PLAN.md §5 Phase 6.C; ST 2110-41:2024 §5.4 + §6.
 Audit ref: [REFACTOR-PLAN.md](REFACTOR-PLAN.md) §5 Phase 6.D; ST 2110-10:2022 §8.2 + §8.3;
 on-disk primary text at [`smpte_standards_internal/st2110-10-2022.pdf`](../../Standards Related/smpte_standards_internal/st2110-10-2022.pdf).
 
+- **Phase 6.D.B:** ST 2110-30:2025 §6.2.1 audio MAXUDP-forbidden
+  (L16 / L24 only).
+
+  1 new error id `st2110-30.a.fmtp.maxudp-forbidden`. §6.2.1 says
+  "The Standard UDP Datagram Size Limit as defined in SMPTE ST
+  2110-10 shall be used." Combined with ST 2110-10:2022 §6.4 / §8.6
+  (MAXUDP signals operation beyond the Standard Limit), MAXUDP
+  cannot appear in a conformant L16 / L24 fmtp.
+
+  New tier-level semantic check `check_audio_maxudp_forbidden` walks
+  `each_audio_fmtp(doc)` (helper from 6.C.H) and emits the finding
+  when encoding ∈ {L16, L24} and `params.MAXUDP` is present.
+
+  **INTENTIONAL non-parity with 1.0.** The 1.0 parser at
+  [`parse_sdp.lua:2293`](parse_sdp.lua#L2293) also forbids MAXUDP
+  for AM824 with the cite "ST 2110-31 §5.x inherits the same UDP-
+  size constraint." Primary text disagrees: ST 2110-31 §5.2 defers
+  to ST 2110-10, which explicitly *permits* MAXUDP for streams
+  exceeding the Standard Limit (§6.5). No -31 clause forbids MAXUDP.
+  Per the validation-strictness principle (silence is not a reason
+  to reject), the grammar tier ports only the well-grounded -30
+  limb of the check. The 1.0 AM824 check is now flagged as a
+  candidate for removal in a separate audit pass.
+
+  5 new tests in `spec/grammar_st2110_spec.lua`: positive (L24
+  without MAXUDP), reject L24 + MAXUDP, reject L16 + MAXUDP,
+  intentional accept on AM824 + MAXUDP, no-spill onto raw video
+  with MAXUDP. Suite: 1506 green.
+
+Audit ref: ST 2110-30:2025 §6.2.1 + ST 2110-10:2022 §6.4 + §8.6;
+on-disk primary text at `smpte_standards_internal/st2110-30-2025.pdf`
+and `st2110-10-2022.pdf`. Out-of-parity-flag: 1.0 parser's
+ST 2110-31 MAXUDP-forbidden limb.
+
 ### Changed
 
 - The inline `errors` table in `parse_sdp.lua` now delegates to

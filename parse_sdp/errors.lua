@@ -1032,6 +1032,29 @@ M.register("st2110-41.a.fmtp.maxudp-forbidden", {
 -- attribute, so a session-level mediaclk does not cover a media block
 -- that lacks its own.
 
+-- ── Phase 6.D.B — ST 2110-30 audio MAXUDP-forbidden ─────────────────────
+-- ST 2110-30:2025 §6.2.1: "The Standard UDP Datagram Size Limit as
+-- defined in SMPTE ST 2110-10 shall be used." Combined with ST 2110-10:2022
+-- §6.4 / §8.6 (MAXUDP signals operation beyond the Standard Limit), a
+-- conformant L16 / L24 stream cannot carry MAXUDP.
+--
+-- Scope is L16 / L24 only. The 1.0 parser also forbids MAXUDP for AM824
+-- with cite "ST 2110-31 §5.x inherits"; -31 §5.2 actually defers to
+-- ST 2110-10 which *permits* MAXUDP (§6.5). Primary text of -31 has no
+-- MAXUDP-forbidden SHALL. The grammar tier intentionally drops the
+-- AM824 limb of this check pending a separate audit-folder follow-up.
+M.register("st2110-30.a.fmtp.maxudp-forbidden", {
+  kind             = "semantic",
+  default_severity = "error",
+  code             = "INVALID_VALUE",
+  message_template =
+    "MAXUDP must not be signaled on L16 / L24 audio streams"
+    .. " (§6.2.1 requires the Standard UDP Size Limit; MAXUDP signals"
+    .. " operation beyond that limit)",
+  spec_ref         = "ST 2110-30:2025 §6.2.1",
+  verified         = true,
+})
+
 M.register("st2110.attr.ts-refclk-required", {
   kind             = "semantic",
   default_severity = "error",

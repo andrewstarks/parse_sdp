@@ -2222,3 +2222,72 @@ describe("ST 2110-10 — required attribute presence (Phase 6.D.A)", function()
     end)
   end)
 end)
+
+-- ── Phase 6.D.B — ST 2110-30:2025 §6.2.1 audio MAXUDP-forbidden ─────────
+--
+-- §6.2.1: "The Standard UDP Datagram Size Limit as defined in SMPTE ST
+--          2110-10 shall be used."
+-- ST 2110-10:2022 §6.4 / §8.6 define MAXUDP as the signal for operating
+-- beyond the Standard Limit; its presence on a -30 stream therefore
+-- violates the §6.2.1 SHALL.
+--
+-- Scope is L16 / L24 only. ST 2110-31 (AM824) defers to ST 2110-10 via
+-- §5.2 but never narrows -10's MAXUDP-permitting prose, so the 1.0
+-- parser's "MAXUDP forbidden on AM824" check is over-strict and
+-- intentionally not ported. The 1.0 case stays flagged for audit-folder
+-- follow-up.
+
+describe("ST 2110-30 — audio MAXUDP-forbidden (Phase 6.D.B)", function()
+
+  it("accepts L24 fmtp without MAXUDP", function()
+    local doc = st2110.match(build_with_fmtp(
+      "m=audio 30000 RTP/AVP 96",
+      "a=rtpmap:96 L24/48000/2",
+      "a=fmtp:96 channel-order=SMPTE2110.(ST)"))
+    assert.is_truthy(doc)
+  end)
+
+  it("rejects L24 fmtp with MAXUDP", function()
+    local doc, ctx = st2110.match(build_with_fmtp(
+      "m=audio 30000 RTP/AVP 96",
+      "a=rtpmap:96 L24/48000/2",
+      "a=fmtp:96 MAXUDP=1500"))
+    assert.is_nil(doc)
+    local f = finding_for(ctx, "st2110-30.a.fmtp.maxudp-forbidden")
+    assert.is_not_nil(f)
+    assert.equal("ST 2110-30:2025 §6.2.1", f.spec_ref)
+  end)
+
+  it("rejects L16 fmtp with MAXUDP", function()
+    local doc, ctx = st2110.match(build_with_fmtp(
+      "m=audio 30000 RTP/AVP 96",
+      "a=rtpmap:96 L16/48000/2",
+      "a=fmtp:96 MAXUDP=1500"))
+    assert.is_nil(doc)
+    assert.is_not_nil(finding_for(ctx, "st2110-30.a.fmtp.maxudp-forbidden"))
+  end)
+
+  -- ── INTENTIONAL non-parity with 1.0 ──────────────────────────────────
+  -- ST 2110-31 has no MAXUDP-forbidden SHALL; the 1.0 parser's check is
+  -- conjecture per "§5.x inherits". Grammar tier does not enforce on
+  -- AM824. Reason: §5.2 defers to ST 2110-10, which explicitly *permits*
+  -- MAXUDP for streams exceeding the Standard Size Limit (§6.5).
+  it("does NOT fire on AM824 fmtp with MAXUDP", function()
+    local doc = st2110.match(build_with_fmtp(
+      "m=audio 30000 RTP/AVP 96",
+      "a=rtpmap:96 AM824/48000/2",
+      "a=fmtp:96 MAXUDP=1500"))
+    assert.is_truthy(doc)
+  end)
+
+  -- NOT-SPEC: MAXUDP on non-audio fmtp is governed by §6.2.5 / §6.3.3
+  -- (already covered in 6.C.D.2 / 6.C.E); -30 forbidden check must not
+  -- spill into raw video.
+  it("does NOT fire on raw video fmtp with MAXUDP", function()
+    local doc = st2110.match(build_with_fmtp(
+      "m=video 30000 RTP/AVP 96",
+      "a=rtpmap:96 raw/90000",
+      RAW_FMTP_COMPLETE_PT96 .. ";MAXUDP=1500"))
+    assert.is_truthy(doc)
+  end)
+end)

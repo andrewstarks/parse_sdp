@@ -765,6 +765,29 @@ local function check_am824_rtpmap_channels_even(doc, ctx)
   return true
 end
 
+-- Phase 6.D.B — ST 2110-30:2025 §6.2.1: "The Standard UDP Datagram Size
+-- Limit as defined in SMPTE ST 2110-10 shall be used." MAXUDP signals
+-- operation beyond the Standard Limit (ST 2110-10:2022 §6.4 / §8.6), so
+-- its presence in an L16 / L24 fmtp violates the §6.2.1 SHALL. AM824 is
+-- intentionally excluded: ST 2110-31 has no equivalent SHALL, only a
+-- deferral to ST 2110-10 which permits MAXUDP.
+local PCM_ENCODINGS = { L16 = true, L24 = true }
+
+local function check_audio_maxudp_forbidden(doc, ctx)
+  for _, e in ipairs(each_audio_fmtp(doc)) do
+    if PCM_ENCODINGS[e.encoding] and e.params.MAXUDP ~= nil then
+      local cont = errors.record(ctx,
+        "st2110-30.a.fmtp.maxudp-forbidden",
+        { field_path = string.format(
+            "media[%d].attributes[fmtp:pt=%d]",
+            e.media_index - 1, e.payload_type),
+          context    = { encoding = e.encoding } })
+      if not cont then return false end
+    end
+  end
+  return true
+end
+
 local function check_audio_fmtp_channel_order(doc, ctx)
   for _, e in ipairs(each_audio_fmtp(doc)) do
     local co = e.params["channel-order"]
@@ -1098,6 +1121,7 @@ local overrides = {
     check_st2110_41_fmtp,
     check_ts_refclk_presence,
     check_mediaclk_presence,
+    check_audio_maxudp_forbidden,
   },
 }
 

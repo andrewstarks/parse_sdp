@@ -637,15 +637,27 @@ AM824 channel parity.
   fixture in `spec/grammar_compose_spec.lua` now include both
   timing attributes by default so the existing ~140 grammar-tier
   tests survive. 8 new tests; suite 1501 green.
-- **6.D.B–D (pending)** — remaining 6.C carry-overs:
-  - **6.D.B** ST 2110-30 §6.2.1 / -31 audio MAXUDP-forbidden
-    (audio streams limit UDP to the Standard Size; MAXUDP signals
-    operation beyond that).
-  - **6.D.C** RFC 3551 §6 / ST 2110-30 audio rtpmap channels-presence
-    SHALL (audio rtpmap must include channels even when 1).
+- **6.D.B (complete)** — ST 2110-30:2025 §6.2.1 audio MAXUDP-
+  forbidden (L16 / L24 only). 1 new error id
+  `st2110-30.a.fmtp.maxudp-forbidden`. Walks `each_audio_fmtp` and
+  emits when encoding ∈ {L16, L24} and `params.MAXUDP` is set.
+  **Intentional non-parity with 1.0**: the 1.0 parser also forbids
+  MAXUDP on AM824 with the cite "ST 2110-31 §5.x inherits" — that
+  cite is conjecture; -31 §5.2 actually defers to -10 which
+  *permits* MAXUDP (§6.5). No -31 SHALL forbids it. Grammar tier
+  ports only the well-grounded -30 limb. 5 new tests; suite 1506
+  green. Flagged for audit-folder follow-up: candidate to remove
+  1.0's AM824 MAXUDP-forbidden check.
+- **6.D.C–D (pending)** — remaining 6.C carry-overs:
+  - **6.D.C** ST 2110-31 §6.1 AM824 rtpmap channels-required.
+    Note: 1.0 also enforces channels-required for L16/L24 per a
+    claimed "ST 2110-30 tightens RFC 3551" annotation; primary
+    text of -30 / AES67 / RFC 3551 does NOT carry that SHALL.
+    Grammar tier ports only the AM824 limb.
   - **6.D.D** Audio packet-payload-fit cross-attribute check
     (channels × depth × ptime × clock-rate fits in one RTP/UDP
-    packet ≤ Standard UDP Size Limit).
+    packet ≤ Standard UDP Size Limit). L16/L24 only; AM824
+    deferred because -31 has no UDP-size SHALL.
 - **6.E (pending)** — cross-stream invariants (RFC 7104 group:DUP,
   SMPTE ST 2022-7 redundancy coherence).
 
