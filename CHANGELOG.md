@@ -137,6 +137,46 @@ validation, all through the registry + Carg-threaded findings ctx.
 118 new tests across Phase 3. Suite: 1030 green (was 904 at start
 of Phase 2; was 964 at start of Phase 3).
 
+- **Phase 4.A:** typed decomposition for the simple-shape compound
+  attributes: rtpmap, mid, ptime, maxptime, framerate, quality.
+  Each lands as a typed table with named fields instead of the 1.0
+  `{name, value=string}` carrier:
+  - `a=rtpmap` → `{name, payload_type, encoding, clock_rate, channels?}`
+    (RFC 8866 §6.6; PT range 0..127 enforced via Cmt, encoding-name
+    against the §9 token char-set, clock-rate / channels against
+    `POS-DIGIT *DIGIT`).
+  - `a=mid` → `{name, tag}` (RFC 5888 §4 identification-tag = RFC 8866
+    §9 token).
+  - `a=ptime` / `a=maxptime` / `a=framerate` → `{name, value=number}`
+    with the value form constrained to `non-zero-int-or-real` per
+    RFC 8866 §6.4 / §6.5 / §6.13. The ABNF's strict
+    `*DIGIT POS-DIGIT` tail (rejecting trailing-zero reals like "1.0")
+    is enforced via the `(DIGIT * #DIGIT)^0 * POS-DIGIT` LPeg idiom
+    — LPeg's `^0` is non-backtracking, so the naive `DIGIT^0 *
+    POS-DIGIT` would starve the final digit.
+  - `a=quality` → `{name, value=number}` (RFC 8866 §6.14
+    `zero-based-integer`; §6.14's suggested 0..10 range is *meaning*,
+    not normative, so unenforced).
+  Dispatch lives in `a_value` as an ordered-choice over the known-name
+  branches, with a generic `{name, value=string?}` fallback for
+  unknown attributes (forward-compat). A malformed known attribute
+  (e.g. `a=rtpmap:96 H264/bad`) fails the whole grammar match instead
+  of degrading to the generic carrier — `a_generic` refuses to start
+  on a known-name lookahead.
+- New registry entry `sdp.a.mid.duplicate-tag` (RFC 5888 §4
+  "identification-tag MUST be unique within an SDP session
+  description") wired into `validate_doc` as a doc-level Cmt that
+  walks every media block's attributes. The 1.0 parser's
+  RFC 5888 §4 uniqueness rule for `a=mid` now lives natively in the
+  grammar path.
+- The `check_dynamic_pt_rtpmap` semantic check now reads
+  `attr.payload_type` directly instead of re-parsing the (now
+  decomposed) rtpmap value string.
+- 17 new tests in `spec/grammar_base_spec.lua` covering each
+  decomposed shape, the strict-ABNF rejections (PT=128, ptime:0,
+  mid with space), and the mid-uniqueness Cmt. Suite: 1047 green
+  (was 1030 at Phase 3 close).
+
 ### Changed
 
 - The inline `errors` table in `parse_sdp.lua` now delegates to

@@ -45,7 +45,7 @@ describe("base SDP grammar — document shape (RFC 8866 §5)", function()
     assert.is_truthy(base.match(minimal(nil, {
       { "m=video 49170 RTP/AVP 96", "a=rtpmap:96 H264/90000" },
       { "m=audio 49172 RTP/AVP 0"  },
-      { "m=text 49174 RTP/AVP 96",  "a=rtpmap:96 text/plain" },
+      { "m=text 49174 RTP/AVP 96",  "a=rtpmap:96 t140/1000" },
     })))
   end)
 
@@ -815,7 +815,9 @@ describe("base SDP grammar — media line + attributes (Phase 2.E)", function()
   end)
 
   -- NOT-SPEC: library
-  it("captures media-level a= attributes (rtpmap/fmtp stay as strings at base tier)", function()
+  it("captures media-level a= attributes (rtpmap decomposed, fmtp still a string at this phase)", function()
+    -- Phase 4.A decomposes rtpmap. fmtp decomposition is Phase 4.B; it still
+    -- lands in the generic {name, value=string} carrier here.
     local doc = base.match(minimal(nil, {
       { "m=video 49170 RTP/AVP 96",
         "a=rtpmap:96 H264/90000",
@@ -824,9 +826,12 @@ describe("base SDP grammar — media line + attributes (Phase 2.E)", function()
     }))
     local attrs = doc.media[1].attributes
     assert.equal(3, #attrs)
-    assert.equal("rtpmap",                    attrs[1].name)
-    assert.equal("96 H264/90000",             attrs[1].value)
-    assert.equal("fmtp",                      attrs[2].name)
+    assert.equal("rtpmap", attrs[1].name)
+    assert.equal(96,       attrs[1].payload_type)
+    assert.equal("H264",   attrs[1].encoding)
+    assert.equal(90000,    attrs[1].clock_rate)
+    assert.is_nil(attrs[1].value)
+    assert.equal("fmtp",                       attrs[2].name)
     assert.equal("96 profile-level-id=42801f", attrs[2].value)
     assert.equal("sendonly", attrs[3].name)
     assert.is_nil(attrs[3].value)
@@ -1253,6 +1258,206 @@ describe("base SDP grammar — match() wrapper + ctx threading (Phase 3.A)", fun
     local doc, ctx = base.match("not a valid sdp")
     assert.is_nil(doc)
     assert.is_table(ctx)
+  end)
+
+end)
+
+describe("base SDP grammar — Phase 4.A attribute decomposition", function()
+
+  -- RFC 8866 §6.6: rtpmap-value = payload-type SP encoding-name "/" clock-rate
+  --                                [ "/" encoding-params ]
+  -- §6.6 normative: "the payload type number is indicated in a 7-bit field,
+  -- limiting the values to inclusively between 0 and 127".
+  describe("a=rtpmap (RFC 8866 §6.6)", function()
+    -- SPEC: RFC 8866 §6.6
+    it("decomposes rtpmap value into payload_type/encoding/clock_rate", function()
+      local doc = base.match(minimal(nil, {
+        { "m=video 49170 RTP/AVP 96", "a=rtpmap:96 H264/90000" },
+      }))
+      local a = doc.media[1].attributes[1]
+      assert.equal("rtpmap", a.name)
+      assert.equal(96,       a.payload_type)
+      assert.equal("H264",   a.encoding)
+      assert.equal(90000,    a.clock_rate)
+      assert.is_nil(a.channels)
+      assert.is_nil(a.value)  -- decomposed; no string value
+    end)
+
+    -- SPEC: RFC 8866 §6.6
+    it("decomposes rtpmap with channels (audio encoding-params)", function()
+      local doc = base.match(minimal(nil, {
+        { "m=audio 49172 RTP/AVP 96", "a=rtpmap:96 L24/48000/2" },
+      }))
+      local a = doc.media[1].attributes[1]
+      assert.equal("rtpmap", a.name)
+      assert.equal(96,       a.payload_type)
+      assert.equal("L24",    a.encoding)
+      assert.equal(48000,    a.clock_rate)
+      assert.equal(2,        a.channels)
+    end)
+
+    -- SPEC: RFC 8866 §6.6 (PT range 0..127)
+    it("accepts payload-type 0 (static PCMU)", function()
+      local doc = base.match(minimal(nil, {
+        { "m=audio 49172 RTP/AVP 0", "a=rtpmap:0 PCMU/8000" },
+      }))
+      local a = doc.media[1].attributes[1]
+      assert.equal(0, a.payload_type)
+    end)
+
+    -- SPEC: RFC 8866 §6.6 (PT range 0..127)
+    it("rejects payload-type 128 (out of 7-bit range)", function()
+      local doc = base.match(minimal(nil, {
+        { "m=video 49170 RTP/AVP 96", "a=rtpmap:128 H264/90000" },
+      }))
+      assert.is_nil(doc)
+    end)
+  end)
+
+  -- RFC 5888 §4: a=mid value is an identification-tag, which uses the RFC 8866
+  -- §9 token grammar. Identification-tag MUST be unique within the SDP.
+  describe("a=mid (RFC 5888 §4)", function()
+    -- SPEC: RFC 5888 §4
+    it("decomposes mid value into a tag field", function()
+      local doc = base.match(minimal(nil, {
+        { "m=video 49170 RTP/AVP 96", "a=rtpmap:96 H264/90000",
+          "a=mid:video1" },
+      }))
+      local a = doc.media[1].attributes[2]
+      assert.equal("mid",    a.name)
+      assert.equal("video1", a.tag)
+      assert.is_nil(a.value)
+    end)
+
+    -- SPEC: RFC 5888 §4 (identification-tag MUST be unique)
+    it("rejects duplicate a=mid tags across media blocks", function()
+      local doc, ctx = base.match(minimal(nil, {
+        { "m=video 49170 RTP/AVP 96", "a=rtpmap:96 H264/90000", "a=mid:1" },
+        { "m=audio 49172 RTP/AVP 0",  "a=mid:1" },
+      }))
+      assert.is_nil(doc)
+      assert.equal(1, #ctx.findings)
+      assert.equal("sdp.a.mid.duplicate-tag", ctx.findings[1].id)
+    end)
+
+    -- SPEC: RFC 5888 §4 / RFC 8866 §9 token char-set
+    it("rejects mid with a space (not a valid §9 token)", function()
+      local doc = base.match(minimal(nil, {
+        { "m=video 49170 RTP/AVP 96", "a=rtpmap:96 H264/90000",
+          "a=mid:tag with space" },
+      }))
+      assert.is_nil(doc)
+    end)
+  end)
+
+  -- RFC 8866 §6.4: ptime-value = non-zero-int-or-real
+  describe("a=ptime (RFC 8866 §6.4)", function()
+    -- SPEC: RFC 8866 §6.4
+    it("decomposes ptime value as a number", function()
+      local doc = base.match(minimal(nil, {
+        { "m=audio 49172 RTP/AVP 0", "a=ptime:20" },
+      }))
+      local a = doc.media[1].attributes[1]
+      assert.equal("ptime", a.name)
+      assert.equal(20,      a.value)
+      assert.is_number(a.value)
+    end)
+
+    -- SPEC: RFC 8866 §6.4 + §9 non-zero-real
+    it("accepts fractional ptime per non-zero-real ABNF", function()
+      local doc = base.match(minimal(nil, {
+        { "m=audio 49172 RTP/AVP 0", "a=ptime:2.5" },
+      }))
+      assert.equal(2.5, doc.media[1].attributes[1].value)
+    end)
+
+    -- SPEC: RFC 8866 §6.4 (non-zero-int-or-real; "0" excluded by ABNF)
+    it("rejects ptime:0 (ABNF excludes zero)", function()
+      local doc = base.match(minimal(nil, {
+        { "m=audio 49172 RTP/AVP 0", "a=ptime:0" },
+      }))
+      assert.is_nil(doc)
+    end)
+  end)
+
+  -- RFC 8866 §6.5: maxptime-value = non-zero-int-or-real
+  describe("a=maxptime (RFC 8866 §6.5)", function()
+    -- SPEC: RFC 8866 §6.5
+    it("decomposes maxptime value as a number", function()
+      local doc = base.match(minimal(nil, {
+        { "m=audio 49172 RTP/AVP 0", "a=maxptime:30" },
+      }))
+      local a = doc.media[1].attributes[1]
+      assert.equal("maxptime", a.name)
+      assert.equal(30,         a.value)
+    end)
+  end)
+
+  -- RFC 8866 §6.13: framerate-value = non-zero-int-or-real
+  describe("a=framerate (RFC 8866 §6.13)", function()
+    -- SPEC: RFC 8866 §6.13
+    it("decomposes integer framerate value as a number", function()
+      local doc = base.match(minimal(nil, {
+        { "m=video 49170 RTP/AVP 96", "a=rtpmap:96 H264/90000",
+          "a=framerate:60" },
+      }))
+      local a = doc.media[1].attributes[2]
+      assert.equal("framerate", a.name)
+      assert.equal(60,          a.value)
+    end)
+
+    -- SPEC: RFC 8866 §6.13 ("Decimal representations of fractional values are
+    --                       allowed.")
+    it("decomposes fractional framerate", function()
+      local doc = base.match(minimal(nil, {
+        { "m=video 49170 RTP/AVP 96", "a=rtpmap:96 H264/90000",
+          "a=framerate:29.97" },
+      }))
+      assert.equal(29.97, doc.media[1].attributes[2].value)
+    end)
+  end)
+
+  -- RFC 8866 §6.14: quality-value = zero-based-integer
+  describe("a=quality (RFC 8866 §6.14)", function()
+    -- SPEC: RFC 8866 §6.14
+    it("decomposes quality value as a number", function()
+      local doc = base.match(minimal(nil, {
+        { "m=video 49170 RTP/AVP 96", "a=rtpmap:96 H264/90000",
+          "a=quality:10" },
+      }))
+      local a = doc.media[1].attributes[2]
+      assert.equal("quality", a.name)
+      assert.equal(10,        a.value)
+    end)
+
+    -- SPEC: RFC 8866 §6.14 + §9 zero-based-integer (allows "0")
+    it("accepts quality:0 (zero-based-integer)", function()
+      local doc = base.match(minimal(nil, {
+        { "m=video 49170 RTP/AVP 96", "a=rtpmap:96 H264/90000",
+          "a=quality:0" },
+      }))
+      assert.equal(0, doc.media[1].attributes[2].value)
+    end)
+  end)
+
+  -- NOT-SPEC: library — generic-attr fallback must still work for unknown attrs.
+  it("unknown attributes still land in the generic {name, value=string} shape", function()
+    local doc = base.match(lines_to_sdp({
+      "v=0", "o=- 1 1 IN IP4 127.0.0.1", "s=X", "t=0 0", "a=tool:libsdp 1.0",
+    }))
+    local a = doc.session.attributes[1]
+    assert.equal("tool",       a.name)
+    assert.equal("libsdp 1.0", a.value)
+  end)
+
+  -- NOT-SPEC: library — flag-attr (no value) keeps name-only shape.
+  it("flag attributes keep name-only shape", function()
+    local doc = base.match(lines_to_sdp({
+      "v=0", "o=- 1 1 IN IP4 127.0.0.1", "s=X", "t=0 0", "a=recvonly",
+    }))
+    local a = doc.session.attributes[1]
+    assert.equal("recvonly", a.name)
+    assert.is_nil(a.value)
   end)
 
 end)

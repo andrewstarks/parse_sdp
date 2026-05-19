@@ -287,6 +287,15 @@ M.register("sdp.m.rtpmap-required-for-dynamic-pt", {
   verified         = true,
 })
 
+M.register("sdp.a.mid.duplicate-tag", {
+  kind             = "semantic",
+  default_severity = "error",
+  code             = "INVALID_VALUE",
+  message_template = "a=mid identification-tag must be unique within the SDP",
+  spec_ref         = "RFC 5888 §4",
+  verified         = true,
+})
+
 -- ── c= connection-address checks (RFC 8866 §5.7 / §9) ──────────────────────
 
 M.register("sdp.c.address.invalid-ipv4", {

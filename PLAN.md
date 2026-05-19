@@ -39,9 +39,19 @@ and runs them through the parser. See
 
 ## Current State
 
-849 hermetic tests passing. Every validation check is grounded in explicit
-spec text; no opinion-based checks remain. The test suite is split into
-seven files along a single axis — *what kind of code each test exercises*:
+1047 hermetic tests passing. Every validation check is grounded in explicit
+spec text; no opinion-based checks remain.
+
+The grammar-first refactor on branch `refactor/grammar-first` is **in
+progress** (Phase 4.A landed; phases 4.B–10 remain). Tracking and design
+live in [REFACTOR-PLAN.md](REFACTOR-PLAN.md). The 1.0 parser at
+`parse_sdp.lua` remains the shipping artifact on `main`; the new grammar
+under `parse_sdp/grammar/` is internal-only until Phase 9 cutover.
+
+The test suite is split along a single axis — *what kind of code each
+test exercises*. Refactor-era files (`grammar_base_spec`,
+`grammar_addresses_spec`, `error_registry_spec`) are not yet enumerated
+in the table below.
 
 | File | Tests | What it covers |
 | --- | ---: | --- |

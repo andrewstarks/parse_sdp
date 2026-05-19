@@ -29,8 +29,8 @@
 local lpeg      = require("lpeg")
 local errors    = require("parse_sdp.errors")
 local addresses = require("parse_sdp.grammar.addresses")
-local P, R, S, V, C, Cg, Ct, Cmt, Carg =
-  lpeg.P, lpeg.R, lpeg.S, lpeg.V, lpeg.C, lpeg.Cg, lpeg.Ct, lpeg.Cmt, lpeg.Carg
+local P, R, S, V, C, Cc, Cg, Ct, Cmt, Carg =
+  lpeg.P, lpeg.R, lpeg.S, lpeg.V, lpeg.C, lpeg.Cc, lpeg.Cg, lpeg.Ct, lpeg.Cmt, lpeg.Carg
 
 -- Primary patterns shared across rules. These are plain LPeg values rather
 -- than V-rules because they are not candidates for per-tier override.
@@ -39,11 +39,6 @@ local SP = P(" ")
 -- ── Semantic checks ─────────────────────────────────────────────────────────
 -- Cross-section invariants the grammar alone can't express. Each check
 -- inspects the captured doc and emits findings via errors.record.
-
--- Sub-grammar for extracting the payload-type token from an rtpmap value
--- string. rtpmap value form is "<pt> <enc>/<clock>[/<chan>]" per RFC 8866
--- §6.6; we only need the leading PT here.
-local rtpmap_pt = C(R("09") ^ 1)
 
 -- Split a connection-address into the address part and an optional
 -- suffix (everything after the first '/', not including the slash).
@@ -150,17 +145,38 @@ local function check_dynamic_pt_rtpmap(doc, ctx)
       local rtpmap_pts = {}
       for _, attr in ipairs(m.attributes) do
         if attr.name == "rtpmap" then
-          local pt = rtpmap_pt:match(attr.value or "")
-          if pt then rtpmap_pts[pt] = true end
+          rtpmap_pts[attr.payload_type] = true
         end
       end
       for _, fmt in ipairs(m.fmts) do
         local pt_n = tonumber(fmt)
-        if pt_n and pt_n >= 96 and pt_n <= 127 and not rtpmap_pts[fmt] then
+        if pt_n and pt_n >= 96 and pt_n <= 127 and not rtpmap_pts[pt_n] then
           local cont = errors.record(ctx, "sdp.m.rtpmap-required-for-dynamic-pt", {
             field_path = string.format("media[%d].attributes[rtpmap]", i),
           })
           if not cont then return false end
+        end
+      end
+    end
+  end
+  return true
+end
+
+-- RFC 5888 §4: "The identification-tag MUST be unique within an SDP session
+-- description." Walks every media block's attribute list, collects mid tags,
+-- and records a finding on the first duplicate.
+local function check_mid_uniqueness(doc, ctx)
+  local seen = {}
+  for i, m in ipairs(doc.media) do
+    for _, attr in ipairs(m.attributes) do
+      if attr.name == "mid" then
+        if seen[attr.tag] then
+          local cont = errors.record(ctx, "sdp.a.mid.duplicate-tag", {
+            field_path = string.format("media[%d].attributes[mid]", i),
+          })
+          if not cont then return false end
+        else
+          seen[attr.tag] = true
         end
       end
     end
@@ -185,6 +201,7 @@ local function validate_doc(_, position, doc, ctx)
 
   if not check_connection_addresses(doc, ctx) then return false end
   if not check_dynamic_pt_rtpmap(doc, ctx) then return false end
+  if not check_mid_uniqueness(doc, ctx) then return false end
 
   return position, doc
 end
@@ -378,17 +395,127 @@ local rules = {
   -- a= attribute (RFC 8866 §5.13):
   --   a=<attribute>            -- flag form, no colon
   --   a=<attribute>:<value>    -- key-value form
-  -- At the base tier, every a= line lands as {name, value?} with the
-  -- value kept as a single string. Per-attribute decomposition (rtpmap,
-  -- fmtp, ts-refclk, source-filter, group, mid, ssrc, etc.) is Phase 4.
-  -- This means today's doc.media[i].attributes is the 1.0 shape — a
-  -- list of {name, value=string} pairs.
+  -- Per-attribute decomposition (Phase 4.A: rtpmap, mid, ptime, maxptime,
+  -- framerate, quality). Unknown attributes fall back to the generic
+  -- {name, value=string?} shape. Known names with malformed values do NOT
+  -- fall through — a_generic refuses to start on a known-name lookahead, so
+  -- a malformed known-attr fails the whole grammar match instead of being
+  -- silently downgraded to a generic carrier.
   a_value = Ct(
-        Cg(V"attr_name", "name")
-      * (P(":") * Cg(V"attr_value", "value")) ^ -1
+        V"a_rtpmap"
+      + V"a_mid"
+      + V"a_ptime"
+      + V"a_maxptime"
+      + V"a_framerate"
+      + V"a_quality"
+      + V"a_generic"
     ),
+
+  -- Look-ahead: a known compound-attribute name followed by ":" or
+  -- end-of-line. Used as a negative lookahead in a_generic so malformed
+  -- instances of a known attribute fail the match instead of degrading
+  -- to the generic shape.
+  known_attr_lookahead =
+        (P("rtpmap")    + P("maxptime")  + P("ptime")
+       + P("framerate") + P("quality")   + P("mid"))
+      * (P(":") + V"line_end"),
+
+  -- rtpmap (RFC 8866 §6.6):
+  --   rtpmap-value = payload-type SP encoding-name "/" clock-rate
+  --                                                [ "/" encoding-params ]
+  -- payload-type: zero-based-integer, normatively 0..127 per §6.6
+  -- ("a 7-bit field, limiting the values to inclusively between 0 and 127").
+  -- encoding-name: RFC 8866 §9 token. clock-rate: integer (POS-DIGIT *DIGIT).
+  -- encoding-params = channels = integer (POS-DIGIT *DIGIT).
+  a_rtpmap = P("rtpmap:")
+      * Cg(Cc("rtpmap"), "name")
+      * Cg(V"payload_type",          "payload_type") * SP
+      * Cg(V"rfc8866_token",         "encoding")     * P("/")
+      * Cg(V"rfc8866_pos_int_num",   "clock_rate")
+      * (P("/") * Cg(V"rfc8866_pos_int_num", "channels")) ^ -1,
+
+  -- mid (RFC 5888 §4): identification-tag = RFC 8866 §9 token.
+  -- Uniqueness across the SDP is enforced at doc level (check_mid_uniqueness).
+  a_mid = P("mid:")
+      * Cg(Cc("mid"), "name")
+      * Cg(V"rfc8866_token", "tag"),
+
+  -- ptime (RFC 8866 §6.4) / maxptime (§6.5) / framerate (§6.13):
+  -- value = non-zero-int-or-real.
+  a_ptime = P("ptime:")
+      * Cg(Cc("ptime"),    "name")
+      * Cg(V"nonzero_int_or_real_num", "value"),
+  a_maxptime = P("maxptime:")
+      * Cg(Cc("maxptime"), "name")
+      * Cg(V"nonzero_int_or_real_num", "value"),
+  a_framerate = P("framerate:")
+      * Cg(Cc("framerate"), "name")
+      * Cg(V"nonzero_int_or_real_num", "value"),
+
+  -- quality (RFC 8866 §6.14): value = zero-based-integer.
+  -- §6.14's "range 0..10" is suggested meaning, not normative; not enforced.
+  a_quality = P("quality:")
+      * Cg(Cc("quality"), "name")
+      * Cg(V"zero_based_int_num", "value"),
+
+  -- Generic fallback: unknown attribute name. Refuses to start on a known
+  -- compound-attribute name so malformed known-attrs fail the match.
+  a_generic = -V"known_attr_lookahead"
+      * Cg(V"attr_name", "name")
+      * (P(":") * Cg(V"attr_value", "value")) ^ -1,
   attr_name  = C((1 - P(":") - SP - V"line_end") ^ 1),
   attr_value = C((1 - V"line_end") ^ 1),
+
+  -- ── Numeric leaves (RFC 8866 §9 ABNF) ────────────────────────────────
+  -- integer            = POS-DIGIT *DIGIT          ; 1..  (no leading zero)
+  -- zero-based-integer = "0" / integer             ; 0, or POS-DIGIT *DIGIT
+  -- non-zero-int-or-real = integer / non-zero-real
+  -- non-zero-real      = zero-based-integer "." *DIGIT POS-DIGIT
+  --                       ; "0" or POS-DIGIT *DIGIT, then ".", then *DIGIT,
+  --                       ; ending on POS-DIGIT (so "1.0" is invalid)
+  -- The *DIGIT POS-DIGIT tail uses `(DIGIT * #DIGIT)^0 * POS-DIGIT` because
+  -- LPeg's `^0` is greedy and non-backtracking: a plain `DIGIT^0 * POS-DIGIT`
+  -- would let the repetition consume the final digit and starve POS-DIGIT.
+  -- The `#DIGIT` look-ahead only consumes a digit when another follows.
+  -- _num variants apply tonumber via the / operator at the leaf.
+  rfc8866_pos_int          = R("19") * R("09") ^ 0,
+  rfc8866_zero_based_int   = P("0") + V"rfc8866_pos_int",
+  rfc8866_nonzero_real     =
+        V"rfc8866_zero_based_int" * P(".")
+      * (R("09") * #R("09")) ^ 0 * R("19"),
+  rfc8866_nonzero_int_or_real =
+        V"rfc8866_nonzero_real" + V"rfc8866_pos_int",
+
+  rfc8866_pos_int_num        = C(V"rfc8866_pos_int")              / tonumber,
+  zero_based_int_num         = C(V"rfc8866_zero_based_int")       / tonumber,
+  nonzero_int_or_real_num    = C(V"rfc8866_nonzero_int_or_real")  / tonumber,
+
+  -- rtpmap payload-type: zero-based-integer constrained to 0..127 (RFC 8866
+  -- §6.6). Range check via Cmt; returns the parsed number on success.
+  payload_type = Cmt(
+      C(V"rfc8866_zero_based_int"),
+      function(_, _, s)
+        local n = tonumber(s)
+        if n > 127 then return false end
+        return true, n
+      end
+    ),
+
+  -- RFC 8866 §9 token character set (referenced by RFC 5888 §4 for
+  -- identification-tag and §6.6 for encoding-name):
+  --   token-char = %x21 / %x23-27 / %x2A-2B / %x2D-2E / %x30-39
+  --              / %x41-5A / %x5E-7E
+  -- Excludes SP, DQUOTE, parens, comma, "/", colon-through-"@",
+  -- "[", "\", "]", and DEL.
+  rfc8866_token_char =
+        P("!")                  -- 0x21
+      + R("\35\39")             -- 0x23..0x27   # $ % & '
+      + R("\42\43")             -- 0x2A..0x2B   * +
+      + R("\45\46")             -- 0x2D..0x2E   - .
+      + R("\48\57")             -- 0x30..0x39   0-9
+      + R("\65\90")             -- 0x41..0x5A   A-Z
+      + R("\94\126"),           -- 0x5E..0x7E   ^ _ ` a-z { | } ~
+  rfc8866_token = C(V"rfc8866_token_char" ^ 1),
 
   -- ── Shared sub-leaves ───────────────────────────────────────────────
   -- token: RFC 8866 ABNF "non-ws-string" — one or more VCHAR (any visible
