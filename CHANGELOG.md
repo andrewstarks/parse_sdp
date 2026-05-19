@@ -112,6 +112,30 @@ shipping artifact for `require("parse_sdp")` callers.
   collects every violation. 11 new tests including multi-PT
   collection, policy variants, non-RTP proto skip, and correct
   field_path attribution across media blocks.
+- **Phase 3.C (Phase 3 close):** connection-address value-form
+  validation per RFC 8866 §5.7 / §9. New module
+  [parse_sdp/grammar/addresses.lua](parse_sdp/grammar/addresses.lua)
+  with RFC 791 IPv4 and RFC 4291 / RFC 3986 §3.2.2 IPv6 grammars
+  (the 38-alternative IPv6 form lifted from the 1.0 parser), plus
+  multicast-classification helpers. The base grammar's validate_doc
+  now calls check_connection_addresses, which exercises every c= in
+  the doc against nine new registry entries:
+  `sdp.c.address.invalid-{ipv4,ipv6}`,
+  `sdp.c.ipv4-multicast.{ttl-required,ttl-out-of-range,numaddr-invalid}`,
+  `sdp.c.ipv4-unicast.suffix-not-allowed`,
+  `sdp.c.ipv6-multicast.{suffix-form-invalid,numaddr-invalid}`,
+  `sdp.c.ipv6-unicast.suffix-not-allowed`.
+  Both session-level and media-level c= lines are validated with
+  correct field_path attribution. 29 new tests in
+  `spec/grammar_addresses_spec.lua` (address patterns + multicast
+  helpers) and 19 in `spec/grammar_base_spec.lua` (semantic checks
+  + policy variants).
+
+Phase 3 close: the base SDP grammar enforces every cross-section
+invariant the 1.0 parser checked plus connection-address value-form
+validation, all through the registry + Carg-threaded findings ctx.
+118 new tests across Phase 3. Suite: 1030 green (was 904 at start
+of Phase 2; was 964 at start of Phase 3).
 
 ### Changed
 

@@ -287,4 +287,87 @@ M.register("sdp.m.rtpmap-required-for-dynamic-pt", {
   verified         = true,
 })
 
+-- ── c= connection-address checks (RFC 8866 §5.7 / §9) ──────────────────────
+
+M.register("sdp.c.address.invalid-ipv4", {
+  kind             = "semantic",
+  default_severity = "error",
+  code             = "INVALID_VALUE",
+  message_template = "c= IP4 address is not a valid dotted-quad",
+  spec_ref         = "RFC 8866 §9 (IP4-address ABNF)",
+  verified         = true,
+})
+
+M.register("sdp.c.address.invalid-ipv6", {
+  kind             = "semantic",
+  default_severity = "error",
+  code             = "INVALID_VALUE",
+  message_template = "c= IP6 address is not a valid IPv6 form",
+  spec_ref         = "RFC 8866 §9 (IP6-address ABNF)",
+  verified         = true,
+})
+
+M.register("sdp.c.ipv4-multicast.ttl-required", {
+  kind             = "semantic",
+  default_severity = "error",
+  code             = "INVALID_VALUE",
+  message_template = "IPv4 multicast c= address requires a '/<ttl>' suffix",
+  spec_ref         = "RFC 8866 §9 (IP4-multicast ABNF)",
+  verified         = true,
+})
+
+M.register("sdp.c.ipv4-multicast.ttl-out-of-range", {
+  kind             = "semantic",
+  default_severity = "error",
+  code             = "INVALID_VALUE",
+  message_template = "IPv4 multicast c= TTL must be 0-255",
+  spec_ref         = "RFC 8866 §5.7",
+  verified         = true,
+})
+
+M.register("sdp.c.ipv4-multicast.numaddr-invalid", {
+  kind             = "semantic",
+  default_severity = "error",
+  code             = "INVALID_VALUE",
+  message_template = "IPv4 multicast c= '<numaddr>' must be a positive integer",
+  spec_ref         = "RFC 8866 §9 (IP4-multicast ABNF)",
+  verified         = true,
+})
+
+M.register("sdp.c.ipv4-unicast.suffix-not-allowed", {
+  kind             = "semantic",
+  default_severity = "error",
+  code             = "INVALID_VALUE",
+  message_template = "IPv4 unicast c= address must not include a '/' suffix",
+  spec_ref         = "RFC 8866 §5.7",
+  verified         = true,
+})
+
+M.register("sdp.c.ipv6-multicast.suffix-form-invalid", {
+  kind             = "semantic",
+  default_severity = "error",
+  code             = "INVALID_VALUE",
+  message_template = "IPv6 multicast c= suffix must be '/<numaddr>' (no TTL field)",
+  spec_ref         = "RFC 8866 §9 (IP6-multicast ABNF)",
+  verified         = true,
+})
+
+M.register("sdp.c.ipv6-multicast.numaddr-invalid", {
+  kind             = "semantic",
+  default_severity = "error",
+  code             = "INVALID_VALUE",
+  message_template = "IPv6 multicast c= '<numaddr>' must be a positive integer",
+  spec_ref         = "RFC 8866 §9 (IP6-multicast ABNF)",
+  verified         = true,
+})
+
+M.register("sdp.c.ipv6-unicast.suffix-not-allowed", {
+  kind             = "semantic",
+  default_severity = "error",
+  code             = "INVALID_VALUE",
+  message_template = "IPv6 unicast c= address must not include a '/' suffix",
+  spec_ref         = "RFC 8866 §5.7",
+  verified         = true,
+})
+
 return M

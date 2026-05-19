@@ -921,6 +921,178 @@ describe("base SDP grammar — full round-trip doc shape (Phase 2 end)", functio
 
 end)
 
+describe("base SDP grammar — connection-address value-form (Phase 3.C, RFC 8866 §5.7 / §9)", function()
+
+  local function build(c_line)
+    return lines_to_sdp({
+      "v=0", "o=- 1 1 IN IP4 127.0.0.1", "s=X",
+      c_line,
+      "t=0 0",
+    })
+  end
+
+  describe("IPv4", function()
+
+    -- NOT-SPEC: library
+    it("accepts unicast with no suffix", function()
+      local doc, ctx = base.match(build("c=IN IP4 192.0.2.1"))
+      assert.is_table(doc)
+      assert.equal(0, #ctx.findings)
+    end)
+
+    -- NOT-SPEC: library
+    it("accepts multicast with /ttl", function()
+      local doc, ctx = base.match(build("c=IN IP4 224.2.17.12/127"))
+      assert.is_table(doc)
+      assert.equal(0, #ctx.findings)
+    end)
+
+    -- NOT-SPEC: library
+    it("accepts multicast with /ttl/numaddr", function()
+      local doc, ctx = base.match(build("c=IN IP4 239.1.1.1/127/3"))
+      assert.is_table(doc)
+      assert.equal(0, #ctx.findings)
+    end)
+
+    -- NOT-SPEC: library
+    it("accepts TTL = 0 (RFC 8866 §5.7 explicitly permits zero)", function()
+      local doc, ctx = base.match(build("c=IN IP4 224.0.0.1/0"))
+      assert.is_table(doc)
+      assert.equal(0, #ctx.findings)
+    end)
+
+    -- NOT-SPEC: library
+    it("rejects multicast without /ttl (sdp.c.ipv4-multicast.ttl-required)", function()
+      local doc, ctx = base.match(build("c=IN IP4 224.2.17.12"))
+      assert.is_nil(doc)
+      assert.equal("sdp.c.ipv4-multicast.ttl-required", ctx.findings[1].id)
+    end)
+
+    -- NOT-SPEC: library
+    it("rejects multicast with TTL > 255 (sdp.c.ipv4-multicast.ttl-out-of-range)", function()
+      local doc, ctx = base.match(build("c=IN IP4 224.2.17.12/256"))
+      assert.is_nil(doc)
+      assert.equal("sdp.c.ipv4-multicast.ttl-out-of-range", ctx.findings[1].id)
+    end)
+
+    -- NOT-SPEC: library
+    it("rejects multicast with numaddr=0 (sdp.c.ipv4-multicast.numaddr-invalid)", function()
+      local doc, ctx = base.match(build("c=IN IP4 224.2.17.12/127/0"))
+      assert.is_nil(doc)
+      assert.equal("sdp.c.ipv4-multicast.numaddr-invalid", ctx.findings[1].id)
+    end)
+
+    -- NOT-SPEC: library
+    it("rejects unicast with a /suffix (sdp.c.ipv4-unicast.suffix-not-allowed)", function()
+      local doc, ctx = base.match(build("c=IN IP4 192.0.2.1/127"))
+      assert.is_nil(doc)
+      assert.equal("sdp.c.ipv4-unicast.suffix-not-allowed", ctx.findings[1].id)
+    end)
+
+    -- NOT-SPEC: library
+    it("rejects malformed IPv4 (sdp.c.address.invalid-ipv4)", function()
+      local doc, ctx = base.match(build("c=IN IP4 256.0.0.1"))
+      assert.is_nil(doc)
+      assert.equal("sdp.c.address.invalid-ipv4", ctx.findings[1].id)
+    end)
+
+  end)
+
+  describe("IPv6", function()
+
+    -- NOT-SPEC: library
+    it("accepts unicast with no suffix", function()
+      local doc, ctx = base.match(build("c=IN IP6 2001:db8::1"))
+      assert.is_table(doc)
+      assert.equal(0, #ctx.findings)
+    end)
+
+    -- NOT-SPEC: library
+    it("accepts multicast with no suffix (numaddr is optional)", function()
+      local doc, ctx = base.match(build("c=IN IP6 ff02::1"))
+      assert.is_table(doc)
+      assert.equal(0, #ctx.findings)
+    end)
+
+    -- NOT-SPEC: library
+    it("accepts multicast with /<numaddr>", function()
+      local doc, ctx = base.match(build("c=IN IP6 ff02::1/3"))
+      assert.is_table(doc)
+      assert.equal(0, #ctx.findings)
+    end)
+
+    -- NOT-SPEC: library
+    it("rejects multicast with a TTL-style /N/M suffix (sdp.c.ipv6-multicast.suffix-form-invalid)", function()
+      local doc, ctx = base.match(build("c=IN IP6 ff02::1/127/3"))
+      assert.is_nil(doc)
+      assert.equal("sdp.c.ipv6-multicast.suffix-form-invalid", ctx.findings[1].id)
+    end)
+
+    -- NOT-SPEC: library
+    it("rejects multicast with numaddr=0", function()
+      local doc, ctx = base.match(build("c=IN IP6 ff02::1/0"))
+      assert.is_nil(doc)
+      assert.equal("sdp.c.ipv6-multicast.numaddr-invalid", ctx.findings[1].id)
+    end)
+
+    -- NOT-SPEC: library
+    it("rejects unicast with a /suffix", function()
+      local doc, ctx = base.match(build("c=IN IP6 2001:db8::1/64"))
+      assert.is_nil(doc)
+      assert.equal("sdp.c.ipv6-unicast.suffix-not-allowed", ctx.findings[1].id)
+    end)
+
+    -- NOT-SPEC: library
+    it("rejects malformed IPv6 (sdp.c.address.invalid-ipv6)", function()
+      local doc, ctx = base.match(build("c=IN IP6 gggg::1"))
+      assert.is_nil(doc)
+      assert.equal("sdp.c.address.invalid-ipv6", ctx.findings[1].id)
+    end)
+
+  end)
+
+  describe("scope: media-level c= is also checked", function()
+
+    -- NOT-SPEC: library
+    it("media-level IPv4 multicast missing TTL is rejected with media[N].connection path", function()
+      local doc, ctx = base.match(lines_to_sdp({
+        "v=0", "o=- 1 1 IN IP4 127.0.0.1", "s=X", "t=0 0",
+        "m=audio 49172 RTP/AVP 0",
+        "c=IN IP4 224.2.17.12",  -- missing /ttl
+      }))
+      assert.is_nil(doc)
+      assert.equal("sdp.c.ipv4-multicast.ttl-required", ctx.findings[1].id)
+      assert.equal("media[1].connection", ctx.findings[1].field_path)
+    end)
+
+  end)
+
+  describe("policy interaction", function()
+
+    -- NOT-SPEC: library
+    it("policy = 'off' bypasses the check", function()
+      local doc, ctx = base.match(
+        build("c=IN IP4 192.0.2.1/127"),  -- normally an error
+        { policy = { ["sdp.c.ipv4-unicast.suffix-not-allowed"] = "off" } }
+      )
+      assert.is_table(doc)
+      assert.equal(0, #ctx.findings)
+    end)
+
+    -- NOT-SPEC: library
+    it("policy = 'warn' downgrades, doc returned with warning finding", function()
+      local doc, ctx = base.match(
+        build("c=IN IP4 192.0.2.1/127"),
+        { policy = { ["sdp.c.ipv4-unicast.suffix-not-allowed"] = "warn" } }
+      )
+      assert.is_table(doc)
+      assert.equal("warn", ctx.findings[1].severity)
+    end)
+
+  end)
+
+end)
+
 describe("base SDP grammar — dynamic-PT requires rtpmap (Phase 3.B, RFC 8866 §8.2.3)", function()
 
   local function build(media_block)

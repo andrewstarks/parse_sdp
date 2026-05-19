@@ -26,8 +26,9 @@
 --                     (t= r=*)+ [z=] [k=] a=*
 --   media_section   = m= [i=] [c=] b=* [k=] a=*
 
-local lpeg   = require("lpeg")
-local errors = require("parse_sdp.errors")
+local lpeg      = require("lpeg")
+local errors    = require("parse_sdp.errors")
+local addresses = require("parse_sdp.grammar.addresses")
 local P, R, S, V, C, Cg, Ct, Cmt, Carg =
   lpeg.P, lpeg.R, lpeg.S, lpeg.V, lpeg.C, lpeg.Cg, lpeg.Ct, lpeg.Cmt, lpeg.Carg
 
@@ -43,6 +44,100 @@ local SP = P(" ")
 -- string. rtpmap value form is "<pt> <enc>/<clock>[/<chan>]" per RFC 8866
 -- §6.6; we only need the leading PT here.
 local rtpmap_pt = C(R("09") ^ 1)
+
+-- Split a connection-address into the address part and an optional
+-- suffix (everything after the first '/', not including the slash).
+-- Returns (addr, suffix_or_nil). The trailing P(-1) ensures the whole
+-- string is consumed; malformed inputs (e.g. with embedded whitespace)
+-- fail the match.
+local split_c_addr = C((1 - P("/")) ^ 1) * (P("/") * C(P(1) ^ 0)) ^ -1 * P(-1)
+
+-- IPv4 multicast suffix: <ttl>[/<numaddr>] — RFC 8866 §9 IP4-multicast.
+local ipv4_mcast_suffix = C(R("09") ^ 1) * (P("/") * C(R("09") ^ 1)) ^ -1 * P(-1)
+
+-- IPv6 multicast suffix: <numaddr> — RFC 8866 §9 IP6-multicast.
+local ipv6_numaddr = C(R("09") ^ 1) * P(-1)
+
+-- Validate one connection-address. Records findings to ctx; returns true to
+-- continue, false to fail the match (when record() returns false under
+-- fail_on_first=true for an error-severity finding).
+local function validate_c_address(addr_type, address, ctx, path)
+  local addr, suffix = split_c_addr:match(address or "")
+
+  if addr_type == "IP4" then
+    if not addr or not addresses.ipv4:match(addr) then
+      return errors.record(ctx, "sdp.c.address.invalid-ipv4", { field_path = path })
+    end
+    if addresses.is_ipv4_multicast(addr) then
+      if not suffix then
+        return errors.record(ctx, "sdp.c.ipv4-multicast.ttl-required",
+                             { field_path = path })
+      end
+      local ttl_str, num_str = ipv4_mcast_suffix:match(suffix)
+      if not ttl_str then
+        return errors.record(ctx, "sdp.c.ipv4-multicast.ttl-required",
+                             { field_path = path })
+      end
+      local ttl = tonumber(ttl_str)
+      if not ttl or ttl > 255 then
+        return errors.record(ctx, "sdp.c.ipv4-multicast.ttl-out-of-range",
+                             { field_path = path })
+      end
+      if num_str then
+        local n = tonumber(num_str)
+        if not n or n < 1 then
+          return errors.record(ctx, "sdp.c.ipv4-multicast.numaddr-invalid",
+                               { field_path = path })
+        end
+      end
+    elseif suffix then
+      return errors.record(ctx, "sdp.c.ipv4-unicast.suffix-not-allowed",
+                           { field_path = path })
+    end
+  elseif addr_type == "IP6" then
+    if not addr or not addresses.ipv6:match(addr) then
+      return errors.record(ctx, "sdp.c.address.invalid-ipv6", { field_path = path })
+    end
+    if addresses.is_ipv6_multicast(addr) then
+      if suffix then
+        local num_str = ipv6_numaddr:match(suffix)
+        if not num_str then
+          return errors.record(ctx, "sdp.c.ipv6-multicast.suffix-form-invalid",
+                               { field_path = path })
+        end
+        local n = tonumber(num_str)
+        if not n or n < 1 then
+          return errors.record(ctx, "sdp.c.ipv6-multicast.numaddr-invalid",
+                               { field_path = path })
+        end
+      end
+    elseif suffix then
+      return errors.record(ctx, "sdp.c.ipv6-unicast.suffix-not-allowed",
+                           { field_path = path })
+    end
+  end
+  return true
+end
+
+-- Top-level check: validate every c= line (session-level and per-media).
+local function check_connection_addresses(doc, ctx)
+  if doc.session.connection then
+    local c = doc.session.connection
+    if not validate_c_address(c.addr_type, c.address, ctx, "session.connection") then
+      return false
+    end
+  end
+  for i, m in ipairs(doc.media) do
+    if m.connection then
+      local c = m.connection
+      local path = string.format("media[%d].connection", i)
+      if not validate_c_address(c.addr_type, c.address, ctx, path) then
+        return false
+      end
+    end
+  end
+  return true
+end
 
 -- RFC 8866 §8.2.3: "If the payload type number is dynamically assigned by
 -- this session description, an additional 'a=rtpmap:' attribute MUST be
@@ -88,6 +183,7 @@ local function validate_doc(_, position, doc, ctx)
     ctx = { findings = {}, fail_on_first = true }
   end
 
+  if not check_connection_addresses(doc, ctx) then return false end
   if not check_dynamic_pt_rtpmap(doc, ctx) then return false end
 
   return position, doc
