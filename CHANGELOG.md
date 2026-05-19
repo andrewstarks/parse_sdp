@@ -7,6 +7,26 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ---
 
+## [Unreleased] — `refactor/grammar-first` branch
+
+Ground-up rewrite of the parser per [REFACTOR-PLAN.md](REFACTOR-PLAN.md).
+**Internal-only so far; no public-API change has landed yet.** The 1.0
+parser remains the shipping artifact on `main`.
+
+### Added
+
+- `parse_sdp/errors.lua` — new error-handling module: registry of
+  checkable spec clauses with stable IDs, severity-policy infrastructure
+  (default everything-is-error / fail-on-first; toggle hooks ready for
+  later), record() emission helper, deepest-failure tracker for pure-LPeg
+  position carry. 1.0 `errors.new` / `errors.format` re-exported with an
+  additive `id` field.
+- `spec/error_registry_spec.lua` — 31 tests covering registry schema,
+  severity resolution, policy validation, record() semantics, the
+  deepest-failure tracker, and legacy-compatibility surface.
+
+---
+
 ## [1.0.0] — 2026-05-18
 
 First stable release. Every validation check is grounded in explicit
