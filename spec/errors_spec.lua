@@ -88,6 +88,44 @@ describe("errors.format", function()
     assert.truthy(#out > 0)
   end)
 
+  -- Phase 6.K: format emits BOTH field_path AND line/col when both
+  -- are present (was elseif before — only one or the other showed).
+  -- field_path is doc-shape coordinates, line/col is text coordinates;
+  -- they answer different questions.
+  it("emits both field_path and line/col when both are present", function()
+    local out = errors.format({
+      message    = "bad fmtp",
+      field_path = "media[1].attributes[fmtp:pt=96]",
+      line       = 8,
+      col        = 42,
+      context    = "",
+      spec_ref   = "ST 2110-20:2022 §7.2",
+    })
+    assert.truthy(out:find("media[1].attributes[fmtp:pt=96]", 1, true))
+    assert.truthy(out:find("line 8",  1, true))
+    assert.truthy(out:find("col 42", 1, true))
+    assert.truthy(out:find("ST 2110-20:2022 §7.2", 1, true))
+  end)
+
+  -- Phase 6.K: `context` is overloaded — legacy 1.0 callers set it to
+  -- the source-line string for the `N | <line>` highlight; newer
+  -- in-grammar Cmts set it to a metadata table like
+  -- {encoding="L24"}. Render the highlight only when context is a
+  -- string (legacy path); a table context is for downstream JSON
+  -- consumers and shouldn't be stringified into the highlight.
+  it("skips the line-highlight when context is a table (not a string)", function()
+    local out = errors.format({
+      message    = "bad value",
+      line       = 5,
+      col        = 1,
+      context    = { encoding = "L24", value = "foo" },
+      spec_ref   = "",
+    })
+    assert.truthy(out:find("line 5",         1, true))
+    assert.falsy (out:find("table:",         1, true))   -- no `tostring(table)`
+    assert.falsy (out:find("  |",            1, true))   -- no highlight block
+  end)
+
 end)
 
 describe("errors.new", function()

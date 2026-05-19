@@ -245,11 +245,27 @@ function M.format(err)
   if not err then return "error: unknown" end
   local code_part = err.code and ("[" .. err.code .. "] ") or ""
   local out = { "error: " .. code_part .. (err.message or "unknown error") }
-  if err.field_path and err.field_path ~= "" then
+  -- Phase 6.K: emit both field_path AND line/col when both are present.
+  -- field_path comes from the in-grammar Cmts (since 6.K's media-index
+  -- threading) or from doc-walk semantic_checks; line/col come from the
+  -- 6.G pos → line/col translation in errors.record. They're complementary
+  -- (field_path = where in the doc; line/col = where in the text).
+  local has_field = err.field_path and err.field_path ~= ""
+  local has_line  = err.line and err.line > 0
+  if has_field then
     out[#out + 1] = " --> field: " .. err.field_path
-  elseif err.line and err.line > 0 then
-    out[#out + 1] = string.format(" --> line %d, col %d", err.line, err.col or 1)
-    if err.context and err.context ~= "" then
+  end
+  if has_line then
+    out[#out + 1] = string.format(
+      "%s line %d, col %d",
+      has_field and "      at" or " -->",
+      err.line, err.col or 1)
+    -- `context` is overloaded: legacy 1.0 callers set it to the source-line
+    -- text for the `N | <line>` highlight block; in-grammar Cmts and the
+    -- newer doc-walk checks set it to a metadata table like
+    -- `{encoding = "L24", value = ...}` for downstream JSON consumers.
+    -- Render the highlight only when it's a string (legacy use).
+    if type(err.context) == "string" and err.context ~= "" then
       local col = err.col or 1
       out[#out + 1] = "  |"
       out[#out + 1] = string.format("%2d | %s", err.line, err.context)

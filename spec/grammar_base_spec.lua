@@ -1142,7 +1142,9 @@ describe("base SDP grammar — dynamic-PT requires rtpmap (Phase 3.B, RFC 8866 �
     assert.equal("RFC 8866 §8.2.3", f.spec_ref)
     assert.equal("MISSING_FIELD",   f.code)
     assert.equal("error",           f.severity)
-    assert.equal("media[1].attributes[rtpmap]", f.field_path)
+    -- Phase 6.K: field_path is now 0-indexed via ctx.media_index (matches
+    -- the convention introduced in 6.D/6.E for in-grammar emissions).
+    assert.equal("media[0].attributes[rtpmap]", f.field_path)
   end)
 
   it("accepts static PT 0 (PCMU) without rtpmap (static, not in 96-127)", function()
@@ -1209,8 +1211,9 @@ describe("base SDP grammar — dynamic-PT requires rtpmap (Phase 3.B, RFC 8866 �
       "m=video 49170 RTP/AVP 96",
     }))
     assert.is_nil(doc)
-    -- field_path should name media[2] (the violator), not media[1].
-    assert.equal("media[2].attributes[rtpmap]", ctx.findings[1].field_path)
+    -- field_path should name media[1] (the second / violator block) under
+    -- the 0-indexed ctx.media_index convention.
+    assert.equal("media[1].attributes[rtpmap]", ctx.findings[1].field_path)
   end)
 
   it("uses the registry message_template", function()
@@ -2143,7 +2146,8 @@ describe("base SDP grammar — ts-refclk traceable-mix (RFC 7273 §4.8)", functi
     assert.is_nil(doc)
     assert.equal(1, #ctx.findings)
     assert.equal("sdp.a.ts-refclk.traceable-mix", ctx.findings[1].id)
-    assert.equal("media[1].attributes", ctx.findings[1].field_path)
+    -- Phase 6.K: 0-indexed via ctx.media_index.
+    assert.equal("media[0].attributes", ctx.findings[1].field_path)
   end)
 
   it("rejects traceable + non-traceable mix at session level", function()

@@ -1548,6 +1548,111 @@ Audit ref: REFACTOR-PLAN.md §5 Phase 6.H.
 Audit ref: REFACTOR-PLAN.md §5 Phase 6.J; RFC 8866 §9 ABNF
 verified for the integer / zero-based-integer grammar.
 
+- **Phase 6.K:** `media_section` Cmt infrastructure + per-block
+  check migrations + diagnostic field_path recovery.
+
+  Two long-standing infrastructure gaps closed in one slice.
+
+  **Gap 1 — no `media_section` Cmt slot.** Several checks
+  (check_dynamic_pt_rtpmap, the per-media half of
+  check_tsrefclk_traceability, check_rtpmap_requires_fmtp,
+  check_mediaclk_presence, check_audio_packet_payload_fit) were
+  per-media-block but sat in `semantic_checks` (a doc-walk slot)
+  because there was no per-block Cmt slot to migrate them to.
+  Phase 6.K adds the slot:
+  - `parse_sdp/grammar/base.lua` `media_section` rule wrapped in
+    two Cmts: a leading one increments `ctx.media_index`
+    (0-indexed, matching 6.D/6.E); a trailing one dispatches every
+    function in `ctx.media_section_checks` against the captured
+    block.
+  - `M.media_section_checks` is a new export slot parallel to
+    `M.semantic_checks`. `extend()` merges
+    `overrides.media_section_checks` into the child tier the same
+    way as `semantic_checks`.
+  - `make_match` threads each grammar's check list via
+    `ctx.media_section_checks` so the rule can be shared without
+    per-tier rebuild.
+
+  **Gap 2 — in-grammar findings lost `media[N]` field_path.**
+  Since Phase 6.F, per-fmtp / per-rtpmap findings emitted with no
+  field_path, falling back to line/col only. Now that
+  `ctx.media_index` is reliably set by the media_section Cmt,
+  every in-grammar Cmt threads a constructed
+  `media[N].attributes[<attr>:pt=<PT>]` field_path through to
+  `errors.record`. Touched: `fmtp_dispatch` (constructs the path
+  once, passes as 4th positional arg to each check); 9 per-fmtp
+  check functions (raw / jxsv / audio / -41) updated to receive
+  and propagate `field_path`; 8 cross-param helpers
+  (raw + jxsv) updated similarly; the AM824 rtpmap
+  channels-required and channels-even Cmts read `ctx.media_index`
+  directly.
+
+  **5 checks migrated** from `semantic_checks` to
+  `media_section_checks`:
+  - `check_dynamic_pt_rtpmap` (base)
+  - `check_media_tsrefclk_traceability` (base, split out of
+    `check_tsrefclk_traceability`; the session-level pass
+    becomes `check_session_tsrefclk_traceability` and stays a
+    `semantic_check`)
+  - `check_rtpmap_requires_fmtp` (st2110 — the 6.F bridge check
+    that was always meant to live in a `media_section` Cmt)
+  - `check_mediaclk_presence` (st2110)
+  - `check_audio_packet_payload_fit` (st2110)
+
+  `semantic_checks` is now strictly cross-section invariants:
+  - base: `check_mid_uniqueness`,
+    `check_group_attribute_invariants`,
+    `check_session_tsrefclk_traceability`
+  - st2110: `check_ts_refclk_presence` (session-level cover
+    semantics), `check_group_dup_coherence` (cross-media-block)
+
+  **`errors.format` now emits BOTH field_path AND line/col when
+  both are present** (was `elseif` before, only one shown).
+  field_path = doc-shape coordinates; line/col = text coordinates.
+  Different questions, both useful. Also fixed a pre-existing bug
+  surfaced by the dual-display: `loc.context` is overloaded —
+  legacy 1.0 callers set it to the source-line string for the
+  `N | <line>` highlight block, but newer in-grammar Cmts set it
+  to a metadata table like `{encoding = "L24"}` for downstream
+  JSON consumers. The format now renders the highlight only when
+  context is a string (legacy use); a table context flows into the
+  JSON output but doesn't get stringified into the formatted
+  error.
+
+  **Behavioral change**: doc-walk emissions for `media[N]` are now
+  0-indexed (matching the convention in 6.D / 6.E / new in-grammar
+  paths) instead of 1-indexed. Two existing tests in
+  `spec/grammar_base_spec.lua` updated to match — the field_path
+  assertions for `check_dynamic_pt_rtpmap` and
+  `check_media_tsrefclk_traceability` changed by `-1`.
+
+  Diagnostic output, before / after for a per-fmtp finding:
+
+  ```text
+  -- Before 6.K (in-grammar finding):
+  error: [MISSING_FIELD] fmtp 'sampling' invalid value
+   --> line 8, col 127
+    = note: required by ST 2110-20:2022 §7.2
+
+  -- After 6.K (multi-block SDP, second media block is audio):
+  error: [INVALID_VALUE] MAXUDP must not be signaled on L16 / L24 …
+   --> field: media[1].attributes[fmtp:pt=96]
+         at line 14, col 51
+    = note: required by ST 2110-30:2025 §6.2.1
+  ```
+
+  2 new tests in `spec/errors_spec.lua` covering the dual-display
+  emission and the metadata-table-context skip. Suite: 1569 green
+  (up from 1567).
+
+  Phase 7 (IPMX) inherits the `media_section_checks` slot — any
+  per-block IPMX check (TR-10 profile presence, NMOS-adjacent
+  layered constraints) drops into `overrides.media_section_checks`
+  and gets the same in-grammar dispatch + field_path + pos
+  plumbing for free.
+
+Audit ref: REFACTOR-PLAN.md §5 Phase 6.K.
+
 The grammar tier now matches 1.0 parity on every well-grounded
 per-encoding required-attribute and cross-attribute SHALL. Three
 out-of-parity flags carry forward for separate audit follow-up:

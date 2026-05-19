@@ -146,24 +146,27 @@ end
 -- included to specify the format name and parameters as defined by the
 -- media type registration for the payload format."
 -- Dynamic range is PT 96–127 (RFC 3551 §6 / RFC 8866 §6.6).
-local function check_dynamic_pt_rtpmap(doc, ctx)
-  for i, m in ipairs(doc.media) do
-    if type(m.proto) == "string" and m.proto:find("RTP", 1, true) then
-      local rtpmap_pts = {}
-      for _, attr in ipairs(m.attributes) do
-        if attr.name == "rtpmap" then
-          rtpmap_pts[attr.payload_type] = true
-        end
-      end
-      for _, fmt in ipairs(m.fmts) do
-        local pt_n = tonumber(fmt)
-        if pt_n and pt_n >= 96 and pt_n <= 127 and not rtpmap_pts[pt_n] then
-          local cont = errors.record(ctx, "sdp.m.rtpmap-required-for-dynamic-pt", {
-            field_path = string.format("media[%d].attributes[rtpmap]", i),
-          })
-          if not cont then return false end
-        end
-      end
+--
+-- Phase 6.K: per-media-block; lives in media_section_checks. Fires at
+-- the end of each media_section's parse with the captured block.
+local function check_dynamic_pt_rtpmap(block, ctx)
+  if type(block.proto) ~= "string" or not block.proto:find("RTP", 1, true) then
+    return true
+  end
+  local rtpmap_pts = {}
+  for _, attr in ipairs(block.attributes) do
+    if attr.name == "rtpmap" then
+      rtpmap_pts[attr.payload_type] = true
+    end
+  end
+  for _, fmt in ipairs(block.fmts) do
+    local pt_n = tonumber(fmt)
+    if pt_n and pt_n >= 96 and pt_n <= 127 and not rtpmap_pts[pt_n] then
+      local cont = errors.record(ctx, "sdp.m.rtpmap-required-for-dynamic-pt", {
+        field_path = string.format(
+          "media[%d].attributes[rtpmap]", ctx.media_index or 0),
+      })
+      if not cont then return false end
     end
   end
   return true
@@ -184,35 +187,37 @@ end
 -- RFC 7273 §4.8: "Traceable time sources MUST NOT be mixed with non-traceable
 -- time sources at any given level." Checks each level (session, every media)
 -- independently — mixing across levels is permitted.
-local function check_tsrefclk_traceability(doc, ctx)
-  local function check_level(attrs, path)
-    local saw_traceable, saw_non = false, false
-    for _, attr in ipairs(attrs) do
-      if attr.name == "ts-refclk" then
-        if tsrefclk_is_traceable(attr) then
-          saw_traceable = true
-        else
-          saw_non = true
-        end
+--
+-- Phase 6.K split: the session-level pass stays a doc-level semantic_check
+-- (cross-section by definition — the "session attributes" scope spans the
+-- doc top); the per-media-block pass moves to media_section_checks so it
+-- fires inline as each block parses, with ctx.media_index in field_path.
+local function check_tsrefclk_level(attrs, ctx, path)
+  local saw_traceable, saw_non = false, false
+  for _, attr in ipairs(attrs) do
+    if attr.name == "ts-refclk" then
+      if tsrefclk_is_traceable(attr) then
+        saw_traceable = true
+      else
+        saw_non = true
       end
     end
-    if saw_traceable and saw_non then
-      return errors.record(ctx, "sdp.a.ts-refclk.traceable-mix",
-                           { field_path = path })
-    end
-    return true
   end
-
-  if not check_level(doc.session.attributes, "session.attributes") then
-    return false
-  end
-  for i, m in ipairs(doc.media) do
-    if not check_level(m.attributes,
-                       string.format("media[%d].attributes", i)) then
-      return false
-    end
+  if saw_traceable and saw_non then
+    return errors.record(ctx, "sdp.a.ts-refclk.traceable-mix",
+                         { field_path = path })
   end
   return true
+end
+
+local function check_session_tsrefclk_traceability(doc, ctx)
+  return check_tsrefclk_level(doc.session.attributes, ctx, "session.attributes")
+end
+
+local function check_media_tsrefclk_traceability(block, ctx)
+  local path = string.format(
+    "media[%d].attributes", ctx.media_index or 0)
+  return check_tsrefclk_level(block.attributes, ctx, path)
 end
 
 -- RFC 5888 §4: "The identification-tag MUST be unique within an SDP session
@@ -328,10 +333,19 @@ local record_trailing_ws      = record_soft("sdp.line.trailing-whitespace")
 -- gets added; check_mid_uniqueness + check_group_attribute_invariants
 -- span media blocks and stay doc-level either way.
 local base_semantic_checks = {
-  check_dynamic_pt_rtpmap,
   check_mid_uniqueness,
   check_group_attribute_invariants,
-  check_tsrefclk_traceability,
+  check_session_tsrefclk_traceability,
+}
+
+-- ── Per-media-block checks (Phase 6.K) ──────────────────────────────────────
+-- Functions taking `(block, ctx)` that fire at the end of each
+-- media_section's parse (via the trailing Cmt on the media_section rule).
+-- Populated as cross-attribute-within-block checks migrate out of
+-- semantic_checks (which is reserved for genuine cross-section invariants).
+local base_media_section_checks = {
+  check_dynamic_pt_rtpmap,
+  check_media_tsrefclk_traceability,
 }
 
 -- Factory producing a document-level Cmt callback bound to a specific
@@ -433,14 +447,41 @@ local rules = {
   -- The m= fields (media, port, port_count, proto, fmts) land *flat* at the
   -- media-block top level rather than nested under "m" — to match the 1.0
   -- doc shape and avoid one level of indirection.
-  media_section = Ct(
-        V"m_line"
-      * (Cg(V"i_line", "info")) ^ -1
-      * (Cg(V"c_line", "connection")) ^ -1
-      * Cg(Ct(V"b_line" ^ 0), "bandwidths")
-      * V"k_line" ^ -1
-      * Cg(Ct(V"a_line" ^ 0), "attributes")
-    ),
+  --
+  -- Phase 6.K: two Cmts bracket the block capture. The leading Cmt
+  -- increments ctx.media_index (0-indexed) BEFORE the block starts
+  -- parsing so per-attribute Cmts inside (a_rtpmap, a_fmtp dispatch,
+  -- AM824 channels) can read the index for field_path construction.
+  -- The trailing Cmt receives the captured block + ctx and dispatches
+  -- ctx.media_section_checks — the per-media-block analogue of the
+  -- document-level `semantic_checks` slot. The checks list is threaded
+  -- via ctx (set by make_match per-grammar) so the rule itself doesn't
+  -- need rebuilding per tier.
+  media_section =
+        Cmt(Carg(1), function(_, pos, ctx)
+              if ctx then
+                ctx.media_index = (ctx.media_index or -1) + 1
+              end
+              return pos
+            end)
+      * Cmt(
+          Ct(
+                V"m_line"
+              * (Cg(V"i_line", "info")) ^ -1
+              * (Cg(V"c_line", "connection")) ^ -1
+              * Cg(Ct(V"b_line" ^ 0), "bandwidths")
+              * V"k_line" ^ -1
+              * Cg(Ct(V"a_line" ^ 0), "attributes")
+            ) * Carg(1),
+          function(_, pos, block, ctx)
+            if not ctx then return pos, block end
+            if ctx.media_section_checks then
+              for _, check in ipairs(ctx.media_section_checks) do
+                if not check(block, ctx) then return false end
+              end
+            end
+            return pos, block
+          end),
 
   -- ── Captured line rules (Phase 2.A–2.D) ──────────────────────────────
   -- Each produces one or more captures consumed by the surrounding Ct.
@@ -1076,14 +1117,16 @@ local rules = {
 -- Driver that runs `grammar` against `text` with a fresh ctx (or one the
 -- caller supplied via opts.ctx). Shared by M.match and the M.extend
 -- closure so child tiers don't re-implement it.
-local function make_match(grammar)
+local function make_match(grammar, media_section_checks)
   return function(text, opts)
     opts = opts or {}
     local ctx = opts.ctx or {
-      findings      = {},
-      policy        = opts.policy,
-      fail_on_first = opts.fail_on_first ~= false,
-      text          = text,   -- enables pos → line/col in errors.record
+      findings              = {},
+      policy                = opts.policy,
+      fail_on_first         = opts.fail_on_first ~= false,
+      text                  = text,   -- enables pos → line/col in errors.record
+      media_section_checks  = media_section_checks,
+      media_index           = -1,     -- pre-incremented to 0 by media_section Cmt
     }
     local doc = grammar:match(text, 1, ctx)
     return doc, ctx
@@ -1094,6 +1137,7 @@ local M = {}
 M.rules                   = rules
 M.grammar                 = lpeg.P(rules)
 M.semantic_checks         = base_semantic_checks
+M.media_section_checks    = base_media_section_checks
 M.make_validate_doc       = make_validate_doc
 M.make_document_body      = make_document_body
 M.fmtp_entries_to_params  = fmtp_entries_to_params
@@ -1101,17 +1145,23 @@ M.fmtp_entries_to_params  = fmtp_entries_to_params
 --- Compose a child tier from a parent.
 --
 -- `parent` is a table with the same shape this module exports: `rules`,
--- `semantic_checks`, `make_validate_doc`. `overrides` carries the child's
--- contributions:
---   - `rules`            — table of rule-name → pattern overrides
---                          (merged into parent.rules; child wins on collision)
---   - `semantic_checks`  — ordered list of (doc, ctx) → bool functions
---                          appended to parent.semantic_checks
+-- `semantic_checks`, `media_section_checks`, `make_validate_doc`.
+-- `overrides` carries the child's contributions:
+--   - `rules`                 — table of rule-name → pattern overrides
+--                                (merged into parent.rules; child wins on collision)
+--   - `semantic_checks`       — ordered list of (doc, ctx) → bool functions
+--                                appended to parent.semantic_checks
+--   - `media_section_checks`  — ordered list of (block, ctx) → bool functions
+--                                appended to parent.media_section_checks
+--                                (Phase 6.K — runs at the end of each
+--                                 media_section's parse via a Cmt on the rule)
 --
 -- The child rebuilds the `document` rule so its Cmt validator closes over
--- the merged check list. Any rule override the child supplies (including
--- a leaf override that lives below `document`) is in the merged rules table
--- and gets picked up at lpeg.P(rules) compile time.
+-- the merged semantic_checks list. The `media_section` rule does NOT
+-- rebuild per tier — it reads the active media_section_checks list from
+-- ctx at parse time (set by make_match), so any rule override the child
+-- supplies in the merged rules table gets picked up at lpeg.P(rules)
+-- compile time.
 --
 -- Returns a table mirroring base's exports plus `match` and `extend`, so
 -- IPMX in Phase 7 chains with `st2110:extend({...})`-equivalent call.
@@ -1130,6 +1180,14 @@ function M.extend(parent, overrides)
     child_checks[#child_checks + 1] = c
   end
 
+  local child_media_section_checks = {}
+  for _, c in ipairs(parent.media_section_checks or {}) do
+    child_media_section_checks[#child_media_section_checks + 1] = c
+  end
+  for _, c in ipairs(overrides.media_section_checks or {}) do
+    child_media_section_checks[#child_media_section_checks + 1] = c
+  end
+
   -- Build a fresh document_body for the child via the parent's factory.
   -- Sharing a single document_body pattern object across two grammar
   -- compilations is unsafe: LPeg rewrites the tree's V-resolution on the
@@ -1146,11 +1204,12 @@ function M.extend(parent, overrides)
     rules                   = child_rules,
     grammar                 = child_grammar,
     semantic_checks         = child_checks,
+    media_section_checks    = child_media_section_checks,
     make_validate_doc       = parent.make_validate_doc,
     make_document_body      = parent.make_document_body,
     fmtp_entries_to_params  = parent.fmtp_entries_to_params,
     extend                  = M.extend,
-    match                   = make_match(child_grammar),
+    match                   = make_match(child_grammar, child_media_section_checks),
   }
   return child
 end
@@ -1174,6 +1233,6 @@ end
 --   ctx.findings for warnings even on success).
 --   On grammar match failure: nil, ctx (ctx.findings may carry the deepest
 --   recorded finding via the tracker).
-M.match = make_match(M.grammar)
+M.match = make_match(M.grammar, base_media_section_checks)
 
 return M

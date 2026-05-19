@@ -39,24 +39,26 @@ and runs them through the parser. See
 
 ## Current State
 
-1567 hermetic tests passing. Every validation check is grounded in explicit
+1569 hermetic tests passing. Every validation check is grounded in explicit
 spec text; no opinion-based checks remain.
 
 The grammar-first refactor on branch `refactor/grammar-first` is **in
-progress**. Phases 4 + 5 complete; **Phase 6 (all of 6.A–6.J except
+progress**. Phases 4 + 5 complete; **Phase 6 (all of 6.A–6.K except
 the deferred 6.I) is now closed.** The grammar tier matches or
 exceeds the 1.0 parser on every check grounded in primary spec text.
 Three 1.0-over-strict flags from 6.D (audio MAXUDP-forbidden on
 AM824, channels-required on L16/L24, packet-payload-fit on AM824)
 are intentionally not ported and remain flagged in `audits/` for
 separate follow-up. Phase 6.F refactored 11 per-line ST 2110 checks
-out of `semantic_checks` (a Lua-massage pipeline) into in-grammar
-`Cmt` callbacks. Phase 6.G wired byte-position diagnostics through
-every in-grammar Cmt. Phase 6.H applied the in-grammar treatment to
-base SDP's `check_connection_addresses`. Phase 6.J hoisted shared
-numeric-value-form LPeg patterns into a new
+out of `semantic_checks` into in-grammar Cmt callbacks. 6.G wired
+byte-position diagnostics through every in-grammar Cmt. 6.H applied
+the in-grammar treatment to base SDP's `check_connection_addresses`.
+6.J hoisted shared numeric-value-form LPeg patterns into a new
 `parse_sdp.grammar.patterns` module that base and st2110 both draw
-from.
+from. 6.K added a `media_section_checks` slot parallel to
+`semantic_checks`, migrated 5 per-block checks into it, and
+recovered the `media[N]` field_path prefix on every in-grammar
+finding via the new `ctx.media_index` plumbing.
 
 Phases 7–10 remain (IPMX tier via `extend(st2110_rules, ...)`,
 serializer rewrite, public API stabilization, migration cutover).

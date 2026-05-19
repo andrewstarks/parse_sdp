@@ -766,6 +766,27 @@ separate follow-up.
   leading-zero rejection (POS-DIGIT *DIGIT instead of `%d+`). 21
   new tests in `spec/grammar_patterns_spec.lua`; suite 1567 green.
   Phase 7 (IPMX) inherits the shared patterns by `require`.
+- **6.K (complete)** — `media_section` Cmt infrastructure +
+  per-block check migrations + diagnostic field_path recovery.
+  Closes both "future infrastructure gaps" flagged after 6.H.
+  base.lua's `media_section` rule now wrapped in two Cmts
+  (leading: increment `ctx.media_index` 0-indexed; trailing:
+  dispatch `ctx.media_section_checks`). New
+  `media_section_checks` slot parallel to `semantic_checks`;
+  `extend()` merges per-tier overrides. 5 checks migrated out
+  of `semantic_checks` (check_dynamic_pt_rtpmap,
+  check_media_tsrefclk_traceability, check_rtpmap_requires_fmtp,
+  check_mediaclk_presence, check_audio_packet_payload_fit) —
+  `semantic_checks` is now strictly cross-section invariants.
+  All in-grammar Cmts that emit findings now thread
+  `field_path = "media[N].attributes[<attr>:pt=<PT>]"` through
+  `errors.record` via the `fmtp_dispatch` pre-format. 9 per-fmtp
+  check functions + 8 cross-param helpers + 2 AM824 rtpmap Cmts
+  updated. `errors.format` now emits both field_path AND
+  line/col when both present (was `elseif`). Pre-existing
+  `loc.context` overload bug fixed (string-only highlight path).
+  Suite 1569 green (up from 1567). Phase 7 IPMX inherits the
+  full slot machinery.
 
 **Phase 7 — IPMX grammar via `extend(st2110_rules, ...)`.**
 Same pattern, IPMX-specific from TR-10 markdowns. Re-verify each citation
