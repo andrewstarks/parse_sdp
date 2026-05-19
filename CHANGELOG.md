@@ -39,6 +39,13 @@ parser remains the shipping artifact on `main`.
   acceptance/rejection: minimal SDP, optional fields, multiple time
   descriptions and r= lines, missing required fields, wrong order,
   bare LF rejection (Phase 5 will soften), empty values rejected.
+- **Phase 2.A:** capturing scaffold + version (v) + session-name (s).
+  The base grammar's document rule now produces a `Ct` table with
+  `doc.version` and `doc.session.name` captured; `v=` is tightened
+  from any-text to literal `"0"` per RFC 8866 §5.1. k= continues to
+  parse-and-discard per §5.12. Remaining session and media fields
+  are still matched-and-discarded placeholders, to be Cg-wrapped in
+  2.B–2.E. 7 new tests in `spec/grammar_base_spec.lua`.
 
 ### Changed
 

@@ -188,6 +188,68 @@ describe("base SDP grammar — document shape (RFC 8866 §5)", function()
 
 end)
 
+describe("base SDP grammar — captured doc shape (Phase 2.A)", function()
+
+  -- NOT-SPEC: library
+  it("returns a captured table for minimal valid SDP", function()
+    local doc = g:match(minimal())
+    assert.is_table(doc)
+  end)
+
+  -- NOT-SPEC: library
+  it("captures version = '0' (RFC 8866 §5.1)", function()
+    local doc = g:match(minimal())
+    assert.equal("0", doc.version)
+  end)
+
+  -- NOT-SPEC: library
+  it("captures session.name (RFC 8866 §5.3)", function()
+    local doc = g:match(minimal())
+    assert.equal("Test Session", doc.session.name)
+  end)
+
+  -- NOT-SPEC: library
+  it("captures session.name preserving spaces, punctuation, dashes", function()
+    local text = lines_to_sdp({
+      "v=0", "o=- 1 1 IN IP4 127.0.0.1",
+      "s=Multi-word session: with punctuation!",
+      "t=0 0",
+    })
+    local doc = g:match(text)
+    assert.equal("Multi-word session: with punctuation!", doc.session.name)
+  end)
+
+  -- NOT-SPEC: library
+  it("rejects v= != '0' (RFC 8866 §5.1: only '0' currently defined)", function()
+    local text = lines_to_sdp({
+      "v=1", "o=- 1 1 IN IP4 127.0.0.1", "s=X", "t=0 0",
+    })
+    assert.is_nil(g:match(text))
+  end)
+
+  -- NOT-SPEC: library
+  it("k= line is parsed and discarded (RFC 8866 §5.12 obsolete)", function()
+    local text = lines_to_sdp({
+      "v=0", "o=- 1 1 IN IP4 127.0.0.1", "s=X", "t=0 0",
+      "k=clear:password",
+    })
+    local doc = g:match(text)
+    assert.is_table(doc)
+    assert.equal("0",  doc.version)
+    assert.equal("X",  doc.session.name)
+    assert.is_nil(doc.session.key)  -- §5.12 says discard; no field on doc
+  end)
+
+  -- NOT-SPEC: library
+  it("captures session as a sub-table, not a top-level field bag", function()
+    local doc = g:match(minimal())
+    -- session.name is inside doc.session, not at doc top level.
+    assert.is_table(doc.session)
+    assert.is_nil(doc.name)
+  end)
+
+end)
+
 describe("base SDP grammar — module exports", function()
 
   -- NOT-SPEC: library
@@ -195,7 +257,7 @@ describe("base SDP grammar — module exports", function()
     assert.is_table(base.rules)
     assert.equal("document", base.rules[1])
     assert.is_truthy(base.rules.document)
-    assert.is_truthy(base.rules.session_section)
+    assert.is_truthy(base.rules.session_inner)
     assert.is_truthy(base.rules.media_section)
   end)
 
