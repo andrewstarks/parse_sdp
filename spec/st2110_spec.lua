@@ -2057,7 +2057,9 @@ describe("ST 2110 validation", function()
       assert.is_nil(ok)
       assert.is_table(err)
       assert.matches("ptime", err.message)
-      assert.equal("ST 2110-30:2025 §6.2.1", err.spec_ref)
+      -- Audit completeness: both clauses jointly impose the ptime SHALL
+      -- on PCM audio. The previous single-cite was incomplete.
+      assert.equal("ST 2110-30:2025 §6.2.1 / AES67 §8.1", err.spec_ref)
     end)
 
     it("rejects a non-numeric ptime", function()
@@ -2154,12 +2156,19 @@ describe("ST 2110 validation", function()
       assert.is_table(doc)
     end)
 
-    -- N4: a=ptime SHALL be present for AM824.
+    -- N4: a=ptime SHALL be present for AM824. The presence SHALL is
+    -- jointly imposed by ST 2110-30:2025 §6.2.1 → AES67 §8.1 and
+    -- ST 2110-31:2022 §6.1; the spec_ref must enumerate all three
+    -- so the audit cite stays accurate when -31 audio (AM824) is in
+    -- play. (PCM audio paths cite only the first two — see ipmx_spec.)
     it("rejects AM824 without a=ptime (§6.1)", function()
       local doc = sdp.parse(am824_sdp(48000, 2, nil))
       local ok, err = doc:validate("st2110")
       assert.is_nil(ok)
       assert.matches("ptime", err.message)
+      assert.equal(
+        "ST 2110-30:2025 §6.2.1 / AES67 §8.1 / ST 2110-31:2022 §6.1",
+        err.spec_ref)
     end)
 
     -- N5: ptime SHALL be from Table 1 for the prevailing clock_rate.

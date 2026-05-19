@@ -2236,18 +2236,26 @@ function st2110.validate(doc)
       -- AES67, including the Session Description Protocol (SDP) as
       -- described in IETF RFC 8866." AES67-2018 §8.1 (Packet time):
       -- "Descriptions shall include a ptime attribute indicating the
-      -- desired packet time." (For AM824 specifically, ST 2110-31:2022
-      -- §6.1 also makes ptime SHALL and additionally constrains its
-      -- value to Table 1 — see below.)
+      -- desired packet time."
+      -- For AM824 specifically, ST 2110-31:2022 §6.1 *also* SHALL-
+      -- requires ptime ("Senders under this standard shall signal a
+      -- ptime attribute in the SDP") AND constrains its value to
+      -- Table 1 (checked further below). The presence SHALL is
+      -- enforced jointly by all three documents; the spec_ref cites
+      -- every applicable clause so a downstream tool reading the
+      -- error knows the full normative basis.
+      local ptime_ref = (enc == "AM824")
+        and "ST 2110-30:2025 §6.2.1 / AES67 §8.1 / ST 2110-31:2022 §6.1"
+        or  "ST 2110-30:2025 §6.2.1 / AES67 §8.1"
       local ptime_attr = find_attr(mattrs, "ptime")
       if not ptime_attr then
-        return attr_err("audio streams require a=ptime (ST 2110-30:2025 §6.2.1 / AES67 §8.1)",
-          mpath, "ptime", "ST 2110-30:2025 §6.2.1")
+        return attr_err("audio streams require a=ptime (" .. ptime_ref .. ")",
+          mpath, "ptime", ptime_ref)
       end
       local ptime_ms = tonumber(ptime_attr.value or "")
       if not ptime_ms or ptime_ms <= 0 then
         return attr_err("invalid a=ptime value (expected positive number)",
-          mpath, "ptime", "ST 2110-30:2025 §6.2.1", "INVALID_VALUE")
+          mpath, "ptime", ptime_ref, "INVALID_VALUE")
       end
       if enc == "AM824" then
         -- N5: "<packet-time> parameter shall take one of the values from

@@ -741,6 +741,26 @@ ST 2110-20:2022 §7.2 / §7.3; ST 2110-10 §6.4.
 
 ### Fixed
 
+- **Audio `a=ptime` `spec_ref` audit completeness.** The shipping parser's
+  `a=ptime`-missing and `a=ptime`-invalid checks previously reported
+  `spec_ref = "ST 2110-30:2025 §6.2.1"` only, while the message text
+  named both ST 2110-30:2025 §6.2.1 and AES67 §8.1. Audit row 38
+  (ptime presence SHALL) and row 39 (Table 1 value SHALL) in
+  `audits/SPEC_COVERAGE.md` cite all the normatively-applicable
+  clauses; the parser's `spec_ref` now matches.
+  - PCM audio (L16 / L24): `spec_ref = "ST 2110-30:2025 §6.2.1 / AES67 §8.1"`
+    — ST 2110-30 chains to AES67 for the SDP SHALL; AES67 §8.1 is
+    where the actual ptime SHALL lives.
+  - AM824 audio: `spec_ref = "ST 2110-30:2025 §6.2.1 / AES67 §8.1 / ST 2110-31:2022 §6.1"`
+    — ST 2110-31:2022 §6.1 *also* SHALL-requires ptime
+    (*"Senders under this standard shall signal a ptime attribute in
+    the SDP"*) and additionally constrains the value to Table 1.
+    Both clauses apply jointly; the cite now enumerates all three.
+  Two existing spec_ref assertions updated to the new combined cite:
+  `spec/st2110_spec.lua` ptime=0 test, `spec/ipmx_spec.lua` D1 cite
+  test. New assertion added to the AM824-without-ptime test to lock
+  in the tri-clause cite. Suite: 1259 green.
+
 - CLAUDE.md's VSF TR-10 markdown path. It pointed to
   `smpte_standards_internal/TR-10 Markdowned Versions/`; the directory
   is at `Standards Related/TR-10 Markdowned Versions/`.

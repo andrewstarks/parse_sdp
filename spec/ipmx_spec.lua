@@ -1262,12 +1262,16 @@ describe("IPMX validation", function()
     -- "Payload Formats and Sample Rates" with no ptime SHALL). The actual
     -- chain is ST 2110-30:2025 §6.2.1 → AES67 §8.1 (and TR-10-3 §7 chains
     -- IPMX PCM audio to AES67 the same way).
-    it("spec_ref for ptime is ST 2110-30:2025 §6.2.1 (D1 fix)", function()
+    it("spec_ref for ptime is ST 2110-30:2025 §6.2.1 / AES67 §8.1 (D1 fix + audit completeness)", function()
+      -- ST 2110-30:2025 §6.2.1 (SDP-conformance SHALL) and AES67 §8.1
+      -- (the ptime SHALL itself) jointly impose ptime presence on PCM
+      -- audio. The previous single-cite was incomplete; the message
+      -- always named both, the spec_ref now matches.
       local doc = sdp.parse(ipmx_audio_sdp())
       assert.is_table(doc)
       local ok, err = doc:validate("ipmx")
       assert.is_nil(ok)
-      assert.equal("ST 2110-30:2025 §6.2.1", err.spec_ref)
+      assert.equal("ST 2110-30:2025 §6.2.1 / AES67 §8.1", err.spec_ref)
     end)
 
     -- IPMX permits the full AES67/extended professional-audio rate set. ST 2110-30
