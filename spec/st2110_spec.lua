@@ -956,7 +956,7 @@ describe("ST 2110 validation", function()
   -- XREF: see also ipmx_spec.lua 'M25 M5: session-level b=AS validation (TR-10-7 §11)' and 'b=AS bandwidth format'.
   describe("M25 M5: b=AS validated at session and media level (TR-10-7 §11)", function()
     -- ST 2110 tier doesn't reject b=AS (TR-10-7 is IPMX-tier), but the value
-    -- must still parse as an unsigned integer per RFC 4566 §5.8; b=AS:0 at
+    -- must still parse as an unsigned integer per RFC 8866 §5.8; b=AS:0 at
     -- session level is rejected by the IPMX tier specifically.
     it("accepts session-level b=AS:5000 in ST 2110", function()
       local text = table.concat({
@@ -3097,7 +3097,7 @@ describe("ST 2110 validation", function()
     end)
 
     -- AMWA sdpoker Issue #2 (CLOSED): early SDPoker rejected fmtp lines that
-    -- did not end with "; ". RFC 4566 §6 imposes no such requirement and
+    -- did not end with "; ". RFC 8866 §6.15 imposes no such requirement and
     -- ST 2110-20:2022 §7.1 describes only inter-parameter separators. The
     -- parser accepts both forms.
     it("accepts fmtp with no trailing semicolon", function()
@@ -3950,7 +3950,7 @@ describe("ST 2110 validation", function()
       assert.is_nil(ok)
       assert.is_table(err)
       assert.matches("payload type", err.message)
-      assert.equal("RFC 4566 §6", err.spec_ref)
+      assert.equal("RFC 8866 §6.15", err.spec_ref)
     end)
   end)
 

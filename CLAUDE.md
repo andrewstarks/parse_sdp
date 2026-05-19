@@ -164,7 +164,7 @@ follow the strictness principle above. Audits follow these rules:
    artifacts. Check the markdown directories first; fall back to PDF only
    when the markdown for the cited clause is not yet available. Locations:
 
-   - VSF TR-10 markdown: `~/Library/CloudStorage/Dropbox/Personal/Claude/Macnica/Standards Related/smpte_standards_internal/TR-10 Markdowned Versions/`
+   - VSF TR-10 markdown: `~/Library/CloudStorage/Dropbox/Personal/Claude/Macnica/Standards Related/TR-10 Markdowned Versions/`
    - SMPTE ST 2110 + IPMX (markdown if present, PDF fallback): `~/Library/CloudStorage/Dropbox/Personal/Claude/Macnica/Standards Related/smpte_standards_internal/`
    - IETF RFCs: `WebFetch https://www.rfc-editor.org/rfc/rfcNNNN.txt`
    - Use `pdftotext` (allowlisted) only when no markdown is available.

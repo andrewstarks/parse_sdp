@@ -38,7 +38,7 @@ describe("IPMX validation", function()
     "a=ts-refclk:ptp=IEEE1588-2008:00-11-22-FF-FE-33-44-55:0",
   }, "\r\n") .. "\r\n"
 
-  -- Generic RFC 4566 SDP (no media blocks, no ST 2110 attributes).
+  -- Generic RFC 8866 SDP (no media blocks, no ST 2110 attributes).
   local GENERIC_SDP = table.concat({
     "v=0",
     "o=- 1 1 IN IP4 127.0.0.1",
@@ -221,7 +221,7 @@ describe("IPMX validation", function()
       assert.matches("extmap", err.field_path)
     end)
 
-    -- RFC 8285 §8 ABNF: extensionattributes = byte-string. RFC 4566 §9 defines
+    -- RFC 8285 §8 ABNF: extensionattributes = byte-string. RFC 8866 §9 defines
     -- byte-string = 1*(%x01-09/%x0B-0C/%x0E-FF) — NUL, CR, LF are forbidden.
     it("rejects extmap ext-attr containing a NUL byte", function()
       local doc = sdp.parse(
@@ -349,7 +349,7 @@ describe("IPMX validation", function()
   -- ── M24: M1 — b=AS format check (TR-10-7 §11) ────────────────────────────────
 
   describe("b=AS bandwidth format (TR-10-7 §11)", function()
-    -- Inline SDP so b= lands in the correct RFC 4566 order (between c= and a=).
+    -- Inline SDP so b= lands in the correct RFC 8866 order (between c= and a=).
     local function ipmx_video_with_bandwidth(b_line)
       local lines = {
         "v=0",

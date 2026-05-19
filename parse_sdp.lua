@@ -193,12 +193,12 @@ function grammar.parse_bandwidth(s)
   return nil, 1
 end
 
--- RFC 4566 §5.10 typed-time: integer optionally followed by d/h/m/s suffix
+-- RFC 8866 §5.10 typed-time: integer optionally followed by d/h/m/s suffix
 -- (e.g. "7d", "1h", "0", "25h"). Used by r= and z= value forms.
 local _typed_time_pat = digit ^ 1 * S("dhms") ^ -1 * -P(1)
 local _typed_time_signed = (P("-") + P("+")) ^ -1 * digit ^ 1 * S("dhms") ^ -1 * -P(1)
 
---- Parse an r= field value into a repeat table per RFC 4566 §5.10.
+--- Parse an r= field value into a repeat table per RFC 8866 §5.10.
 -- Form: <repeat interval> <active duration> <offsets from start-time>...
 -- Each token is "typed-time" (decimal integer with optional d/h/m/s suffix).
 -- At least three tokens required.
@@ -214,7 +214,7 @@ function grammar.parse_repeat(s)
   return { interval = tokens[1], duration = tokens[2], offsets = offsets }
 end
 
---- Parse a z= field value per RFC 4566 §5.11.
+--- Parse a z= field value per RFC 8866 §5.11.
 -- Form: <adjustment time> <offset> <adjustment time> <offset>...
 -- Adjustment times are NTP integers (no suffix); offsets are typed-time
 -- with optional sign. At least one pair required; even token count.
@@ -232,7 +232,7 @@ function grammar.parse_timezone(s)
   return pairs_out
 end
 
---- Parse a k= field value per RFC 4566 §5.12.
+--- Parse a k= field value per RFC 8866 §5.12.
 -- Form: <method> | <method>:<encryption key>. Methods include "prompt",
 -- "clear", "base64", "uri" (per RFC 4566); other tokens accepted
 -- structurally (the spec lists these but does not strictly forbid others).
@@ -471,7 +471,7 @@ local function ser_media_block(m)
 end
 
 --- Serialize an SDP document table to an RFC 4566 text string.
--- Field order follows RFC 4566 §5.  All lines use CRLF endings.
+-- Field order follows RFC 8866 §5.  All lines use CRLF endings.
 -- The caller is responsible for ensuring doc is structurally valid; no validation
 -- is performed here.
 -- @param doc table  SDP document table with version, origin, session, media fields.
@@ -564,7 +564,7 @@ local function each_dup_group(doc, spec_ref, callback)
   return true
 end
 
--- RFC 4566 §9 token grammar (referenced by RFC 5888 §4/§5 for semantics and
+-- RFC 8866 §9 token grammar (referenced by RFC 5888 §4/§5 for semantics and
 -- identification-tag): token-char = %x21 / %x23-27 / %x2A-2B / %x2D-2E /
 -- %x30-39 / %x41-5A / %x5E-7E. Excludes SP, DQUOTE, parens, comma, slash,
 -- colon-through-at, brackets-and-backslash, DEL.
@@ -1359,7 +1359,7 @@ end
 
 -- ST 2110-20:2022 §7.1 fmtp formatting (strict): parameter entries SHALL be
 -- separated by ";" followed by whitespace, AND there SHALL be no semicolon
--- after the last item. This is stricter than RFC 4566 §6 (which is silent on
+-- after the last item. This is stricter than RFC 8866 §6.15 (which is silent on
 -- inter-parameter spacing) and stricter than ST 2110-22:2022 §7.2 (which
 -- explicitly makes the trailing space optional). Apply at the -20 branch only.
 -- Returns true on conformance, or nil + error message string.
@@ -1613,7 +1613,7 @@ function st2110.validate(doc)
         return attr_err(
           string.format("fmtp payload type %s does not match rtpmap payload type %s",
             tostring(fmtp_pt), tostring(rtp_pt)),
-          mpath, "fmtp", "RFC 4566 §6", "INVALID_VALUE")
+          mpath, "fmtp", "RFC 8866 §6.15", "INVALID_VALUE")
       end
     end
     local enc, clock_rate = rtpmap_parse(rtpmap.value or "")
@@ -1650,7 +1650,7 @@ function st2110.validate(doc)
     if fmtp then
       local p, fmtp_err = fmtp_params(fmtp.value or "")
       if not p then
-        return attr_err("invalid fmtp: " .. fmtp_err, mpath, "fmtp", "RFC 4566 §6", "INVALID_VALUE")
+        return attr_err("invalid fmtp: " .. fmtp_err, mpath, "fmtp", "RFC 8866 §6.15", "INVALID_VALUE")
       end
       params = p
     end
@@ -1865,7 +1865,7 @@ function st2110.validate(doc)
       end
       -- N6 (§7.4): "The SDP object shall include an indication of frame rate
       -- via one of the mechanisms listed in Table 4." Either a=framerate
-      -- (RFC 4566 §6) or fmtp exactframerate satisfies the SHALL.
+      -- (RFC 8866 §6.13) or fmtp exactframerate satisfies the SHALL.
       do
         local has_framerate_attr = find_attr(mattrs, "framerate") ~= nil
         local has_exactframerate = params["exactframerate"] ~= nil
@@ -1878,10 +1878,10 @@ function st2110.validate(doc)
         if has_framerate_attr then
           local fr_attr = find_attr(mattrs, "framerate")
           local fr_val = fr_attr and fr_attr.value or ""
-          -- RFC 4566 §6 / ST 2110-22:2022 Table 4: integer or <integer>.<fraction>.
+          -- RFC 8866 §6.13 / ST 2110-22:2022 Table 4: integer or <integer>.<fraction>.
           if not fr_val:match("^%d+$") and not fr_val:match("^%d+%.%d+$") then
             return attr_err(
-              "invalid a=framerate value '" .. fr_val .. "' (RFC 4566 §6 / ST 2110-22:2022 §7.4)",
+              "invalid a=framerate value '" .. fr_val .. "' (RFC 8866 §6.13 / ST 2110-22:2022 §7.4)",
               mpath, "framerate", "ST 2110-22:2022 §7.4", "INVALID_VALUE")
           end
         end
@@ -2640,7 +2640,7 @@ end
 
 -- RFC 8285 §5 a=extmap (RFC 8285 obsoletes RFC 5285): mapentry SP
 -- extensionname [SP extensionattributes]; §8 ABNF.
--- extensionattributes = byte-string (RFC 4566 §9): 1*(%x01-09/%x0B-0C/%x0E-FF),
+-- extensionattributes = byte-string (RFC 8866 §9): 1*(%x01-09/%x0B-0C/%x0E-FF),
 -- i.e. any byte except NUL, LF, CR.
 local _extmap_id  = R("09")^1
 local _extmap_dir = P("sendonly") + P("recvonly") + P("sendrecv") + P("inactive")
@@ -3411,20 +3411,20 @@ local function peek_type(lines, pos)
 end
 
 --- Parse SDP text into a raw document table (no metatable attached).
--- Enforces RFC 4566 §5 field ordering strictly.  Optionally runs ST 2110
+-- Enforces RFC 8866 §5 field ordering strictly.  Optionally runs ST 2110
 -- or IPMX validation after a successful RFC 4566 parse.
 -- @param text string  Raw SDP text (CRLF or LF line endings).
 -- @param mode string  Optional: "st2110" or "ipmx" for extended validation.
 -- @return table  Raw SDP document table on success.
 -- @return nil, err  on parse or validation failure.
 function parser.parse(text, mode)
-  -- RFC 4566 §9 ABNF: every record (including the last) ends with CRLF.
+  -- RFC 8866 §9 ABNF: every record (including the last) ends with CRLF.
   -- §5 permits LF tolerance, but a terminator must be present.
   if #text > 0 and text:sub(-1) ~= "\n" then
     return nil, errors.new(
-      "SDP must end with a newline (RFC 4566 §5 / §9 ABNF)",
+      "SDP must end with a newline (RFC 8866 §5 / §9 ABNF)",
       { line = 1, col = #text, context = "", code = "MALFORMED_LINE",
-        spec_ref = "RFC 4566 §5" })
+        spec_ref = "RFC 8866 §5" })
   end
   local lines = split_lines(text)
   local n     = #lines
@@ -3504,7 +3504,7 @@ function parser.parse(text, mode)
     pos = pos + 1
   end
 
-  -- RFC 4566 §5: "One or more time descriptions ('t=' and 'r=' lines)".
+  -- RFC 8866 §5: "One or more time descriptions ('t=' and 'r=' lines)".
   -- Each time description = one t= followed by zero or more r= lines.
   -- Multiple time descriptions are permitted.
   local time_descriptions = {}
@@ -3543,7 +3543,7 @@ function parser.parse(text, mode)
     stop  = time_descriptions[1].stop,
   }
 
-  -- RFC 4566 §5.11: optional z= (time zones), at most one line.
+  -- RFC 8866 §5.11: optional z= (time zones), at most one line.
   local time_zones
   if pos <= n and peek_type(lines, pos) == "z" then
     time_zones, e = parse_required(lines, pos, "z", grammar.parse_timezone)

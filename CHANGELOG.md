@@ -25,6 +25,21 @@ parser remains the shipping artifact on `main`.
   severity resolution, policy validation, record() semantics, the
   deepest-failure tracker, and legacy-compatibility surface.
 
+### Changed
+
+- **All `spec_ref` citations migrated from RFC 4566 to RFC 8866**
+  (RFC 8866 obsoletes RFC 4566). Section numbers verified against the
+  on-disk RFC 8866 text and updated where 8866 introduces finer
+  subsections — fmtp cites now point to §6.15, framerate cites to §6.13,
+  rtpmap to §6.6. Test assertions and citation-label test names updated
+  to match.
+
+### Fixed
+
+- CLAUDE.md's VSF TR-10 markdown path. It pointed to
+  `smpte_standards_internal/TR-10 Markdowned Versions/`; the directory
+  is at `Standards Related/TR-10 Markdowned Versions/`.
+
 ---
 
 ## [1.0.0] — 2026-05-18

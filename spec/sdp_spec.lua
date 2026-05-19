@@ -35,16 +35,16 @@ describe("sdp.parse — required session fields (RFC 8866 §5)", function()
     assert.equal("My Session", doc.session.name)
   end)
 
-  it("rejects SDP that does not end with a newline (RFC 4566 §5 / §9 ABNF)", function()
+  it("rejects SDP that does not end with a newline (RFC 8866 §5 / §9 ABNF)", function()
     local missing_nl = minimal:sub(1, -3)  -- strip trailing \r\n
     local doc, err = sdp.parse(missing_nl)
     assert.is_nil(doc)
     assert.is_table(err)
     assert.matches("newline", err.message)
-    assert.equal("RFC 4566 §5", err.spec_ref)
+    assert.equal("RFC 8866 §5", err.spec_ref)
   end)
 
-  it("rejects blank lines between records (RFC 4566 §5 / §9 ABNF)", function()
+  it("rejects blank lines between records (RFC 8866 §5 / §9 ABNF)", function()
     local with_blank = table.concat({
       "v=0",
       "o=- 1234567890 1 IN IP4 192.0.2.1",
@@ -64,7 +64,7 @@ describe("sdp.parse — required session fields (RFC 8866 §5)", function()
     assert.equal(1, err.line)
   end)
 
-  -- RFC 8866 §5.3 (and RFC 4566 §5.3 with the same intent):
+  -- RFC 8866 §5.3 (and RFC 8866 §5.3 with the same intent):
   -- "If a session has no meaningful name, then 's= ' or 's=-' is RECOMMENDED."
   -- The 's=' line MUST NOT be empty, but a single space or dash is valid.
   it("accepts 's= ' (single space session name per RFC 8866 §5.3)", function()
@@ -327,9 +327,9 @@ describe("sdp.parse — optional session fields (M4)", function()
   end)
 end)
 
--- RFC 4566 §5: support for r= (repeat times), z= (time zones),
+-- RFC 8866 §5: support for r= (repeat times), z= (time zones),
 -- k= (encryption keys, session and media level), and multiple t= blocks.
-describe("sdp.parse — RFC 4566 §5 r=/z=/k=/multiple t= (audit F8)", function()
+describe("sdp.parse — RFC 8866 §5 r=/z=/k=/multiple t= (audit F8)", function()
   local sdp = require("parse_sdp")
 
   local function make(extra_lines)
@@ -338,7 +338,7 @@ describe("sdp.parse — RFC 4566 §5 r=/z=/k=/multiple t= (audit F8)", function(
     return table.concat(lines, "\r\n") .. "\r\n"
   end
 
-  it("accepts t= followed by r= (RFC 4566 §5.10)", function()
+  it("accepts t= followed by r= (RFC 8866 §5.10)", function()
     local doc, err = sdp.parse(make({ "t=2873397496 2873404696", "r=604800 3600 0 90000" }))
     assert.is_nil(err)
     assert.is_table(doc)
@@ -356,7 +356,7 @@ describe("sdp.parse — RFC 4566 §5 r=/z=/k=/multiple t= (audit F8)", function(
     assert.same({ "0", "25h" }, r.offsets)
   end)
 
-  it("accepts multiple time descriptions (RFC 4566 §5)", function()
+  it("accepts multiple time descriptions (RFC 8866 §5)", function()
     local doc, err = sdp.parse(make({
       "t=2873397496 2873404696", "r=604800 3600 0 90000",
       "t=2880000000 2880003600",
@@ -371,7 +371,7 @@ describe("sdp.parse — RFC 4566 §5 r=/z=/k=/multiple t= (audit F8)", function(
     assert.equal(2873397496, doc.session.timing.start)
   end)
 
-  it("accepts z= time zones (RFC 4566 §5.11)", function()
+  it("accepts z= time zones (RFC 8866 §5.11)", function()
     local doc, err = sdp.parse(make({
       "t=2873397496 2873404696",
       "z=2882844526 -1h 2898848070 0",
@@ -497,7 +497,7 @@ describe("sdp.parse — media blocks (M5)", function()
     assert.equal("96 H264/90000", m.attributes[1].value)
   end)
 
-  it("accepts a=fmtp with payload type and no parameters (RFC 4566 §6)", function()
+  it("accepts a=fmtp with payload type and no parameters (RFC 8866 §6.15)", function()
     local doc, err = sdp.parse(make({
       "m=video 49170 RTP/AVP 96",
       "a=rtpmap:96 H264/90000",
