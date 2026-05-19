@@ -23,6 +23,9 @@ local MINIMAL = lines_to_sdp({
   "t=0 0",
 })
 
+-- ST 2110-10:2022 §8.2 + §8.3 require every media block to carry
+-- a=ts-refclk and a media-level a=mediaclk (Phase 6.D.A); include both
+-- so the st2110 tier accepts this fixture once those checks fire.
 local MINIMAL_WITH_RTPMAP = lines_to_sdp({
   "v=0",
   "o=- 1234567890 1 IN IP4 192.0.2.1",
@@ -30,6 +33,8 @@ local MINIMAL_WITH_RTPMAP = lines_to_sdp({
   "t=0 0",
   "m=video 49170 RTP/AVP 96",
   "a=rtpmap:96 H264/90000",
+  "a=ts-refclk:localmac=00-11-22-33-44-55",
+  "a=mediaclk:sender",
 })
 
 describe("base.extend — composition mechanism", function()

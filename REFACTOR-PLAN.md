@@ -622,12 +622,30 @@ constraints (-20, -22, -30, -31, -41). Several spec-conformant
 TCS/depth=16f coupling, RFC 9134 enum corrections for jxsv,
 AM824 channel parity.
 
-- **6.D (pending)** — required-attribute presence per media type
-  (ts-refclk, mediaclk, ptime). Includes the -30 audio
-  MAXUDP-forbidden and packet-payload-fit checks (cross-attribute,
-  RTP-payload-aware) that 6.C deferred as out-of-fmtp-scope, and
-  the audio rtpmap channel-count presence (RFC 3551 §6) for all
-  audio encodings.
+- **6.D.A (complete)** — ST 2110-10:2022 §8.2 + §8.3 per-media-
+  block presence checks for `a=ts-refclk` and media-level
+  `a=mediaclk`, lifted from the 1.0 parser with citation corrections
+  (1.0 cited §7.2 / §7.3; primary text places the SHALLs at §8.2 /
+  §8.3). Two new error ids `st2110.attr.ts-refclk-required` and
+  `st2110.attr.mediaclk-required`. Two tier-level semantic checks
+  walking `doc.media` with a small `media_block_has_attr` /
+  `session_has_attr` helper pair. RFC 7273 §4.8 session-level
+  ts-refclk covers all media blocks; §8.3's "media-level" qualifier
+  means session-level mediaclk does NOT satisfy a per-stream SHALL.
+  The `build()` / `build_with_fmtp()` helpers in
+  `spec/grammar_st2110_spec.lua` and the `MINIMAL_WITH_RTPMAP`
+  fixture in `spec/grammar_compose_spec.lua` now include both
+  timing attributes by default so the existing ~140 grammar-tier
+  tests survive. 8 new tests; suite 1501 green.
+- **6.D.B–D (pending)** — remaining 6.C carry-overs:
+  - **6.D.B** ST 2110-30 §6.2.1 / -31 audio MAXUDP-forbidden
+    (audio streams limit UDP to the Standard Size; MAXUDP signals
+    operation beyond that).
+  - **6.D.C** RFC 3551 §6 / ST 2110-30 audio rtpmap channels-presence
+    SHALL (audio rtpmap must include channels even when 1).
+  - **6.D.D** Audio packet-payload-fit cross-attribute check
+    (channels × depth × ptime × clock-rate fits in one RTP/UDP
+    packet ≤ Standard UDP Size Limit).
 - **6.E (pending)** — cross-stream invariants (RFC 7104 group:DUP,
   SMPTE ST 2022-7 redundancy coherence).
 

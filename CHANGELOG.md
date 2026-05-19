@@ -1021,6 +1021,49 @@ Audit ref: REFACTOR-PLAN.md §5 Phase 6.C; ST 2110-31:2022 §6.1.
 
 Audit ref: REFACTOR-PLAN.md §5 Phase 6.C; ST 2110-41:2024 §5.4 + §6.
 
+- **Phase 6.D.A:** ST 2110-10:2022 §8.2 + §8.3 per-media-block
+  required-attribute presence. First slice of Phase 6.D; lifts
+  ts-refclk / mediaclk presence checks from the 1.0 parser into the
+  grammar tier with corrected citations (1.0 cited §7.2 / §7.3; primary
+  text places the SHALLs at §8.2 / §8.3).
+
+  2 new error ids:
+  - `st2110.attr.ts-refclk-required` — §8.2: "All stream descriptions
+    shall have a ts-refclk attribute as specified in IETF RFC 7273
+    section 4." Per-stream presence; RFC 7273 §4.8 permits the
+    attribute at session level, so a session-level ts-refclk covers
+    all media blocks (the check exits early when one is present).
+  - `st2110.attr.mediaclk-required` — §8.3: "All stream descriptions
+    shall have a media-level mediaclk attribute as per IETF RFC 7273
+    section 5." The "media-level" qualifier means a session-level
+    mediaclk does NOT satisfy the per-stream SHALL — a media block
+    lacking its own `a=mediaclk` is rejected even if the session
+    carries one.
+
+  Two new tier-level semantic checks `check_ts_refclk_presence` and
+  `check_mediaclk_presence` walk `doc.media` and emit findings with
+  `field_path = "media[<i>]"`. Helpers `media_block_has_attr` and
+  `session_has_attr` are reused across both checks. The base grammar
+  already parses both attributes via the RFC 7273 ABNF (`a_ts_refclk`
+  and `a_mediaclk` rules) — this slice only adds the per-media-block
+  presence assertions on top of existing value-form validation.
+
+  The `build()` / `build_with_fmtp()` helpers in
+  `spec/grammar_st2110_spec.lua` (and the `MINIMAL_WITH_RTPMAP`
+  fixture in `spec/grammar_compose_spec.lua`) now include
+  `a=ts-refclk:localmac=…` and `a=mediaclk:sender` lines by default
+  so the existing ~140 grammar-tier ST 2110 tests survive the new
+  per-block requirement.
+
+  8 new tests in `spec/grammar_st2110_spec.lua`: positive (single
+  media block carrying both), negative (each attribute omitted in
+  turn), session-level cover for ts-refclk only (§4.8 path),
+  session-level non-cover for mediaclk (§8.3 "media-level"), and
+  multi-media-block per-index field-path reporting. Suite: 1501 green.
+
+Audit ref: [REFACTOR-PLAN.md](REFACTOR-PLAN.md) §5 Phase 6.D; ST 2110-10:2022 §8.2 + §8.3;
+on-disk primary text at [`smpte_standards_internal/st2110-10-2022.pdf`](../../Standards Related/smpte_standards_internal/st2110-10-2022.pdf).
+
 ### Changed
 
 - The inline `errors` table in `parse_sdp.lua` now delegates to

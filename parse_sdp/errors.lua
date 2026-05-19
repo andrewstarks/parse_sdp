@@ -1020,4 +1020,39 @@ M.register("st2110-41.a.fmtp.maxudp-forbidden", {
   verified         = true,
 })
 
+-- ── ST 2110-10 required-attribute presence (Phase 6.D.A) ─────────────────
+-- ST 2110-10:2022 §8.2: "All stream descriptions shall have a ts-refclk
+-- attribute as specified in IETF RFC 7273 section 4."
+-- ST 2110-10:2022 §8.3: "All stream descriptions shall have a media-level
+-- mediaclk attribute as per IETF RFC 7273 section 5."
+-- Both SHALLs are per-media-section presence requirements. Value-form
+-- validation lives in the base grammar (RFC 7273 ABNF for ts-refclk and
+-- mediaclk bodies); these checks only assert the attribute appears on
+-- every media block. The §8.3 SHALL is satisfied only by a media-level
+-- attribute, so a session-level mediaclk does not cover a media block
+-- that lacks its own.
+
+M.register("st2110.attr.ts-refclk-required", {
+  kind             = "semantic",
+  default_severity = "error",
+  code             = "MISSING_FIELD",
+  message_template =
+    "media block must include an 'a=ts-refclk' attribute"
+    .. " (every ST 2110 stream description requires one)",
+  spec_ref         = "ST 2110-10:2022 §8.2",
+  verified         = true,
+})
+
+M.register("st2110.attr.mediaclk-required", {
+  kind             = "semantic",
+  default_severity = "error",
+  code             = "MISSING_FIELD",
+  message_template =
+    "media block must include a media-level 'a=mediaclk' attribute"
+    .. " (every ST 2110 stream description requires one; session-level"
+    .. " mediaclk does not satisfy the per-stream SHALL)",
+  spec_ref         = "ST 2110-10:2022 §8.3",
+  verified         = true,
+})
+
 return M

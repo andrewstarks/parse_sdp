@@ -784,6 +784,53 @@ local function check_audio_fmtp_channel_order(doc, ctx)
   return true
 end
 
+-- Phase 6.D.A — ST 2110-10:2022 §8.2 / §8.3 per-media-block presence.
+-- §8.2: "All stream descriptions shall have a ts-refclk attribute as
+--        specified in IETF RFC 7273 section 4."
+-- §8.3: "All stream descriptions shall have a media-level mediaclk
+--        attribute as per IETF RFC 7273 section 5."
+-- Both checks walk doc.media and emit a finding on any block missing
+-- the required attribute. RFC 7273 §4.8 permits ts-refclk at session
+-- level — when present there it covers all media blocks. §8.3's
+-- "media-level" qualifier explicitly restricts mediaclk: a session-
+-- level mediaclk does NOT satisfy a per-stream block lacking its own.
+local function media_block_has_attr(m, name)
+  for _, attr in ipairs(m.attributes) do
+    if attr.name == name then return true end
+  end
+  return false
+end
+
+local function session_has_attr(doc, name)
+  for _, attr in ipairs(doc.session.attributes) do
+    if attr.name == name then return true end
+  end
+  return false
+end
+
+local function check_ts_refclk_presence(doc, ctx)
+  if session_has_attr(doc, "ts-refclk") then return true end
+  for i, m in ipairs(doc.media) do
+    if not media_block_has_attr(m, "ts-refclk") then
+      local cont = errors.record(ctx, "st2110.attr.ts-refclk-required",
+        { field_path = string.format("media[%d]", i - 1) })
+      if not cont then return false end
+    end
+  end
+  return true
+end
+
+local function check_mediaclk_presence(doc, ctx)
+  for i, m in ipairs(doc.media) do
+    if not media_block_has_attr(m, "mediaclk") then
+      local cont = errors.record(ctx, "st2110.attr.mediaclk-required",
+        { field_path = string.format("media[%d]", i - 1) })
+      if not cont then return false end
+    end
+  end
+  return true
+end
+
 local function check_jxsv_fmtp_cross_param(doc, ctx)
   for _, e in ipairs(each_fmtp_for_encoding(doc, "jxsv")) do
     local path = string.format(
@@ -1049,6 +1096,8 @@ local overrides = {
     check_audio_fmtp_channel_order,
     check_am824_rtpmap_channels_even,
     check_st2110_41_fmtp,
+    check_ts_refclk_presence,
+    check_mediaclk_presence,
   },
 }
 

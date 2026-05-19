@@ -39,14 +39,13 @@ and runs them through the parser. See
 
 ## Current State
 
-1493 hermetic tests passing. Every validation check is grounded in explicit
+1501 hermetic tests passing. Every validation check is grounded in explicit
 spec text; no opinion-based checks remain.
 
 The grammar-first refactor on branch `refactor/grammar-first` is **in
-progress**. Phases 4 + 5 complete; **Phase 6.C is fully closed** —
-all ten sub-phases (6.C.A through 6.C.J) ship coverage at or above
-1.0 parity for every ST 2110 encoding's `a=fmtp` constraints. The
-grammar tier covers:
+progress**. Phases 4 + 5 complete; **Phase 6.C is fully closed**;
+Phase 6.D is now in progress with the first slice (6.D.A) shipped.
+The grammar tier covers:
 
 - ST 2110-20 raw video: §7.1 no-whitespace-around-=, §7.2/§7.4.2
   required-param presence + -21 §8.1 TP, 7 enum value-sets, 6
@@ -60,10 +59,13 @@ grammar tier covers:
 - ST 2110-31 AM824: rtpmap channel parity (§6.1).
 - ST 2110-41 Fast Metadata: required SSN with value form, optional
   DIT with hex-token value form, MAXUDP forbidden.
+- ST 2110-10 §8.2 + §8.3: per-media-block `a=ts-refclk` and
+  media-level `a=mediaclk` presence (Phase 6.D.A; 1.0 cited the
+  wrong sections, grammar tier corrects to §8.2 / §8.3).
 
-Phases 6.D–10 remain (per-encoding required-attribute presence at the
-media-block level — ts-refclk, mediaclk, ptime; cross-stream
-invariants; serializer rewrite; public API stabilization; migration
+Phases 6.D.B+ and 6.E–10 remain (audio MAXUDP-forbidden, audio rtpmap
+channels-presence, packet-payload-fit; cross-stream invariants like
+group:DUP; serializer rewrite; public API stabilization; migration
 cutover). Tracking and design live in [REFACTOR-PLAN.md](REFACTOR-PLAN.md).
 The 1.0 parser at `parse_sdp.lua` remains the shipping artifact on
 `main`; the new grammar under `parse_sdp/grammar/` is internal-only

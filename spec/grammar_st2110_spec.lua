@@ -7,6 +7,14 @@
 local base   = require("parse_sdp.grammar.base")
 local st2110 = require("parse_sdp.grammar.st2110")
 
+-- ST 2110-10:2022 §8.2 + §8.3 require every media block to carry
+-- a=ts-refclk and a media-level a=mediaclk (Phase 6.D.A). The build
+-- helpers below include both by default so tests that aren't about
+-- per-attribute presence don't trip the new semantic checks. Use the
+-- TIMING_* constants directly when constructing custom SDPs.
+local TIMING_TS_REFCLK = "a=ts-refclk:localmac=00-11-22-33-44-55"
+local TIMING_MEDIACLK  = "a=mediaclk:sender"
+
 local function build(media_line, rtpmap_line)
   return table.concat({
     "v=0",
@@ -16,6 +24,8 @@ local function build(media_line, rtpmap_line)
     media_line,
     "c=IN IP4 239.0.0.1/64",
     rtpmap_line,
+    TIMING_TS_REFCLK,
+    TIMING_MEDIACLK,
   }, "\r\n") .. "\r\n"
 end
 
@@ -30,6 +40,8 @@ local function build_with_fmtp(media_line, rtpmap_line, fmtp_line)
     "c=IN IP4 239.0.0.1/64",
     rtpmap_line,
     fmtp_line,
+    TIMING_TS_REFCLK,
+    TIMING_MEDIACLK,
   }, "\r\n") .. "\r\n"
 end
 
@@ -383,6 +395,8 @@ describe("ST 2110-20 raw video fmtp — required parameters", function()
       "m=video 30000 RTP/AVP 31",        -- PT 31 = H.261, static
       "c=IN IP4 239.0.0.1/64",
       "a=fmtp:31 CIF=2",                 -- no rtpmap → no raw binding
+      "a=ts-refclk:localmac=00-11-22-33-44-55",
+      "a=mediaclk:sender",
     }, "\r\n") .. "\r\n"))
   end)
 
@@ -2009,5 +2023,202 @@ describe("ST 2110-41 fmtp [ST 2110-41:2024 §6 + §5.4]", function()
   it("base tier accepts ST 2110-41 fmtp with no SSN", function()
     assert.is_truthy(base.match(st2110_41_sdp(
       "a=fmtp:96 DIT=100")))
+  end)
+end)
+
+-- ── Phase 6.D.A — ST 2110-10:2022 §8.2/§8.3 per-media-block presence ────
+--
+-- §8.2: "All stream descriptions shall have a ts-refclk attribute as
+--        specified in IETF RFC 7273 section 4."
+-- §8.3: "All stream descriptions shall have a media-level mediaclk
+--        attribute as per IETF RFC 7273 section 5."
+--
+-- Both SHALLs are per-media-section presence requirements. The build
+-- helpers include both attributes by default; these tests construct
+-- custom SDPs that omit one or the other to exercise the new checks.
+--
+-- The "media-level" qualifier on §8.3 means a session-level mediaclk
+-- does NOT satisfy the SHALL for a media block that lacks its own;
+-- §8.2 has no such qualifier (RFC 7273 §4.8 explicitly allows session
+-- or media level), so a session-level ts-refclk DOES cover media
+-- blocks that don't carry one.
+
+describe("ST 2110-10 — required attribute presence (Phase 6.D.A)", function()
+
+  local function sdp_lines(lines)
+    return table.concat(lines, "\r\n") .. "\r\n"
+  end
+
+  local TIMING_TS_REFCLK = "a=ts-refclk:localmac=00-11-22-33-44-55"
+  local TIMING_MEDIACLK  = "a=mediaclk:sender"
+
+  describe("a=ts-refclk required per media block (§8.2)", function()
+
+    it("accepts a media block that carries a=ts-refclk", function()
+      local doc = st2110.match(sdp_lines({
+        "v=0",
+        "o=- 1 1 IN IP4 192.0.2.1",
+        "s=Test",
+        "t=0 0",
+        "m=video 30000 RTP/AVP 96",
+        "c=IN IP4 239.0.0.1/64",
+        "a=rtpmap:96 raw/90000",
+        RAW_FMTP_COMPLETE_PT96,
+        TIMING_TS_REFCLK,
+        TIMING_MEDIACLK,
+      }))
+      assert.is_truthy(doc)
+    end)
+
+    it("rejects a media block missing a=ts-refclk", function()
+      local doc, ctx = st2110.match(sdp_lines({
+        "v=0",
+        "o=- 1 1 IN IP4 192.0.2.1",
+        "s=Test",
+        "t=0 0",
+        "m=video 30000 RTP/AVP 96",
+        "c=IN IP4 239.0.0.1/64",
+        "a=rtpmap:96 raw/90000",
+        RAW_FMTP_COMPLETE_PT96,
+        TIMING_MEDIACLK,
+      }))
+      assert.is_nil(doc)
+      local f = finding_for(ctx, "st2110.attr.ts-refclk-required")
+      assert.is_not_nil(f)
+      assert.equal("media[0]", f.field_path)
+      assert.equal("ST 2110-10:2022 §8.2", f.spec_ref)
+    end)
+
+    it("accepts media-block omission when ts-refclk is at session level", function()
+      -- RFC 7273 §4.8 explicitly permits ts-refclk at session level;
+      -- §8.2's SHALL is satisfied as long as the attribute appears
+      -- somewhere applicable to the stream. Session-level a= follows
+      -- t= per RFC 8866 §5 ordering.
+      local doc = st2110.match(sdp_lines({
+        "v=0",
+        "o=- 1 1 IN IP4 192.0.2.1",
+        "s=Test",
+        "t=0 0",
+        TIMING_TS_REFCLK,
+        "m=video 30000 RTP/AVP 96",
+        "c=IN IP4 239.0.0.1/64",
+        "a=rtpmap:96 raw/90000",
+        RAW_FMTP_COMPLETE_PT96,
+        TIMING_MEDIACLK,
+      }))
+      assert.is_truthy(doc)
+    end)
+
+    it("reports the offending media index when one block of two is missing", function()
+      -- First media block has timing; second omits ts-refclk.
+      local doc, ctx = st2110.match(sdp_lines({
+        "v=0",
+        "o=- 1 1 IN IP4 192.0.2.1",
+        "s=Test",
+        "t=0 0",
+        "m=video 30000 RTP/AVP 96",
+        "c=IN IP4 239.0.0.1/64",
+        "a=rtpmap:96 raw/90000",
+        RAW_FMTP_COMPLETE_PT96,
+        TIMING_TS_REFCLK,
+        TIMING_MEDIACLK,
+        "m=video 30002 RTP/AVP 97",
+        "c=IN IP4 239.0.0.2/64",
+        "a=rtpmap:97 raw/90000",
+        "a=fmtp:97 sampling=YCbCr-4:2:2;width=1920;height=1080;"
+          .. "exactframerate=60000/1001;depth=10;colorimetry=BT709;"
+          .. "PM=2110GPM;SSN=ST2110-20:2022;TP=2110TPN",
+        TIMING_MEDIACLK,
+      }))
+      assert.is_nil(doc)
+      local f = finding_for(ctx, "st2110.attr.ts-refclk-required")
+      assert.is_not_nil(f)
+      assert.equal("media[1]", f.field_path)
+    end)
+  end)
+
+  describe("a=mediaclk required per media block (§8.3)", function()
+
+    it("accepts a media block that carries a media-level a=mediaclk", function()
+      local doc = st2110.match(sdp_lines({
+        "v=0",
+        "o=- 1 1 IN IP4 192.0.2.1",
+        "s=Test",
+        "t=0 0",
+        "m=video 30000 RTP/AVP 96",
+        "c=IN IP4 239.0.0.1/64",
+        "a=rtpmap:96 raw/90000",
+        RAW_FMTP_COMPLETE_PT96,
+        TIMING_TS_REFCLK,
+        TIMING_MEDIACLK,
+      }))
+      assert.is_truthy(doc)
+    end)
+
+    it("rejects a media block missing a=mediaclk", function()
+      local doc, ctx = st2110.match(sdp_lines({
+        "v=0",
+        "o=- 1 1 IN IP4 192.0.2.1",
+        "s=Test",
+        "t=0 0",
+        "m=video 30000 RTP/AVP 96",
+        "c=IN IP4 239.0.0.1/64",
+        "a=rtpmap:96 raw/90000",
+        RAW_FMTP_COMPLETE_PT96,
+        TIMING_TS_REFCLK,
+      }))
+      assert.is_nil(doc)
+      local f = finding_for(ctx, "st2110.attr.mediaclk-required")
+      assert.is_not_nil(f)
+      assert.equal("media[0]", f.field_path)
+      assert.equal("ST 2110-10:2022 §8.3", f.spec_ref)
+    end)
+
+    it("rejects media-block omission even when mediaclk is at session level", function()
+      -- §8.3's "media-level mediaclk attribute" qualifier means a
+      -- session-level mediaclk does NOT cover a media block lacking
+      -- its own; the SHALL is unsatisfied. Session-level a= follows
+      -- t= per RFC 8866 §5 ordering.
+      local doc, ctx = st2110.match(sdp_lines({
+        "v=0",
+        "o=- 1 1 IN IP4 192.0.2.1",
+        "s=Test",
+        "t=0 0",
+        TIMING_MEDIACLK,
+        "m=video 30000 RTP/AVP 96",
+        "c=IN IP4 239.0.0.1/64",
+        "a=rtpmap:96 raw/90000",
+        RAW_FMTP_COMPLETE_PT96,
+        TIMING_TS_REFCLK,
+      }))
+      assert.is_nil(doc)
+      assert.is_not_nil(finding_for(ctx, "st2110.attr.mediaclk-required"))
+    end)
+
+    it("reports the offending media index when one block of two is missing", function()
+      local doc, ctx = st2110.match(sdp_lines({
+        "v=0",
+        "o=- 1 1 IN IP4 192.0.2.1",
+        "s=Test",
+        "t=0 0",
+        "m=video 30000 RTP/AVP 96",
+        "c=IN IP4 239.0.0.1/64",
+        "a=rtpmap:96 raw/90000",
+        RAW_FMTP_COMPLETE_PT96,
+        TIMING_TS_REFCLK,
+        TIMING_MEDIACLK,
+        "m=video 30002 RTP/AVP 97",
+        "c=IN IP4 239.0.0.2/64",
+        "a=rtpmap:97 raw/90000",
+        "a=fmtp:97 sampling=YCbCr-4:2:2;width=1920;height=1080;"
+          .. "exactframerate=60000/1001;depth=10;colorimetry=BT709;"
+          .. "PM=2110GPM;SSN=ST2110-20:2022;TP=2110TPN",
+        TIMING_TS_REFCLK,
+      }))
+      assert.is_nil(doc)
+      local f = finding_for(ctx, "st2110.attr.mediaclk-required")
+      assert.is_not_nil(f)
+      assert.equal("media[1]", f.field_path)
+    end)
   end)
 end)
