@@ -1793,6 +1793,175 @@ describe("base SDP grammar — Phase 4.C mediaclk decomposition (RFC 7273 §5.4)
 
 end)
 
+describe("base SDP grammar — Phase 4.D source-filter (RFC 4570 §3)", function()
+
+  -- SPEC: RFC 4570 §3
+  it("decomposes incl filter with IPv4 dest + one source", function()
+    local doc = base.match(minimal(nil, {
+      { "m=video 49170 RTP/AVP 0",
+        "c=IN IP4 239.1.1.1/127",
+        "a=source-filter:incl IN IP4 239.1.1.1 192.0.2.1" },
+    }))
+    local a = doc.media[1].attributes[1]
+    assert.equal("source-filter", a.name)
+    assert.equal("incl", a.filter_mode)
+    assert.equal("IN",   a.net_type)
+    assert.equal("IP4",  a.addr_type)
+    assert.equal("239.1.1.1", a.dest_address)
+    assert.is_table(a.src_addresses)
+    assert.equal(1, #a.src_addresses)
+    assert.equal("192.0.2.1", a.src_addresses[1])
+  end)
+
+  -- SPEC: RFC 4570 §3 (multiple src addresses allowed)
+  it("decomposes excl filter with multiple source addresses", function()
+    local doc = base.match(minimal(nil, {
+      { "m=video 49170 RTP/AVP 0",
+        "c=IN IP4 239.1.1.1/127",
+        "a=source-filter:excl IN IP4 239.1.1.1 192.0.2.1 192.0.2.2 192.0.2.3" },
+    }))
+    local a = doc.media[1].attributes[1]
+    assert.equal("excl", a.filter_mode)
+    assert.equal(3, #a.src_addresses)
+    assert.equal("192.0.2.3", a.src_addresses[3])
+  end)
+
+  -- SPEC: RFC 4570 §3 addrtype = "IP4" / "IP6" / "*"
+  it("accepts '*' addrtype (FQDN form)", function()
+    local doc = base.match(minimal(nil, {
+      { "m=video 49170 RTP/AVP 0",
+        "a=source-filter:incl IN * sender.example.com source.example.com" },
+    }))
+    local a = doc.media[1].attributes[1]
+    assert.equal("*", a.addr_type)
+    assert.equal("sender.example.com", a.dest_address)
+    assert.equal("source.example.com", a.src_addresses[1])
+  end)
+
+  -- SPEC: RFC 4570 §3 requires at least one src address
+  it("rejects source-filter with no source addresses", function()
+    local doc = base.match(minimal(nil, {
+      { "m=video 49170 RTP/AVP 0",
+        "a=source-filter:incl IN IP4 239.1.1.1" },
+    }))
+    assert.is_nil(doc)
+  end)
+
+end)
+
+describe("base SDP grammar — Phase 4.D group (RFC 5888 §5)", function()
+
+  -- SPEC: RFC 5888 §5
+  it("decomposes group:DUP with two identification-tags", function()
+    local doc = base.match(lines_to_sdp({
+      "v=0", "o=- 1 1 IN IP4 127.0.0.1", "s=X", "t=0 0",
+      "a=group:DUP primary backup",
+    }))
+    local a = doc.session.attributes[1]
+    assert.equal("group", a.name)
+    assert.equal("DUP",   a.semantics)
+    assert.is_table(a.tags)
+    assert.equal(2, #a.tags)
+    assert.equal("primary", a.tags[1])
+    assert.equal("backup",  a.tags[2])
+  end)
+
+  -- SPEC: RFC 5888 §5 — *(SP identification-tag) is zero-or-more
+  it("accepts group with no tags (zero-or-more per ABNF)", function()
+    local doc = base.match(lines_to_sdp({
+      "v=0", "o=- 1 1 IN IP4 127.0.0.1", "s=X", "t=0 0",
+      "a=group:LS",
+    }))
+    local a = doc.session.attributes[1]
+    assert.equal("LS", a.semantics)
+    assert.is_table(a.tags)
+    assert.equal(0, #a.tags)
+  end)
+
+end)
+
+describe("base SDP grammar — Phase 4.D ssrc / ssrc-group (RFC 5576 §10)", function()
+
+  -- SPEC: RFC 5576 §10 Figure 4
+  -- ssrc-attr = "ssrc:" ssrc-id SP attribute  where attribute = name[":"value]
+  it("decomposes ssrc with attribute name:value form", function()
+    local doc = base.match(minimal(nil, {
+      { "m=audio 49172 RTP/AVP 0",
+        "a=ssrc:12345 cname:user@example.com" },
+    }))
+    local a = doc.media[1].attributes[1]
+    assert.equal("ssrc",       a.name)
+    assert.equal(12345,        a.ssrc_id)
+    assert.equal("cname",      a.attribute)
+    assert.equal("user@example.com", a.value)
+  end)
+
+  -- SPEC: RFC 5576 §10 Figure 4 — bare attribute (no :value)
+  it("decomposes ssrc with bare flag-form attribute", function()
+    local doc = base.match(minimal(nil, {
+      { "m=audio 49172 RTP/AVP 0",
+        "a=ssrc:12345 sendonly" },
+    }))
+    local a = doc.media[1].attributes[1]
+    assert.equal(12345,      a.ssrc_id)
+    assert.equal("sendonly", a.attribute)
+    assert.is_nil(a.value)
+  end)
+
+  -- SPEC: RFC 5576 §10 Figure 4 — ssrc-id is 32-bit unsigned (0..2^32-1)
+  it("accepts the maximum 32-bit ssrc-id", function()
+    local doc = base.match(minimal(nil, {
+      { "m=audio 49172 RTP/AVP 0",
+        "a=ssrc:4294967295 cname:max" },
+    }))
+    assert.equal(4294967295, doc.media[1].attributes[1].ssrc_id)
+  end)
+
+  -- SPEC: RFC 5576 §10 Figure 5
+  -- ssrc-group-attr = "ssrc-group:" semantics *(SP ssrc-id)
+  it("decomposes ssrc-group:FID with multiple ssrc-ids", function()
+    local doc = base.match(minimal(nil, {
+      { "m=video 49170 RTP/AVP 0",
+        "a=ssrc-group:FID 12345 67890" },
+    }))
+    local a = doc.media[1].attributes[1]
+    assert.equal("ssrc-group", a.name)
+    assert.equal("FID",        a.semantics)
+    assert.is_table(a.ssrc_ids)
+    assert.equal(2, #a.ssrc_ids)
+    assert.equal(12345, a.ssrc_ids[1])
+    assert.equal(67890, a.ssrc_ids[2])
+  end)
+
+end)
+
+describe("base SDP grammar — Phase 4.D msid (RFC 8830 §2)", function()
+
+  -- SPEC: RFC 8830 §2 — msid-value = msid-id [SP msid-appdata]
+  it("decomposes msid with appdata", function()
+    local doc = base.match(minimal(nil, {
+      { "m=video 49170 RTP/AVP 0",
+        "a=msid:stream-id track-id" },
+    }))
+    local a = doc.media[1].attributes[1]
+    assert.equal("msid",      a.name)
+    assert.equal("stream-id", a.msid_id)
+    assert.equal("track-id",  a.appdata)
+  end)
+
+  -- SPEC: RFC 8830 §2 — appdata is optional
+  it("decomposes msid without appdata", function()
+    local doc = base.match(minimal(nil, {
+      { "m=video 49170 RTP/AVP 0",
+        "a=msid:stream-id" },
+    }))
+    local a = doc.media[1].attributes[1]
+    assert.equal("stream-id", a.msid_id)
+    assert.is_nil(a.appdata)
+  end)
+
+end)
+
 describe("base SDP grammar — module exports", function()
 
   -- NOT-SPEC: library

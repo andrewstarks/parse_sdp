@@ -250,6 +250,48 @@ of Phase 2; was 964 at start of Phase 3).
 - 16 new tests in `spec/grammar_base_spec.lua`. RFC 7273 saved
   permanently as markdown per the spec-storage rule. Suite: 1072
   green.
+- **Phase 4.D:** typed decomposition for five identity / grouping
+  attributes:
+  - `a=source-filter` (RFC 4570 §3):
+    `{name, filter_mode, net_type, addr_type, dest_address,
+       src_addresses=[...]}`. filter_mode ∈ {"incl", "excl"},
+    addr_type ∈ {"IP4", "IP6", "*"}; literal-IP form
+    validation is **out of scope at the base tier** — that
+    narrows in Phase 6 (ST 2110-10 §6.5 / §8.4). At least one
+    src address is required (per `1*(src-address SP)` ABNF);
+    `a=source-filter:incl IN IP4 239.1.1.1` (no src) is rejected.
+  - `a=group` (RFC 5888 §5):
+    `{name, semantics, tags=[...]}`. semantics is an RFC 8866 §9
+    token (LS / FID / SRF / ANAT / DUP / FEC / BUNDLE / etc.);
+    tags is a possibly-empty array of identification-tag tokens
+    per the spec's `*(SP identification-tag)`. The Phase 4.A
+    mid-uniqueness Cmt and a future group-mid-symmetry Cmt land
+    on top of this shape.
+  - `a=ssrc` (RFC 5576 §10 Figure 4):
+    `{name, ssrc_id, attribute, value?}`. ssrc_id is a 32-bit
+    unsigned integer (captured as a Lua number; Lua 5.5's
+    integer subtype represents 0..2^32-1 exactly). The inner
+    attribute follows SDP §5.13 `name [":" value]` shape — each
+    `a=ssrc` line carries exactly one attribute (multiple lines
+    for the same SSRC are not merged at this layer).
+  - `a=ssrc-group` (RFC 5576 §10 Figure 5):
+    `{name, semantics, ssrc_ids=[...]}`. semantics is a token
+    (FEC / FID per RFC 5576, with RFC 8866 §9 token extension);
+    ssrc_ids is a possibly-empty array of decimal integers per
+    the spec's `*(SP ssrc-id)`.
+  - `a=msid` (RFC 8830 §2):
+    `{name, msid_id, appdata?}`. Both tokens are captured via
+    the non-ws-token rule; `appdata` is nil when only the
+    msid-id is present.
+- New leaves: `non_ws_token` (any non-whitespace run up to
+  line_end; reused by source-filter and msid), `ssrc_id_num`
+  (32-bit decimal integer → number).
+- `known_attr_lookahead` extended with source-filter, group,
+  ssrc-group, ssrc, msid; ordered longer-first so `ssrc-group`
+  binds before `ssrc`.
+- 12 new tests in `spec/grammar_base_spec.lua` covering the
+  decomposed shapes and the ABNF-strict rejections (e.g.
+  source-filter with no source addresses). Suite: 1084 green.
 
 ### Changed
 

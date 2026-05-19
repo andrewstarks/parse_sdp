@@ -39,11 +39,11 @@ and runs them through the parser. See
 
 ## Current State
 
-1072 hermetic tests passing. Every validation check is grounded in explicit
+1084 hermetic tests passing. Every validation check is grounded in explicit
 spec text; no opinion-based checks remain.
 
 The grammar-first refactor on branch `refactor/grammar-first` is **in
-progress** (Phase 4.A–4.C landed; phases 4.D–10 remain). Tracking and
+progress** (Phase 4.A–4.D landed; Phase 4.E and 5–10 remain). Tracking and
 design live in [REFACTOR-PLAN.md](REFACTOR-PLAN.md). The 1.0 parser at
 `parse_sdp.lua` remains the shipping artifact on `main`; the new grammar
 under `parse_sdp/grammar/` is internal-only until Phase 9 cutover.

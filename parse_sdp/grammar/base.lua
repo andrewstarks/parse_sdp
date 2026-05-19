@@ -412,6 +412,11 @@ local rules = {
       + V"a_fmtp"
       + V"a_ts_refclk"
       + V"a_mediaclk"
+      + V"a_source_filter"
+      + V"a_group"
+      + V"a_ssrc_group"
+      + V"a_ssrc"
+      + V"a_msid"
       + V"a_mid"
       + V"a_ptime"
       + V"a_maxptime"
@@ -423,12 +428,15 @@ local rules = {
   -- Look-ahead: a known compound-attribute name followed by ":" or
   -- end-of-line. Used as a negative lookahead in a_generic so malformed
   -- instances of a known attribute fail the match instead of degrading
-  -- to the generic shape. Longer names first (matters for "maxptime"
-  -- vs "ptime" / "ts-refclk" vs "mediaclk").
+  -- to the generic shape. Order: longer-prefix patterns before their
+  -- shorter siblings (matters for "ssrc-group" vs "ssrc", and the
+  -- "maxptime" vs "ptime" group).
   known_attr_lookahead =
-        (P("ts-refclk") + P("maxptime")  + P("framerate")
-       + P("mediaclk")  + P("rtpmap")    + P("quality")
-       + P("ptime")     + P("fmtp")      + P("mid"))
+        (P("source-filter") + P("ssrc-group") + P("ts-refclk")
+       + P("maxptime")      + P("framerate")  + P("mediaclk")
+       + P("rtpmap")        + P("quality")    + P("group")
+       + P("ptime")         + P("msid")       + P("ssrc")
+       + P("fmtp")          + P("mid"))
       * (P(":") + V"line_end"),
 
   -- rtpmap (RFC 8866 §6.6):
@@ -513,6 +521,68 @@ local rules = {
   a_mid = P("mid:")
       * Cg(Cc("mid"), "name")
       * Cg(V"rfc8866_token", "tag"),
+
+  -- source-filter (RFC 4570 §3):
+  --   filter-spec = filter-mode SP nettype SP addrtype SP dest-address
+  --                                                    SP 1*(src-address SP)
+  -- filter-mode = "incl" / "excl"
+  -- nettype is "IN" (RFC 8866 §5.7 / §9). addrtype = "IP4" / "IP6" / "*";
+  -- when "*" the dest/src are FQDNs (no literal-IP grammar enforced at the
+  -- base tier — address-form validation belongs to a tiered narrowing, like
+  -- ST 2110-10 §6.5 / §8.4).
+  a_source_filter = P("source-filter:")
+      * Cg(Cc("source-filter"), "name")
+      * Cg(C(P("incl") + P("excl")), "filter_mode") * SP
+      * Cg(C(P("IN")),                   "net_type") * SP
+      * Cg(C(P("IP4") + P("IP6") + P("*")), "addr_type") * SP
+      * Cg(V"non_ws_token", "dest_address")
+      * Cg(Ct((SP * V"non_ws_token") ^ 1), "src_addresses"),
+
+  non_ws_token = C((1 - SP - V"line_end") ^ 1),
+
+  -- group (RFC 5888 §5):
+  --   group-attribute = "group:" semantics *(SP identification-tag)
+  -- semantics and each identification-tag are RFC 8866 §9 tokens. The
+  -- *(SP id-tag) is zero-or-more, so `a=group:LS` (no tags) is conformant
+  -- per the ABNF, however nonsensical.
+  a_group = P("group:")
+      * Cg(Cc("group"), "name")
+      * Cg(V"rfc8866_token", "semantics")
+      * Cg(Ct((SP * V"rfc8866_token") ^ 0), "tags"),
+
+  -- ssrc-group (RFC 5576 §10 Figure 5):
+  --   ssrc-group-attr = "ssrc-group:" semantics *(SP ssrc-id)
+  --   semantics       = "FEC" / "FID" / token         ; RFC 8866 §9 token
+  --   ssrc-id         = integer                       ; 0..2^32-1
+  -- *(SP ssrc-id) is zero-or-more per ABNF (matches the a_group shape).
+  a_ssrc_group = P("ssrc-group:")
+      * Cg(Cc("ssrc-group"), "name")
+      * Cg(V"rfc8866_token", "semantics")
+      * Cg(Ct((SP * V"ssrc_id_num") ^ 0), "ssrc_ids"),
+
+  -- ssrc-id is 0..2^32-1 (RFC 5576 §10 Figure 4). Lua 5.5 integer subtype
+  -- represents this range exactly, so we capture as a number via tonumber.
+  -- No range-check Cmt yet — Phase 5 may add a soft-syntactic finding for
+  -- overflow; for now we accept any decimal-digit run.
+  ssrc_id_num = C(R("09") ^ 1) / tonumber,
+
+  -- ssrc (RFC 5576 §10 Figure 4):
+  --   ssrc-attr = "ssrc:" ssrc-id SP attribute
+  -- where `attribute` is the RFC 8866 §5.13 attribute body: name [":" value].
+  a_ssrc = P("ssrc:")
+      * Cg(Cc("ssrc"), "name")
+      * Cg(V"ssrc_id_num", "ssrc_id") * SP
+      * Cg(V"attr_name", "attribute")
+      * (P(":") * Cg(V"attr_value", "value")) ^ -1,
+
+  -- msid (RFC 8830 §2):
+  --   msid-value = msid-id [SP msid-appdata]
+  -- Both msid-id and msid-appdata are tokens (the WebRTC use case forbids
+  -- whitespace inside either; we use the non-ws-token form).
+  a_msid = P("msid:")
+      * Cg(Cc("msid"), "name")
+      * Cg(V"non_ws_token", "msid_id")
+      * (SP * Cg(V"non_ws_token", "appdata")) ^ -1,
 
   -- ts-refclk (RFC 7273 §4.8):
   --   clksrc = ntp / ptp / gps / gal / glonass / local / private / clksrc-ext
