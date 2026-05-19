@@ -2484,4 +2484,254 @@ describe("ST 2110-30 — audio packet-payload-fit (Phase 6.D.D)", function()
   end)
 end)
 
+-- ── Phase 6.E.B — ST 2110-10:2022 §8.5 group:DUP leg coherence ──────────
+--
+-- ST 2110-10:2022 §8.5: "Duplicate RTP streams meeting the requirements
+-- of SMPTE ST 2022-7 may be used for redundant transmission… Senders…
+-- shall signal the RTP duplication using the session level group
+-- attribute of IETF RFC 5888 and the duplication grouping DUP semantics
+-- of IETF RFC 7104… Redundant streams shall not use both identical
+-- source addresses and identical destination addresses at the same time."
+--
+-- ST 2022-7:2019 §6 (chained via §8.5): "The transmitter shall transmit
+-- at least two streams, each containing copies of each RTP datagram.
+-- The RTP header and the RTP payload shall be identical for each
+-- datagram copy."
+--
+-- The chain requires DUP-grouped legs to be identical in everything that
+-- the SDP defines about the RTP packet shape — media type, rtpmap
+-- (encoding + clock rate + PT), fmtp essence params — plus the direct
+-- §8.5 address-coherence prohibition.
+
+describe("ST 2110-10 — group:DUP leg coherence (Phase 6.E.B)", function()
+
+  local function dup_sdp(group_line)
+    -- Two-leg DUP fixture, identical legs differing only in dst address.
+    return table.concat({
+      "v=0",
+      "o=- 1 1 IN IP4 192.0.2.1",
+      "s=Test",
+      "t=0 0",
+      group_line,
+      "m=video 30000 RTP/AVP 96",
+      "c=IN IP4 239.0.0.1/64",
+      "a=rtpmap:96 raw/90000",
+      RAW_FMTP_COMPLETE_PT96,
+      "a=mid:primary",
+      "a=ts-refclk:localmac=00-11-22-33-44-55",
+      "a=mediaclk:sender",
+      "m=video 30002 RTP/AVP 96",
+      "c=IN IP4 239.0.0.2/64",
+      "a=rtpmap:96 raw/90000",
+      RAW_FMTP_COMPLETE_PT96,
+      "a=mid:backup",
+      "a=ts-refclk:localmac=00-11-22-33-44-55",
+      "a=mediaclk:sender",
+    }, "\r\n") .. "\r\n"
+  end
+
+  -- Build a leg with explicit overrides for m=/rtpmap/fmtp/mid; used by
+  -- mismatch tests below where varying just one of those attributes is
+  -- the point of the test.
+  local function dup_sdp_legs(group_line, leg1, leg2)
+    local function leg_block(L)
+      local parts = {}
+      parts[#parts + 1] = L.m or "m=video 30000 RTP/AVP 96"
+      parts[#parts + 1] = L.c or "c=IN IP4 239.0.0.1/64"
+      parts[#parts + 1] = L.rtpmap or "a=rtpmap:96 raw/90000"
+      parts[#parts + 1] = L.fmtp or RAW_FMTP_COMPLETE_PT96
+      parts[#parts + 1] = "a=mid:" .. L.mid
+      parts[#parts + 1] = "a=ts-refclk:localmac=00-11-22-33-44-55"
+      parts[#parts + 1] = "a=mediaclk:sender"
+      if L.extra then parts[#parts + 1] = L.extra end
+      return table.concat(parts, "\r\n")
+    end
+    return table.concat({
+      "v=0",
+      "o=- 1 1 IN IP4 192.0.2.1",
+      "s=Test",
+      "t=0 0",
+      group_line,
+      leg_block(leg1),
+      leg_block(leg2),
+    }, "\r\n") .. "\r\n"
+  end
+
+  it("accepts two identical legs in DUP", function()
+    assert.is_truthy(st2110.match(dup_sdp("a=group:DUP primary backup")))
+  end)
+
+  describe("mid resolution", function()
+
+    it("rejects a DUP tag that resolves to no a=mid", function()
+      -- "secondary" tag is undefined; only "primary" exists.
+      local doc, ctx = st2110.match(dup_sdp_legs(
+        "a=group:DUP primary secondary",
+        { mid = "primary" },
+        { mid = "backup", m = "m=video 30002 RTP/AVP 96",
+          c = "c=IN IP4 239.0.0.2/64" }))
+      assert.is_nil(doc)
+      local f = finding_for(ctx, "st2110-10.a.group-dup.mid-resolve")
+      assert.is_not_nil(f)
+      assert.equal("ST 2110-10:2022 §8.5", f.spec_ref)
+    end)
+  end)
+
+  describe("min-2-legs", function()
+
+    it("rejects a DUP with only one resolved leg", function()
+      local doc, ctx = st2110.match(table.concat({
+        "v=0", "o=- 1 1 IN IP4 192.0.2.1", "s=Test", "t=0 0",
+        "a=group:DUP primary",         -- only one tag
+        "m=video 30000 RTP/AVP 96",
+        "c=IN IP4 239.0.0.1/64",
+        "a=rtpmap:96 raw/90000",
+        RAW_FMTP_COMPLETE_PT96,
+        "a=mid:primary",
+        "a=ts-refclk:localmac=00-11-22-33-44-55",
+        "a=mediaclk:sender",
+      }, "\r\n") .. "\r\n")
+      assert.is_nil(doc)
+      assert.is_not_nil(finding_for(ctx, "st2110-10.a.group-dup.min-2-legs"))
+    end)
+  end)
+
+  describe("essence coherence (chained via ST 2022-7 §6)", function()
+
+    it("rejects DUP legs with different media types", function()
+      local doc, ctx = st2110.match(dup_sdp_legs(
+        "a=group:DUP primary backup",
+        { mid = "primary" },
+        { mid = "backup",
+          m = "m=audio 30002 RTP/AVP 96",
+          c = "c=IN IP4 239.0.0.2/64",
+          rtpmap = "a=rtpmap:96 L24/48000/2",
+          fmtp = "a=fmtp:96 channel-order=SMPTE2110.(ST)" }))
+      assert.is_nil(doc)
+      assert.is_not_nil(finding_for(ctx,
+        "st2110-10.a.group-dup.media-type-same"))
+    end)
+
+    it("rejects DUP legs with different rtpmap encoding", function()
+      local doc, ctx = st2110.match(dup_sdp_legs(
+        "a=group:DUP primary backup",
+        { mid = "primary" },
+        { mid = "backup",
+          m = "m=video 30002 RTP/AVP 96",
+          c = "c=IN IP4 239.0.0.2/64",
+          rtpmap = "a=rtpmap:96 jxsv/90000",
+          fmtp = "a=fmtp:96 width=1920;height=1080;TP=2110TPN;packetmode=0" }))
+      assert.is_nil(doc)
+      assert.is_not_nil(finding_for(ctx,
+        "st2110-10.a.group-dup.rtpmap-same"))
+    end)
+
+    it("rejects DUP legs with different RTP payload types", function()
+      local doc, ctx = st2110.match(dup_sdp_legs(
+        "a=group:DUP primary backup",
+        { mid = "primary" },
+        { mid = "backup",
+          m = "m=video 30002 RTP/AVP 97",
+          c = "c=IN IP4 239.0.0.2/64",
+          rtpmap = "a=rtpmap:97 raw/90000",
+          fmtp = "a=fmtp:97 sampling=YCbCr-4:2:2;width=1920;height=1080;"
+              .. "exactframerate=60000/1001;depth=10;colorimetry=BT709;"
+              .. "PM=2110GPM;SSN=ST2110-20:2022;TP=2110TPN" }))
+      assert.is_nil(doc)
+      assert.is_not_nil(finding_for(ctx,
+        "st2110-10.a.group-dup.payload-type-same"))
+    end)
+
+    it("rejects DUP legs with different fmtp params", function()
+      local doc, ctx = st2110.match(dup_sdp_legs(
+        "a=group:DUP primary backup",
+        { mid = "primary" },
+        { mid = "backup",
+          m = "m=video 30002 RTP/AVP 96",
+          c = "c=IN IP4 239.0.0.2/64",
+          fmtp = "a=fmtp:96 sampling=YCbCr-4:2:0;width=1920;height=1080;"
+              .. "exactframerate=60000/1001;depth=10;colorimetry=BT709;"
+              .. "PM=2110GPM;SSN=ST2110-20:2022;TP=2110TPN" }))
+      assert.is_nil(doc)
+      assert.is_not_nil(finding_for(ctx,
+        "st2110-10.a.group-dup.fmtp-same"))
+    end)
+
+    -- NOT-SPEC: library — the params comparison is order-insensitive
+    -- (table compare), so reordered params still compare equal even
+    -- though their raw value strings differ.
+    it("accepts DUP legs with reordered but equivalent fmtp params", function()
+      assert.is_truthy(st2110.match(dup_sdp_legs(
+        "a=group:DUP primary backup",
+        { mid = "primary" },
+        { mid = "backup",
+          m = "m=video 30002 RTP/AVP 96",
+          c = "c=IN IP4 239.0.0.2/64",
+          -- Same key/value set as RAW_FMTP_COMPLETE_PT96, reordered.
+          fmtp = "a=fmtp:96 TP=2110TPN;SSN=ST2110-20:2022;PM=2110GPM;"
+              .. "colorimetry=BT709;depth=10;exactframerate=60000/1001;"
+              .. "height=1080;width=1920;sampling=YCbCr-4:2:2" })))
+    end)
+  end)
+
+  describe("address coherence (§8.5 direct SHALL)", function()
+
+    it("rejects DUP legs sharing BOTH src and dst addresses", function()
+      -- Both legs have the same destination (239.0.0.1) AND the same
+      -- source-filter source (198.51.100.1).
+      local doc, ctx = st2110.match(table.concat({
+        "v=0", "o=- 1 1 IN IP4 192.0.2.1", "s=Test", "t=0 0",
+        "a=group:DUP primary backup",
+        "m=video 30000 RTP/AVP 96",
+        "c=IN IP4 239.0.0.1/64",
+        "a=source-filter:incl IN IP4 239.0.0.1 198.51.100.1",
+        "a=rtpmap:96 raw/90000",
+        RAW_FMTP_COMPLETE_PT96,
+        "a=mid:primary",
+        "a=ts-refclk:localmac=00-11-22-33-44-55",
+        "a=mediaclk:sender",
+        "m=video 30002 RTP/AVP 96",
+        "c=IN IP4 239.0.0.1/64",          -- same dst
+        "a=source-filter:incl IN IP4 239.0.0.1 198.51.100.1",  -- same src
+        "a=rtpmap:96 raw/90000",
+        RAW_FMTP_COMPLETE_PT96,
+        "a=mid:backup",
+        "a=ts-refclk:localmac=00-11-22-33-44-55",
+        "a=mediaclk:sender",
+      }, "\r\n") .. "\r\n")
+      assert.is_nil(doc)
+      assert.is_not_nil(finding_for(ctx,
+        "st2110-10.a.group-dup.addr-coherence"))
+    end)
+
+    it("accepts DUP legs with same dst but different src (RFC 7104 §4.1)", function()
+      assert.is_truthy(st2110.match(table.concat({
+        "v=0", "o=- 1 1 IN IP4 192.0.2.1", "s=Test", "t=0 0",
+        "a=group:DUP primary backup",
+        "m=video 30000 RTP/AVP 96",
+        "c=IN IP4 239.0.0.1/64",
+        "a=source-filter:incl IN IP4 239.0.0.1 198.51.100.1",
+        "a=rtpmap:96 raw/90000",
+        RAW_FMTP_COMPLETE_PT96,
+        "a=mid:primary",
+        "a=ts-refclk:localmac=00-11-22-33-44-55",
+        "a=mediaclk:sender",
+        "m=video 30002 RTP/AVP 96",
+        "c=IN IP4 239.0.0.1/64",          -- same dst
+        "a=source-filter:incl IN IP4 239.0.0.1 198.51.100.2",  -- DIFFERENT src
+        "a=rtpmap:96 raw/90000",
+        RAW_FMTP_COMPLETE_PT96,
+        "a=mid:backup",
+        "a=ts-refclk:localmac=00-11-22-33-44-55",
+        "a=mediaclk:sender",
+      }, "\r\n") .. "\r\n"))
+    end)
+
+    it("accepts DUP legs with different dst (RFC 7104 §4.2)", function()
+      assert.is_truthy(st2110.match(dup_sdp("a=group:DUP primary backup")))
+    end)
+  end)
+end)
+
+
 

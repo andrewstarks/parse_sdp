@@ -1205,6 +1205,84 @@ of-parity-flag: 1.0 parser's L16 / L24 channels-required limb.
 Audit ref: REFACTOR-PLAN.md §5 Phase 6.E; RFC 5888 §6 + §9.2
 verified against primary text via WebFetch.
 
+- **Phase 6.E.B:** ST 2110-10 §8.5 group:DUP leg coherence
+  (ST 2110 tier).
+
+  7 new error ids covering the full cross-stream coherence semantics
+  for `a=group:DUP`. All cite `ST 2110-10:2022 §8.5` as the SDP-side
+  spec_ref; the underlying SHALL chain (§8.5 invokes ST 2022-7 §6
+  which requires "at least two streams" with bit-identical RTP
+  headers + payloads) lives in error-registry comments and message
+  text:
+
+  - `st2110-10.a.group-dup.mid-resolve` — every DUP tag must
+    resolve to a defined `a=mid`; unresolved tags reduce the
+    effective leg count, breaking ST 2022-7 §6's at-least-two-
+    streams SHALL.
+  - `st2110-10.a.group-dup.min-2-legs` — direct ST 2022-7 §6:
+    "The transmitter shall transmit at least two streams".
+  - `st2110-10.a.group-dup.media-type-same` — chained: ST 2022-7
+    §6's bit-identical RTP payload cannot be satisfied across
+    different m= media types.
+  - `st2110-10.a.group-dup.rtpmap-same` — chained: same encoding
+    + clock rate required across legs.
+  - `st2110-10.a.group-dup.payload-type-same` — chained: PT field
+    is part of the RTP header that must be bit-identical.
+  - `st2110-10.a.group-dup.fmtp-same` — chained: identical RTP
+    payload bytes imply identical signaled essence params.
+  - `st2110-10.a.group-dup.addr-coherence` — direct ST 2110-10
+    §8.5: "Redundant streams shall not use both identical source
+    addresses and identical destination addresses at the same
+    time".
+
+  ST 2022-7:2019 §6 chain verified on disk at
+  `/tmp/st2022-7.txt:234-236`:
+  > "The transmitter shall transmit at least two streams, each
+  > containing copies of each RTP datagram. The RTP header and
+  > the RTP payload shall be identical for each datagram copy."
+
+  New tier-level semantic check `check_group_dup_coherence` in
+  `parse_sdp/grammar/st2110.lua` builds a mid → media-block index
+  once, then for each `a=group:DUP` session attribute resolves
+  tags, validates min-2 legs, and compares legs[2..N] against
+  legs[1] across all five essence attributes plus address
+  coherence. Helpers `params_equal` (order-insensitive table
+  compare), `first_attr`, and `leg_src_dst` (reads
+  `attr.src_addresses[1]` from the decomposed source-filter).
+
+  **Improvement over 1.0:** fmtp comparison is now order-
+  insensitive (table compare on decomposed `params`) instead of
+  raw value-string compare. A DUP pair with reordered-but-
+  equivalent fmtp keys would have been rejected by 1.0 but is
+  accepted by the grammar tier as semantically identical.
+
+  11 new tests in `spec/grammar_st2110_spec.lua`: positive
+  (identical legs), mid-resolution (one tag undefined), min-2-
+  legs (single-tag group), media-type-mismatch, rtpmap-encoding-
+  mismatch, payload-type-mismatch, fmtp-mismatch, reordered-
+  fmtp-equivalence (the 1.0-improvement case), address-coherence
+  reject (both src+dst identical), accept (RFC 7104 §4.1 same-
+  dst-different-src), accept (RFC 7104 §4.2 different-dst).
+  Suite: 1538 green.
+
+**Phase 6.E is now closed.** Coverage summary across the two
+slices:
+
+- 6.E.A: RFC 5888 §6 + §9.2 group/mid invariants (base tier)
+- 6.E.B: ST 2110-10 §8.5 + ST 2022-7 §6 group:DUP leg coherence
+  (ST 2110 tier, 7 checks)
+
+**Phase 6 is now closed.** Phases 6.A–6.E ship the full ST 2110
++ base-SDP cross-stream and per-encoding coverage set. The
+grammar tier matches or exceeds the 1.0 parser on every check
+that is grounded in primary spec text; three 1.0-over-strict
+flags (audio MAXUDP / channels-required / packet-payload-fit
+limbs for AM824 or L16/L24) are intentionally not ported and
+remain flagged in `audits/` for follow-up.
+
+Audit ref: REFACTOR-PLAN.md §5 Phase 6.E; ST 2110-10:2022 §8.5,
+ST 2022-7:2019 §6 verified against on-disk primary text.
+
 The grammar tier now matches 1.0 parity on every well-grounded
 per-encoding required-attribute and cross-attribute SHALL. Three
 out-of-parity flags carry forward for separate audit follow-up:

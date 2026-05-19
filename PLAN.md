@@ -39,13 +39,19 @@ and runs them through the parser. See
 
 ## Current State
 
-1527 hermetic tests passing. Every validation check is grounded in explicit
+1538 hermetic tests passing. Every validation check is grounded in explicit
 spec text; no opinion-based checks remain.
 
 The grammar-first refactor on branch `refactor/grammar-first` is **in
-progress**. Phases 4 + 5 complete; **Phases 6.C and 6.D are fully
-closed**; **Phase 6.E.A** (RFC 5888 group/mid invariants) has shipped.
-6.E.B (ST 2110-10 §8.5 group:DUP coherence) remains.
+progress**. Phases 4 + 5 complete; **Phase 6 (all of 6.A–6.E) is now
+closed.** The grammar tier matches or exceeds the 1.0 parser on every
+check grounded in primary spec text. Three 1.0-over-strict flags from
+6.D (audio MAXUDP-forbidden on AM824, channels-required on L16/L24,
+packet-payload-fit on AM824) are intentionally not ported and remain
+flagged in `audits/` for separate follow-up.
+
+Phases 7–10 remain (IPMX tier via `extend(st2110_rules, ...)`,
+serializer rewrite, public API stabilization, migration cutover).
 The grammar tier covers:
 
 - ST 2110-20 raw video: §7.1 no-whitespace-around-=, §7.2/§7.4.2

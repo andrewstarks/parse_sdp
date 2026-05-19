@@ -1032,6 +1032,116 @@ M.register("st2110-41.a.fmtp.maxudp-forbidden", {
 -- attribute, so a session-level mediaclk does not cover a media block
 -- that lacks its own.
 
+-- ── Phase 6.E.B — ST 2110-10 §8.5 group:DUP leg coherence ───────────────
+-- ST 2110-10:2022 §8.5: "Duplicate RTP streams meeting the requirements
+-- of SMPTE ST 2022-7 may be used for redundant transmission… Senders…
+-- shall signal the RTP duplication using the session level group
+-- attribute of IETF RFC 5888 and the duplication grouping DUP semantics
+-- of IETF RFC 7104."
+--
+-- ST 2022-7:2019 §6 (verified on disk at /tmp/st2022-7.txt:234-236):
+--   "The transmitter shall transmit at least two streams, each
+--    containing copies of each RTP datagram. The RTP header and the RTP
+--    payload shall be identical for each datagram copy."
+--
+-- Chain-of-SHALLs grounding: §8.5 requires "meeting the requirements of
+-- SMPTE ST 2022-7"; §6 requires (a) at least two streams and (b)
+-- bit-identical RTP header + payload across copies. SDP attributes that
+-- DEFINE the RTP packet shape — media type (from m=), rtpmap (encoding
+-- + clock rate), payload type number, fmtp essence parameters — must
+-- therefore match across DUP legs, else the legs cannot satisfy §6's
+-- bit-identity SHALL and the §8.5 SHALL is violated. The SDP-side cite
+-- is §8.5 throughout; the §6 chain lives in error message comments.
+--
+-- §8.5 also directly forbids: "Redundant streams shall not use both
+-- identical source addresses and identical destination addresses at
+-- the same time" — the address-coherence check.
+
+M.register("st2110-10.a.group-dup.mid-resolve", {
+  kind             = "semantic",
+  default_severity = "error",
+  code             = "INVALID_VALUE",
+  message_template =
+    "a=group:DUP tag does not resolve to any a=mid in the session"
+    .. " (an unresolved tag reduces the effective leg count, breaking"
+    .. " ST 2022-7 §6's 'at least two streams' SHALL chained from"
+    .. " ST 2110-10 §8.5)",
+  spec_ref         = "ST 2110-10:2022 §8.5",
+  verified         = true,
+})
+
+M.register("st2110-10.a.group-dup.min-2-legs", {
+  kind             = "semantic",
+  default_severity = "error",
+  code             = "INVALID_VALUE",
+  message_template =
+    "a=group:DUP must have at least two resolved legs"
+    .. " (ST 2022-7 §6: 'The transmitter shall transmit at least two"
+    .. " streams')",
+  spec_ref         = "ST 2110-10:2022 §8.5",
+  verified         = true,
+})
+
+M.register("st2110-10.a.group-dup.media-type-same", {
+  kind             = "semantic",
+  default_severity = "error",
+  code             = "INVALID_VALUE",
+  message_template =
+    "a=group:DUP legs must have the same m= media type"
+    .. " (ST 2022-7 §6 requires bit-identical RTP payload; different"
+    .. " media types cannot satisfy that SHALL)",
+  spec_ref         = "ST 2110-10:2022 §8.5",
+  verified         = true,
+})
+
+M.register("st2110-10.a.group-dup.rtpmap-same", {
+  kind             = "semantic",
+  default_severity = "error",
+  code             = "INVALID_VALUE",
+  message_template =
+    "a=group:DUP legs must have the same a=rtpmap encoding and clock"
+    .. " rate (ST 2022-7 §6 requires bit-identical RTP payload)",
+  spec_ref         = "ST 2110-10:2022 §8.5",
+  verified         = true,
+})
+
+M.register("st2110-10.a.group-dup.payload-type-same", {
+  kind             = "semantic",
+  default_severity = "error",
+  code             = "INVALID_VALUE",
+  message_template =
+    "a=group:DUP legs must use the same RTP payload type number"
+    .. " (ST 2022-7 §6's bit-identical RTP header SHALL includes the"
+    .. " PT field)",
+  spec_ref         = "ST 2110-10:2022 §8.5",
+  verified         = true,
+})
+
+M.register("st2110-10.a.group-dup.fmtp-same", {
+  kind             = "semantic",
+  default_severity = "error",
+  code             = "INVALID_VALUE",
+  message_template =
+    "a=group:DUP legs must have identical a=fmtp essence parameters"
+    .. " (ST 2022-7 §6's bit-identical RTP payload SHALL implies"
+    .. " identical signaled essence)",
+  spec_ref         = "ST 2110-10:2022 §8.5",
+  verified         = true,
+})
+
+M.register("st2110-10.a.group-dup.addr-coherence", {
+  kind             = "semantic",
+  default_severity = "error",
+  code             = "INVALID_VALUE",
+  message_template =
+    "a=group:DUP legs must not share BOTH source address and"
+    .. " destination address (ST 2110-10:2022 §8.5: 'Redundant streams"
+    .. " shall not use both identical source addresses and identical"
+    .. " destination addresses at the same time')",
+  spec_ref         = "ST 2110-10:2022 §8.5",
+  verified         = true,
+})
+
 -- ── Phase 6.E.A — RFC 5888 group attribute cross-stream invariants ──────
 -- RFC 5888 §6: "All of the 'm' lines of a session description that uses
 -- 'group' MUST be identified with a 'mid' attribute whether they appear

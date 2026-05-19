@@ -814,6 +814,132 @@ local function check_audio_maxudp_forbidden(doc, ctx)
   return true
 end
 
+-- Phase 6.E.B — ST 2110-10:2022 §8.5 group:DUP leg coherence.
+--
+-- §8.5 requires duplicate RTP streams to "meet the requirements of SMPTE
+-- ST 2022-7". ST 2022-7:2019 §6 requires (a) "at least two streams" and
+-- (b) "RTP header and RTP payload shall be identical for each datagram
+-- copy". The SDP attributes that define the RTP packet shape — m= media
+-- type, a=rtpmap (encoding + clock rate + PT), a=fmtp params — must
+-- therefore match across DUP legs. §8.5 also directly forbids identical
+-- src+dst across legs. See parse_sdp/errors.lua header for the full
+-- chain-of-SHALLs grounding.
+--
+-- Single tier-level semantic check walks doc.session.attributes for
+-- group:DUP entries; for each, resolves tags via mid_index, validates
+-- min-2 legs, then compares legs[2..N] to legs[1] across all five
+-- essence attributes plus address coherence. All findings share
+-- spec_ref "ST 2110-10:2022 §8.5".
+
+local function params_equal(a, b)
+  if a == nil and b == nil then return true end
+  if a == nil or b == nil then return false end
+  local count_a, count_b = 0, 0
+  for k, v in pairs(a) do
+    count_a = count_a + 1
+    if b[k] ~= v then return false end
+  end
+  for _ in pairs(b) do count_b = count_b + 1 end
+  return count_a == count_b
+end
+
+local function first_attr(block, name)
+  for _, attr in ipairs(block.attributes) do
+    if attr.name == name then return attr end
+  end
+  return nil
+end
+
+local function leg_src_dst(block, doc)
+  local conn = block.connection or doc.session.connection
+  local dst  = conn and conn.address or ""
+  local sf   = first_attr(block, "source-filter")
+  local src  = (sf and sf.src_addresses and sf.src_addresses[1]) or ""
+  return src, dst
+end
+
+local function check_group_dup_coherence(doc, ctx)
+  local mid_index = {}
+  for i, m in ipairs(doc.media) do
+    for _, attr in ipairs(m.attributes) do
+      if attr.name == "mid" then
+        mid_index[attr.tag] = { index = i, block = m }
+      end
+    end
+  end
+
+  for gi, gattr in ipairs(doc.session.attributes) do
+    if gattr.name == "group" and gattr.semantics == "DUP" then
+      local path = string.format(
+        "session.attributes[group][%d]", gi - 1)
+
+      local legs = {}
+      for _, tag in ipairs(gattr.tags) do
+        local entry = mid_index[tag]
+        if not entry then
+          local cont = errors.record(ctx,
+            "st2110-10.a.group-dup.mid-resolve",
+            { field_path = path, context = { tag = tag } })
+          if not cont then return false end
+        else
+          legs[#legs + 1] = entry
+        end
+      end
+
+      if #legs < 2 then
+        local cont = errors.record(ctx,
+          "st2110-10.a.group-dup.min-2-legs",
+          { field_path = path, context = { resolved_legs = #legs } })
+        if not cont then return false end
+      else
+        local lead       = legs[1].block
+        local base_rm    = first_attr(lead, "rtpmap")
+        local base_fm    = first_attr(lead, "fmtp")
+        local base_src, base_dst = leg_src_dst(lead, doc)
+
+        for j = 2, #legs do
+          local leg = legs[j].block
+          if leg.media ~= lead.media then
+            local cont = errors.record(ctx,
+              "st2110-10.a.group-dup.media-type-same",
+              { field_path = path })
+            if not cont then return false end
+          end
+          local rm = first_attr(leg, "rtpmap")
+          if (rm and rm.encoding) ~= (base_rm and base_rm.encoding)
+              or (rm and rm.clock_rate) ~= (base_rm and base_rm.clock_rate) then
+            local cont = errors.record(ctx,
+              "st2110-10.a.group-dup.rtpmap-same",
+              { field_path = path })
+            if not cont then return false end
+          end
+          if (rm and rm.payload_type) ~= (base_rm and base_rm.payload_type) then
+            local cont = errors.record(ctx,
+              "st2110-10.a.group-dup.payload-type-same",
+              { field_path = path })
+            if not cont then return false end
+          end
+          local fm = first_attr(leg, "fmtp")
+          if not params_equal(fm and fm.params, base_fm and base_fm.params) then
+            local cont = errors.record(ctx,
+              "st2110-10.a.group-dup.fmtp-same",
+              { field_path = path })
+            if not cont then return false end
+          end
+          local src, dst = leg_src_dst(leg, doc)
+          if dst ~= "" and dst == base_dst and src == base_src then
+            local cont = errors.record(ctx,
+              "st2110-10.a.group-dup.addr-coherence",
+              { field_path = path })
+            if not cont then return false end
+          end
+        end
+      end
+    end
+  end
+  return true
+end
+
 -- Phase 6.D.D — ST 2110-30:2025 §6.2.1 audio packet-payload-fit.
 -- §6.2.1 requires "The Standard UDP Datagram Size Limit as defined in
 -- SMPTE ST 2110-10 shall be used". ST 2110-10:2022 §6.4 sets that limit
@@ -1196,6 +1322,7 @@ local overrides = {
     check_mediaclk_presence,
     check_audio_maxudp_forbidden,
     check_audio_packet_payload_fit,
+    check_group_dup_coherence,
   },
 }
 

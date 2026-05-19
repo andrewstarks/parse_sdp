@@ -681,14 +681,25 @@ none of these are grounded in -30 / -31 primary text.
   `sdp.a.group.references-port-zero-mid` (§9.2, 1.0-gap close).
   New base-tier semantic check `check_group_attribute_invariants`
   does one doc walk for both passes. 7 new tests; suite 1527 green.
-- **6.E.B (pending)** — ST 2110-10 §8.5 group:DUP coherence (st2110
-  tier). Re-scoping in progress: see "DUP-leg coherence audit"
-  conversation note about whether the chain §8.5 → ST 2022-7 §6
-  (RTP-identity SHALL) sufficiently grounds the SDP-level "DUP
-  legs must match in media-type / rtpmap / PT / fmtp" derived
-  checks. If the chain holds, 6.E.B ports the full 1.0 cross-
-  stream check set (7 checks); if not, ports only the directly-
-  grounded address-coherence SHALL.
+- **6.E.B (complete)** — ST 2110-10:2022 §8.5 + ST 2022-7:2019 §6
+  group:DUP leg coherence (ST 2110 tier). Full 7-check port from
+  1.0 via the cite chain (§8.5 invokes ST 2022-7 §6, which
+  requires at-least-two streams with bit-identical RTP headers +
+  payloads — necessary condition: SDP attrs defining packet shape
+  must match across legs). 7 new error ids
+  `st2110-10.a.group-dup.{mid-resolve, min-2-legs,
+  media-type-same, rtpmap-same, payload-type-same, fmtp-same,
+  addr-coherence}`. Improvement over 1.0: fmtp comparison is
+  order-insensitive (decomposed `params` table compare instead of
+  raw value-string compare). 11 new tests; suite 1538 green.
+
+**Phase 6.E is now closed.** Phase 6 as a whole (6.A–6.E) ships
+the full ST 2110 + base-SDP cross-stream and per-encoding
+coverage set. Grammar tier matches or exceeds the 1.0 parser on
+every check grounded in primary spec text; three 1.0-over-strict
+flags from 6.D (audio MAXUDP / channels-required / packet-fit
+limbs for AM824 or L16/L24) remain flagged in `audits/` for
+separate follow-up.
 
 **Phase 7 — IPMX grammar via `extend(st2110_rules, ...)`.**
 Same pattern, IPMX-specific from TR-10 markdowns. Re-verify each citation
