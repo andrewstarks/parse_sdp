@@ -382,6 +382,184 @@ describe("base SDP grammar — origin and connection captures (Phase 2.B)", func
 
 end)
 
+describe("base SDP grammar — text fields and bandwidth (Phase 2.C)", function()
+
+  -- NOT-SPEC: library
+  it("captures session.info when i= present (RFC 8866 §5.4)", function()
+    local text = lines_to_sdp({
+      "v=0", "o=- 1 1 IN IP4 127.0.0.1", "s=X",
+      "i=A short session description",
+      "t=0 0",
+    })
+    local doc = g:match(text)
+    assert.equal("A short session description", doc.session.info)
+  end)
+
+  -- NOT-SPEC: library
+  it("session.info is nil when i= absent", function()
+    local doc = g:match(minimal())
+    assert.is_nil(doc.session.info)
+  end)
+
+  -- NOT-SPEC: library
+  it("captures session.uri when u= present (RFC 8866 §5.5)", function()
+    local text = lines_to_sdp({
+      "v=0", "o=- 1 1 IN IP4 127.0.0.1", "s=X",
+      "u=http://example.com/session.sdp",
+      "t=0 0",
+    })
+    local doc = g:match(text)
+    assert.equal("http://example.com/session.sdp", doc.session.uri)
+  end)
+
+  -- NOT-SPEC: library
+  it("captures session.emails as an array (RFC 8866 §5.6)", function()
+    local text = lines_to_sdp({
+      "v=0", "o=- 1 1 IN IP4 127.0.0.1", "s=X",
+      "e=alice@example.com",
+      "e=bob@example.com (Bob)",
+      "t=0 0",
+    })
+    local doc = g:match(text)
+    assert.is_table(doc.session.emails)
+    assert.equal(2, #doc.session.emails)
+    assert.equal("alice@example.com",      doc.session.emails[1])
+    assert.equal("bob@example.com (Bob)",  doc.session.emails[2])
+  end)
+
+  -- NOT-SPEC: library
+  it("session.emails is an empty array when no e= lines", function()
+    local doc = g:match(minimal())
+    assert.is_table(doc.session.emails)
+    assert.equal(0, #doc.session.emails)
+  end)
+
+  -- NOT-SPEC: library
+  it("captures session.phones as an array (RFC 8866 §5.6)", function()
+    local text = lines_to_sdp({
+      "v=0", "o=- 1 1 IN IP4 127.0.0.1", "s=X",
+      "p=+1 555 1234",
+      "p=+44 20 7946 0958",
+      "t=0 0",
+    })
+    local doc = g:match(text)
+    assert.is_table(doc.session.phones)
+    assert.equal(2, #doc.session.phones)
+    assert.equal("+1 555 1234",        doc.session.phones[1])
+    assert.equal("+44 20 7946 0958",   doc.session.phones[2])
+  end)
+
+  -- NOT-SPEC: library
+  it("captures session.bandwidths with type + numeric value (RFC 8866 §5.8)", function()
+    local text = lines_to_sdp({
+      "v=0", "o=- 1 1 IN IP4 127.0.0.1", "s=X",
+      "b=AS:128",
+      "b=TIAS:96000",
+      "t=0 0",
+    })
+    local doc = g:match(text)
+    assert.is_table(doc.session.bandwidths)
+    assert.equal(2, #doc.session.bandwidths)
+    assert.equal("AS",   doc.session.bandwidths[1].type)
+    assert.equal(128,    doc.session.bandwidths[1].value)
+    assert.is_number(doc.session.bandwidths[1].value)
+    assert.equal("TIAS", doc.session.bandwidths[2].type)
+    assert.equal(96000,  doc.session.bandwidths[2].value)
+  end)
+
+  -- NOT-SPEC: library
+  it("session.bandwidths is an empty array when no b= lines", function()
+    local doc = g:match(minimal())
+    assert.is_table(doc.session.bandwidths)
+    assert.equal(0, #doc.session.bandwidths)
+  end)
+
+  -- NOT-SPEC: library
+  it("rejects b= with non-digit bandwidth value", function()
+    local text = lines_to_sdp({
+      "v=0", "o=- 1 1 IN IP4 127.0.0.1", "s=X",
+      "b=AS:fast",
+      "t=0 0",
+    })
+    assert.is_nil(g:match(text))
+  end)
+
+  -- NOT-SPEC: library
+  it("rejects b= missing colon", function()
+    local text = lines_to_sdp({
+      "v=0", "o=- 1 1 IN IP4 127.0.0.1", "s=X",
+      "b=AS 128",
+      "t=0 0",
+    })
+    assert.is_nil(g:match(text))
+  end)
+
+end)
+
+describe("base SDP grammar — media array shape (Phase 2.C)", function()
+
+  -- NOT-SPEC: library
+  it("doc.media is an empty array when no media blocks present", function()
+    local doc = g:match(minimal())
+    assert.is_table(doc.media)
+    assert.equal(0, #doc.media)
+  end)
+
+  -- NOT-SPEC: library
+  it("doc.media has one entry per m= section", function()
+    local doc = g:match(minimal(nil, {
+      { "m=video 49170 RTP/AVP 96" },
+      { "m=audio 49172 RTP/AVP 0"  },
+    }))
+    assert.is_table(doc.media)
+    assert.equal(2, #doc.media)
+  end)
+
+  -- NOT-SPEC: library
+  it("captures media-level info when i= present", function()
+    local doc = g:match(minimal(nil, {
+      { "m=video 49170 RTP/AVP 96",
+        "i=Video stream description" },
+    }))
+    assert.equal("Video stream description", doc.media[1].info)
+  end)
+
+  -- NOT-SPEC: library
+  it("captures media-level connection", function()
+    local doc = g:match(minimal(nil, {
+      { "m=video 49170 RTP/AVP 96",
+        "c=IN IP4 239.1.1.1/127" },
+    }))
+    assert.is_table(doc.media[1].connection)
+    assert.equal("IP4",            doc.media[1].connection.addr_type)
+    assert.equal("239.1.1.1/127",  doc.media[1].connection.address)
+  end)
+
+  -- NOT-SPEC: library
+  it("captures media-level bandwidths as array of {type, value}", function()
+    local doc = g:match(minimal(nil, {
+      { "m=video 49170 RTP/AVP 96",
+        "b=AS:5000",
+        "b=TIAS:4500000" },
+    }))
+    assert.equal(2, #doc.media[1].bandwidths)
+    assert.equal("AS",       doc.media[1].bandwidths[1].type)
+    assert.equal(5000,       doc.media[1].bandwidths[1].value)
+    assert.equal("TIAS",     doc.media[1].bandwidths[2].type)
+    assert.equal(4500000,    doc.media[1].bandwidths[2].value)
+  end)
+
+  -- NOT-SPEC: library
+  it("media-level info / connection are nil when their lines are absent", function()
+    local doc = g:match(minimal(nil, { { "m=video 49170 RTP/AVP 96" } }))
+    assert.is_nil(doc.media[1].info)
+    assert.is_nil(doc.media[1].connection)
+    assert.is_table(doc.media[1].bandwidths)
+    assert.equal(0, #doc.media[1].bandwidths)
+  end)
+
+end)
+
 describe("base SDP grammar — module exports", function()
 
   -- NOT-SPEC: library

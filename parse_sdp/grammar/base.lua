@@ -45,7 +45,7 @@ local rules = {
         Cg(V"v_line", "version")
       * Cg(V"o_line", "origin")
       * Cg(Ct(V"session_inner"), "session")
-      * V"media_section" ^ 0
+      * Cg(Ct(V"media_section" ^ 0), "media")
     ) * -1,
 
   -- Session-level inner section: s= through a=*. Phase 2.A captures only
@@ -53,42 +53,46 @@ local rules = {
   -- t/r/z, and a=.
   session_inner =
         Cg(V"s_line", "name")
-      * V"i_line" ^ -1
-      * V"u_line" ^ -1
-      * V"e_line" ^ 0
-      * V"p_line" ^ 0
+      * (Cg(V"i_line", "info")) ^ -1
+      * (Cg(V"u_line", "uri")) ^ -1
+      * Cg(Ct(V"e_line" ^ 0), "emails")
+      * Cg(Ct(V"p_line" ^ 0), "phones")
       * (Cg(V"c_line", "connection")) ^ -1
-      * V"b_line" ^ 0
+      * Cg(Ct(V"b_line" ^ 0), "bandwidths")
       * (V"t_line" * V"r_line" ^ 0) ^ 1
       * V"z_line" ^ -1
       * V"k_line" ^ -1                       -- RFC 8866 §5.12: parsed and discarded
-      * V"a_line" ^ 0,
+      * V"a_line" ^ 0,                       -- captured in 2.E
 
   -- Media section (RFC 8866 §5):
   --   m= (required), i=?, c=?, b=*, k=?, a=*
-  media_section =
+  -- Wrapped in Ct so each media block lands as one table in doc.media[i].
+  -- m= itself is captured in 2.E; today it's a placeholder match (no fields
+  -- yet from m=, but i/c/b are captured).
+  media_section = Ct(
         V"m_line"
-      * V"i_line" ^ -1
-      * V"c_line" ^ -1
-      * V"b_line" ^ 0
+      * (Cg(V"i_line", "info")) ^ -1
+      * (Cg(V"c_line", "connection")) ^ -1
+      * Cg(Ct(V"b_line" ^ 0), "bandwidths")
       * V"k_line" ^ -1
-      * V"a_line" ^ 0,
+      * V"a_line" ^ 0                        -- captured in 2.E
+    ),
 
-  -- ── Captured line rules (Phase 2.A–2.B) ──────────────────────────────
+  -- ── Captured line rules (Phase 2.A–2.C) ──────────────────────────────
   -- Each produces ONE capture (string or table).
   v_line = P("v=") * V"v_value" * V"line_end",
   o_line = P("o=") * V"o_value" * V"line_end",
   s_line = P("s=") * V"s_value" * V"line_end",
+  i_line = P("i=") * V"i_value" * V"line_end",
+  u_line = P("u=") * V"u_value" * V"line_end",
+  e_line = P("e=") * V"e_value" * V"line_end",
+  p_line = P("p=") * V"p_value" * V"line_end",
   c_line = P("c=") * V"c_value" * V"line_end",
+  b_line = P("b=") * V"b_value" * V"line_end",
 
-  -- ── Placeholder line rules (to be captured in 2.C–2.E) ───────────────
+  -- ── Placeholder line rules (to be captured in 2.D–2.E) ───────────────
   -- These match-and-discard via V"value". Document shape is enforced;
   -- structural sub-fields aren't surfaced into the doc table yet.
-  i_line = P("i=") * V"value" * V"line_end",
-  u_line = P("u=") * V"value" * V"line_end",
-  e_line = P("e=") * V"value" * V"line_end",
-  p_line = P("p=") * V"value" * V"line_end",
-  b_line = P("b=") * V"value" * V"line_end",
   t_line = P("t=") * V"value" * V"line_end",
   r_line = P("r=") * V"value" * V"line_end",
   z_line = P("z=") * V"value" * V"line_end",
@@ -129,6 +133,25 @@ local rules = {
       * Cg(V"addrtype", "addr_type") * SP
       * Cg(V"token",    "address")
     ),
+
+  -- Text fields. RFC 8866 §5.4, §5.5, §5.6 — each takes a "text" value
+  -- (one or more bytes up to the next CRLF). At the base tier we accept
+  -- the value as a single string; Phase 3 will add a soft-syntactic
+  -- finding for embedded bare CR (forbidden by the §9 ABNF byte-string).
+  i_value = C((1 - V"line_end") ^ 1),
+  u_value = C((1 - V"line_end") ^ 1),
+  e_value = C((1 - V"line_end") ^ 1),
+  p_value = C((1 - V"line_end") ^ 1),
+
+  -- b= bandwidth (RFC 8866 §5.8):  b=<bwtype>:<bandwidth>
+  -- bwtype is a token (defined value forms include "CT", "AS", "TIAS",
+  -- "RS", "RR"; experimental ones use "X-..."); value-set validation
+  -- lives in Phase 3. bandwidth is decimal digits, captured as a number.
+  b_value = Ct(
+        Cg(V"bw_type", "type")  * P(":")
+      * Cg(V"digits" / tonumber, "value")
+    ),
+  bw_type = C((1 - P(":") - SP - V"line_end") ^ 1),
 
   -- ── Shared sub-leaves ───────────────────────────────────────────────
   -- token: RFC 8866 ABNF "non-ws-string" — one or more VCHAR (any visible

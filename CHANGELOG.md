@@ -55,6 +55,16 @@ parser remains the shipping artifact on `main`.
   `/TTL` or `/<numaddrs>` suffix verbatim (decomposition + value-form
   validation lives in Phase 3 with the findings context). nettype
   tightened to literal "IN", addrtype to "IP4"|"IP6". 12 new tests.
+- **Phase 2.C:** text fields (i, u, e, p) + bandwidth (b) leaves.
+  `doc.session.info` / `doc.session.uri` are strings (optional).
+  `doc.session.emails` / `doc.session.phones` are arrays of strings
+  (empty array when absent). `doc.session.bandwidths` is an array
+  of `{type, value=number}`. media_section becomes `Ct(...)` and the
+  document scaffold now wraps it as `Cg(Ct(media_section^0), "media")`,
+  so `doc.media` is always an array (was previously absent). Each
+  media block captures `info` / `connection` / `bandwidths` from
+  media-level i=, c=, b= lines. m= itself is captured in 2.E.
+  16 new tests.
 
 ### Changed
 
