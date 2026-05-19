@@ -578,4 +578,63 @@ for _, p in ipairs(ENUM_RAW_PARAMS) do
   })
 end
 
+-- ── ST 2110-20 raw video fmtp value-form narrowings — non-enum (6.C.D.2) ──
+-- Six parameters carry value FORMS rather than enumerated sets — integer
+-- ranges, fractions in lowest terms, or fixed patterns. Each fires when
+-- the parameter is PRESENT on a raw video fmtp with a value that doesn't
+-- match the defined form; absence is the *-required check's job.
+local NON_ENUM_RAW_PARAMS = {
+  -- §7.2: width / height integers 1..32767 inclusive.
+  { "width",          "ST 2110-20:2022 §7.2",
+    "fmtp 'width' must be a positive integer between 1 and 32767" },
+  { "height",         "ST 2110-20:2022 §7.2",
+    "fmtp 'height' must be a positive integer between 1 and 32767" },
+  -- §7.2: positive integer OR positive_n/positive_d in lowest terms.
+  { "exactframerate", "ST 2110-20:2022 §7.2",
+    "fmtp 'exactframerate' must be a positive integer or a positive"
+    .. " n/d ratio in lowest terms" },
+  -- §7.3: positive integer, no greater than the §6.4 Extended UDP Size
+  -- Limit (8960 octets).
+  { "MAXUDP",         "ST 2110-20:2022 §7.3",
+    "fmtp 'MAXUDP' must be a positive integer not exceeding 8960" },
+  -- §7.3: W:H with both positive and in lowest terms ("smallest integer
+  -- values possible for width and height shall be used").
+  { "PAR",            "ST 2110-20:2022 §7.3",
+    "fmtp 'PAR' must be W:H with both positive integers in lowest terms" },
+  -- §7.2: identifies the spec revision the sender implements; only two
+  -- forms defined: ST2110-20:2017 and ST2110-20:2022.
+  { "SSN",            "ST 2110-20:2022 §7.2",
+    "fmtp 'SSN' must be ST2110-20:2017 or ST2110-20:2022" },
+}
+
+for _, p in ipairs(NON_ENUM_RAW_PARAMS) do
+  local key, ref, msg = p[1], p[2], p[3]
+  M.register("st2110-20.a.fmtp." .. key .. "-invalid-value", {
+    kind             = "semantic",
+    default_severity = "error",
+    code             = "INVALID_VALUE",
+    message_template = msg,
+    spec_ref         = ref,
+    verified         = true,
+  })
+end
+
+-- ── ST 2110-20 §7.3 flag-only parameters (Phase 6.C.D.2) ──────────────────
+-- §7.3 defines `interlace` and `segmented` as bare-attribute flags
+-- ("...the optional 'interlace' parameter shall be set" — no value form
+-- defined). Signaling either as a key=value pair is invalid.
+local FLAG_ONLY_RAW_PARAMS = { "interlace", "segmented" }
+
+for _, key in ipairs(FLAG_ONLY_RAW_PARAMS) do
+  M.register("st2110-20.a.fmtp." .. key .. "-invalid-value", {
+    kind             = "semantic",
+    default_severity = "error",
+    code             = "INVALID_VALUE",
+    message_template =
+      "fmtp '" .. key .. "' must be a bare flag (no '=value')",
+    spec_ref         = "ST 2110-20:2022 §7.3",
+    verified         = true,
+  })
+end
+
 return M

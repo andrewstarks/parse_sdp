@@ -130,20 +130,124 @@ local RAW_VIDEO_ENUM_KEYS = {
   "sampling", "depth", "colorimetry", "PM", "TP", "TCS", "RANGE",
 }
 
--- For every raw video fmtp, validate every PRESENT enum-typed parameter
--- against its permitted set. Absent parameters are the *-required check's
--- concern. Each violation records the corresponding -invalid-value finding.
+-- Non-enum value-form validators (Phase 6.C.D.2). Each takes the raw string
+-- value as captured by the fmtp grammar and returns true when the value
+-- satisfies the ST 2110-20 form rule, false otherwise. Order matches the
+-- _KEYS list for stable fail_on_first behaviour.
+
+local function gcd(a, b)
+  while b ~= 0 do a, b = b, a % b end
+  return a
+end
+
+-- §7.2: width / height "Permitted values are integers between 1 and 32767
+-- inclusive." Same form for both — single builder, two keys.
+local function make_pixel_dim_validator()
+  return function(v)
+    if not v:match("^%d+$") then return false end
+    local n = tonumber(v)
+    return n ~= nil and n >= 1 and n <= 32767
+  end
+end
+
+-- §7.2: "non-integer rates shall be signaled as a ratio of two integer
+-- decimal numbers separated by a 'forward-slash' character (e.g. 30000/1001),
+-- utilizing the numerically smallest numerator value possible." Lowest-terms
+-- requirement → gcd(n, d) == 1. Integer form: positive non-zero decimal.
+local function validate_exactframerate(v)
+  -- N/D fraction form.
+  local n_str, d_str = v:match("^(%d+)/(%d+)$")
+  if n_str then
+    local n, d = tonumber(n_str), tonumber(d_str)
+    if not n or not d or n == 0 or d == 0 then return false end
+    return gcd(n, d) == 1
+  end
+  -- Integer form.
+  if not v:match("^%d+$") then return false end
+  local n = tonumber(v)
+  return n ~= nil and n > 0
+end
+
+-- §7.3 + §6.4: positive integer no greater than the Extended UDP Size Limit
+-- of 8960 octets.
+local function validate_maxudp(v)
+  if not v:match("^%d+$") then return false end
+  local n = tonumber(v)
+  return n ~= nil and n >= 1 and n <= 8960
+end
+
+-- §7.3: W:H, both positive integers, in lowest terms.
+local function validate_par(v)
+  local w_str, h_str = v:match("^(%d+):(%d+)$")
+  if not w_str then return false end
+  local w, h = tonumber(w_str), tonumber(h_str)
+  if not w or not h or w == 0 or h == 0 then return false end
+  return gcd(w, h) == 1
+end
+
+-- §7.2: SSN identifies the spec revision; defined values are ST2110-20:2017
+-- and ST2110-20:2022. Other year tokens are not defined.
+local function validate_ssn(v)
+  return v == "ST2110-20:2017" or v == "ST2110-20:2022"
+end
+
+local RAW_VIDEO_VALUE_VALIDATORS = {
+  width          = make_pixel_dim_validator(),
+  height         = make_pixel_dim_validator(),
+  exactframerate = validate_exactframerate,
+  MAXUDP         = validate_maxudp,
+  PAR            = validate_par,
+  SSN            = validate_ssn,
+}
+
+local RAW_VIDEO_VALUE_FORM_KEYS = {
+  "width", "height", "exactframerate", "MAXUDP", "PAR", "SSN",
+}
+
+-- §7.3: `interlace` and `segmented` are bare-attribute flags; signaling
+-- either with a `=value` is invalid. The base fmtp grammar captures flags
+-- as params[key] == true and kv-pairs as params[key] == string; the check
+-- fires when the captured shape is a string.
+local RAW_VIDEO_FLAG_ONLY_KEYS = { "interlace", "segmented" }
+
+-- For every raw video fmtp, validate every PRESENT value-typed parameter
+-- against its spec rule. Three classes:
+--   - enum keys: lookup in RAW_VIDEO_ENUM_VALUES
+--   - non-enum value-form keys: predicate in RAW_VIDEO_VALUE_VALIDATORS
+--   - flag-only keys: must be `true` (a kv-string value is invalid)
+-- Absent parameters are the *-required check's concern. Each violation
+-- records the corresponding -invalid-value finding.
 local function check_raw_video_fmtp_values(doc, ctx)
   for _, e in ipairs(each_raw_video_fmtp(doc)) do
+    local path = string.format(
+      "media[%d].attributes[fmtp:pt=%d]", e.media_index, e.payload_type)
+
     for _, key in ipairs(RAW_VIDEO_ENUM_KEYS) do
       local val = e.params[key]
       if val ~= nil and not RAW_VIDEO_ENUM_VALUES[key][val] then
-        local cont = errors.record(
-          ctx,
+        local cont = errors.record(ctx,
           "st2110-20.a.fmtp." .. key .. "-invalid-value",
-          { field_path = string.format(
-              "media[%d].attributes[fmtp:pt=%d]",
-              e.media_index, e.payload_type) })
+          { field_path = path })
+        if not cont then return false end
+      end
+    end
+
+    for _, key in ipairs(RAW_VIDEO_VALUE_FORM_KEYS) do
+      local val = e.params[key]
+      if val ~= nil and not RAW_VIDEO_VALUE_VALIDATORS[key](tostring(val)) then
+        local cont = errors.record(ctx,
+          "st2110-20.a.fmtp." .. key .. "-invalid-value",
+          { field_path = path })
+        if not cont then return false end
+      end
+    end
+
+    for _, key in ipairs(RAW_VIDEO_FLAG_ONLY_KEYS) do
+      local val = e.params[key]
+      if val ~= nil and val ~= true then
+        local cont = errors.record(ctx,
+          "st2110-20.a.fmtp." .. key .. "-invalid-value",
+          { field_path = path })
         if not cont then return false end
       end
     end

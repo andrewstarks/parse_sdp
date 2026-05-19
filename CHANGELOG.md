@@ -684,6 +684,41 @@ Audit ref: REFACTOR-PLAN.md §5 Phase 6.C; audits/SPEC_INVENTORY.md
 ST 2110-20:2022 §7.2 / §7.3 / §7.4.2 / §7.5 / §7.6 / §6.3;
 ST 2110-21:2022 §8.1.
 
+- **Phase 6.C.D.2:** ST 2110-20:2022 non-enum value forms (§7.2 +
+  §7.3) and §7.3 flag-only parameters for raw video fmtp.
+
+  Six non-enum value-form narrowings (each PRESENT → must satisfy
+  the spec rule; absence is the *-required check's concern):
+  - `width` / `height` — positive integer 1..32767 (§7.2)
+  - `exactframerate` — positive integer OR positive `n/d` ratio in
+    lowest terms via gcd(n, d) == 1 (§7.2 "numerically smallest
+    numerator value possible")
+  - `MAXUDP` — positive integer ≤ 8960 (§7.3 + ST 2110-10 §6.4
+    Extended UDP Size Limit)
+  - `PAR` — `W:H` with W,H positive integers in lowest terms (§7.3)
+  - `SSN` — `ST2110-20:2017` or `ST2110-20:2022` (§7.2: only those
+    two revisions defined)
+
+  Two flag-only narrowings (params[key] must be `true`, never a
+  string captured from `key=value`):
+  - `interlace` — bare-attribute flag (§7.3)
+  - `segmented` — bare-attribute flag (§7.3); cross-param SHALL
+    requiring `interlace` also present is deferred to 6.C.E.
+
+  Same `check_raw_video_fmtp_values` semantic check extended with
+  per-key validator functions (`make_pixel_dim_validator`,
+  `validate_exactframerate`, `validate_maxudp`, `validate_par`,
+  `validate_ssn`) plus a flag-only loop. Validators ported from the
+  1.0 parser's predicates (`valid_pixel_dim`, `valid_exactframerate`,
+  `valid_maxudp`, `valid_par`, the `_ssn20_pat`).
+
+  8 new error ids `st2110-20.a.fmtp.<key>-invalid-value` for width,
+  height, exactframerate, MAXUDP, PAR, SSN, interlace, segmented.
+  33 new tests; suite: 1259 green.
+
+Audit ref: REFACTOR-PLAN.md §5 Phase 6.C; audits/SPEC_INVENTORY.md
+ST 2110-20:2022 §7.2 / §7.3; ST 2110-10 §6.4.
+
 ### Changed
 
 - The inline `errors` table in `parse_sdp.lua` now delegates to

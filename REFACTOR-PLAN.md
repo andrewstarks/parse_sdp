@@ -548,15 +548,21 @@ ST 2110 check migrates under its new ID.
   alongside the §7.2 presence check, with a shared
   `each_raw_video_fmtp` helper. Value sets lifted verbatim from
   the 1.0 parser's VALID_* constants. 60 new tests; suite 1226 green.
-- **6.C (remaining: 6.C.D.2 + 6.C.E)** — 6.C.D.2: non-enum value
-  forms for raw video fmtp (width / height integer 1..32767;
-  exactframerate integer or N/D in lowest terms; MAXUDP integer
-  ≤8960; PAR W:H in lowest terms; SSN pattern `ST2110-20:YYYY`);
-  flag-only `interlace` / `segmented`. 6.C.E: cross-parameter
-  SHALLs (SSN-conditional on colorimetry/TCS, PM/MAXUDP,
-  KEY/colorimetry, 4:2:0/interlace, RANGE/BT2100). Also pending:
-  -22 jxsv fmtp parameter sets, -30 audio fmtp where defined,
-  -41 SSN/DIT.
+- **6.C.D.2 (complete)** — non-enum value forms for raw video fmtp
+  (width / height integer 1..32767; exactframerate integer or N/D
+  in lowest terms; MAXUDP integer ≤8960; PAR W:H in lowest terms;
+  SSN `ST2110-20:2017` or `ST2110-20:2022`) and flag-only
+  `interlace` / `segmented`. 8 new error ids
+  `st2110-20.a.fmtp.<key>-invalid-value`. Same
+  `check_raw_video_fmtp_values` semantic check extended with
+  per-key validator functions ported from the 1.0 parser's
+  predicates. 33 new tests; suite 1259 green.
+- **6.C (remaining: 6.C.E)** — cross-parameter SHALLs
+  (SSN-conditional on colorimetry/TCS, PM/MAXUDP forbid pair,
+  KEY/colorimetry coupling, 4:2:0/interlace forbid pair,
+  RANGE/BT2100 narrowing, segmented-requires-interlace). Also
+  pending: -22 jxsv fmtp parameter sets, -30 audio fmtp where
+  defined, -41 SSN/DIT.
 - **6.D (pending)** — required-attribute presence per media type
   (ts-refclk, mediaclk, ptime).
 - **6.E (pending)** — cross-stream invariants (RFC 7104 group:DUP,

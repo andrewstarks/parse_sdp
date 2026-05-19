@@ -498,3 +498,258 @@ describe("ST 2110-20 raw video fmtp — enum value sets", function()
       "a=fmtp:96 sampling=BOGUS;DID_SDID={0x41,0x05}")))
   end)
 end)
+
+-- ───────────────────────────────────────────────────────────────────────────
+-- Phase 6.C.D.2 — ST 2110-20 raw video fmtp non-enum value forms +
+-- §7.3 flag-only `interlace` / `segmented`. Six parameters carry value
+-- forms (integer ranges, fractions in lowest terms, fixed patterns)
+-- rather than enumerated sets; two are bare-attribute flags.
+
+describe("ST 2110-20 raw video fmtp — non-enum value forms", function()
+
+  local RAW_MEDIA  = "m=video 30000 RTP/AVP 96"
+  local RAW_RTPMAP = "a=rtpmap:96 raw/90000"
+
+  -- Build a raw fmtp where one required param is replaced (or one
+  -- optional param appended) with the given value. Mirrors the
+  -- helper in the enum block but parameter list is the complete §7.2
+  -- required set so optional params are appended.
+  local REQUIRED_PARAMS = {
+    "sampling=YCbCr-4:2:2", "width=1920", "height=1080",
+    "exactframerate=60000/1001", "depth=10", "colorimetry=BT709",
+    "PM=2110GPM", "SSN=ST2110-20:2022", "TP=2110TPN",
+  }
+
+  local function fmtp_with(key, val)
+    local parts = {}
+    local replaced = false
+    for _, p in ipairs(REQUIRED_PARAMS) do
+      if p:sub(1, #key + 1) == (key .. "=") then
+        parts[#parts + 1] = key .. "=" .. val
+        replaced = true
+      else
+        parts[#parts + 1] = p
+      end
+    end
+    if not replaced then
+      parts[#parts + 1] = key .. "=" .. val
+    end
+    return "a=fmtp:96 " .. table.concat(parts, ";")
+  end
+
+  -- Append a bare-flag token (no `=value`) to the complete required set.
+  local function fmtp_with_flag(key)
+    local parts = {}
+    for _, p in ipairs(REQUIRED_PARAMS) do
+      parts[#parts + 1] = p
+    end
+    parts[#parts + 1] = key
+    return "a=fmtp:96 " .. table.concat(parts, ";")
+  end
+
+  -- ── width / height [ST 2110-20:2022 §7.2] ────────────────────────────
+  for _, key in ipairs({ "width", "height" }) do
+    describe(("'%s' (integer 1..32767) [ST 2110-20:2022 §7.2]"):format(key),
+        function()
+      it(("accepts %s=1"):format(key), function()
+        assert.is_truthy(st2110.match(build_with_fmtp(
+          RAW_MEDIA, RAW_RTPMAP, fmtp_with(key, "1"))))
+      end)
+      it(("accepts %s=32767 (upper bound)"):format(key), function()
+        assert.is_truthy(st2110.match(build_with_fmtp(
+          RAW_MEDIA, RAW_RTPMAP, fmtp_with(key, "32767"))))
+      end)
+      it(("rejects %s=0"):format(key), function()
+        local doc, ctx = st2110.match(build_with_fmtp(
+          RAW_MEDIA, RAW_RTPMAP, fmtp_with(key, "0")))
+        assert.is_nil(doc)
+        assert.is_not_nil(finding_for(ctx,
+          "st2110-20.a.fmtp." .. key .. "-invalid-value"))
+      end)
+      it(("rejects %s=32768 (over upper bound)"):format(key), function()
+        local doc, ctx = st2110.match(build_with_fmtp(
+          RAW_MEDIA, RAW_RTPMAP, fmtp_with(key, "32768")))
+        assert.is_nil(doc)
+        assert.is_not_nil(finding_for(ctx,
+          "st2110-20.a.fmtp." .. key .. "-invalid-value"))
+      end)
+      it(("rejects non-integer %s"):format(key), function()
+        local doc, ctx = st2110.match(build_with_fmtp(
+          RAW_MEDIA, RAW_RTPMAP, fmtp_with(key, "abc")))
+        assert.is_nil(doc)
+        assert.is_not_nil(finding_for(ctx,
+          "st2110-20.a.fmtp." .. key .. "-invalid-value"))
+      end)
+    end)
+  end
+
+  -- ── exactframerate [ST 2110-20:2022 §7.2] ────────────────────────────
+  describe("'exactframerate' [ST 2110-20:2022 §7.2]", function()
+    it("accepts positive integer", function()
+      assert.is_truthy(st2110.match(build_with_fmtp(
+        RAW_MEDIA, RAW_RTPMAP, fmtp_with("exactframerate", "60"))))
+    end)
+    it("accepts 30000/1001 (lowest terms)", function()
+      assert.is_truthy(st2110.match(build_with_fmtp(
+        RAW_MEDIA, RAW_RTPMAP, fmtp_with("exactframerate", "30000/1001"))))
+    end)
+    it("rejects 0", function()
+      local doc, ctx = st2110.match(build_with_fmtp(
+        RAW_MEDIA, RAW_RTPMAP, fmtp_with("exactframerate", "0")))
+      assert.is_nil(doc)
+      assert.is_not_nil(finding_for(ctx,
+        "st2110-20.a.fmtp.exactframerate-invalid-value"))
+    end)
+    it("rejects 60000/2002 (not in lowest terms)", function()
+      -- 60000/2002 reduces to 30000/1001; §7.2 requires lowest terms.
+      local doc, ctx = st2110.match(build_with_fmtp(
+        RAW_MEDIA, RAW_RTPMAP, fmtp_with("exactframerate", "60000/2002")))
+      assert.is_nil(doc)
+      assert.is_not_nil(finding_for(ctx,
+        "st2110-20.a.fmtp.exactframerate-invalid-value"))
+    end)
+    it("rejects 60/0 (zero denominator)", function()
+      local doc, ctx = st2110.match(build_with_fmtp(
+        RAW_MEDIA, RAW_RTPMAP, fmtp_with("exactframerate", "60/0")))
+      assert.is_nil(doc)
+      assert.is_not_nil(finding_for(ctx,
+        "st2110-20.a.fmtp.exactframerate-invalid-value"))
+    end)
+  end)
+
+  -- ── MAXUDP [ST 2110-20:2022 §7.3 + ST 2110-10 §6.4] ──────────────────
+  describe("'MAXUDP' (positive int ≤8960) [ST 2110-20:2022 §7.3]", function()
+    it("accepts MAXUDP=1500", function()
+      assert.is_truthy(st2110.match(build_with_fmtp(
+        RAW_MEDIA, RAW_RTPMAP, fmtp_with("MAXUDP", "1500"))))
+    end)
+    it("accepts MAXUDP=8960 (upper bound)", function()
+      assert.is_truthy(st2110.match(build_with_fmtp(
+        RAW_MEDIA, RAW_RTPMAP, fmtp_with("MAXUDP", "8960"))))
+    end)
+    it("rejects MAXUDP=0", function()
+      local doc, ctx = st2110.match(build_with_fmtp(
+        RAW_MEDIA, RAW_RTPMAP, fmtp_with("MAXUDP", "0")))
+      assert.is_nil(doc)
+      assert.is_not_nil(finding_for(ctx,
+        "st2110-20.a.fmtp.MAXUDP-invalid-value"))
+    end)
+    it("rejects MAXUDP=8961 (over upper bound)", function()
+      local doc, ctx = st2110.match(build_with_fmtp(
+        RAW_MEDIA, RAW_RTPMAP, fmtp_with("MAXUDP", "8961")))
+      assert.is_nil(doc)
+      assert.is_not_nil(finding_for(ctx,
+        "st2110-20.a.fmtp.MAXUDP-invalid-value"))
+    end)
+  end)
+
+  -- ── PAR [ST 2110-20:2022 §7.3] ───────────────────────────────────────
+  describe("'PAR' (W:H in lowest terms) [ST 2110-20:2022 §7.3]", function()
+    it("accepts PAR=1:1", function()
+      assert.is_truthy(st2110.match(build_with_fmtp(
+        RAW_MEDIA, RAW_RTPMAP, fmtp_with("PAR", "1:1"))))
+    end)
+    it("accepts PAR=16:9", function()
+      assert.is_truthy(st2110.match(build_with_fmtp(
+        RAW_MEDIA, RAW_RTPMAP, fmtp_with("PAR", "16:9"))))
+    end)
+    it("rejects PAR=2:2 (not in lowest terms)", function()
+      local doc, ctx = st2110.match(build_with_fmtp(
+        RAW_MEDIA, RAW_RTPMAP, fmtp_with("PAR", "2:2")))
+      assert.is_nil(doc)
+      assert.is_not_nil(finding_for(ctx,
+        "st2110-20.a.fmtp.PAR-invalid-value"))
+    end)
+    it("rejects PAR=0:1", function()
+      local doc, ctx = st2110.match(build_with_fmtp(
+        RAW_MEDIA, RAW_RTPMAP, fmtp_with("PAR", "0:1")))
+      assert.is_nil(doc)
+      assert.is_not_nil(finding_for(ctx,
+        "st2110-20.a.fmtp.PAR-invalid-value"))
+    end)
+    it("rejects PAR=16-9 (wrong separator)", function()
+      local doc, ctx = st2110.match(build_with_fmtp(
+        RAW_MEDIA, RAW_RTPMAP, fmtp_with("PAR", "16-9")))
+      assert.is_nil(doc)
+      assert.is_not_nil(finding_for(ctx,
+        "st2110-20.a.fmtp.PAR-invalid-value"))
+    end)
+  end)
+
+  -- ── SSN [ST 2110-20:2022 §7.2] ───────────────────────────────────────
+  describe("'SSN' pattern [ST 2110-20:2022 §7.2]", function()
+    it("accepts SSN=ST2110-20:2017", function()
+      assert.is_truthy(st2110.match(build_with_fmtp(
+        RAW_MEDIA, RAW_RTPMAP, fmtp_with("SSN", "ST2110-20:2017"))))
+    end)
+    it("accepts SSN=ST2110-20:2022", function()
+      assert.is_truthy(st2110.match(build_with_fmtp(
+        RAW_MEDIA, RAW_RTPMAP, fmtp_with("SSN", "ST2110-20:2022"))))
+    end)
+    it("rejects SSN=ST2110-20:2019 (no such revision)", function()
+      local doc, ctx = st2110.match(build_with_fmtp(
+        RAW_MEDIA, RAW_RTPMAP, fmtp_with("SSN", "ST2110-20:2019")))
+      assert.is_nil(doc)
+      assert.is_not_nil(finding_for(ctx,
+        "st2110-20.a.fmtp.SSN-invalid-value"))
+    end)
+    it("rejects SSN=wrong (wrong shape)", function()
+      local doc, ctx = st2110.match(build_with_fmtp(
+        RAW_MEDIA, RAW_RTPMAP, fmtp_with("SSN", "wrong")))
+      assert.is_nil(doc)
+      assert.is_not_nil(finding_for(ctx,
+        "st2110-20.a.fmtp.SSN-invalid-value"))
+    end)
+  end)
+end)
+
+-- ───────────────────────────────────────────────────────────────────────────
+-- Phase 6.C.D.2 (cont.) — ST 2110-20:2022 §7.3 flag-only parameters.
+-- `interlace` and `segmented` must be bare-attribute flags, not kv-pairs.
+
+describe("ST 2110-20 raw video fmtp — flag-only [ST 2110-20:2022 §7.3]", function()
+
+  local RAW_MEDIA  = "m=video 30000 RTP/AVP 96"
+  local RAW_RTPMAP = "a=rtpmap:96 raw/90000"
+
+  -- Note: tests for `segmented` deliberately also include `interlace`
+  -- bare in the fmtp because §7.3 requires it. Cross-parameter SHALL
+  -- (segmented-without-interlace) lands in Phase 6.C.E.
+
+  it("accepts bare 'interlace' flag", function()
+    assert.is_truthy(st2110.match(build_with_fmtp(
+      RAW_MEDIA, RAW_RTPMAP,
+      RAW_FMTP_COMPLETE_PT96 .. ";interlace")))
+  end)
+
+  it("accepts bare 'segmented' flag (with interlace)", function()
+    assert.is_truthy(st2110.match(build_with_fmtp(
+      RAW_MEDIA, RAW_RTPMAP,
+      RAW_FMTP_COMPLETE_PT96 .. ";interlace;segmented")))
+  end)
+
+  it("rejects 'interlace=1' (must be flag, not kv)", function()
+    local doc, ctx = st2110.match(build_with_fmtp(
+      RAW_MEDIA, RAW_RTPMAP,
+      RAW_FMTP_COMPLETE_PT96 .. ";interlace=1"))
+    assert.is_nil(doc)
+    assert.is_not_nil(finding_for(ctx,
+      "st2110-20.a.fmtp.interlace-invalid-value"))
+  end)
+
+  it("rejects 'segmented=true' (must be flag, not kv)", function()
+    local doc, ctx = st2110.match(build_with_fmtp(
+      RAW_MEDIA, RAW_RTPMAP,
+      RAW_FMTP_COMPLETE_PT96 .. ";interlace;segmented=true"))
+    assert.is_nil(doc)
+    assert.is_not_nil(finding_for(ctx,
+      "st2110-20.a.fmtp.segmented-invalid-value"))
+  end)
+
+  -- NOT-SPEC: library — base tier carries no flag-only narrowing.
+  it("base tier accepts 'interlace=anything'", function()
+    assert.is_truthy(base.match(build_with_fmtp(
+      RAW_MEDIA, RAW_RTPMAP,
+      RAW_FMTP_COMPLETE_PT96 .. ";interlace=anything")))
+  end)
+end)
