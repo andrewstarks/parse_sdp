@@ -29,6 +29,16 @@ parser remains the shipping artifact on `main`.
   dump a starting policy table. Architecture-ready for the deferred
   severity-toggling feature (no toggleable behavior yet). 4 new tests
   in `spec/library_spec.lua`.
+- `parse_sdp/grammar/base.lua` — Phase 1 base SDP grammar skeleton.
+  Top-down `lpeg.P(rules)` for the RFC 8866 §5 document shape with
+  session-section / media-section sub-grammars and per-line wrappers.
+  Every leaf is a placeholder (`(1 - line_end)^1`) — value-set tightening
+  and rich-doc decomposition land in Phase 2. The exported `rules` table
+  is the composition unit Phases 6/7 will extend for st2110 / ipmx.
+- `spec/grammar_base_spec.lua` — 20 tests covering structural
+  acceptance/rejection: minimal SDP, optional fields, multiple time
+  descriptions and r= lines, missing required fields, wrong order,
+  bare LF rejection (Phase 5 will soften), empty values rejected.
 
 ### Changed
 
