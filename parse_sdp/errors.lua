@@ -278,4 +278,13 @@ M.register("sdp.a.fmtp.trailing-semicolon", {
   verified         = true,
 })
 
+M.register("sdp.m.rtpmap-required-for-dynamic-pt", {
+  kind             = "semantic",
+  default_severity = "error",
+  code             = "MISSING_FIELD",
+  message_template = "dynamic RTP payload type (96-127) requires a matching a=rtpmap",
+  spec_ref         = "RFC 8866 §8.2.3",
+  verified         = true,
+})
+
 return M

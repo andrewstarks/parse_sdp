@@ -100,6 +100,18 @@ shipping artifact for `require("parse_sdp")` callers.
   default-policy honoring, and ctx return semantics are in place. 7
   new tests covering wrapper behavior; the 80 existing capture tests
   now go through `base.match()` instead of `g:match()`.
+- **Phase 3.B:** first real semantic check — dynamic RTP PT requires
+  matching `a=rtpmap` (RFC 8866 §8.2.3). New registry entry
+  `sdp.m.rtpmap-required-for-dynamic-pt` (semantic / error /
+  MISSING_FIELD). The check walks `doc.media`, and for every media
+  block whose proto contains "RTP", confirms every dynamic-range
+  payload type (96–127) in `m.fmts` has a matching `a=rtpmap`
+  attribute. The rtpmap-PT extraction uses a small LPeg sub-grammar
+  rather than a Lua string match, keeping the discipline. Policy
+  overrides (`"off"` / `"warn"`) work. `fail_on_first = false`
+  collects every violation. 11 new tests including multi-PT
+  collection, policy variants, non-RTP proto skip, and correct
+  field_path attribution across media blocks.
 
 ### Changed
 

@@ -41,10 +41,11 @@ describe("base SDP grammar — document shape (RFC 8866 §5)", function()
 
   -- NOT-SPEC: library
   it("accepts multiple media blocks", function()
+    -- Dynamic PT 96 requires a=rtpmap (RFC 8866 §8.2.3, Phase 3.B).
     assert.is_truthy(base.match(minimal(nil, {
-      { "m=video 49170 RTP/AVP 96" },
+      { "m=video 49170 RTP/AVP 96", "a=rtpmap:96 H264/90000" },
       { "m=audio 49172 RTP/AVP 0"  },
-      { "m=text 49174 RTP/AVP 96"  },
+      { "m=text 49174 RTP/AVP 96",  "a=rtpmap:96 text/plain" },
     })))
   end)
 
@@ -507,7 +508,7 @@ describe("base SDP grammar — media array shape (Phase 2.C)", function()
   -- NOT-SPEC: library
   it("doc.media has one entry per m= section", function()
     local doc = base.match(minimal(nil, {
-      { "m=video 49170 RTP/AVP 96" },
+      { "m=video 49170 RTP/AVP 96", "a=rtpmap:96 H264/90000" },
       { "m=audio 49172 RTP/AVP 0"  },
     }))
     assert.is_table(doc.media)
@@ -518,7 +519,8 @@ describe("base SDP grammar — media array shape (Phase 2.C)", function()
   it("captures media-level info when i= present", function()
     local doc = base.match(minimal(nil, {
       { "m=video 49170 RTP/AVP 96",
-        "i=Video stream description" },
+        "i=Video stream description",
+        "a=rtpmap:96 H264/90000" },
     }))
     assert.equal("Video stream description", doc.media[1].info)
   end)
@@ -527,7 +529,8 @@ describe("base SDP grammar — media array shape (Phase 2.C)", function()
   it("captures media-level connection", function()
     local doc = base.match(minimal(nil, {
       { "m=video 49170 RTP/AVP 96",
-        "c=IN IP4 239.1.1.1/127" },
+        "c=IN IP4 239.1.1.1/127",
+        "a=rtpmap:96 H264/90000" },
     }))
     assert.is_table(doc.media[1].connection)
     assert.equal("IP4",            doc.media[1].connection.addr_type)
@@ -539,7 +542,8 @@ describe("base SDP grammar — media array shape (Phase 2.C)", function()
     local doc = base.match(minimal(nil, {
       { "m=video 49170 RTP/AVP 96",
         "b=AS:5000",
-        "b=TIAS:4500000" },
+        "b=TIAS:4500000",
+        "a=rtpmap:96 H264/90000" },
     }))
     assert.equal(2, #doc.media[1].bandwidths)
     assert.equal("AS",       doc.media[1].bandwidths[1].type)
@@ -550,7 +554,9 @@ describe("base SDP grammar — media array shape (Phase 2.C)", function()
 
   -- NOT-SPEC: library
   it("media-level info / connection are nil when their lines are absent", function()
-    local doc = base.match(minimal(nil, { { "m=video 49170 RTP/AVP 96" } }))
+    -- Static PT 0 (PCMU) avoids needing rtpmap to exercise the
+    -- "absent-optional-field" path.
+    local doc = base.match(minimal(nil, { { "m=audio 49172 RTP/AVP 0" } }))
     assert.is_nil(doc.media[1].info)
     assert.is_nil(doc.media[1].connection)
     assert.is_table(doc.media[1].bandwidths)
@@ -725,7 +731,7 @@ describe("base SDP grammar — media line + attributes (Phase 2.E)", function()
   -- NOT-SPEC: library
   it("captures m= fields flat at media-block top level (RFC 8866 §5.14)", function()
     local doc = base.match(minimal(nil, {
-      { "m=video 49170 RTP/AVP 96" },
+      { "m=video 49170 RTP/AVP 96", "a=rtpmap:96 H264/90000" },
     }))
     local m = doc.media[1]
     assert.equal("video",    m.media)
@@ -741,7 +747,7 @@ describe("base SDP grammar — media line + attributes (Phase 2.E)", function()
   -- NOT-SPEC: library
   it("captures m= port_count when present (port/count form)", function()
     local doc = base.match(minimal(nil, {
-      { "m=video 49170/2 RTP/AVP 96" },
+      { "m=video 49170/2 RTP/AVP 96", "a=rtpmap:96 H264/90000" },
     }))
     assert.equal(49170, doc.media[1].port)
     assert.equal(2,     doc.media[1].port_count)
@@ -750,8 +756,13 @@ describe("base SDP grammar — media line + attributes (Phase 2.E)", function()
 
   -- NOT-SPEC: library
   it("captures m= with multiple format tokens", function()
+    -- Dynamic PTs require matching a=rtpmap (RFC 8866 §8.2.3); include them
+    -- so the test focuses on fmts-array capture, not the semantic check.
     local doc = base.match(minimal(nil, {
-      { "m=video 49170 RTP/AVP 96 97 98" },
+      { "m=video 49170 RTP/AVP 96 97 98",
+        "a=rtpmap:96 H264/90000",
+        "a=rtpmap:97 H265/90000",
+        "a=rtpmap:98 VP9/90000" },
     }))
     assert.same({"96", "97", "98"}, doc.media[1].fmts)
   end)
@@ -759,7 +770,8 @@ describe("base SDP grammar — media line + attributes (Phase 2.E)", function()
   -- NOT-SPEC: library
   it("captures proto with slashes verbatim", function()
     local doc = base.match(minimal(nil, {
-      { "m=video 49170 RTP/SAVP 96" },
+      { "m=video 49170 RTP/SAVP 96",
+        "a=rtpmap:96 H264/90000" },
     }))
     assert.equal("RTP/SAVP", doc.media[1].proto)
   end)
@@ -822,7 +834,9 @@ describe("base SDP grammar — media line + attributes (Phase 2.E)", function()
 
   -- NOT-SPEC: library
   it("session.attributes and media.attributes are empty arrays when absent", function()
-    local doc = base.match(minimal(nil, { { "m=video 49170 RTP/AVP 96" } }))
+    -- Using static PT 0 (PCMU) so the dynamic-PT-requires-rtpmap check
+    -- (RFC 8866 §8.2.3, Phase 3.B) doesn't fire.
+    local doc = base.match(minimal(nil, { { "m=audio 49172 RTP/AVP 0" } }))
     assert.is_table(doc.session.attributes)
     assert.equal(0, #doc.session.attributes)
     assert.is_table(doc.media[1].attributes)
@@ -831,8 +845,10 @@ describe("base SDP grammar — media line + attributes (Phase 2.E)", function()
 
   -- NOT-SPEC: library
   it("attribute values may contain colons (only the first split point counts)", function()
+    -- Static PT 0 dodges the dynamic-PT-requires-rtpmap check; we're
+    -- testing colon handling in attribute values here, not semantic checks.
     local doc = base.match(minimal(nil, {
-      { "m=video 49170 RTP/AVP 96",
+      { "m=audio 49172 RTP/AVP 0",
         "a=ts-refclk:ptp=IEEE1588-2008:00-1D-9A-FF-FE-2C-32-0F:0" },
     }))
     local a = doc.media[1].attributes[1]
@@ -901,6 +917,114 @@ describe("base SDP grammar — full round-trip doc shape (Phase 2 end)", functio
     assert.equal(2, #doc.media[1].attributes)
     assert.equal("audio", doc.media[2].media)
     assert.equal(1, #doc.media[2].attributes)
+  end)
+
+end)
+
+describe("base SDP grammar — dynamic-PT requires rtpmap (Phase 3.B, RFC 8866 §8.2.3)", function()
+
+  local function build(media_block)
+    return lines_to_sdp({
+      "v=0", "o=- 1 1 IN IP4 127.0.0.1", "s=X", "t=0 0",
+      table.unpack(media_block),
+    })
+  end
+
+  it("accepts dynamic PT 96 when a matching a=rtpmap is present", function()
+    local doc, ctx = base.match(build({
+      "m=video 49170 RTP/AVP 96",
+      "a=rtpmap:96 H264/90000",
+    }))
+    assert.is_table(doc)
+    assert.equal(0, #ctx.findings)
+  end)
+
+  it("rejects dynamic PT 96 with no matching a=rtpmap (RFC 8866 §8.2.3)", function()
+    local doc, ctx = base.match(build({
+      "m=video 49170 RTP/AVP 96",
+    }))
+    assert.is_nil(doc)
+    assert.equal(1, #ctx.findings)
+    local f = ctx.findings[1]
+    assert.equal("sdp.m.rtpmap-required-for-dynamic-pt", f.id)
+    assert.equal("RFC 8866 §8.2.3", f.spec_ref)
+    assert.equal("MISSING_FIELD",   f.code)
+    assert.equal("error",           f.severity)
+    assert.equal("media[1].attributes[rtpmap]", f.field_path)
+  end)
+
+  it("accepts static PT 0 (PCMU) without rtpmap (static, not in 96-127)", function()
+    local doc, ctx = base.match(build({ "m=audio 49172 RTP/AVP 0" }))
+    assert.is_table(doc)
+    assert.equal(0, #ctx.findings)
+  end)
+
+  it("accepts static PT 31 (H261) without rtpmap", function()
+    local doc, ctx = base.match(build({ "m=video 49170 RTP/AVP 31" }))
+    assert.is_table(doc)
+    assert.equal(0, #ctx.findings)
+  end)
+
+  it("rejects on the FIRST missing rtpmap when several dynamic PTs are unmatched", function()
+    local doc, ctx = base.match(build({
+      "m=video 49170 RTP/AVP 96 97",
+      -- no rtpmap for either
+    }))
+    assert.is_nil(doc)
+    -- fail_on_first default: at least one finding, stops there.
+    assert.is_truthy(#ctx.findings >= 1)
+  end)
+
+  it("collects all missing-rtpmap findings when fail_on_first = false", function()
+    local doc, ctx = base.match(build({
+      "m=video 49170 RTP/AVP 96 97 98",
+    }), { fail_on_first = false })
+    -- Match still succeeds because record() returns true when not failing.
+    assert.is_table(doc)
+    assert.equal(3, #ctx.findings)
+    for _, f in ipairs(ctx.findings) do
+      assert.equal("sdp.m.rtpmap-required-for-dynamic-pt", f.id)
+    end
+  end)
+
+  it("skips the check entirely when policy['sdp.m.rtpmap-required-for-dynamic-pt'] = 'off'", function()
+    local doc, ctx = base.match(build({
+      "m=video 49170 RTP/AVP 96",
+    }), { policy = { ["sdp.m.rtpmap-required-for-dynamic-pt"] = "off" } })
+    assert.is_table(doc)
+    assert.equal(0, #ctx.findings)
+  end)
+
+  it("downgrades to warning when policy maps the id to 'warn'", function()
+    local doc, ctx = base.match(build({
+      "m=video 49170 RTP/AVP 96",
+    }), { policy = { ["sdp.m.rtpmap-required-for-dynamic-pt"] = "warn" } })
+    assert.is_table(doc, "warn-severity findings do not fail the match")
+    assert.equal(1, #ctx.findings)
+    assert.equal("warn", ctx.findings[1].severity)
+  end)
+
+  it("does NOT fire for non-RTP proto (e.g., udp)", function()
+    -- The check is gated on proto containing "RTP".
+    local doc, ctx = base.match(build({ "m=video 49170 udp 96" }))
+    assert.is_table(doc)
+    assert.equal(0, #ctx.findings)
+  end)
+
+  it("fires only on the offending media block when multiple are present", function()
+    local doc, ctx = base.match(build({
+      "m=audio 49172 RTP/AVP 0",
+      "m=video 49170 RTP/AVP 96",
+    }))
+    assert.is_nil(doc)
+    -- field_path should name media[2] (the violator), not media[1].
+    assert.equal("media[2].attributes[rtpmap]", ctx.findings[1].field_path)
+  end)
+
+  it("uses the registry message_template", function()
+    local doc, ctx = base.match(build({ "m=video 49170 RTP/AVP 96" }))
+    assert.is_nil(doc)
+    assert.matches("dynamic RTP payload type", ctx.findings[1].message)
   end)
 
 end)

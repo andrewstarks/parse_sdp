@@ -35,25 +35,60 @@ local P, R, S, V, C, Cg, Ct, Cmt, Carg =
 -- than V-rules because they are not candidates for per-tier override.
 local SP = P(" ")
 
--- Document-level Cmt callback. Phase 3 wires in semantic / cross-section
--- checks; Phase 3.A ships an empty scaffold that threads Carg(1) into the
--- callback so subsequent sub-commits can record findings via errors.record.
+-- ── Semantic checks ─────────────────────────────────────────────────────────
+-- Cross-section invariants the grammar alone can't express. Each check
+-- inspects the captured doc and emits findings via errors.record.
+
+-- Sub-grammar for extracting the payload-type token from an rtpmap value
+-- string. rtpmap value form is "<pt> <enc>/<clock>[/<chan>]" per RFC 8866
+-- §6.6; we only need the leading PT here.
+local rtpmap_pt = C(R("09") ^ 1)
+
+-- RFC 8866 §8.2.3: "If the payload type number is dynamically assigned by
+-- this session description, an additional 'a=rtpmap:' attribute MUST be
+-- included to specify the format name and parameters as defined by the
+-- media type registration for the payload format."
+-- Dynamic range is PT 96–127 (RFC 3551 §6 / RFC 8866 §6.6).
+local function check_dynamic_pt_rtpmap(doc, ctx)
+  for i, m in ipairs(doc.media) do
+    if type(m.proto) == "string" and m.proto:find("RTP", 1, true) then
+      local rtpmap_pts = {}
+      for _, attr in ipairs(m.attributes) do
+        if attr.name == "rtpmap" then
+          local pt = rtpmap_pt:match(attr.value or "")
+          if pt then rtpmap_pts[pt] = true end
+        end
+      end
+      for _, fmt in ipairs(m.fmts) do
+        local pt_n = tonumber(fmt)
+        if pt_n and pt_n >= 96 and pt_n <= 127 and not rtpmap_pts[fmt] then
+          local cont = errors.record(ctx, "sdp.m.rtpmap-required-for-dynamic-pt", {
+            field_path = string.format("media[%d].attributes[rtpmap]", i),
+          })
+          if not cont then return false end
+        end
+      end
+    end
+  end
+  return true
+end
+
+-- Document-level Cmt callback. Walks the captured doc, runs each semantic
+-- check in order, records findings into ctx, and either continues (return
+-- pos, doc) or fails the match (return false) per the ctx.fail_on_first
+-- policy.
 --
 -- Signature follows the LPeg manual's Cmt contract:
 --   f(subject, position, capture1, ..., captureN) → control values
--- The capture pattern here is `Ct(<body>) * Carg(1)`, so the captures are
--- [doc, ctx]. Returning `pos, doc` keeps the doc capture and consumes the
--- empty Carg, so callers see only `doc` as the match result.
-local function validate_doc(subject, position, doc, ctx)
-  -- Grammar-only consumers (g:match(text) with no extra arg) get ctx=nil.
-  -- A default ctx still records findings but the caller never sees them;
-  -- hard-fail-on-first remains the implicit policy.
+-- The capture pattern is `Ct(body) * Carg(1)`, so captures are [doc, ctx].
+local function validate_doc(_, position, doc, ctx)
+  -- Grammar-only consumers (no extra-arg path) get ctx=nil; default to
+  -- hard-fail-on-first with findings discarded.
   if ctx == nil then
     ctx = { findings = {}, fail_on_first = true }
   end
 
-  -- Phase 3.B+ adds cross-section checks here. For 3.A the scaffold is a
-  -- no-op: doc passes through unchanged.
+  if not check_dynamic_pt_rtpmap(doc, ctx) then return false end
 
   return position, doc
 end
