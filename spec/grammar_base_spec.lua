@@ -1070,16 +1070,19 @@ describe("base SDP grammar — connection-address value-form (Phase 3.C, RFC 886
 
   describe("scope: media-level c= is also checked", function()
 
-    -- NOT-SPEC: library
-    it("media-level IPv4 multicast missing TTL is rejected with media[N].connection path", function()
+    -- NOT-SPEC: library — Phase 6.H moved this check in-grammar (Cmt on
+    -- c_value) so findings now carry line/col instead of the
+    -- session.connection / media[N].connection field_path the doc-walk
+    -- used to emit. Same check, better diagnostic shape.
+    it("media-level IPv4 multicast missing TTL is rejected", function()
       local doc, ctx = base.match(lines_to_sdp({
         "v=0", "o=- 1 1 IN IP4 127.0.0.1", "s=X", "t=0 0",
         "m=audio 49172 RTP/AVP 0",
-        "c=IN IP4 224.2.17.12",  -- missing /ttl
+        "c=IN IP4 224.2.17.12",  -- missing /ttl, line 6
       }))
       assert.is_nil(doc)
       assert.equal("sdp.c.ipv4-multicast.ttl-required", ctx.findings[1].id)
-      assert.equal("media[1].connection", ctx.findings[1].field_path)
+      assert.equal(6, ctx.findings[1].line)
     end)
 
   end)

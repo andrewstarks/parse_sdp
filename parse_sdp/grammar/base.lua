@@ -29,8 +29,8 @@
 local lpeg      = require("lpeg")
 local errors    = require("parse_sdp.errors")
 local addresses = require("parse_sdp.grammar.addresses")
-local P, R, S, V, C, Cc, Cg, Ct, Cmt, Carg =
-  lpeg.P, lpeg.R, lpeg.S, lpeg.V, lpeg.C, lpeg.Cc, lpeg.Cg, lpeg.Ct, lpeg.Cmt, lpeg.Carg
+local P, R, S, V, C, Cc, Cg, Cb, Ct, Cmt, Carg =
+  lpeg.P, lpeg.R, lpeg.S, lpeg.V, lpeg.C, lpeg.Cc, lpeg.Cg, lpeg.Cb, lpeg.Ct, lpeg.Cmt, lpeg.Carg
 
 -- Primary patterns shared across rules. These are plain LPeg values rather
 -- than V-rules because they are not candidates for per-tier override.
@@ -70,83 +70,74 @@ local ipv6_numaddr = C(R("09") ^ 1) * P(-1)
 
 -- Validate one connection-address. Records findings to ctx; returns true to
 -- continue, false to fail the match (when record() returns false under
--- fail_on_first=true for an error-severity finding).
-local function validate_c_address(addr_type, address, ctx, path)
+-- fail_on_first=true for an error-severity finding). Called from a trailing
+-- Cmt on the c_value rule (Phase 6.H), so it runs once per c= line at
+-- parse time and pos carries the line/col for diagnostics.
+local function validate_c_address(addr_type, address, ctx, pos)
   local addr, suffix = split_c_addr:match(address or "")
 
   if addr_type == "IP4" then
     if not addr or not addresses.ipv4:match(addr) then
-      return errors.record(ctx, "sdp.c.address.invalid-ipv4", { field_path = path })
+      return errors.record(ctx, "sdp.c.address.invalid-ipv4", { pos = pos })
     end
     if addresses.is_ipv4_multicast(addr) then
       if not suffix then
         return errors.record(ctx, "sdp.c.ipv4-multicast.ttl-required",
-                             { field_path = path })
+                             { pos = pos })
       end
       local ttl_str, num_str = ipv4_mcast_suffix:match(suffix)
       if not ttl_str then
         return errors.record(ctx, "sdp.c.ipv4-multicast.ttl-required",
-                             { field_path = path })
+                             { pos = pos })
       end
       local ttl = tonumber(ttl_str)
       if not ttl or ttl > 255 then
         return errors.record(ctx, "sdp.c.ipv4-multicast.ttl-out-of-range",
-                             { field_path = path })
+                             { pos = pos })
       end
       if num_str then
         local n = tonumber(num_str)
         if not n or n < 1 then
           return errors.record(ctx, "sdp.c.ipv4-multicast.numaddr-invalid",
-                               { field_path = path })
+                               { pos = pos })
         end
       end
     elseif suffix then
       return errors.record(ctx, "sdp.c.ipv4-unicast.suffix-not-allowed",
-                           { field_path = path })
+                           { pos = pos })
     end
   elseif addr_type == "IP6" then
     if not addr or not addresses.ipv6:match(addr) then
-      return errors.record(ctx, "sdp.c.address.invalid-ipv6", { field_path = path })
+      return errors.record(ctx, "sdp.c.address.invalid-ipv6", { pos = pos })
     end
     if addresses.is_ipv6_multicast(addr) then
       if suffix then
         local num_str = ipv6_numaddr:match(suffix)
         if not num_str then
           return errors.record(ctx, "sdp.c.ipv6-multicast.suffix-form-invalid",
-                               { field_path = path })
+                               { pos = pos })
         end
         local n = tonumber(num_str)
         if not n or n < 1 then
           return errors.record(ctx, "sdp.c.ipv6-multicast.numaddr-invalid",
-                               { field_path = path })
+                               { pos = pos })
         end
       end
     elseif suffix then
       return errors.record(ctx, "sdp.c.ipv6-unicast.suffix-not-allowed",
-                           { field_path = path })
+                           { pos = pos })
     end
   end
   return true
 end
 
--- Top-level check: validate every c= line (session-level and per-media).
-local function check_connection_addresses(doc, ctx)
-  if doc.session.connection then
-    local c = doc.session.connection
-    if not validate_c_address(c.addr_type, c.address, ctx, "session.connection") then
-      return false
-    end
-  end
-  for i, m in ipairs(doc.media) do
-    if m.connection then
-      local c = m.connection
-      local path = string.format("media[%d].connection", i)
-      if not validate_c_address(c.addr_type, c.address, ctx, path) then
-        return false
-      end
-    end
-  end
-  return true
+-- Cmt callback for the trailing-validate hook on c_value. Reads the captured
+-- addr_type + address via Cb (resolves within the surrounding c_value Ct,
+-- since the Cmt is INSIDE that Ct just after the three Cgs close).
+local function c_value_validate(_, pos, addr_type, address, ctx)
+  if not ctx then return pos end
+  if not validate_c_address(addr_type, address, ctx, pos) then return false end
+  return pos
 end
 
 -- RFC 8866 §8.2.3: "If the payload type number is dynamically assigned by
@@ -328,8 +319,14 @@ local record_trailing_ws      = record_soft("sdp.line.trailing-whitespace")
 -- Ordered list of cross-section semantic checks the document-level Cmt
 -- runs after capture. Phase 6 extends this list per tier via M.extend; the
 -- order in which checks execute is the order they appear here.
+--
+-- Phase 6.H: check_connection_addresses moved in-grammar (Cmt on
+-- c_value). The remaining four are genuine cross-section invariants —
+-- check_dynamic_pt_rtpmap + check_tsrefclk_traceability are per-media-
+-- block and could move to a `media_section` Cmt if that infrastructure
+-- gets added; check_mid_uniqueness + check_group_attribute_invariants
+-- span media blocks and stay doc-level either way.
 local base_semantic_checks = {
-  check_connection_addresses,
   check_dynamic_pt_rtpmap,
   check_mid_uniqueness,
   check_group_attribute_invariants,
@@ -499,6 +496,13 @@ local rules = {
         Cg(V"nettype",  "net_type")  * SP
       * Cg(V"addrtype", "addr_type") * SP
       * Cg(V"token",    "address")
+      -- Phase 6.H: validate the captured address inline (multicast TTL/
+      -- numaddr suffix forms, IPv4/IPv6 syntax, unicast-with-suffix
+      -- rejection). Was a post-parse doc walk via check_connection_
+      -- addresses; lifted in-grammar so findings carry line/col and the
+      -- check fires the moment a c= line completes. Cb resolves within
+      -- this Ct because the trailing Cmt sits just after the three Cgs.
+      * Cmt(Cb"addr_type" * Cb"address" * Carg(1), c_value_validate)
     ),
 
   -- Text fields. RFC 8866 §5.4, §5.5, §5.6 — each takes a "text" value

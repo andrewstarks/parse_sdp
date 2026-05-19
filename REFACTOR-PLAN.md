@@ -729,6 +729,17 @@ separate follow-up.
   replaced with `pos`, fixing the smell and threading position in
   one pass. 8 new tests (3 unit + 3 unit + 2 integration); suite
   1546 green.
+- **6.H (complete)** — applied 6.F's principle to base.lua.
+  `check_connection_addresses` moved in-grammar as a Cmt on
+  `c_value` (uses Cb"addr_type" + Cb"address" inside the
+  surrounding Ct; pos threads through 6.G's plumbing). Audited
+  the remaining 4 base semantic_checks:
+  `check_dynamic_pt_rtpmap` and `check_tsrefclk_traceability` are
+  per-media-block and could move to a `media_section` Cmt if/when
+  that infrastructure lands; `check_mid_uniqueness` and `check_group_attribute_invariants`
+  span media blocks and stay doc-level. base_semantic_checks
+  dropped from 5 to 4 entries. One test relaxed (line-number
+  assertion instead of field_path). Suite unchanged at 1546.
 
 **Phase 7 — IPMX grammar via `extend(st2110_rules, ...)`.**
 Same pattern, IPMX-specific from TR-10 markdowns. Re-verify each citation

@@ -1428,6 +1428,54 @@ worth scrutinizing.
 
 Audit ref: REFACTOR-PLAN.md §5 Phase 6.G.
 
+- **Phase 6.H:** in-grammar refactor for base SDP's connection-address
+  validation; follow-up audit of base.lua's remaining
+  `semantic_checks`.
+
+  Same principle as 6.F applied to base.lua: a per-line check
+  shouldn't sit in `semantic_checks`. `check_connection_addresses`
+  was a doc walk that iterated `doc.session.connection` plus every
+  `doc.media[i].connection` and validated each address (IPv4/IPv6
+  syntax, multicast TTL/numaddr suffix forms, unicast-with-suffix
+  rejection). Lifted in-grammar as a `Cmt` appended to `c_value`,
+  inside the existing Ct so `Cb"addr_type"` + `Cb"address"` resolve
+  cleanly. Same validation logic in `validate_c_address`, now taking
+  `(addr_type, address, ctx, pos)` instead of `(..., path)`. The
+  per-c= line position threads through 6.G's `loc.pos` plumbing, so
+  findings carry real line numbers.
+
+  Audit of base.lua's remaining 4 semantic_checks (so the layering
+  is documented even where no move happened):
+
+  - `check_dynamic_pt_rtpmap` — per-media-block; could move to a
+    `media_section` Cmt if that infrastructure gets added.
+    Currently a legitimate semantic_check.
+  - `check_tsrefclk_traceability` — per-level (session + each
+    media). Same story.
+  - `check_mid_uniqueness` — cross-media-block; genuinely
+    doc-level.
+  - `check_group_attribute_invariants` — cross-section (session
+    `a=group` references mids in media blocks); genuinely
+    doc-level.
+
+  Net: base.lua's `semantic_checks` list dropped from 5 to 4. The
+  remaining 4 carry an explanatory comment classifying each as
+  "could move with media_section Cmt infra" vs "genuinely
+  cross-section". When the media_section Cmt slot lands, 2 more
+  base checks + the 6.F bridge check `check_rtpmap_requires_fmtp`
+  in st2110 will all migrate there.
+
+  One test in `spec/grammar_base_spec.lua` relaxed: the test for
+  "media-level IPv4 multicast missing TTL is rejected with
+  media[N].connection path" had its field_path assertion replaced
+  with a line-number assertion (line 6, the c= line). Same shape
+  as the 6.F test relaxation for the AM824 channels-required
+  multi-block test.
+
+  Suite: 1546 green.
+
+Audit ref: REFACTOR-PLAN.md §5 Phase 6.H.
+
 The grammar tier now matches 1.0 parity on every well-grounded
 per-encoding required-attribute and cross-attribute SHALL. Three
 out-of-parity flags carry forward for separate audit follow-up:
