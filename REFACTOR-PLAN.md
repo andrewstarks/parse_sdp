@@ -717,6 +717,18 @@ separate follow-up.
   field_path prefix (grammar doesn't track media-index). Suite
   unchanged at 1538 green. Updates [[lpeg-discipline]] memory
   with the per-category placement rule.
+- **6.G (complete)** — diagnostic-position plumbing + cleanup.
+  Wires byte position from in-grammar Cmts to (line, col) in
+  the formatted error output: `errors.pos_to_line_col` + ctx.text
+  threaded through `make_match` + every Cmt that emits a finding
+  now passes `loc.pos = pos`. Per-fmtp / per-rtpmap findings
+  recover real line numbers (col, too), restoring most of the
+  diagnostic context the 6.F refactor traded away when it dropped
+  the `media[N]` field_path prefix. Also: dead `path` parameter
+  on the 10 raw/jxsv cross-param helpers (always `""` since 6.F)
+  replaced with `pos`, fixing the smell and threading position in
+  one pass. 8 new tests (3 unit + 3 unit + 2 integration); suite
+  1546 green.
 
 **Phase 7 — IPMX grammar via `extend(st2110_rules, ...)`.**
 Same pattern, IPMX-specific from TR-10 markdowns. Re-verify each citation

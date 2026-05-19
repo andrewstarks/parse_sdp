@@ -1357,6 +1357,77 @@ memory note updated with the per-category placement rule and the
 explicit naming of `semantic_checks` as a Lua-massage pipeline
 worth scrutinizing.
 
+- **Phase 6.G:** in-grammar Cmts now carry byte position → line/col
+  for human-readable error diagnostics, plus assorted cleanups.
+
+  User pushback after 6.F: per-fmtp / per-rtpmap findings dropped
+  the `media[N].attributes[…]` field_path prefix that doc-walks
+  used to carry, and the line/col fallback in `errors.format` never
+  fired because in-grammar Cmts emitted findings with `loc = {}`
+  (no position info). Net result: a 4-media-block SDP with a bad
+  raw fmtp produced "fmtp 'sampling' invalid value" with no
+  indication of which block.
+
+  This slice wires position through. New `errors.pos_to_line_col(
+  text, pos)` translates an LPeg byte position to (1-indexed line,
+  col) via O(n) LF scan. `errors.record` now accepts `loc.pos` and,
+  when `ctx.text` is present, translates to populate the finding's
+  `line` / `col` fields. `make_match` in
+  `parse_sdp/grammar/base.lua` stores the input text in `ctx.text`
+  automatically.
+
+  Updated every in-grammar Cmt call site to pass `loc.pos = pos`:
+  `record_soft` and `fmtp_trailing_sep_record` in base.lua;
+  `record_rate_and_media`, the AM824 rtpmap channels-required +
+  channels-even Cmts, `fmtp_st2110_raw_kv_pair`
+  (whitespace-around-=), and the 6.F `fmtp_dispatch` in st2110.lua.
+  The 9 per-fmtp check functions (raw / jxsv / audio / -41) take
+  `(params, ctx, pos)` or `(params, ctx, pos, encoding)` and pass
+  pos through to `errors.record`. The 10 raw / jxsv cross-param
+  helpers had their dead `path` parameter (always passed as `""`
+  since 6.F) replaced with `pos` — fixes the dead-param smell AND
+  threads position in one pass.
+
+  Diagnostic improvement, before / after:
+
+  ```text
+  error: [MISSING_FIELD] fmtp 'sampling' invalid value
+    = note: required by ST 2110-20:2022 §7.2
+
+  error: [MISSING_FIELD] fmtp 'sampling' invalid value
+   --> line 8, col 127
+    = note: required by ST 2110-20:2022 §7.2
+  ```
+
+  Doc-walks (semantic_checks) continue to record without `pos` —
+  they don't have one, since they iterate the captured doc after
+  parsing. Their findings keep `line=0 col=0` (no regression vs.
+  pre-6.F).
+
+  Cleanup: dropped a stale 4-line orphan comment in
+  `parse_sdp/grammar/st2110.lua` that referenced the deleted
+  `check_am824_rtpmap_channels_*` helpers (relics of the 6.F
+  refactor). Consolidated a doubled MAXUDP-forbidden comment block.
+
+  8 new tests: 3 unit tests for `pos_to_line_col` + 3 unit tests
+  for `errors.record` loc.pos translation in
+  `spec/error_registry_spec.lua`; 2 integration tests in
+  `spec/grammar_st2110_spec.lua` verifying that the raw-fmtp
+  missing-sampling and AM824 missing-channels findings now carry
+  real line numbers. Suite: 1546 green.
+
+  Implementation note: under `fail_on_first=true`, an in-grammar
+  Cmt that returns `false` (because record returned cont=false)
+  fails its grammar match, which triggers LPeg backtracking — the
+  same Cmt may fire again under a different alternation branch,
+  appending a duplicate finding. Only the first finding is
+  user-visible (the doc returns nil and only the deepest-failure
+  is reported), so the duplicate is invisible in practice. The new
+  integration tests use `fail_on_first=false` to dodge this and
+  inspect findings directly.
+
+Audit ref: REFACTOR-PLAN.md §5 Phase 6.G.
+
 The grammar tier now matches 1.0 parity on every well-grounded
 per-encoding required-attribute and cross-attribute SHALL. Three
 out-of-parity flags carry forward for separate audit follow-up:

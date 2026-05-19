@@ -140,11 +140,40 @@ function M.validate_policy(policy)
   return true
 end
 
+-- ─── Position helpers ───────────────────────────────────────────────────────
+
+-- Translate an LPeg byte position into (line, col) against the original
+-- input text. Lines are 1-indexed; columns are 1-indexed within each line.
+-- LF terminates a line for both bare-LF and CRLF (we count LF only — CR
+-- precedes LF and sits at the previous line's last column). Pure O(n)
+-- scan; finding emission is rare enough that an indexed cache isn't worth
+-- the complexity.
+function M.pos_to_line_col(text, pos)
+  if not text or not pos or pos < 1 then return 0, 0 end
+  if pos > #text + 1 then pos = #text + 1 end
+  local line, last_lf = 1, 0
+  for i = 1, pos - 1 do
+    if text:byte(i) == 10 then  -- LF
+      line = line + 1
+      last_lf = i
+    end
+  end
+  return line, pos - last_lf
+end
+
 -- ─── record() — the only way a check site emits a finding ───────────────────
 
--- ctx: { findings = {}, policy = {?}, fail_on_first = bool }
+-- ctx: { findings = {}, policy = {?}, fail_on_first = bool, text = ?str }
 -- id:  registered check id
--- loc: { line=, col=, context=, field_path= }   (any field may be nil)
+-- loc: { line=, col=, context=, field_path=, pos= }   (any field may be nil)
+--
+-- Position resolution: when loc.pos and ctx.text are both present, line/col
+-- are computed from pos. Otherwise loc.line/col are used as-is (0 when
+-- absent). This lets in-grammar Cmt callbacks pass `pos` (cheap — they
+-- already receive it) and get real positions in the formatted output,
+-- without making semantic_checks doc walks (which have no pos) carry extra
+-- machinery.
+--
 -- Returns true to continue matching, false to fail the match (only when the
 -- effective severity is "error" and ctx.fail_on_first is true).
 function M.record(ctx, id, loc)
@@ -152,14 +181,20 @@ function M.record(ctx, id, loc)
   if not def then error("record() with unknown check id: " .. tostring(id), 2) end
   local sev = (ctx.policy and ctx.policy[id]) or def.default_severity
   if sev == "off" then return true end
+  local line, col = 0, 0
+  if loc and loc.pos and ctx.text then
+    line, col = M.pos_to_line_col(ctx.text, loc.pos)
+  elseif loc then
+    line, col = loc.line or 0, loc.col or 0
+  end
   ctx.findings[#ctx.findings + 1] = {
     id         = id,
     severity   = sev,
     message    = def.message_template,
     spec_ref   = def.spec_ref,
     code       = def.code,
-    line       = loc and loc.line or 0,
-    col        = loc and loc.col  or 0,
+    line       = line,
+    col        = col,
     context    = loc and loc.context or "",
     field_path = loc and loc.field_path,
   }

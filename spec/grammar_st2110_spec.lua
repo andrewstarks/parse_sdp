@@ -2736,5 +2736,61 @@ describe("ST 2110-10 — group:DUP leg coherence (Phase 6.E.B)", function()
   end)
 end)
 
+-- ── Phase 6.G — in-grammar Cmts carry line/col via loc.pos + ctx.text ────
+--
+-- Verifies the position-translation plumbing introduced in 6.G: each
+-- in-grammar Cmt that emits a finding passes `loc.pos = pos`, and
+-- errors.record translates that to (line, col) against ctx.text. The
+-- effect: per-fmtp / per-rtpmap findings now carry a real line number,
+-- restoring most of the diagnostic context that the field_path =
+-- media[N] doc-walk pattern used to provide.
+
+describe("ST 2110 — in-grammar findings carry line/col (Phase 6.G)", function()
+
+  it("a raw fmtp missing 'sampling' reports the fmtp's line", function()
+    -- fail_on_first=false so we collect the dispatch's finding without
+    -- LPeg backtracking re-firing it.
+    local doc, ctx = st2110.match(table.concat({
+      "v=0",                                         -- line 1
+      "o=- 1 1 IN IP4 192.0.2.1",                    -- line 2
+      "s=Test",                                      -- line 3
+      "t=0 0",                                       -- line 4
+      "m=video 30000 RTP/AVP 96",                    -- line 5
+      "c=IN IP4 239.0.0.1/64",                       -- line 6
+      "a=rtpmap:96 raw/90000",                       -- line 7
+      "a=fmtp:96 width=1920;height=1080;exactframerate=60000/1001;"
+        .. "depth=10;colorimetry=BT709;PM=2110GPM;SSN=ST2110-20:2022;"
+        .. "TP=2110TPN",                             -- line 8 (no 'sampling')
+      "a=ts-refclk:localmac=00-11-22-33-44-55",
+      "a=mediaclk:sender",
+    }, "\r\n") .. "\r\n", { fail_on_first = false })
+    assert.is_truthy(doc)
+    local f = finding_for(ctx, "st2110-20.a.fmtp.sampling-required")
+    assert.is_not_nil(f)
+    assert.equal(8, f.line)
+    assert.is_true(f.col > 0)
+  end)
+
+  it("an AM824 rtpmap missing channels reports that rtpmap's line", function()
+    -- In-grammar Cmt on st2110_rtpmap_am824 (Phase 6.F refactor).
+    local doc, ctx = st2110.match(table.concat({
+      "v=0",                                         -- 1
+      "o=- 1 1 IN IP4 192.0.2.1",                    -- 2
+      "s=Test",                                      -- 3
+      "t=0 0",                                       -- 4
+      "m=audio 30000 RTP/AVP 96",                    -- 5
+      "c=IN IP4 239.0.0.1/64",                       -- 6
+      "a=rtpmap:96 AM824/48000",                     -- 7 (no <nchan>)
+      "a=ts-refclk:localmac=00-11-22-33-44-55",
+      "a=mediaclk:sender",
+    }, "\r\n") .. "\r\n", { fail_on_first = false })
+    assert.is_truthy(doc)
+    local f = finding_for(ctx, "st2110-31.a.rtpmap.am824-channels-required")
+    assert.is_not_nil(f)
+    assert.equal(7, f.line)
+    assert.is_true(f.col > 0)
+  end)
+end)
+
 
 

@@ -223,6 +223,72 @@ describe("record()", function()
     end)
   end)
 
+  -- Phase 6.G: in-grammar Cmts pass loc.pos and rely on ctx.text for
+  -- pos → line/col translation.
+
+  -- NOT-SPEC: library
+  it("translates loc.pos to line/col when ctx.text is present", function()
+    local ctx = {
+      findings = {}, fail_on_first = false,
+      text = "v=0\r\no=- 1 1 IN IP4 192.0.2.1\r\ns=Test\r\n",
+    }
+    -- pos 6 is the 'o' on line 2 (after "v=0\r\n" = bytes 1..5).
+    errors.record(ctx, "sdp.v.must-be-zero", { pos = 6 })
+    assert.equal(2, ctx.findings[1].line)
+    assert.equal(1, ctx.findings[1].col)
+  end)
+
+  -- NOT-SPEC: library
+  it("falls back to loc.line/col when loc.pos absent", function()
+    local ctx = {
+      findings = {}, fail_on_first = false,
+      text = "v=0\r\n",
+    }
+    errors.record(ctx, "sdp.v.must-be-zero", { line = 7, col = 3 })
+    assert.equal(7, ctx.findings[1].line)
+    assert.equal(3, ctx.findings[1].col)
+  end)
+
+  -- NOT-SPEC: library
+  it("loc.pos is ignored when ctx.text is absent", function()
+    local ctx = { findings = {}, fail_on_first = false }
+    errors.record(ctx, "sdp.v.must-be-zero", { pos = 99 })
+    assert.equal(0, ctx.findings[1].line)
+    assert.equal(0, ctx.findings[1].col)
+  end)
+
+end)
+
+describe("pos_to_line_col", function()
+
+  -- NOT-SPEC: library
+  it("returns (1, pos) on a single-line text", function()
+    local line, col = errors.pos_to_line_col("v=0\r\n", 3)
+    assert.equal(1, line)
+    assert.equal(3, col)
+  end)
+
+  -- NOT-SPEC: library
+  it("counts LF terminators (CRLF and bare LF both work)", function()
+    local text = "v=0\r\no=- 1\r\ns=x\r\n"
+    -- pos 12 is the 's' on line 3 (v=0\r\n = 5 bytes, o=- 1\r\n = 7 bytes,
+    -- so s starts at byte 13... but our impl reports the line of byte pos).
+    -- Pos 13 should be col 1 of line 3.
+    local line, col = errors.pos_to_line_col(text, 13)
+    assert.equal(3, line)
+    assert.equal(1, col)
+  end)
+
+  -- NOT-SPEC: library
+  it("returns (0, 0) on nil text or invalid pos", function()
+    local line, col = errors.pos_to_line_col(nil, 5)
+    assert.equal(0, line)
+    assert.equal(0, col)
+    line, col = errors.pos_to_line_col("v=0\r\n", 0)
+    assert.equal(0, line)
+    assert.equal(0, col)
+  end)
+
 end)
 
 describe("deepest-failure tracker", function()

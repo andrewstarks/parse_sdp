@@ -310,7 +310,7 @@ end
 local function record_soft(check_id)
   return function(_, pos, ctx)
     if not ctx then return pos end
-    local cont = errors.record(ctx, check_id, {})
+    local cont = errors.record(ctx, check_id, { pos = pos })
     if not cont then return false end
     return pos
   end
@@ -683,7 +683,8 @@ local rules = {
       Cmt(P(";") * V"fmtp_hws" ^ 0 * Carg(1),
           function(_, pos, ctx)
             if not ctx then return pos end
-            local cont = errors.record(ctx, "sdp.a.fmtp.trailing-semicolon", {})
+            local cont = errors.record(ctx,
+              "sdp.a.fmtp.trailing-semicolon", { pos = pos })
             if not cont then return false end
             return pos
           end),
@@ -1073,6 +1074,7 @@ local function make_match(grammar)
       findings      = {},
       policy        = opts.policy,
       fail_on_first = opts.fail_on_first ~= false,
+      text          = text,   -- enables pos → line/col in errors.record
     }
     local doc = grammar:match(text, 1, ctx)
     return doc, ctx

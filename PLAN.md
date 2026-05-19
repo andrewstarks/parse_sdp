@@ -39,18 +39,21 @@ and runs them through the parser. See
 
 ## Current State
 
-1538 hermetic tests passing. Every validation check is grounded in explicit
+1546 hermetic tests passing. Every validation check is grounded in explicit
 spec text; no opinion-based checks remain.
 
 The grammar-first refactor on branch `refactor/grammar-first` is **in
-progress**. Phases 4 + 5 complete; **Phase 6 (all of 6.A–6.F) is now
+progress**. Phases 4 + 5 complete; **Phase 6 (all of 6.A–6.G) is now
 closed.** The grammar tier matches or exceeds the 1.0 parser on every
 check grounded in primary spec text. Three 1.0-over-strict flags from
 6.D (audio MAXUDP-forbidden on AM824, channels-required on L16/L24,
 packet-payload-fit on AM824) are intentionally not ported and remain
 flagged in `audits/` for separate follow-up. Phase 6.F refactored
 11 per-line checks out of `semantic_checks` (a Lua-massage pipeline)
-into in-grammar `Cmt` callbacks on the actual rules.
+into in-grammar `Cmt` callbacks on the actual rules. Phase 6.G wired
+byte-position diagnostics through every in-grammar Cmt so per-fmtp /
+per-rtpmap findings now carry real (line, col) in the formatter
+output.
 
 Phases 7–10 remain (IPMX tier via `extend(st2110_rules, ...)`,
 serializer rewrite, public API stabilization, migration cutover).
