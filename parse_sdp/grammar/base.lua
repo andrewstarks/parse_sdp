@@ -1023,11 +1023,12 @@ local function make_match(grammar)
 end
 
 local M = {}
-M.rules              = rules
-M.grammar            = lpeg.P(rules)
-M.semantic_checks    = base_semantic_checks
-M.make_validate_doc  = make_validate_doc
-M.make_document_body = make_document_body
+M.rules                   = rules
+M.grammar                 = lpeg.P(rules)
+M.semantic_checks         = base_semantic_checks
+M.make_validate_doc       = make_validate_doc
+M.make_document_body      = make_document_body
+M.fmtp_entries_to_params  = fmtp_entries_to_params
 
 --- Compose a child tier from a parent.
 --
@@ -1074,13 +1075,14 @@ function M.extend(parent, overrides)
 
   local child_grammar = lpeg.P(child_rules)
   local child = {
-    rules              = child_rules,
-    grammar            = child_grammar,
-    semantic_checks    = child_checks,
-    make_validate_doc  = parent.make_validate_doc,
-    make_document_body = parent.make_document_body,
-    extend             = M.extend,
-    match              = make_match(child_grammar),
+    rules                   = child_rules,
+    grammar                 = child_grammar,
+    semantic_checks         = child_checks,
+    make_validate_doc       = parent.make_validate_doc,
+    make_document_body      = parent.make_document_body,
+    fmtp_entries_to_params  = parent.fmtp_entries_to_params,
+    extend                  = M.extend,
+    match                   = make_match(child_grammar),
   }
   return child
 end

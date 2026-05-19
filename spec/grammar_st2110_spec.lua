@@ -19,6 +19,20 @@ local function build(media_line, rtpmap_line)
   }, "\r\n") .. "\r\n"
 end
 
+-- Build with an extra fmtp line after the rtpmap.
+local function build_with_fmtp(media_line, rtpmap_line, fmtp_line)
+  return table.concat({
+    "v=0",
+    "o=- 1 1 IN IP4 192.0.2.1",
+    "s=Test",
+    "t=0 0",
+    media_line,
+    "c=IN IP4 239.0.0.1/64",
+    rtpmap_line,
+    fmtp_line,
+  }, "\r\n") .. "\r\n"
+end
+
 -- Finding helper: returns the first finding with the matched id, or nil.
 local function finding_for(ctx, id)
   for _, f in ipairs(ctx.findings or {}) do
@@ -153,5 +167,88 @@ describe("ST 2110 rtpmap narrowings — non-ST-2110 encodings pass through", fun
   it("accepts m=audio with L16/48000/2 (no AES67 check in 6.B)", function()
     assert.is_truthy(st2110.match(build("m=audio 30000 RTP/AVP 96",
                                         "a=rtpmap:96 L16/48000/2")))
+  end)
+end)
+
+-- ───────────────────────────────────────────────────────────────────────────
+-- Phase 6.C.B — ST 2110-20 raw fmtp parameter-form narrowing
+-- ST 2110-20:2022 §7.1: "Each media type parameter entry shall be
+-- constructed as either: a <name>=<value> pair, with no whitespace within
+-- the name or value or between the name, equal sign, and value."
+-- Scope: only when the surrounding rtpmap encoding is `raw`.
+
+describe("ST 2110-20 raw fmtp — no whitespace around '=' (ST 2110-20:2022 §7.1)", function()
+
+  local RAW_MEDIA  = "m=video 30000 RTP/AVP 96"
+  local RAW_RTPMAP = "a=rtpmap:96 raw/90000"
+
+  it("accepts fmtp with no whitespace around '='", function()
+    local doc = st2110.match(build_with_fmtp(
+      RAW_MEDIA, RAW_RTPMAP,
+      "a=fmtp:96 sampling=YCbCr-4:2:2;width=1920;height=1080"))
+    assert.is_truthy(doc)
+  end)
+
+  it("rejects fmtp with whitespace on both sides of '='", function()
+    local doc, ctx = st2110.match(build_with_fmtp(
+      RAW_MEDIA, RAW_RTPMAP,
+      "a=fmtp:96 sampling = YCbCr-4:2:2"))
+    assert.is_nil(doc)
+    assert.is_not_nil(finding_for(ctx,
+      "st2110-20.a.fmtp.no-whitespace-around-equals"))
+  end)
+
+  it("rejects fmtp with whitespace before '='", function()
+    local doc, ctx = st2110.match(build_with_fmtp(
+      RAW_MEDIA, RAW_RTPMAP,
+      "a=fmtp:96 sampling =YCbCr-4:2:2"))
+    assert.is_nil(doc)
+    assert.is_not_nil(finding_for(ctx,
+      "st2110-20.a.fmtp.no-whitespace-around-equals"))
+  end)
+
+  it("rejects fmtp with whitespace after '='", function()
+    local doc, ctx = st2110.match(build_with_fmtp(
+      RAW_MEDIA, RAW_RTPMAP,
+      "a=fmtp:96 sampling= YCbCr-4:2:2"))
+    assert.is_nil(doc)
+    assert.is_not_nil(finding_for(ctx,
+      "st2110-20.a.fmtp.no-whitespace-around-equals"))
+  end)
+
+  it("rejects only the offending entry's row (later entry trips the check)", function()
+    -- First entry is clean; second has whitespace around '='. The strict
+    -- branch fails on the second entry, so the whole match fails.
+    local doc, ctx = st2110.match(build_with_fmtp(
+      RAW_MEDIA, RAW_RTPMAP,
+      "a=fmtp:96 sampling=YCbCr-4:2:2;width = 1920"))
+    assert.is_nil(doc)
+    assert.is_not_nil(finding_for(ctx,
+      "st2110-20.a.fmtp.no-whitespace-around-equals"))
+  end)
+
+  -- NOT-SPEC: library — narrowing is scoped to raw via Cb"encoding". Other
+  -- ST 2110 essence specs do not carry the no-whitespace SHALL; they keep
+  -- base's loose form (CLAUDE.md strictness: silence ≠ rejection).
+  it("does NOT reject whitespace-around-= for jxsv (no narrowing applies)", function()
+    assert.is_truthy(st2110.match(build_with_fmtp(
+      "m=video 30000 RTP/AVP 96",
+      "a=rtpmap:96 jxsv/90000",
+      "a=fmtp:96 profile = High444.12")))
+  end)
+
+  -- NOT-SPEC: library
+  it("does NOT reject whitespace-around-= for smpte291 (no narrowing applies)", function()
+    assert.is_truthy(st2110.match(build_with_fmtp(
+      "m=video 30000 RTP/AVP 96",
+      "a=rtpmap:96 smpte291/90000",
+      "a=fmtp:96 DID_SDID = {0x41,0x05}")))
+  end)
+
+  -- NOT-SPEC: library — base tier MUST still accept what ST 2110 rejects.
+  it("base tier accepts whitespace around '=' even for raw", function()
+    assert.is_truthy(base.match(build_with_fmtp(
+      RAW_MEDIA, RAW_RTPMAP,
+      "a=fmtp:96 sampling = YCbCr-4:2:2")))
   end)
 end)

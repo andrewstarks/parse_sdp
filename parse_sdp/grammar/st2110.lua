@@ -17,8 +17,8 @@ local lpeg   = require("lpeg")
 local base   = require("parse_sdp.grammar.base")
 local errors = require("parse_sdp.errors")
 
-local P, V, Cc, Cg, Cb, Cmt, Carg =
-  lpeg.P, lpeg.V, lpeg.Cc, lpeg.Cg, lpeg.Cb, lpeg.Cmt, lpeg.Carg
+local P, V, C, Cc, Cg, Cb, Ct, Cmt, Carg =
+  lpeg.P, lpeg.V, lpeg.C, lpeg.Cc, lpeg.Cg, lpeg.Cb, lpeg.Ct, lpeg.Cmt, lpeg.Carg
 
 local SP = P(" ")
 
@@ -86,6 +86,12 @@ local overrides = {
     -- unknown encoding falls through to the default branch and is captured
     -- with base's permissive shape (silence is not rejection — CLAUDE.md
     -- strictness principle).
+    --
+    -- Trailing Cmt records ctx.rtpmap_encodings[pt] = encoding so a later
+    -- a=fmtp on the same media block can look the encoding up by PT. Each
+    -- a= line is wrapped in its own a_value Ct, so a Cb"encoding" from one
+    -- line is no longer in scope by the time the next line parses — ctx is
+    -- the cross-line carrier.
     a_rtpmap = P("rtpmap:")
         * Cg(Cc("rtpmap"), "name")
         * Cg(V"payload_type", "payload_type") * SP
@@ -93,7 +99,15 @@ local overrides = {
           + V"st2110_rtpmap_jxsv"
           + V"st2110_rtpmap_smpte291"
           + V"st2110_rtpmap_am824"
-          + V"st2110_rtpmap_default" ),
+          + V"st2110_rtpmap_default" )
+        * Cmt(Cb"payload_type" * Cb"encoding" * Carg(1),
+              function(_, pos, pt, enc, ctx)
+                if ctx then
+                  ctx.rtpmap_encodings = ctx.rtpmap_encodings or {}
+                  ctx.rtpmap_encodings[pt] = enc
+                end
+                return pos
+              end),
 
     st2110_rtpmap_raw = make_rtpmap_branch(
       "raw",
@@ -130,6 +144,88 @@ local overrides = {
 
     st2110_known_rtpmap_encoding =
         (P("raw") + P("jxsv") + P("smpte291") + P("AM824")) * P("/"),
+
+    -- ── fmtp parameter-form narrowings (Phase 6.C.B) ─────────────────────
+    -- ST 2110-20:2022 §7.1: "Each media type parameter entry shall be
+    -- constructed as either a <name>=<value> pair, with no whitespace
+    -- within the name or value or between the name, equal sign, and
+    -- value; a <name> standalone declaration, with no whitespace within
+    -- the name." Scope: only when the surrounding rtpmap encoding is
+    -- `raw`. Other ST 2110 essence specs (-22, -30, -31, -40) do not
+    -- carry this prohibition; they keep base's loose form.
+    --
+    -- Encoding-gated alternation: the first branch matches only when this
+    -- fmtp's payload_type was previously recorded (via a_rtpmap's trailing
+    -- Cmt) as carrying encoding="raw" AND the input has no whitespace
+    -- around `=`; the second branch matches when the recorded encoding is
+    -- anything else (including absent — static PT with no rtpmap) and uses
+    -- base's loose `fmtp_params_branch`. A `raw` fmtp with whitespace fails
+    -- both branches → a_fmtp fails → match returns nil with the finding in
+    -- ctx.findings (under fail_on_first=true).
+    --
+    -- The lookup is ctx-based rather than Cb-based because the rtpmap and
+    -- fmtp lines each close their own a_value Ct, so the rtpmap's encoding
+    -- Cg is no longer in scope at fmtp time. ctx.rtpmap_encodings is the
+    -- cross-line carrier (populated in a_rtpmap above).
+    a_fmtp = P("fmtp:")
+        * Cg(Cc("fmtp"), "name")
+        * Cg(V"payload_type", "payload_type") * SP
+        * ( V"fmtp_st2110_raw_payload"
+          + V"fmtp_payload_non_raw" ),
+
+    fmtp_st2110_raw_payload =
+        Cmt(Cb"payload_type" * Carg(1), function(_, pos, pt, ctx)
+          local enc = ctx and ctx.rtpmap_encodings
+                            and ctx.rtpmap_encodings[pt]
+          return enc == "raw" and pos
+        end)
+        * V"fmtp_st2110_raw_params",
+
+    fmtp_payload_non_raw =
+        Cmt(Cb"payload_type" * Carg(1), function(_, pos, pt, ctx)
+          local enc = ctx and ctx.rtpmap_encodings
+                            and ctx.rtpmap_encodings[pt]
+          return enc ~= "raw" and pos
+        end)
+        * ( V"fmtp_params_branch" + V"fmtp_raw_branch" ),
+
+    -- Strict params branch for `raw`: each kv-pair captures the
+    -- (key, ws_before_eq, ws_after_eq, value) tuple; a Cmt examines the
+    -- whitespace captures, records sdp st2110-20.a.fmtp.no-whitespace-
+    -- around-equals when either side is non-empty, and otherwise yields
+    -- the {key, value} pair the outer transform expects.
+    fmtp_st2110_raw_params =
+        Cg(
+            Ct(V"fmtp_st2110_raw_entry"
+              * (V"fmtp_sep" * V"fmtp_st2110_raw_entry") ^ 0)
+              / base.fmtp_entries_to_params,
+            "params"
+          )
+        * V"fmtp_trailing_sep_record" ^ -1
+        * #V"line_end_chars",
+
+    fmtp_st2110_raw_entry =
+        V"fmtp_st2110_raw_kv_pair" + V"fmtp_flag",
+
+    fmtp_st2110_raw_kv_pair =
+        Cmt(
+          Ct(
+            C(V"fmtp_key_chars" ^ 1)
+            * C(V"fmtp_hws" ^ 0)
+            * P("=")
+            * C(V"fmtp_hws" ^ 0)
+            * C(V"fmtp_val_chars" ^ 0)
+          ) * Carg(1),
+          function(_, pos, captured, ctx)
+            local key, ws_l, ws_r, val =
+              captured[1], captured[2], captured[3], captured[4]
+            if #ws_l > 0 or #ws_r > 0 then
+              local cont = errors.record(
+                ctx, "st2110-20.a.fmtp.no-whitespace-around-equals", {})
+              if not cont then return false end
+            end
+            return pos, { key, val }
+          end),
   },
 }
 

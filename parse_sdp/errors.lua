@@ -498,4 +498,21 @@ M.register("st2110-31.a.rtpmap.am824-clock-rate-set", {
   verified         = true,
 })
 
+-- ── ST 2110-20 raw fmtp parameter form narrowings (Phase 6.C.B) ───────────
+-- ST 2110-20:2022 §7.1 — "Each media type parameter entry shall be
+-- constructed as either: a <name>=<value> pair, with no whitespace within
+-- the name or value or between the name, equal sign, and value;
+-- a <name> standalone declaration, with no whitespace within the name."
+-- Scope: applies only when the surrounding rtpmap encoding is `raw`. Other
+-- ST 2110 essence specs do not carry this prohibition.
+M.register("st2110-20.a.fmtp.no-whitespace-around-equals", {
+  kind             = "hard-syntactic",
+  default_severity = "error",
+  code             = "INVALID_VALUE",
+  message_template =
+    "fmtp parameter must not have whitespace around '='",
+  spec_ref         = "ST 2110-20:2022 §7.1",
+  verified         = true,
+})
+
 return M

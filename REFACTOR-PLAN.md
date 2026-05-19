@@ -509,8 +509,27 @@ ST 2110 check migrates under its new ID.
   `spec/grammar_st2110_spec.lua`. Suite 1144 green (modulo pre-existing
   fmtp flake). L16/L24 union check via AES67 deferred — AES67-2023 is
   paywalled, would need `verified=false`.
-- **6.C (pending)** — fmtp parameter narrowings per media type, value
-  sets, whitespace-around-= narrowing for -20.
+- **6.C.A (complete)** — `fmtp_params_branch` rewritten off the `%`
+  accumulator to dissolve the trailing-semicolon flake. Entries now
+  capture `{key, value}` / `{flag, true}` sub-tables collected by
+  `Ct(...) / fmtp_entries_to_params` rather than folded via `%`. 30/30
+  fresh runs green after change (previously ~45% flake rate). Investigation
+  preserved at [audits/FMTP_ACCUMULATOR_FLAKE.md](audits/FMTP_ACCUMULATOR_FLAKE.md).
+- **6.C.B (complete)** — ST 2110-20:2022 §7.1 raw fmtp parameter-form
+  narrowing. New error id `st2110-20.a.fmtp.no-whitespace-around-equals`
+  in `errors.lua`. ST 2110 overrides `a_rtpmap` to record
+  `ctx.rtpmap_encodings[pt] = encoding`, then overrides `a_fmtp` with
+  two encoding-gated branches: a strict params parser for raw PTs that
+  rejects whitespace around `=`, and base's loose form for everything
+  else. The ctx-based lookup is necessary because each a= line closes
+  its own a_value Ct — `Cb"encoding"` from a later fmtp line cannot
+  reach the earlier rtpmap's group capture. 8 new tests in
+  `spec/grammar_st2110_spec.lua`; suite 1152 green. Deferred edge case:
+  if `a=fmtp` precedes `a=rtpmap` for the same PT within a media block,
+  the encoding lookup misses; revisit only if a real SDP surfaces this
+  ordering (no real ST 2110 sender does).
+- **6.C (remaining)** — other -20 fmtp value-set narrowings, -22 jxsv
+  fmtp parameter sets, -30 audio fmtp where defined, -41 SSN/DIT.
 - **6.D (pending)** — required-attribute presence per media type
   (ts-refclk, mediaclk, ptime).
 - **6.E (pending)** — cross-stream invariants (RFC 7104 group:DUP,

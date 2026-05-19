@@ -547,6 +547,64 @@ rows ST 2110-20 §7.1 #78–79, ST 2110-22 §5.2 #7 / §6.2 #12, ST 2110-31
   table); existing tests unchanged. `set_pair` / `set_flag` Lua locals
   removed; replaced by a single `fmtp_entries_to_params` transform.
 
+- **Phase 6.C.B:** ST 2110-20 raw fmtp parameter-form narrowing per
+  ST 2110-20:2022 §7.1 — *"Each media type parameter entry shall be
+  constructed as either a `<name>=<value>` pair, with no whitespace
+  within the name or value or between the name, equal sign, and value;
+  a `<name>` standalone declaration, with no whitespace within the
+  name."* Scope:
+  only fmtp lines whose PT was previously bound to a raw rtpmap. Other
+  ST 2110 essence specs (-22, -30, -31, -40) do not carry this
+  prohibition and keep base's loose form.
+
+  New error id `st2110-20.a.fmtp.no-whitespace-around-equals` in
+  `parse_sdp/errors.lua` (hard-syntactic / error / INVALID_VALUE / spec
+  ref `ST 2110-20:2022 §7.1`).
+
+  Implementation. The narrowing is encoding-gated, but the rtpmap's
+  encoding capture is no longer in scope by the time the next a= line
+  parses — each a_line closes its own a_value Ct, so `Cb"encoding"` from
+  a later fmtp line cannot reach the earlier rtpmap's group capture. The
+  cross-line carrier is ctx:
+
+  - ST 2110's `a_rtpmap` override gains a trailing
+    `Cmt(Cb"payload_type" * Cb"encoding" * Carg(1), ...)` that writes
+    `ctx.rtpmap_encodings[pt] = encoding` after the rtpmap branch
+    matches. (The Cb pair is in scope here because we're still inside
+    a_rtpmap and the encoding Cg lives in the branch that just
+    completed.)
+  - ST 2110's `a_fmtp` override has a two-branch alternation gated on
+    the recorded encoding via `Cmt(Cb"payload_type" * Carg(1), ...)`.
+    The raw branch (`fmtp_st2110_raw_params`) uses a strict kv-pair
+    that captures the ws around `=` and records the finding via
+    `errors.record` when either side is non-empty; the non-raw branch
+    falls through to base's loose `fmtp_params_branch` / `fmtp_raw_branch`.
+    A raw fmtp with whitespace fails the strict branch (and the
+    non-raw branch's gate), so a_fmtp fails — the finding is in
+    ctx.findings under fail_on_first=true.
+
+  `parse_sdp.grammar.base` exposes `fmtp_entries_to_params` so the
+  ST 2110 strict-form override reuses the same list-to-table transform
+  6.C.A introduced.
+
+  Limitation. If a media block places `a=fmtp` for a given PT before
+  the corresponding `a=rtpmap`, the encoding lookup misses (no rtpmap
+  has been recorded yet) and the fmtp falls through to the non-raw
+  branch. RFC 8866 does not mandate rtpmap-before-fmtp ordering, but
+  every real ST 2110 sender and every fixture in the suite follows it.
+  Tracked as a deferred edge case; revisit only if a real SDP surfaces
+  the opposite ordering.
+
+- `spec/grammar_st2110_spec.lua` — 8 new tests (25 total in the file).
+  Per ST 2110-20:2022 §7.1: accept fmtp with no ws around `=`; reject
+  ws on both sides, before only, after only; reject the offending
+  entry's row when an earlier entry was clean; do NOT reject ws around
+  `=` for jxsv or smpte291 (no narrowing applies); confirm base tier
+  still accepts what ST 2110 rejects. Suite: 1152 green.
+
+Audit ref: REFACTOR-PLAN.md §5 Phase 6.C; audits/SPEC_INVENTORY.md
+ST 2110-20:2022 §7.1.
+
 ### Changed
 
 - The inline `errors` table in `parse_sdp.lua` now delegates to

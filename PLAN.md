@@ -39,17 +39,20 @@ and runs them through the parser. See
 
 ## Current State
 
-1144 hermetic tests passing. Every validation check is grounded in explicit
+1152 hermetic tests passing. Every validation check is grounded in explicit
 spec text; no opinion-based checks remain.
 
 The grammar-first refactor on branch `refactor/grammar-first` is **in
-progress** (Phases 4 + 5 complete; Phases 6.A + 6.B landed — `base.extend`
-composition mechanism, `parse_sdp.grammar.st2110` shell, and per-encoding
-rtpmap narrowings (raw / jxsv / smpte291 / AM824) expressed as in-grammar
-overrides; phases 6.C–10 remain). Tracking and
-design live in [REFACTOR-PLAN.md](REFACTOR-PLAN.md). The 1.0 parser at
-`parse_sdp.lua` remains the shipping artifact on `main`; the new grammar
-under `parse_sdp/grammar/` is internal-only until Phase 9 cutover.
+progress**. Phases 4 + 5 complete; 6.A + 6.B + 6.C.A + 6.C.B landed —
+`base.extend` composition mechanism, `parse_sdp.grammar.st2110` shell,
+per-encoding rtpmap narrowings (raw / jxsv / smpte291 / AM824) expressed
+as in-grammar overrides, `fmtp_params_branch` rewritten off the `%`
+accumulator, and ST 2110-20:2022 §7.1 raw fmtp no-whitespace-around-=
+narrowing implemented via a ctx-carried rtpmap→encoding map. Phases 6.C
+(remaining fmtp narrowings) and 6.D–10 remain. Tracking and design live
+in [REFACTOR-PLAN.md](REFACTOR-PLAN.md). The 1.0 parser at `parse_sdp.lua`
+remains the shipping artifact on `main`; the new grammar under
+`parse_sdp/grammar/` is internal-only until Phase 9 cutover.
 
 **Former flake (resolved in 6.C.A):** the `sdp.a.fmtp.trailing-semicolon`
 tests in `spec/grammar_base_spec.lua` previously flaked at ~45% with
