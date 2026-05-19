@@ -167,17 +167,21 @@ describe("base SDP grammar — document shape (RFC 8866 §5)", function()
   end)
 
   -- NOT-SPEC: library
-  it("rejects bare LF line endings at this tier (Phase 5 will soften to a warning)", function()
-    -- Phase 1 enforces CRLF strictly per RFC 8866 §9 ABNF. Phase 5 adds
-    -- soft-syntactic LF tolerance that records a finding instead.
+  it("accepts bare LF line endings with a warn finding (Phase 5 soft-syntactic)", function()
+    -- RFC 8866 §9 ABNF says CRLF; bare LF is non-conformant but common.
+    -- Phase 5 added soft-syntactic tolerance that records the deviation
+    -- via sdp.line.lf-only-line-ending. Detailed coverage lives in the
+    -- "Phase 5 soft-syntactic findings" describe block below.
     local text = "v=0\no=- 1 1 IN IP4 127.0.0.1\ns=X\nt=0 0\n"
-    assert.is_nil(base.match(text))
+    assert.is_truthy(base.match(text))
   end)
 
   -- NOT-SPEC: library
-  it("rejects missing final CRLF on the last line", function()
+  it("accepts missing final CRLF on the last line (Phase 5 soft-syntactic)", function()
+    -- RFC 8866 §9 ABNF requires CRLF after every line including the last.
+    -- Phase 5 records sdp.file.trailing-newline-missing instead of rejecting.
     local text = "v=0\r\no=- 1 1 IN IP4 127.0.0.1\r\ns=X\r\nt=0 0"
-    assert.is_nil(base.match(text))
+    assert.is_truthy(base.match(text))
   end)
 
   -- NOT-SPEC: library
@@ -2178,6 +2182,235 @@ describe("base SDP grammar — ts-refclk traceable-mix (RFC 7273 §4.8)", functi
         "a=ts-refclk:private:traceable" },
     }))
     assert.is_truthy(doc)
+  end)
+
+end)
+
+describe("base SDP grammar — Phase 5 soft-syntactic findings", function()
+
+  -- Helper for non-default policy + collect-all-findings runs.
+  local function match_collect(text)
+    return base.match(text, { fail_on_first = false })
+  end
+
+  -- ── 5.A.1: bare LF line endings ────────────────────────────────────────
+  -- SPEC: RFC 8866 §9 ABNF requires CRLF. Bare LF is non-conformant but
+  -- common in practice; lax form accepted with a default-warn finding.
+  describe("bare LF instead of CRLF (sdp.line.lf-only-line-ending)", function()
+    it("accepts bare-LF lines and emits a warn finding per LF line", function()
+      local lf_text =
+        "v=0\n" ..
+        "o=- 1 1 IN IP4 127.0.0.1\n" ..
+        "s=X\n" ..
+        "t=0 0\n"
+      local doc, ctx = match_collect(lf_text)
+      assert.is_truthy(doc)
+      local lf_findings = 0
+      for _, f in ipairs(ctx.findings) do
+        if f.id == "sdp.line.lf-only-line-ending" then
+          lf_findings = lf_findings + 1
+        end
+      end
+      assert.equal(4, lf_findings)
+    end)
+
+    it("under fail_on_first with warn severity, parse succeeds (warn doesn't halt)", function()
+      local lf_text =
+        "v=0\n" ..
+        "o=- 1 1 IN IP4 127.0.0.1\n" ..
+        "s=X\n" ..
+        "t=0 0\n"
+      local doc, ctx = base.match(lf_text)  -- default fail_on_first=true
+      assert.is_truthy(doc)
+      -- Warn-severity findings still record under fail_on_first.
+      local found = false
+      for _, f in ipairs(ctx.findings) do
+        if f.id == "sdp.line.lf-only-line-ending" then found = true end
+      end
+      assert.is_true(found)
+    end)
+
+    it("policy 'off' suppresses LF findings entirely", function()
+      local lf_text =
+        "v=0\n" ..
+        "o=- 1 1 IN IP4 127.0.0.1\n" ..
+        "s=X\n" ..
+        "t=0 0\n"
+      local doc, ctx = base.match(lf_text,
+        { policy = { ["sdp.line.lf-only-line-ending"] = "off" }, fail_on_first = false })
+      assert.is_truthy(doc)
+      for _, f in ipairs(ctx.findings) do
+        assert.is_not.equal("sdp.line.lf-only-line-ending", f.id)
+      end
+    end)
+
+    it("policy 'error' promotes LF finding to error (parse fails)", function()
+      local lf_text =
+        "v=0\n" ..
+        "o=- 1 1 IN IP4 127.0.0.1\n" ..
+        "s=X\n" ..
+        "t=0 0\n"
+      local doc = base.match(lf_text,
+        { policy = { ["sdp.line.lf-only-line-ending"] = "error" } })
+      assert.is_nil(doc)
+    end)
+  end)
+
+  -- ── 5.B: trailing whitespace before terminator ────────────────────────
+  -- SPEC: RFC 8866 §9 — line content is a non-whitespace text run followed
+  -- by CRLF. Trailing whitespace is non-conformant; lax form accepts it
+  -- with sdp.line.trailing-whitespace.
+  describe("trailing whitespace (sdp.line.trailing-whitespace)", function()
+    it("accepts a line with trailing spaces and emits one finding", function()
+      local text =
+        "v=0\r\n" ..
+        "o=- 1 1 IN IP4 127.0.0.1\r\n" ..
+        "s=Hello World  \r\n" ..    -- two trailing spaces
+        "t=0 0\r\n"
+      local doc, ctx = match_collect(text)
+      assert.is_truthy(doc)
+      local count = 0
+      for _, f in ipairs(ctx.findings) do
+        if f.id == "sdp.line.trailing-whitespace" then count = count + 1 end
+      end
+      assert.equal(1, count)
+    end)
+
+    -- The trailing whitespace must NOT land in the captured value.
+    it("strips trailing whitespace from the captured value", function()
+      local text =
+        "v=0\r\n" ..
+        "o=- 1 1 IN IP4 127.0.0.1\r\n" ..
+        "s=Hello World  \r\n" ..    -- two trailing spaces
+        "t=0 0\r\n"
+      local doc = match_collect(text)
+      assert.equal("Hello World", doc.session.name)
+    end)
+
+    -- Internal whitespace inside a text value must NOT trigger the finding.
+    it("ignores internal whitespace inside a value", function()
+      local text =
+        "v=0\r\n" ..
+        "o=- 1 1 IN IP4 127.0.0.1\r\n" ..
+        "s=Hello World\r\n" ..
+        "t=0 0\r\n"
+      local _, ctx = match_collect(text)
+      for _, f in ipairs(ctx.findings) do
+        assert.is_not.equal("sdp.line.trailing-whitespace", f.id)
+      end
+    end)
+
+    -- Trailing tabs also count as trailing whitespace per RFC 8866 §9.
+    it("accepts trailing tabs and emits a finding", function()
+      local text =
+        "v=0\r\n" ..
+        "o=- 1 1 IN IP4 127.0.0.1\r\n" ..
+        "s=X\t\r\n" ..             -- trailing tab
+        "t=0 0\r\n"
+      local _, ctx = match_collect(text)
+      local found = false
+      for _, f in ipairs(ctx.findings) do
+        if f.id == "sdp.line.trailing-whitespace" then found = true end
+      end
+      assert.is_true(found)
+    end)
+  end)
+
+  -- ── 5.C: fmtp trailing semicolon ──────────────────────────────────────
+  -- SPEC: RFC 8866 §6.15 — fmtp value form is byte-string with a semicolon
+  -- separator convention. A trailing ';' is lax-tolerated with
+  -- sdp.a.fmtp.trailing-semicolon.
+  describe("fmtp trailing semicolon (sdp.a.fmtp.trailing-semicolon)", function()
+    it("emits a finding when fmtp ends with a stray ';'", function()
+      local doc, ctx = match_collect(minimal(nil, {
+        { "m=video 49170 RTP/AVP 96", "a=rtpmap:96 H264/90000",
+          "a=fmtp:96 profile-level-id=42e016;" },
+      }))
+      assert.is_truthy(doc)
+      local count = 0
+      for _, f in ipairs(ctx.findings) do
+        if f.id == "sdp.a.fmtp.trailing-semicolon" then count = count + 1 end
+      end
+      assert.equal(1, count)
+    end)
+
+    it("emits no finding for fmtp without a trailing ';'", function()
+      local _, ctx = match_collect(minimal(nil, {
+        { "m=video 49170 RTP/AVP 96", "a=rtpmap:96 H264/90000",
+          "a=fmtp:96 profile-level-id=42e016;max-mbps=108000" },
+      }))
+      for _, f in ipairs(ctx.findings) do
+        assert.is_not.equal("sdp.a.fmtp.trailing-semicolon", f.id)
+      end
+    end)
+  end)
+
+  -- ── 5.D: UTF-8 BOM at file start ──────────────────────────────────────
+  -- SPEC: RFC 8866 §6 — SDP charset is declared via `a=charset:`; a BOM
+  -- isn't required and isn't part of the §9 ABNF, but some editors emit
+  -- one. Lax form accepts it with sdp.file.bom-present.
+  describe("UTF-8 BOM (sdp.file.bom-present)", function()
+    local BOM = "\239\187\191"
+
+    it("accepts a leading UTF-8 BOM and emits a finding", function()
+      local text = BOM ..
+        "v=0\r\n" ..
+        "o=- 1 1 IN IP4 127.0.0.1\r\n" ..
+        "s=X\r\n" ..
+        "t=0 0\r\n"
+      local doc, ctx = match_collect(text)
+      assert.is_truthy(doc)
+      local count = 0
+      for _, f in ipairs(ctx.findings) do
+        if f.id == "sdp.file.bom-present" then count = count + 1 end
+      end
+      assert.equal(1, count)
+    end)
+
+    it("emits no BOM finding when the file has no BOM", function()
+      local text =
+        "v=0\r\n" ..
+        "o=- 1 1 IN IP4 127.0.0.1\r\n" ..
+        "s=X\r\n" ..
+        "t=0 0\r\n"
+      local _, ctx = match_collect(text)
+      for _, f in ipairs(ctx.findings) do
+        assert.is_not.equal("sdp.file.bom-present", f.id)
+      end
+    end)
+  end)
+
+  -- ── 5.A.2: missing trailing newline ────────────────────────────────────
+  -- SPEC: RFC 8866 §9 — every <fields> line is followed by CRLF, including
+  -- the last. Lax form accepts a document that ends without a trailing
+  -- terminator; emits sdp.file.trailing-newline-missing.
+  describe("missing trailing newline (sdp.file.trailing-newline-missing)", function()
+    it("accepts a document with no trailing newline and emits one finding", function()
+      local text =
+        "v=0\r\n" ..
+        "o=- 1 1 IN IP4 127.0.0.1\r\n" ..
+        "s=X\r\n" ..
+        "t=0 0"          -- no trailing \r\n
+      local doc, ctx = match_collect(text)
+      assert.is_truthy(doc)
+      local count = 0
+      for _, f in ipairs(ctx.findings) do
+        if f.id == "sdp.file.trailing-newline-missing" then count = count + 1 end
+      end
+      assert.equal(1, count)
+    end)
+
+    it("strict-CRLF document emits no missing-newline finding", function()
+      local text =
+        "v=0\r\n" ..
+        "o=- 1 1 IN IP4 127.0.0.1\r\n" ..
+        "s=X\r\n" ..
+        "t=0 0\r\n"
+      local _, ctx = match_collect(text)
+      for _, f in ipairs(ctx.findings) do
+        assert.is_not.equal("sdp.file.trailing-newline-missing", f.id)
+      end
+    end)
   end)
 
 end)

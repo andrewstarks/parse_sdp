@@ -236,6 +236,30 @@ local function check_mid_uniqueness(doc, ctx)
   return true
 end
 
+-- Soft-syntactic finding recorders (Phase 5). Each runs in a Cmt callback
+-- inside the grammar, records the finding via errors.record, and either
+-- continues the match (return pos) or fails it (return false) per ctx.policy
+-- + ctx.fail_on_first. Default severity is "warn" so warn-severity findings
+-- accumulate without halting the parse; policy can promote to "error" or
+-- suppress to "off".
+local function record_soft(check_id)
+  return function(_, pos, ctx)
+    if not ctx then return pos end
+    local cont = errors.record(ctx, check_id, {})
+    if not cont then return false end
+    return pos
+  end
+end
+
+local record_bare_lf          = record_soft("sdp.line.lf-only-line-ending")
+local record_missing_newline  = record_soft("sdp.file.trailing-newline-missing")
+local record_trailing_ws      = record_soft("sdp.line.trailing-whitespace")
+-- a=fmtp trailing-';' uses an inline Cmt body inside fmtp_trailing_sep_record
+-- because that Cmt has to *consume* the ';' (+ optional whitespace) — a
+-- zero-width Cmt(Carg(1), ...) trips LPeg's "no previous value for
+-- accumulator capture" error when nested inside the same Cg as the `%`
+-- accumulator chain that folds entries into params.
+
 -- Document-level Cmt callback. Walks the captured doc, runs each semantic
 -- check in order, records findings into ctx, and either continues (return
 -- pos, doc) or fails the match (return false) per the ctx.fail_on_first
@@ -267,7 +291,7 @@ local rules = {
   -- captured: version, origin, session.name, session.connection (Phase 2.A–2.B).
   -- The remaining session and media fields are placeholder pattern matches
   -- until their corresponding sub-commit (2.C–2.E) wraps the leaf in a Cg.
-  document = Cmt(
+  document = V"bom_opt" * Cmt(
       Ct(
             Cg(V"v_line", "version")
           * Cg(V"o_line", "origin")
@@ -276,6 +300,18 @@ local rules = {
         ) * Carg(1),
       validate_doc
     ) * -1,
+
+  -- Optional UTF-8 BOM (EF BB BF) at the start of the file. RFC 8866 §6
+  -- doesn't require it and SDP charset signaling lives in `a=charset:`;
+  -- some text editors emit one anyway. The Cmt consumes the three bytes
+  -- and records the soft-syntactic finding.
+  bom_opt = Cmt(P("\239\187\191") * Carg(1),
+                function(_, pos, ctx)
+                  if not ctx then return pos end
+                  local cont = errors.record(ctx, "sdp.file.bom-present", {})
+                  if not cont then return false end
+                  return pos
+                end) ^ -1,
 
   -- Session-level inner section: s= through a=*. Phase 2.A captures only
   -- s= → name; 2.B–2.E will add Cg wrappers for i=, u=, e=, p=, c=, b=,
@@ -345,7 +381,7 @@ local rules = {
 
   -- s= is a non-empty text string. RFC 8866 §5.3 RECOMMENDS "s= " or "s=-"
   -- when there's no meaningful name; the parser accepts either.
-  s_value = C((1 - V"line_end") ^ 1),
+  s_value = C((1 - V"value_boundary_chars") ^ 1),
 
   -- o= origin (RFC 8866 §5.2):
   --   o=<username> <sess-id> <sess-version> <nettype> <addrtype> <unicast-address>
@@ -377,10 +413,10 @@ local rules = {
   -- (one or more bytes up to the next CRLF). At the base tier we accept
   -- the value as a single string; Phase 3 will add a soft-syntactic
   -- finding for embedded bare CR (forbidden by the §9 ABNF byte-string).
-  i_value = C((1 - V"line_end") ^ 1),
-  u_value = C((1 - V"line_end") ^ 1),
-  e_value = C((1 - V"line_end") ^ 1),
-  p_value = C((1 - V"line_end") ^ 1),
+  i_value = C((1 - V"value_boundary_chars") ^ 1),
+  u_value = C((1 - V"value_boundary_chars") ^ 1),
+  e_value = C((1 - V"value_boundary_chars") ^ 1),
+  p_value = C((1 - V"value_boundary_chars") ^ 1),
 
   -- b= bandwidth (RFC 8866 §5.8):  b=<bwtype>:<bandwidth>
   -- bwtype is a token (defined value forms include "CT", "AS", "TIAS",
@@ -390,7 +426,7 @@ local rules = {
         Cg(V"bw_type", "type")  * P(":")
       * Cg(V"digits" / tonumber, "value")
     ),
-  bw_type = C((1 - P(":") - SP - V"line_end") ^ 1),
+  bw_type = C((1 - P(":") - SP - V"line_end_chars") ^ 1),
 
   -- t= time-field (RFC 8866 §5.9):  t=<start-time> SP <stop-time>
   -- start/stop are decimal integers (or 0 for unbounded). Captured as
@@ -489,7 +525,7 @@ local rules = {
        + P("rtpmap")        + P("quality")    + P("group")
        + P("ptime")         + P("msid")       + P("ssrc")
        + P("rtcp")          + P("fmtp")       + P("mid"))
-      * (P(":") + V"line_end"),
+      * (P(":") + V"line_end_chars"),
 
   -- rtpmap (RFC 8866 §6.6):
   --   rtpmap-value = payload-type SP encoding-name "/" clock-rate
@@ -532,15 +568,30 @@ local rules = {
   -- `Ct(P(""))`. The whole accumulator is wrapped in an anonymous Cg so its
   -- intermediate values don't leak into the surrounding `a_value` Ct
   -- (LPeg idiom: idioms.md §18).
+  -- The kv-list inside Cg("params") uses the `%` accumulator (idioms.md §18)
+  -- to fold each entry into a seed table. The optional trailing-';' detector
+  -- is a Cmt that consumes the `;` itself AND the following whitespace, and
+  -- records the finding side-effectfully — placing it inside the `^-1` means
+  -- it only fires when a trailing ';' is actually present in the input
+  -- (handles both `foo=bar;` and `foo=bar; ` / `foo=bar;\t` forms).
   fmtp_params_branch =
         Cg(
             Ct(P(""))
               * V"fmtp_entry"
               * (V"fmtp_sep" * V"fmtp_entry") ^ 0
-              * V"fmtp_sep" ^ -1,           -- optional trailing ';'
+              * V"fmtp_trailing_sep_record" ^ -1,
             "params"
           )
-      * #V"line_end",
+      * #V"line_end_chars",
+
+  fmtp_trailing_sep_record =
+      Cmt(P(";") * V"fmtp_hws" ^ 0 * Carg(1),
+          function(_, pos, ctx)
+            if not ctx then return pos end
+            local cont = errors.record(ctx, "sdp.a.fmtp.trailing-semicolon", {})
+            if not cont then return false end
+            return pos
+          end),
 
   fmtp_entry = V"fmtp_kv_pair" + V"fmtp_flag",
   fmtp_kv_pair =
@@ -566,7 +617,7 @@ local rules = {
 
   -- Raw fallback: any non-empty byte-string up to line_end. Captured as
   -- `raw` because no `params` field is populated.
-  fmtp_raw_branch = Cg(C((1 - V"line_end") ^ 1), "raw"),
+  fmtp_raw_branch = Cg(C((1 - V"value_boundary_chars") ^ 1), "raw"),
 
   -- mid (RFC 5888 §4): identification-tag = RFC 8866 §9 token.
   -- Uniqueness across the SDP is enforced at doc level (check_mid_uniqueness).
@@ -590,7 +641,7 @@ local rules = {
       * Cg(V"non_ws_token", "dest_address")
       * Cg(Ct((SP * V"non_ws_token") ^ 1), "src_addresses"),
 
-  non_ws_token = C((1 - SP - V"line_end") ^ 1),
+  non_ws_token = C((1 - SP - V"line_end_chars") ^ 1),
 
   -- group (RFC 5888 §5):
   --   group-attribute = "group:" semantics *(SP identification-tag)
@@ -650,7 +701,7 @@ local rules = {
       * (P("/") * Cg(V"extmap_direction", "direction")) ^ -1
       * SP
       * Cg(V"non_ws_token", "uri")
-      * (SP * Cg(C((1 - V"line_end") ^ 1), "attributes")) ^ -1,
+      * (SP * Cg(C((1 - V"value_boundary_chars") ^ 1), "attributes")) ^ -1,
 
   extmap_direction = C(P("sendonly") + P("recvonly")
                      + P("sendrecv") + P("inactive")),
@@ -672,7 +723,7 @@ local rules = {
       * Cg(Cc("rtcp-fb"), "name")
       * Cg(V"rtcp_fb_pt", "payload_type") * SP
       * Cg(V"rfc8866_token", "feedback_type")
-      * (SP * Cg(C((1 - V"line_end") ^ 1), "parameters")) ^ -1,
+      * (SP * Cg(C((1 - V"value_boundary_chars") ^ 1), "parameters")) ^ -1,
 
   -- Either the string "*" (captured as a literal) OR a numeric payload-type
   -- (captured as a number via tonumber). Type-polymorphic by design.
@@ -696,7 +747,7 @@ local rules = {
   -- then blocks a_generic from claiming it.
   a_rtcp_mux = P("rtcp-mux")
       * Cg(Cc("rtcp-mux"), "name")
-      * #V"line_end",
+      * #V"line_end_chars",
 
   -- ts-refclk (RFC 7273 §4.8):
   --   clksrc = ntp / ptp / gps / gal / glonass / local / private / clksrc-ext
@@ -705,7 +756,7 @@ local rules = {
   -- anything else — including `localmac=<mac>`, which ST 2110-10 §8.2
   -- defines as an extension and the Phase 6 ST 2110 tier will promote
   -- to a recognized form.
-  -- Each branch ends with `#V"line_end"` so the choice only commits on a
+  -- Each branch ends with `#V"line_end_chars"` so the choice only commits on a
   -- branch that consumes exactly up to end-of-line — otherwise control
   -- falls through to the next alternative.
   a_ts_refclk = P("ts-refclk:")
@@ -714,8 +765,8 @@ local rules = {
         + V"tsr_bare" + V"tsr_ext" ),
 
   tsr_ntp = P("ntp=") * Cg(Cc("ntp"), "source")
-      * ( P("/traceable/") * Cg(Cc(true), "traceable") * #V"line_end"
-        + Cg(C((1 - V"line_end") ^ 1), "address") ),
+      * ( P("/traceable/") * Cg(Cc(true), "traceable") * #V"line_end_chars"
+        + Cg(C((1 - V"value_boundary_chars") ^ 1), "address") ),
 
   tsr_ptp = P("ptp=") * Cg(Cc("ptp"), "source")
       * Cg(C(V"rfc8866_token_char" ^ 1), "version")
@@ -723,26 +774,26 @@ local rules = {
       * V"tsr_ptp_server",
 
   tsr_ptp_server =
-        P("traceable") * Cg(Cc(true), "traceable") * #V"line_end"
+        P("traceable") * Cg(Cc(true), "traceable") * #V"line_end_chars"
       + Cg(V"eui64_str", "grandmaster")
-          * (P(":") * Cg(C((1 - V"line_end") ^ 1), "domain")) ^ -1
-          * #V"line_end",
+          * (P(":") * Cg(C((1 - V"value_boundary_chars") ^ 1), "domain")) ^ -1
+          * #V"line_end_chars",
 
   tsr_private = P("private") * Cg(Cc("private"), "source")
       * (P(":traceable") * Cg(Cc(true), "traceable")) ^ -1
-      * #V"line_end",
+      * #V"line_end_chars",
 
   -- Bare clock-source names: gps, gal, glonass, local. The `&line_end`
   -- guard prevents this branch from claiming a prefix-overlapping ext
   -- token (e.g. "local" inside "localmac=...").
   tsr_bare = Cg(C(P("glonass") + P("gps") + P("gal") + P("local")),
                 "source")
-      * #V"line_end",
+      * #V"line_end_chars",
 
   -- Generic clksrc-ext fallback: <token>[=<byte-string>].
   tsr_ext = Cg(C(V"rfc8866_token_char" ^ 1), "source")
-      * (P("=") * Cg(C((1 - V"line_end") ^ 1), "value")) ^ -1
-      * #V"line_end",
+      * (P("=") * Cg(C((1 - V"value_boundary_chars") ^ 1), "value")) ^ -1
+      * #V"line_end_chars",
 
   -- mediaclk (RFC 7273 §5.4):
   --   media-clksrc = "mediaclk:" [media-clkid SP] mediaclock
@@ -758,11 +809,11 @@ local rules = {
       * V"mediaclk_body",
 
   mediaclk_id_prefix = P("id=")
-      * Cg(C((1 - SP - V"line_end") ^ 1), "id") * SP,
+      * Cg(C((1 - SP - V"line_end_chars") ^ 1), "id") * SP,
 
   mediaclk_body = V"mc_sender" + V"mc_direct" + V"mc_ieee1722" + V"mc_ext",
 
-  mc_sender = P("sender") * Cg(Cc("sender"), "mode") * #V"line_end",
+  mc_sender = P("sender") * Cg(Cc("sender"), "mode") * #V"line_end_chars",
 
   -- direct: bare or with =offset and/or " rate=N/N". Offset ABNF is
   -- 1*DIGIT (RFC 7273 §5.4) — looser than RFC 8866 §9 integer because
@@ -770,7 +821,7 @@ local rules = {
   mc_direct = P("direct") * Cg(Cc("direct"), "mode")
       * (P("=") * Cg(V"mediaclk_offset_num", "offset")) ^ -1
       * (SP * P("rate=") * Cg(V"rate_pair", "rate")) ^ -1
-      * #V"line_end",
+      * #V"line_end_chars",
 
   mediaclk_offset_num = C(R("09") ^ 1) / tonumber,
 
@@ -782,11 +833,11 @@ local rules = {
 
   mc_ieee1722 = P("IEEE1722=") * Cg(Cc("IEEE1722"), "mode")
       * Cg(V"eui64_str", "stream_id")
-      * #V"line_end",
+      * #V"line_end_chars",
 
   mc_ext = Cg(C(V"rfc8866_token_char" ^ 1), "mode")
-      * (P("=") * Cg(C((1 - V"line_end") ^ 1), "value")) ^ -1
-      * #V"line_end",
+      * (P("=") * Cg(C((1 - V"value_boundary_chars") ^ 1), "value")) ^ -1
+      * #V"line_end_chars",
 
   -- EUI-64: 8 hex octets separated by '-' (RFC 7273 §4.8 EUI64 = 7(2HEXDIG
   -- "-") 2HEXDIG). Used by ts-refclk:ptp grandmaster and mediaclk:IEEE1722
@@ -818,8 +869,8 @@ local rules = {
   a_generic = -V"known_attr_lookahead"
       * Cg(V"attr_name", "name")
       * (P(":") * Cg(V"attr_value", "value")) ^ -1,
-  attr_name  = C((1 - P(":") - SP - V"line_end") ^ 1),
-  attr_value = C((1 - V"line_end") ^ 1),
+  attr_name  = C((1 - P(":") - SP - V"line_end_chars") ^ 1),
+  attr_value = C((1 - V"value_boundary_chars") ^ 1),
 
   -- ── Numeric leaves (RFC 8866 §9 ABNF) ────────────────────────────────
   -- integer            = POS-DIGIT *DIGIT          ; 1..  (no leading zero)
@@ -878,7 +929,7 @@ local rules = {
   -- digits: one or more ASCII digits, captured as string.
   -- nettype: RFC 8866 §5.2 / §5.7 defines only "IN".
   -- addrtype: RFC 8866 §5.2 / §5.7 defines "IP4" and "IP6".
-  token    = C((1 - SP - V"line_end") ^ 1),
+  token    = C((1 - SP - V"line_end_chars") ^ 1),
   digits   = C(R("09") ^ 1),
   nettype  = C(P("IN")),
   addrtype = C(P("IP4") + P("IP6")),
@@ -886,10 +937,35 @@ local rules = {
   -- ── Bottom leaves ───────────────────────────────────────────────────
   -- value: any non-empty run of bytes up to (but not including) the next
   --   line terminator. Used by lines whose values aren't yet decomposed.
-  -- line_end: CRLF per RFC 8866 §9 ABNF. Phase 5 will add a soft-syntactic
-  --   bare-LF alternative that records a finding.
-  value    = (1 - V"line_end") ^ 1,
-  line_end = P("\r\n"),
+  -- line_end (Phase 5): three branches in priority order —
+  --   1. strict CRLF (RFC 8866 §9 ABNF).
+  --   2. bare LF — soft-syntactic, records sdp.line.lf-only-line-ending.
+  --   3. end-of-input lookahead — fires once on the last line if the file
+  --      ends without a terminator; records sdp.file.trailing-newline-missing.
+  --      #P(-1) does not consume, so the surrounding `* -1` in `document`
+  --      still matches EOF after the finding lands.
+  -- line_end_chars: pure-structural counterpart used for byte-boundary
+  -- lookaheads (`1 - V"line_end_chars"`, `#V"line_end_chars"`). Cmt
+  -- callbacks fire during lookahead evaluation in LPeg, so using V"line_end"
+  -- in a `1 -` predicate would spuriously record findings on every byte
+  -- tested against the boundary. The chars-only rule has no captures and
+  -- no side effects.
+  value          = (1 - V"value_boundary_chars") ^ 1,
+  -- A value position can stop at either a line terminator (line_end_chars)
+  -- or at the FIRST byte of trailing horizontal whitespace that itself
+  -- precedes a terminator (so the trailing-ws Cmt branch in line_end gets a
+  -- chance to fire). Internal whitespace (ws not adjacent to a terminator)
+  -- stays inside the value.
+  value_boundary_chars = S(" \t") ^ 1 * V"line_end_chars" + V"line_end_chars",
+  line_end_chars       = P("\r\n") + P("\n") + P(-1),
+
+  line_end =
+        Cmt(S(" \t") ^ 1 * Carg(1), record_trailing_ws) * V"line_end_core"
+      + V"line_end_core",
+
+  line_end_core = P("\r\n")
+                + Cmt(P("\n") * Carg(1), record_bare_lf)
+                + Cmt(#P(-1)  * Carg(1), record_missing_newline),
 }
 
 local M = {}

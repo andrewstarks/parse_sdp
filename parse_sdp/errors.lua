@@ -251,6 +251,24 @@ M.register("sdp.o.username-required", {
   verified         = true,
 })
 
+M.register("sdp.file.bom-present", {
+  kind             = "soft-syntactic",
+  default_severity = "warn",
+  code             = "MALFORMED_LINE",
+  message_template = "file starts with a UTF-8 BOM; RFC 8866 §6 SDP charset signaling does not require it",
+  spec_ref         = "RFC 8866 §6",
+  verified         = true,
+})
+
+M.register("sdp.line.trailing-whitespace", {
+  kind             = "soft-syntactic",
+  default_severity = "warn",
+  code             = "MALFORMED_LINE",
+  message_template = "line has trailing whitespace before the terminator",
+  spec_ref         = "RFC 8866 §9",
+  verified         = true,
+})
+
 M.register("sdp.line.lf-only-line-ending", {
   kind             = "soft-syntactic",
   default_severity = "warn",

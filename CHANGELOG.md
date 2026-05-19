@@ -348,6 +348,50 @@ captured string. 64 new tests across Phase 4 (1030 → 1094).
 
 Audit ref: `audits/SPEC_INVENTORY.md` row 9 — RFC 7273 §4.8.
 
+- **Phase 5:** soft-syntactic findings. The grammar now accepts five
+  common deviations from RFC 8866 §9 strict form, recording each via
+  the registry while continuing the parse. Default severity is `warn`
+  per the registry — caller policy can promote any to `error` (fails
+  the match) or suppress to `off`.
+  - `sdp.line.lf-only-line-ending` (existing) — bare LF instead of
+    CRLF. The `line_end` rule is now `P("\r\n") + Cmt(P("\n"), …) +
+    Cmt(#P(-1), …)`.
+  - `sdp.file.trailing-newline-missing` (existing) — last line ends
+    without a terminator. Implemented via the same `#P(-1)`
+    end-of-input lookahead in `line_end`; the lookahead is
+    non-consuming so the document's `* -1` still matches EOF after
+    the finding lands.
+  - **New** `sdp.line.trailing-whitespace` — trailing SP/HTAB before
+    a line terminator. The `line_end` rule's first branch absorbs the
+    trailing whitespace via a Cmt before delegating to `line_end_core`.
+    Value captures stop at the trailing-ws boundary via a new
+    `value_boundary_chars` rule so the trailing whitespace lands in
+    `line_end`'s scope, not the value string.
+  - `sdp.a.fmtp.trailing-semicolon` (existing) — fmtp value ending
+    with a stray `;`. The Cmt sits inside `Cg("params")` and CONSUMES
+    the `;` + optional whitespace; this works around an LPeg quirk
+    where a *zero-width* `Cmt(Carg(1), …)` inside the same `Cg` as
+    a `%` accumulator chain trips the "no previous value for
+    accumulator capture" runtime error.
+  - **New** `sdp.file.bom-present` — leading UTF-8 BOM. A
+    `Cmt(P("\xef\xbb\xbf") * Carg(1), …) ^ -1` at the start of the
+    document rule.
+- The `line_end` rule now has a clean structural twin `line_end_chars`
+  (just `P("\r\n") + P("\n") + P(-1)`, no captures) used in
+  `1 - V"line_end_chars"` byte-boundary lookaheads. The split is
+  required: Cmt callbacks **fire during lookahead evaluation** in LPeg,
+  so using the side-effectful `line_end` rule in `1 -` predicates
+  would spuriously double-record findings on every `\n` byte tested
+  against the boundary. All 25+ in-grammar lookaheads were migrated.
+- 14 new tests covering each finding's emission, the no-finding
+  baseline, the policy precedence (warn / error / off promotion),
+  trailing-whitespace stripping from captured values, internal-vs-
+  trailing whitespace discrimination, and the BOM-absent path.
+  Suite: 1115 green.
+
+Audit ref: REFACTOR-PLAN.md §3.3 (Soft-syntactic candidates) +
+LPeg-skill `references/idioms.md` §18 (accumulator caveat).
+
 ### Changed
 
 - The inline `errors` table in `parse_sdp.lua` now delegates to
