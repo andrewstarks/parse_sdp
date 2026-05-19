@@ -740,6 +740,16 @@ separate follow-up.
   span media blocks and stay doc-level. base_semantic_checks
   dropped from 5 to 4 entries. One test relaxed (line-number
   assertion instead of field_path). Suite unchanged at 1546.
+- **6.I (deferred)** — topical reorganization of
+  `spec/grammar_st2110_spec.lua` per the test-ordering principle
+  ([[test-ordering]] memory: base SDP first, then ST 2110
+  extensions in spec order -10 / -20 / -22 / -30 / -31 / -40 /
+  -41, then TR-10-N hierarchy). 5 phase-tagged blocks (6.D.A,
+  6.D.B, 6.D.C, 6.D.D, 6.E.B) were appended at the file end
+  during May 2026 development and should slot into their
+  respective encoding sections. Test-only commit, no logic
+  change. Deferred to a later session; pending work tracked in
+  this bullet so a future agent picks it up.
 
 **Phase 7 — IPMX grammar via `extend(st2110_rules, ...)`.**
 Same pattern, IPMX-specific from TR-10 markdowns. Re-verify each citation
