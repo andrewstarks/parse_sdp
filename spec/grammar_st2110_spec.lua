@@ -50,6 +50,14 @@ local RAW_FMTP_COMPLETE_PT96 =
  .. "exactframerate=60000/1001;depth=10;colorimetry=BT709;"
  .. "PM=2110GPM;SSN=ST2110-20:2022;TP=2110TPN"
 
+-- A complete jxsv fmtp line containing every ST 2110-22:2022 §7.2 +
+-- RFC 9134 §7.1 required parameter (width, height, TP, packetmode).
+-- Acceptance tests that aren't *about* jxsv required-param presence
+-- append this so they don't trip the §7.2 / §7.1 semantic check
+-- (Phase 6.C.G.1).
+local JXSV_FMTP_COMPLETE_PT96 =
+    "a=fmtp:96 width=1920;height=1080;TP=2110TPN;packetmode=0"
+
 describe("ST 2110-20 raw — rtpmap narrowings (ST 2110-20:2022 §7.1)", function()
 
   it("accepts m=video with raw/90000", function()
@@ -90,8 +98,12 @@ end)
 describe("ST 2110-22 jxsv — rtpmap narrowings (ST 2110-22:2022 §5.2/§6.2)", function()
 
   it("accepts m=video with jxsv/90000", function()
-    local doc = st2110.match(build("m=video 30000 RTP/AVP 96",
-                                   "a=rtpmap:96 jxsv/90000"))
+    -- fmtp included so the Phase 6.C.G.1 required-param check doesn't
+    -- fail the match; this test asserts only the rtpmap narrowing.
+    local doc = st2110.match(build_with_fmtp(
+      "m=video 30000 RTP/AVP 96",
+      "a=rtpmap:96 jxsv/90000",
+      JXSV_FMTP_COMPLETE_PT96))
     assert.is_truthy(doc)
   end)
 
@@ -245,10 +257,13 @@ describe("ST 2110-20 raw fmtp — no whitespace around '=' (ST 2110-20:2022 §7.
   -- ST 2110 essence specs do not carry the no-whitespace SHALL; they keep
   -- base's loose form (CLAUDE.md strictness: silence ≠ rejection).
   it("does NOT reject whitespace-around-= for jxsv (no narrowing applies)", function()
+    -- Use the complete jxsv required-param set + an extra profile with
+    -- whitespace around `=` so this test isolates only the ws-around-=
+    -- narrowing (the 6.C.G.1 jxsv required-param check passes).
     assert.is_truthy(st2110.match(build_with_fmtp(
       "m=video 30000 RTP/AVP 96",
       "a=rtpmap:96 jxsv/90000",
-      "a=fmtp:96 profile = High444.12")))
+      JXSV_FMTP_COMPLETE_PT96 .. ";profile = High444.12")))
   end)
 
   -- NOT-SPEC: library
@@ -1204,5 +1219,399 @@ describe("ST 2110-20 raw video fmtp — 1.0-gap closes (Phase 6.C.F)",
       RAW_MEDIA, RAW_RTPMAP, fmtp_from(with({
         TCS = "LINEAR", depth = "10",
       })))))
+  end)
+end)
+
+-- ───────────────────────────────────────────────────────────────────────────
+-- Phase 6.C.G.1 — ST 2110-22 jxsv fmtp required-param presence + per-key
+-- value-set narrowings. Following the same shape as the 6.C.C / 6.C.D
+-- structure used for -20 raw video.
+
+describe("ST 2110-22 jxsv fmtp — required parameters", function()
+
+  local JXSV_MEDIA  = "m=video 30000 RTP/AVP 96"
+  local JXSV_RTPMAP = "a=rtpmap:96 jxsv/90000"
+
+  -- Required: width, height, TP (ST 2110-22:2022 §7.2 Table 1) and
+  -- packetmode (RFC 9134 §7.1).
+  local REQUIRED = {
+    width      = "1920",
+    height     = "1080",
+    TP         = "2110TPN",
+    packetmode = "0",
+  }
+
+  local PARAM_REF = {
+    width      = "ST 2110-22:2022 §7.2",
+    height     = "ST 2110-22:2022 §7.2",
+    TP         = "ST 2110-22:2022 §7.2",
+    packetmode = "RFC 9134 §7.1",
+  }
+
+  local ORDER = { "width", "height", "TP", "packetmode" }
+
+  local function fmtp_omitting(key_to_omit)
+    local parts = {}
+    for _, k in ipairs(ORDER) do
+      if k ~= key_to_omit then
+        parts[#parts + 1] = k .. "=" .. REQUIRED[k]
+      end
+    end
+    return "a=fmtp:96 " .. table.concat(parts, ";")
+  end
+
+  it("accepts jxsv fmtp with every required parameter present", function()
+    assert.is_truthy(st2110.match(build_with_fmtp(
+      JXSV_MEDIA, JXSV_RTPMAP, JXSV_FMTP_COMPLETE_PT96)))
+  end)
+
+  for _, key in ipairs(ORDER) do
+    it(("rejects jxsv fmtp missing '%s' [%s]"):format(key, PARAM_REF[key]),
+        function()
+      local doc, ctx = st2110.match(build_with_fmtp(
+        JXSV_MEDIA, JXSV_RTPMAP, fmtp_omitting(key)))
+      assert.is_nil(doc)
+      assert.is_not_nil(finding_for(ctx,
+        "st2110-22.a.fmtp." .. key .. "-required"))
+    end)
+  end
+
+  -- NOT-SPEC: library — required-param check is scoped to jxsv. Other
+  -- essences have their own required sets (or none).
+  it("does NOT require jxsv params for raw (different essence)", function()
+    assert.is_truthy(st2110.match(build_with_fmtp(
+      "m=video 30000 RTP/AVP 96",
+      "a=rtpmap:96 raw/90000",
+      RAW_FMTP_COMPLETE_PT96)))
+  end)
+
+  it("rejects jxsv video with no a=fmtp at all", function()
+    local doc, ctx = st2110.match(build(JXSV_MEDIA, JXSV_RTPMAP))
+    assert.is_nil(doc)
+    -- The first missing-param finding identifies the failure mode
+    -- (width is first in ORDER).
+    assert.is_not_nil(finding_for(ctx,
+      "st2110-22.a.fmtp.width-required"))
+  end)
+end)
+
+describe("ST 2110-22 jxsv fmtp — enum value sets", function()
+
+  local JXSV_MEDIA  = "m=video 30000 RTP/AVP 96"
+  local JXSV_RTPMAP = "a=rtpmap:96 jxsv/90000"
+
+  -- Build a complete jxsv fmtp with one key overridden (or appended for
+  -- optional keys). Mirrors the -20 enum helper.
+  local function jxsv_fmtp_with(key, val)
+    local parts = { "width=1920", "height=1080", "TP=2110TPN",
+                    "packetmode=0" }
+    local replaced = false
+    for i, p in ipairs(parts) do
+      if p:sub(1, #key + 1) == (key .. "=") then
+        parts[i] = key .. "=" .. val
+        replaced = true
+        break
+      end
+    end
+    if not replaced then
+      parts[#parts + 1] = key .. "=" .. val
+    end
+    return "a=fmtp:96 " .. table.concat(parts, ";")
+  end
+
+  -- Per-key permitted values, lifted from JXSV_ENUM_VALUES in
+  -- parse_sdp/grammar/st2110.lua. Tests cover each value individually
+  -- so any regression on the per-key set is caught.
+  local ENUM_VALUES = {
+    sampling = {
+      "YCbCr-4:4:4", "YCbCr-4:2:2", "YCbCr-4:2:0",
+      "CLYCbCr-4:4:4", "CLYCbCr-4:2:2", "CLYCbCr-4:2:0",
+      "ICtCp-4:4:4", "ICtCp-4:2:2", "ICtCp-4:2:0",
+      "RGB", "XYZ", "KEY", "UNSPECIFIED",
+    },
+    colorimetry = {
+      "BT601-5", "BT709-2", "SMPTE240M",
+      "BT601", "BT709", "BT2020", "BT2100",
+      "ST2065-1", "ST2065-3", "XYZ", "UNSPECIFIED",
+    },
+    TCS       = { "SDR", "PQ", "HLG", "UNSPECIFIED" },
+    RANGE     = { "NARROW", "FULLPROTECT", "FULL" },
+    TP        = { "2110TPN", "2110TPNL", "2110TPW" },
+    transmode = { "0", "1" },
+    profile   = {
+      "Unrestricted", "Light422.10", "Light444.12",
+      "LightSubline422.10", "LightSubline444.12",
+      "Main422.10", "Main444.12", "High444.12",
+      "MLS.12",
+      "LightBayer", "MainBayer", "HighBayer", "MLSBayer",
+    },
+    level = {
+      "Unrestricted", "1k-1", "2k-1",
+      "4k-1", "4k-2", "4k-3",
+      "8k-1", "8k-2", "8k-3",
+      "16k-1", "16k-2", "16k-3",
+    },
+    sublevel = {
+      "Unrestricted", "Full", "Sublev12bpp", "Sublev9bpp",
+      "Sublev6bpp", "Sublev4bpp", "Sublev3bpp", "Sublev2bpp",
+    },
+  }
+
+  local SPEC_REF = {
+    sampling    = "RFC 9134 §7.1",
+    colorimetry = "RFC 9134 §7.1",
+    TCS         = "RFC 9134 §7.1",
+    RANGE       = "RFC 9134 §7.1",
+    TP          = "ST 2110-22:2022 §5.3",
+    transmode   = "RFC 9134 §7.1",
+    profile     = "RFC 9134 §7.1",
+    level       = "RFC 9134 §7.1",
+    sublevel    = "RFC 9134 §7.1",
+  }
+
+  local KEY_ORDER = {
+    "TP", "sampling", "colorimetry", "TCS", "RANGE",
+    "transmode", "profile", "level", "sublevel",
+  }
+
+  for _, key in ipairs(KEY_ORDER) do
+    describe(("'%s' [%s]"):format(key, SPEC_REF[key]), function()
+      for _, v in ipairs(ENUM_VALUES[key]) do
+        it(("accepts %s=%s"):format(key, v), function()
+          assert.is_truthy(st2110.match(build_with_fmtp(
+            JXSV_MEDIA, JXSV_RTPMAP, jxsv_fmtp_with(key, v))))
+        end)
+      end
+      it(("rejects %s=BOGUS"):format(key), function()
+        local doc, ctx = st2110.match(build_with_fmtp(
+          JXSV_MEDIA, JXSV_RTPMAP, jxsv_fmtp_with(key, "BOGUS")))
+        assert.is_nil(doc)
+        assert.is_not_nil(finding_for(ctx,
+          "st2110-22.a.fmtp." .. key .. "-invalid-value"))
+      end)
+    end)
+  end
+
+  -- Spec-divergence-from-1.0 sanity tests. The grammar tier follows
+  -- RFC 9134 §7.1 verbatim; values 1.0 accepted but RFC 9134 omits
+  -- must now be rejected, and values RFC 9134 permits but 1.0 rejected
+  -- must now be accepted.
+  describe("RFC 9134 §7.1 vs 1.0 enum divergence", function()
+    it("rejects colorimetry=ALPHA on jxsv (RFC 9134 omits ALPHA)",
+        function()
+      local doc, ctx = st2110.match(build_with_fmtp(
+        JXSV_MEDIA, JXSV_RTPMAP, jxsv_fmtp_with("colorimetry", "ALPHA")))
+      assert.is_nil(doc)
+      assert.is_not_nil(finding_for(ctx,
+        "st2110-22.a.fmtp.colorimetry-invalid-value"))
+    end)
+    it("accepts colorimetry=BT601-5 on jxsv (RFC 9134 permits)",
+        function()
+      assert.is_truthy(st2110.match(build_with_fmtp(
+        JXSV_MEDIA, JXSV_RTPMAP, jxsv_fmtp_with("colorimetry", "BT601-5"))))
+    end)
+    it("rejects TCS=LINEAR on jxsv (RFC 9134 omits)", function()
+      local doc, ctx = st2110.match(build_with_fmtp(
+        JXSV_MEDIA, JXSV_RTPMAP, jxsv_fmtp_with("TCS", "LINEAR")))
+      assert.is_nil(doc)
+      assert.is_not_nil(finding_for(ctx,
+        "st2110-22.a.fmtp.TCS-invalid-value"))
+    end)
+    it("rejects TCS=ST2115LOGS3 on jxsv (RFC 9134 omits)", function()
+      local doc, ctx = st2110.match(build_with_fmtp(
+        JXSV_MEDIA, JXSV_RTPMAP, jxsv_fmtp_with("TCS", "ST2115LOGS3")))
+      assert.is_nil(doc)
+      assert.is_not_nil(finding_for(ctx,
+        "st2110-22.a.fmtp.TCS-invalid-value"))
+    end)
+    it("accepts sampling=UNSPECIFIED on jxsv (RFC 9134 permits)",
+        function()
+      assert.is_truthy(st2110.match(build_with_fmtp(
+        JXSV_MEDIA, JXSV_RTPMAP, jxsv_fmtp_with("sampling", "UNSPECIFIED"))))
+    end)
+  end)
+end)
+
+describe("ST 2110-22 jxsv fmtp — non-enum value forms", function()
+
+  local JXSV_MEDIA  = "m=video 30000 RTP/AVP 96"
+  local JXSV_RTPMAP = "a=rtpmap:96 jxsv/90000"
+
+  -- Same builder shape as the enum block, with `key` substitution.
+  local function jxsv_fmtp_with(key, val)
+    local parts = { "width=1920", "height=1080", "TP=2110TPN",
+                    "packetmode=0" }
+    local replaced = false
+    for i, p in ipairs(parts) do
+      if p:sub(1, #key + 1) == (key .. "=") then
+        parts[i] = key .. "=" .. val
+        replaced = true
+        break
+      end
+    end
+    if not replaced then
+      parts[#parts + 1] = key .. "=" .. val
+    end
+    return "a=fmtp:96 " .. table.concat(parts, ";")
+  end
+
+  -- ── width / height [ST 2110-22:2022 §7.2 + RFC 9134 §7.1] ────────────
+  for _, key in ipairs({ "width", "height" }) do
+    describe(("'%s' (integer 1..32767) [ST 2110-22:2022 §7.2]")
+                :format(key), function()
+      it(("accepts %s=1"):format(key), function()
+        assert.is_truthy(st2110.match(build_with_fmtp(
+          JXSV_MEDIA, JXSV_RTPMAP, jxsv_fmtp_with(key, "1"))))
+      end)
+      it(("accepts %s=32767"):format(key), function()
+        assert.is_truthy(st2110.match(build_with_fmtp(
+          JXSV_MEDIA, JXSV_RTPMAP, jxsv_fmtp_with(key, "32767"))))
+      end)
+      it(("rejects %s=0"):format(key), function()
+        local doc, ctx = st2110.match(build_with_fmtp(
+          JXSV_MEDIA, JXSV_RTPMAP, jxsv_fmtp_with(key, "0")))
+        assert.is_nil(doc)
+        assert.is_not_nil(finding_for(ctx,
+          "st2110-22.a.fmtp." .. key .. "-invalid-value"))
+      end)
+      it(("rejects %s=32768"):format(key), function()
+        local doc, ctx = st2110.match(build_with_fmtp(
+          JXSV_MEDIA, JXSV_RTPMAP, jxsv_fmtp_with(key, "32768")))
+        assert.is_nil(doc)
+        assert.is_not_nil(finding_for(ctx,
+          "st2110-22.a.fmtp." .. key .. "-invalid-value"))
+      end)
+    end)
+  end
+
+  -- ── packetmode / depth / exactframerate / MAXUDP / CMAX / SSN ────────
+  describe("'depth' positive integer [RFC 9134 §7.1]", function()
+    it("accepts depth=10", function()
+      assert.is_truthy(st2110.match(build_with_fmtp(
+        JXSV_MEDIA, JXSV_RTPMAP, jxsv_fmtp_with("depth", "10"))))
+    end)
+    it("accepts depth=8 / 12 / 16 (RFC 9134 'typical' examples)",
+        function()
+      for _, d in ipairs({ "8", "12", "16" }) do
+        assert.is_truthy(st2110.match(build_with_fmtp(
+          JXSV_MEDIA, JXSV_RTPMAP, jxsv_fmtp_with("depth", d))))
+      end
+    end)
+    it("rejects depth=0", function()
+      local doc, ctx = st2110.match(build_with_fmtp(
+        JXSV_MEDIA, JXSV_RTPMAP, jxsv_fmtp_with("depth", "0")))
+      assert.is_nil(doc)
+      assert.is_not_nil(finding_for(ctx,
+        "st2110-22.a.fmtp.depth-invalid-value"))
+    end)
+    -- NOT-SPEC: library — RFC 9134 §7.1 doesn't close the depth enum,
+    -- so values 1.0 rejects for raw (e.g. "13") are accepted for jxsv.
+    it("accepts depth=13 (RFC 9134 doesn't close the set)", function()
+      assert.is_truthy(st2110.match(build_with_fmtp(
+        JXSV_MEDIA, JXSV_RTPMAP, jxsv_fmtp_with("depth", "13"))))
+    end)
+  end)
+
+  describe("'exactframerate' [RFC 9134 §7.1]", function()
+    it("accepts integer", function()
+      assert.is_truthy(st2110.match(build_with_fmtp(
+        JXSV_MEDIA, JXSV_RTPMAP, jxsv_fmtp_with("exactframerate", "30"))))
+    end)
+    it("accepts 30000/1001 (lowest terms)", function()
+      assert.is_truthy(st2110.match(build_with_fmtp(
+        JXSV_MEDIA, JXSV_RTPMAP,
+        jxsv_fmtp_with("exactframerate", "30000/1001"))))
+    end)
+    it("rejects 60000/2002 (not lowest terms)", function()
+      local doc, ctx = st2110.match(build_with_fmtp(
+        JXSV_MEDIA, JXSV_RTPMAP,
+        jxsv_fmtp_with("exactframerate", "60000/2002")))
+      assert.is_nil(doc)
+      assert.is_not_nil(finding_for(ctx,
+        "st2110-22.a.fmtp.exactframerate-invalid-value"))
+    end)
+  end)
+
+  describe("'MAXUDP' (positive int ≤ 8960) [ST 2110-10 §6.4]",
+      function()
+    it("accepts MAXUDP=8960", function()
+      assert.is_truthy(st2110.match(build_with_fmtp(
+        JXSV_MEDIA, JXSV_RTPMAP, jxsv_fmtp_with("MAXUDP", "8960"))))
+    end)
+    it("rejects MAXUDP=8961", function()
+      local doc, ctx = st2110.match(build_with_fmtp(
+        JXSV_MEDIA, JXSV_RTPMAP, jxsv_fmtp_with("MAXUDP", "8961")))
+      assert.is_nil(doc)
+      assert.is_not_nil(finding_for(ctx,
+        "st2110-22.a.fmtp.MAXUDP-invalid-value"))
+    end)
+  end)
+
+  describe("'CMAX' (integer) [ST 2110-21:2022 §8.2]", function()
+    it("accepts CMAX=5000", function()
+      assert.is_truthy(st2110.match(build_with_fmtp(
+        JXSV_MEDIA, JXSV_RTPMAP, jxsv_fmtp_with("CMAX", "5000"))))
+    end)
+    it("rejects CMAX=abc (non-integer)", function()
+      local doc, ctx = st2110.match(build_with_fmtp(
+        JXSV_MEDIA, JXSV_RTPMAP, jxsv_fmtp_with("CMAX", "abc")))
+      assert.is_nil(doc)
+      assert.is_not_nil(finding_for(ctx,
+        "st2110-22.a.fmtp.CMAX-invalid-value"))
+    end)
+  end)
+
+  describe("'SSN' [ST 2110-22:2022 §7.2]", function()
+    it("accepts SSN=ST2110-22:2019", function()
+      assert.is_truthy(st2110.match(build_with_fmtp(
+        JXSV_MEDIA, JXSV_RTPMAP, jxsv_fmtp_with("SSN", "ST2110-22:2019"))))
+    end)
+    it("accepts SSN=ST2110-22:2022", function()
+      assert.is_truthy(st2110.match(build_with_fmtp(
+        JXSV_MEDIA, JXSV_RTPMAP, jxsv_fmtp_with("SSN", "ST2110-22:2022"))))
+    end)
+    it("rejects SSN=ST2110-20:2022 (wrong subtype)", function()
+      local doc, ctx = st2110.match(build_with_fmtp(
+        JXSV_MEDIA, JXSV_RTPMAP, jxsv_fmtp_with("SSN", "ST2110-20:2022")))
+      assert.is_nil(doc)
+      assert.is_not_nil(finding_for(ctx,
+        "st2110-22.a.fmtp.SSN-invalid-value"))
+    end)
+  end)
+end)
+
+describe("ST 2110-22 jxsv fmtp — flag-only [RFC 9134 §7.1]", function()
+
+  local JXSV_MEDIA  = "m=video 30000 RTP/AVP 96"
+  local JXSV_RTPMAP = "a=rtpmap:96 jxsv/90000"
+
+  it("accepts bare 'interlace' flag", function()
+    assert.is_truthy(st2110.match(build_with_fmtp(
+      JXSV_MEDIA, JXSV_RTPMAP,
+      JXSV_FMTP_COMPLETE_PT96 .. ";interlace")))
+  end)
+
+  it("accepts bare 'segmented' flag (with interlace)", function()
+    assert.is_truthy(st2110.match(build_with_fmtp(
+      JXSV_MEDIA, JXSV_RTPMAP,
+      JXSV_FMTP_COMPLETE_PT96 .. ";interlace;segmented")))
+  end)
+
+  it("rejects 'interlace=1' (must be flag, not kv)", function()
+    local doc, ctx = st2110.match(build_with_fmtp(
+      JXSV_MEDIA, JXSV_RTPMAP,
+      JXSV_FMTP_COMPLETE_PT96 .. ";interlace=1"))
+    assert.is_nil(doc)
+    assert.is_not_nil(finding_for(ctx,
+      "st2110-22.a.fmtp.interlace-invalid-value"))
+  end)
+
+  it("rejects 'segmented=true'", function()
+    local doc, ctx = st2110.match(build_with_fmtp(
+      JXSV_MEDIA, JXSV_RTPMAP,
+      JXSV_FMTP_COMPLETE_PT96 .. ";interlace;segmented=true"))
+    assert.is_nil(doc)
+    assert.is_not_nil(finding_for(ctx,
+      "st2110-22.a.fmtp.segmented-invalid-value"))
   end)
 end)

@@ -36,17 +36,18 @@ local RAW_VIDEO_REQUIRED_PARAMS = {
   "colorimetry", "PM", "SSN", "TP",
 }
 
--- Shared helper: returns a list of {media_index, pt, params_or_empty} tuples,
--- one per raw rtpmap PT in the document. params is the fmtp params table for
--- the matching PT or {} when no fmtp is present. Used by every raw-video
--- semantic check so the doc walk stays in one place.
-local function each_raw_video_fmtp(doc)
+-- Shared helper: returns a list of {media_index, payload_type, params} tuples,
+-- one per rtpmap PT whose encoding matches `encoding_name` in the document.
+-- `params` is the fmtp params table for the matching PT or {} when no fmtp
+-- is present. Used by every encoding-scoped semantic check (raw / jxsv /
+-- smpte291 / AM824) so the doc walk stays in one place.
+local function each_fmtp_for_encoding(doc, encoding_name)
   local out = {}
   for i, m in ipairs(doc.media) do
-    local raw_pts = {}
+    local matching_pts = {}
     for _, attr in ipairs(m.attributes) do
-      if attr.name == "rtpmap" and attr.encoding == "raw" then
-        raw_pts[attr.payload_type] = true
+      if attr.name == "rtpmap" and attr.encoding == encoding_name then
+        matching_pts[attr.payload_type] = true
       end
     end
     local fmtp_by_pt = {}
@@ -55,7 +56,7 @@ local function each_raw_video_fmtp(doc)
         fmtp_by_pt[attr.payload_type] = attr
       end
     end
-    for pt in pairs(raw_pts) do
+    for pt in pairs(matching_pts) do
       local fmtp = fmtp_by_pt[pt]
       out[#out + 1] = {
         media_index = i,
@@ -65,6 +66,13 @@ local function each_raw_video_fmtp(doc)
     end
   end
   return out
+end
+
+-- Thin wrapper for raw video scope. Kept for readability at the call sites
+-- of the -20 checks (each_raw_video_fmtp(doc) reads as cleanly as the
+-- explicit-encoding form, and the call sites pre-date the refactor).
+local function each_raw_video_fmtp(doc)
+  return each_fmtp_for_encoding(doc, "raw")
 end
 
 -- Walks every media block, finds payload types whose a=rtpmap encoding is
@@ -415,6 +423,189 @@ local function check_raw_video_fmtp_cross_param(doc, ctx)
   return true
 end
 
+-- ── ST 2110-22 jxsv fmtp narrowings (Phase 6.C.G.1) ────────────────────────
+-- ST 2110-22:2022 §7.2 Table 1 plus RFC 9134 §7.1 (IANA video/jxsv media-
+-- type registration) define the jxsv fmtp parameter set: 3 required from
+-- ST 2110-22 (width, height, TP), 1 required from RFC 9134 (packetmode),
+-- plus 12 optional value-form parameters and 2 bare-flag parameters.
+--
+-- Value-set divergence from 1.0 parser:
+--   * `colorimetry`: RFC 9134 lists {BT601-5, BT709-2, SMPTE240M, BT601,
+--     BT709, BT2020, BT2100, ST2065-1, ST2065-3, XYZ, UNSPECIFIED}.
+--     1.0 reuses ST 2110-20's set (includes ALPHA, omits the 3 legacy
+--     values). The grammar tier follows RFC 9134 — primary spec text.
+--   * `TCS`: RFC 9134 lists {SDR, PQ, HLG, UNSPECIFIED} only. 1.0 reuses
+--     ST 2110-20's 11-value set. Grammar tier follows RFC 9134.
+--   * `sampling`: RFC 9134 adds `UNSPECIFIED` to the -20 set. Grammar
+--     tier includes it.
+
+local JXSV_ENUM_VALUES = {
+  -- RFC 9134 §7.1 — same family as -20 sampling plus UNSPECIFIED.
+  sampling = {
+    ["YCbCr-4:4:4"]   = true, ["YCbCr-4:2:2"]   = true, ["YCbCr-4:2:0"]   = true,
+    ["CLYCbCr-4:4:4"] = true, ["CLYCbCr-4:2:2"] = true, ["CLYCbCr-4:2:0"] = true,
+    ["ICtCp-4:4:4"]   = true, ["ICtCp-4:2:2"]   = true, ["ICtCp-4:2:0"]   = true,
+    ["RGB"]           = true, ["XYZ"]           = true, ["KEY"]           = true,
+    ["UNSPECIFIED"]   = true,
+  },
+  -- RFC 9134 §7.1 — colorimetry: 11 values; legacy `*-5/-2`/SMPTE240M
+  -- forms are explicitly permitted alongside the modern names.
+  colorimetry = {
+    ["BT601-5"]   = true, ["BT709-2"]    = true, ["SMPTE240M"]   = true,
+    ["BT601"]     = true, ["BT709"]      = true, ["BT2020"]      = true,
+    ["BT2100"]    = true, ["ST2065-1"]   = true, ["ST2065-3"]    = true,
+    ["XYZ"]       = true, ["UNSPECIFIED"] = true,
+  },
+  -- RFC 9134 §7.1 — TCS: 4 values only (much narrower than -20).
+  TCS = {
+    ["SDR"] = true, ["PQ"] = true, ["HLG"] = true, ["UNSPECIFIED"] = true,
+  },
+  -- RFC 9134 §7.1 — RANGE: 3 values. BT2100 narrowing is cross-param
+  -- (Phase 6.C.G.2), not a member-of-set check.
+  RANGE = { ["NARROW"] = true, ["FULLPROTECT"] = true, ["FULL"] = true },
+  -- ST 2110-22:2022 §5.3 — same TP set as -21 §8.1.
+  TP = { ["2110TPN"] = true, ["2110TPNL"] = true, ["2110TPW"] = true },
+  -- RFC 9134 §7.1 — transmode T-bit, packetmode K-bit ∈ {0, 1}.
+  transmode  = { ["0"] = true, ["1"] = true },
+  packetmode = { ["0"] = true, ["1"] = true },
+  -- RFC 9134 §7.1 — profile/level/sublevel reference ISO 21122-2.
+  -- 1.0 parser hard-codes the JPEG-XS Part 2 enums; preserved here so
+  -- the grammar tier doesn't regress past 1.0.
+  profile = {
+    ["Unrestricted"]       = true,
+    ["Light422.10"]        = true,
+    ["Light444.12"]        = true,
+    ["LightSubline422.10"] = true,
+    ["LightSubline444.12"] = true,
+    ["Main422.10"]         = true,
+    ["Main444.12"]         = true,
+    ["High444.12"]         = true,
+    ["MLS.12"]             = true,
+    ["LightBayer"]         = true,
+    ["MainBayer"]          = true,
+    ["HighBayer"]          = true,
+    ["MLSBayer"]           = true,
+  },
+  level = {
+    ["Unrestricted"] = true,
+    ["1k-1"]   = true,
+    ["2k-1"]   = true,
+    ["4k-1"]   = true, ["4k-2"]   = true, ["4k-3"]   = true,
+    ["8k-1"]   = true, ["8k-2"]   = true, ["8k-3"]   = true,
+    ["16k-1"]  = true, ["16k-2"]  = true, ["16k-3"]  = true,
+  },
+  sublevel = {
+    ["Unrestricted"] = true,
+    ["Full"]         = true,
+    ["Sublev12bpp"]  = true,
+    ["Sublev9bpp"]   = true,
+    ["Sublev6bpp"]   = true,
+    ["Sublev4bpp"]   = true,
+    ["Sublev3bpp"]   = true,
+    ["Sublev2bpp"]   = true,
+  },
+}
+
+local JXSV_ENUM_KEYS = {
+  "TP", "packetmode", "sampling", "TCS", "colorimetry", "RANGE",
+  "transmode", "profile", "level", "sublevel",
+}
+
+-- Non-enum value-form validators. width/height/exactframerate/MAXUDP reuse
+-- the -20 implementations (same form per RFC 9134 §7.1). depth is open
+-- positive integer (RFC 9134 §7.1: "typical values 8, 10, 12, 16" —
+-- non-closed). CMAX is any integer per ST 2110-21:2022 §8.2. SSN takes
+-- ST2110-22:2019 or ST2110-22:2022 per ST 2110-22:2022 §7.2 Table 2.
+
+local function validate_positive_integer(v)
+  if not v:match("^%d+$") then return false end
+  local n = tonumber(v)
+  return n ~= nil and n > 0
+end
+
+local function validate_integer(v)
+  if not v:match("^%-?%d+$") then return false end
+  return tonumber(v) ~= nil
+end
+
+local function validate_ssn22(v)
+  return v == "ST2110-22:2019" or v == "ST2110-22:2022"
+end
+
+local JXSV_VALUE_VALIDATORS = {
+  width          = make_pixel_dim_validator(),
+  height         = make_pixel_dim_validator(),
+  exactframerate = validate_exactframerate,
+  depth          = validate_positive_integer,
+  MAXUDP         = validate_maxudp,
+  CMAX           = validate_integer,
+  SSN            = validate_ssn22,
+}
+
+local JXSV_VALUE_FORM_KEYS = {
+  "width", "height", "exactframerate", "depth", "MAXUDP", "CMAX", "SSN",
+}
+
+local JXSV_FLAG_ONLY_KEYS = { "interlace", "segmented" }
+
+-- RFC 9134 §7.1 — required parameters: width, height, TP (from
+-- ST 2110-22:2022 §7.2 Table 1) and packetmode (from RFC 9134 §7.1).
+local JXSV_REQUIRED_PARAMS = { "width", "height", "TP", "packetmode" }
+
+local function check_jxsv_fmtp_required(doc, ctx)
+  for _, e in ipairs(each_fmtp_for_encoding(doc, "jxsv")) do
+    for _, key in ipairs(JXSV_REQUIRED_PARAMS) do
+      if e.params[key] == nil then
+        local cont = errors.record(ctx,
+          "st2110-22.a.fmtp." .. key .. "-required",
+          { field_path = string.format(
+              "media[%d].attributes[fmtp:pt=%d]",
+              e.media_index, e.payload_type) })
+        if not cont then return false end
+      end
+    end
+  end
+  return true
+end
+
+local function check_jxsv_fmtp_values(doc, ctx)
+  for _, e in ipairs(each_fmtp_for_encoding(doc, "jxsv")) do
+    local path = string.format(
+      "media[%d].attributes[fmtp:pt=%d]", e.media_index, e.payload_type)
+
+    for _, key in ipairs(JXSV_ENUM_KEYS) do
+      local val = e.params[key]
+      if val ~= nil and not JXSV_ENUM_VALUES[key][tostring(val)] then
+        local cont = errors.record(ctx,
+          "st2110-22.a.fmtp." .. key .. "-invalid-value",
+          { field_path = path })
+        if not cont then return false end
+      end
+    end
+
+    for _, key in ipairs(JXSV_VALUE_FORM_KEYS) do
+      local val = e.params[key]
+      if val ~= nil and not JXSV_VALUE_VALIDATORS[key](tostring(val)) then
+        local cont = errors.record(ctx,
+          "st2110-22.a.fmtp." .. key .. "-invalid-value",
+          { field_path = path })
+        if not cont then return false end
+      end
+    end
+
+    for _, key in ipairs(JXSV_FLAG_ONLY_KEYS) do
+      local val = e.params[key]
+      if val ~= nil and val ~= true then
+        local cont = errors.record(ctx,
+          "st2110-22.a.fmtp." .. key .. "-invalid-value",
+          { field_path = path })
+        if not cont then return false end
+      end
+    end
+  end
+  return true
+end
+
 -- ── rtpmap encoding narrowings (Phase 6.B) ─────────────────────────────────
 --
 -- Each known ST 2110 essence encoding has:
@@ -625,6 +816,8 @@ local overrides = {
     check_raw_video_fmtp_required,
     check_raw_video_fmtp_values,
     check_raw_video_fmtp_cross_param,
+    check_jxsv_fmtp_required,
+    check_jxsv_fmtp_values,
   },
 }
 

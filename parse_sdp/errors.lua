@@ -785,4 +785,99 @@ for _, p in ipairs(TCS_REQUIRES_16F) do
   })
 end
 
+-- ── ST 2110-22 jxsv fmtp narrowings (Phase 6.C.G.1) ───────────────────────
+-- ST 2110-22:2022 §7.2 Table 1 lists three required jxsv format-specific
+-- parameters: width, height, TP. RFC 9134 §7.1 (IANA video/jxsv) adds
+-- packetmode as required, and defines value forms for the optional set
+-- (sampling, exactframerate, depth, TCS, colorimetry, RANGE, transmode,
+-- profile, level, sublevel, interlace, segmented).
+--
+-- Per-tier scope: a fmtp check fires only when its payload-type's rtpmap
+-- encoding is `jxsv`. ctx.rtpmap_encodings carries the binding from the
+-- a_rtpmap override (same mechanism as -20 raw).
+--
+-- Spec divergence from 1.0 parser: 1.0 reuses ST 2110-20's value sets for
+-- jxsv `colorimetry` / `TCS` / `sampling`. RFC 9134 §7.1 defines its own
+-- enums that overlap but are not identical. The grammar tier follows
+-- RFC 9134 (primary spec text); see commit message for the diff.
+
+-- Required-presence rows (ST 2110-22:2022 §7.2 Table 1 + RFC 9134 §7.1).
+local REQUIRED_JXSV_PARAMS = {
+  { "width",      "ST 2110-22:2022 §7.2"  },
+  { "height",     "ST 2110-22:2022 §7.2"  },
+  { "TP",         "ST 2110-22:2022 §7.2"  },
+  { "packetmode", "RFC 9134 §7.1"         },
+}
+
+for _, p in ipairs(REQUIRED_JXSV_PARAMS) do
+  local key, ref = p[1], p[2]
+  M.register("st2110-22.a.fmtp." .. key .. "-required", {
+    kind             = "semantic",
+    default_severity = "error",
+    code             = "MISSING_FIELD",
+    message_template =
+      "fmtp for jxsv must include required '" .. key .. "' parameter",
+    spec_ref         = ref,
+    verified         = true,
+  })
+end
+
+-- Per-key value-set / value-form rows. Enum-typed and non-enum forms are
+-- both registered under the `-invalid-value` suffix so the audit grep
+-- pattern matches the -20 family one-for-one.
+local JXSV_VALUE_FORM_PARAMS = {
+  -- RFC 9134 §7.1 — required value forms
+  { "width",          "ST 2110-22:2022 §7.2"  },
+  { "height",         "ST 2110-22:2022 §7.2"  },
+  { "TP",             "ST 2110-22:2022 §5.3"  },
+  { "packetmode",     "RFC 9134 §7.1"         },
+  -- RFC 9134 §7.1 — optional value forms
+  { "sampling",       "RFC 9134 §7.1"         },
+  { "exactframerate", "RFC 9134 §7.1"         },
+  { "depth",          "RFC 9134 §7.1"         },
+  { "TCS",            "RFC 9134 §7.1"         },
+  { "colorimetry",    "RFC 9134 §7.1"         },
+  { "RANGE",          "RFC 9134 §7.1"         },
+  { "transmode",      "RFC 9134 §7.1"         },
+  { "profile",        "RFC 9134 §7.1"         },
+  { "level",          "RFC 9134 §7.1"         },
+  { "sublevel",       "RFC 9134 §7.1"         },
+  -- ST 2110-22:2022 §7.2 Table 2 optional rows (year-specific value form)
+  { "SSN",            "ST 2110-22:2022 §7.2"  },
+  -- ST 2110-10 §6.4 — Extended UDP Size Limit (referenced by ST 2110-22)
+  { "MAXUDP",         "ST 2110-10 §6.4"       },
+  -- ST 2110-21:2022 §8.2 — CMAX integer form (referenced by ST 2110-22)
+  { "CMAX",           "ST 2110-21:2022 §8.2"  },
+}
+
+for _, p in ipairs(JXSV_VALUE_FORM_PARAMS) do
+  local key, ref = p[1], p[2]
+  M.register("st2110-22.a.fmtp." .. key .. "-invalid-value", {
+    kind             = "semantic",
+    default_severity = "error",
+    code             = "INVALID_VALUE",
+    message_template =
+      "fmtp '" .. key .. "' value does not satisfy the defined value form",
+    spec_ref         = ref,
+    verified         = true,
+  })
+end
+
+-- RFC 9134 §7.1 — interlace and segmented are bare-attribute flags;
+-- signaling either as `key=value` is invalid. Same form as -20 §7.3 but
+-- different normative source, so separate IDs.
+local JXSV_FLAG_ONLY_PARAMS = { "interlace", "segmented" }
+
+for _, key in ipairs(JXSV_FLAG_ONLY_PARAMS) do
+  M.register("st2110-22.a.fmtp." .. key .. "-invalid-value", {
+    kind             = "semantic",
+    default_severity = "error",
+    code             = "INVALID_VALUE",
+    message_template =
+      "fmtp '" .. key .. "' must be a bare flag (no '=value')",
+    spec_ref         = "RFC 9134 §7.1",
+    verified         = true,
+  })
+end
+
 return M

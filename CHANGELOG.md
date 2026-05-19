@@ -834,6 +834,57 @@ ST 2110-20:2022 §6.2.5 / §6.3.3 / §7.2 / §7.3 / §7.4.1.
 Audit ref: REFACTOR-PLAN.md §5 Phase 6.C; audits/SPEC_INVENTORY.md
 rows 61, 115, 116, 117, 118; ST 2110-20:2022 §6.2.5 Table 3 + §7.6.
 
+- **Phase 6.C.G.1:** ST 2110-22 jxsv fmtp required-parameter presence
+  (ST 2110-22:2022 §7.2 Table 1 + RFC 9134 §7.1) plus per-key
+  value-set / value-form narrowings for the full RFC 9134 §7.1
+  optional parameter set.
+
+  Refactor: the `each_raw_video_fmtp(doc)` helper from 6.C.C was
+  generalized to `each_fmtp_for_encoding(doc, encoding)` so the same
+  walker drives raw, jxsv, smpte291, and AM824 scope checks. A thin
+  `each_raw_video_fmtp` wrapper preserves the original call sites.
+
+  4 required-param error ids: `st2110-22.a.fmtp.{width,height,TP,
+  packetmode}-required`. 16 value-form / flag-only error ids:
+  `st2110-22.a.fmtp.<key>-invalid-value` for sampling, exactframerate,
+  depth, TCS, colorimetry, RANGE, transmode, profile, level, sublevel,
+  SSN, MAXUDP, CMAX, width, height, TP, packetmode, interlace,
+  segmented.
+
+  Two new semantic checks (`check_jxsv_fmtp_required`,
+  `check_jxsv_fmtp_values`) mirror the -20 raw structure. Both scoped
+  to PTs whose `a=rtpmap` encoding is `jxsv` via the ctx-carried
+  rtpmap→encoding map (Phase 6.C.B mechanism).
+
+  **Spec-conformant divergence from 1.0 parser.** The 1.0 parser
+  reuses ST 2110-20's value sets for jxsv `colorimetry`, `TCS`, and
+  `sampling`. RFC 9134 §7.1 — verified directly against
+  `https://www.rfc-editor.org/rfc/rfc9134.txt` — defines its own enums
+  that overlap but are not identical. The grammar tier follows RFC
+  9134 (primary spec text). Per [[feedback_refactor_parity]] this is
+  a 1.0-gap close that goes both ways:
+
+  - `colorimetry`: RFC 9134 lists `{BT601-5, BT709-2, SMPTE240M,
+    BT601, BT709, BT2020, BT2100, ST2065-1, ST2065-3, XYZ,
+    UNSPECIFIED}`. 1.0 reuses -20's set (includes `ALPHA`, omits the
+    three legacy values). Net: grammar accepts BT601-5/BT709-2/
+    SMPTE240M (1.0 rejected); rejects ALPHA (1.0 accepted).
+  - `TCS`: RFC 9134 lists `{SDR, PQ, HLG, UNSPECIFIED}` only. 1.0
+    reuses -20's 11-value set. Net: grammar rejects LINEAR, BT2100-
+    LINPQ, BT2100LINHLG, ST2065-1, ST428-1, DENSITY, ST2115LOGS3
+    (all of which 1.0 accepted for jxsv).
+  - `sampling`: RFC 9134 adds `UNSPECIFIED` to the -20 set. Net:
+    grammar accepts UNSPECIFIED for jxsv (1.0 rejected).
+
+  Five tests in `RFC 9134 §7.1 vs 1.0 enum divergence` lock the new
+  behavior in: ALPHA rejected, BT601-5 accepted, LINEAR rejected,
+  ST2115LOGS3 rejected, UNSPECIFIED sampling accepted.
+
+  133 new tests total (310 in the file). Suite: 1437 green.
+
+Audit ref: REFACTOR-PLAN.md §5 Phase 6.C; audits/SPEC_INVENTORY.md
+RFC 9134 rows 31–58 + ST 2110-22:2022 rows 7, 9, 11–13, 20–26.
+
 ### Changed
 
 - The inline `errors` table in `parse_sdp.lua` now delegates to
