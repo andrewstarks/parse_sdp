@@ -24,9 +24,18 @@ parser remains the shipping artifact on `main`.
 - `spec/error_registry_spec.lua` — 31 tests covering registry schema,
   severity resolution, policy validation, record() semantics, the
   deepest-failure tracker, and legacy-compatibility surface.
+- `sdp.checks()` and `sdp.default_policy()` on the public module.
+  Together they let callers inspect every check the parser may emit and
+  dump a starting policy table. Architecture-ready for the deferred
+  severity-toggling feature (no toggleable behavior yet). 4 new tests
+  in `spec/library_spec.lua`.
 
 ### Changed
 
+- The inline `errors` table in `parse_sdp.lua` now delegates to
+  `parse_sdp.errors`. Error struct shape, `errors.new()` signature, and
+  `errors.format()` output are byte-identical to 1.0. Internal-only;
+  no caller-visible change.
 - **All `spec_ref` citations migrated from RFC 4566 to RFC 8866**
   (RFC 8866 obsoletes RFC 4566). Section numbers verified against the
   on-disk RFC 8866 text and updated where 8866 introduces finer

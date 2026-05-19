@@ -10,51 +10,10 @@ local dkjson = require("dkjson")
 local P, R, S, V, C, Cp, Ct = lpeg.P, lpeg.R, lpeg.S, lpeg.V, lpeg.C, lpeg.Cp, lpeg.Ct
 
 -- ── Errors ────────────────────────────────────────────────────────────────────
-local errors = {}
-
---- Build a structured error table.
--- @param msg string   Human-readable description of the error.
--- @param opts table   Optional fields: code, line, col, context, field_path, spec_ref.
---                     code defaults to "MISSING_FIELD".
--- @return table  Error table with message, code, line, col, context, field_path, spec_ref.
-function errors.new(msg, opts)
-  local o = opts or {}
-  return {
-    message    = msg,
-    line       = o.line    or 0,
-    col        = o.col     or 0,
-    context    = o.context or "",
-    code       = o.code    or "MISSING_FIELD",
-    field_path = o.field_path,
-    spec_ref   = o.spec_ref,
-  }
-end
-
---- Format an error table into a human-readable multi-line string.
--- Produces `error: [CODE] message`, a location arrow, context line with caret,
--- and an optional spec note — suitable for writing directly to stderr.
--- @param err table   Error table as returned by errors.new, or nil.
--- @return string  Formatted error text.
-function errors.format(err)
-  if not err then return "error: unknown" end
-  local code_part = err.code and ("[" .. err.code .. "] ") or ""
-  local out = { "error: " .. code_part .. (err.message or "unknown error") }
-  if err.field_path and err.field_path ~= "" then
-    out[#out + 1] = " --> field: " .. err.field_path
-  elseif err.line and err.line > 0 then
-    out[#out + 1] = string.format(" --> line %d, col %d", err.line, err.col or 1)
-    if err.context and err.context ~= "" then
-      local col = err.col or 1
-      out[#out + 1] = "  |"
-      out[#out + 1] = string.format("%2d | %s", err.line, err.context)
-      out[#out + 1] = "   | " .. string.rep(" ", col - 1) .. "^"
-    end
-  end
-  if err.spec_ref and err.spec_ref ~= "" then
-    out[#out + 1] = "  = note: required by " .. err.spec_ref
-  end
-  return table.concat(out, "\n")
-end
+-- errors.new / errors.format live in parse_sdp.errors. The check registry,
+-- severity policy, record() helper, and deepest-failure tracker also live
+-- there. See parse_sdp/errors.lua for the API surface.
+local errors = require("parse_sdp.errors")
 
 -- ── Util ──────────────────────────────────────────────────────────────────────
 local util = {}
@@ -3729,6 +3688,18 @@ end
 function M.new(t)
   return setmetatable(t, mt)
 end
+
+--- Registered checks. Returns an array of every check the parser may emit,
+-- sorted by id. Each entry is `{id, kind, default_severity, code, spec_ref,
+-- message_template, verified [, verification_note]}`. Inspectable for audit
+-- and for generating policy files via `sdp.default_policy()`.
+M.checks = errors.checks
+
+--- Default policy table — `{id = default_severity}` for every registered
+-- check. Dump it, edit it, save it as your config, pass back via
+-- `parse(text, mode, { policy = ... })`. Unknown ids in a policy fail at
+-- parse() time so typos surface immediately.
+M.default_policy = errors.default_policy
 
 -- Exposed for spec access; not part of the public contract.
 M._grammar = grammar

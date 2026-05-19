@@ -518,3 +518,45 @@ describe("library: sdp.new() wrapper", function()
     assert.is_function(doc.is_sdp)
   end)
 end)
+
+describe("library: sdp.checks() registry introspection", function()
+  -- NOT-SPEC: library
+  it("returns a non-empty array of check definitions", function()
+    local cs = sdp.checks()
+    assert.is_table(cs)
+    assert.is_truthy(#cs > 0)
+    for _, c in ipairs(cs) do
+      assert.is_string(c.id)
+      assert.is_string(c.spec_ref)
+      assert.is_string(c.default_severity)
+    end
+  end)
+
+  -- NOT-SPEC: library
+  it("entries are sorted by id", function()
+    local prev
+    for _, c in ipairs(sdp.checks()) do
+      if prev then assert.is_truthy(prev < c.id) end
+      prev = c.id
+    end
+  end)
+end)
+
+describe("library: sdp.default_policy()", function()
+  -- NOT-SPEC: library
+  it("returns a table mapping every registered id to its default severity", function()
+    local p = sdp.default_policy()
+    assert.is_table(p)
+    for _, c in ipairs(sdp.checks()) do
+      assert.equal(c.default_severity, p[c.id])
+    end
+  end)
+
+  -- NOT-SPEC: library
+  it("returned table is a fresh copy (caller can mutate without polluting)", function()
+    local p1 = sdp.default_policy()
+    p1["sdp.v.must-be-zero"] = "warn"
+    local p2 = sdp.default_policy()
+    assert.equal("error", p2["sdp.v.must-be-zero"])
+  end)
+end)
