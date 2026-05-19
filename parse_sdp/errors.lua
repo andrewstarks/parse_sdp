@@ -1032,6 +1032,30 @@ M.register("st2110-41.a.fmtp.maxudp-forbidden", {
 -- attribute, so a session-level mediaclk does not cover a media block
 -- that lacks its own.
 
+-- ── Phase 6.D.C — ST 2110-31 AM824 rtpmap channels-required ─────────────
+-- ST 2110-31:2022 §6.1: "The number of AES3 Subframe sequences multiplexed
+-- within the payload shall be signaled in the SDP object on the a=rtpmap
+-- line, using the syntactic field which typically communicates the number
+-- of channels in an audio signal, as shown below: a=rtpmap:<pt> AM824/
+-- <clock-rate>/<nchan>". The <nchan> field is therefore mandatory for any
+-- AM824 rtpmap (the SHALL is on signaling the count via that field).
+--
+-- L16 / L24 channels-required is intentionally NOT enforced. The 1.0
+-- parser tightens RFC 3551 §6 (which says channels is OPTIONAL and may
+-- be omitted when 1) for L16 / L24 too, claiming "ST 2110-30 tightens
+-- this." Primary text of ST 2110-30:2025 / AES67-2013 / RFC 3551 does
+-- not carry that SHALL; the 1.0 limb stays flagged for audit follow-up.
+M.register("st2110-31.a.rtpmap.am824-channels-required", {
+  kind             = "semantic",
+  default_severity = "error",
+  code             = "MISSING_FIELD",
+  message_template =
+    "AM824 rtpmap must signal the number of AES3 Subframe sequences"
+    .. " in the channels field (a=rtpmap:<pt> AM824/<clock-rate>/<nchan>)",
+  spec_ref         = "ST 2110-31:2022 §6.1",
+  verified         = true,
+})
+
 -- ── Phase 6.D.B — ST 2110-30 audio MAXUDP-forbidden ─────────────────────
 -- ST 2110-30:2025 §6.2.1: "The Standard UDP Datagram Size Limit as
 -- defined in SMPTE ST 2110-10 shall be used." Combined with ST 2110-10:2022

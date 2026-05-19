@@ -1098,6 +1098,44 @@ on-disk primary text at `smpte_standards_internal/st2110-30-2025.pdf`
 and `st2110-10-2022.pdf`. Out-of-parity-flag: 1.0 parser's
 ST 2110-31 MAXUDP-forbidden limb.
 
+- **Phase 6.D.C:** ST 2110-31:2022 §6.1 AM824 rtpmap
+  channels-required (AM824 only).
+
+  1 new error id `st2110-31.a.rtpmap.am824-channels-required`. §6.1:
+  "The number of AES3 Subframe sequences multiplexed within the
+  payload shall be signaled in the SDP object on the a=rtpmap line,
+  using the syntactic field which typically communicates the number
+  of channels in an audio signal, as shown below: `a=rtpmap:<pt>
+  AM824/<clock-rate>/<nchan>`". The `<nchan>` field is therefore
+  mandatory for AM824 rtpmaps.
+
+  New tier-level semantic check `check_am824_rtpmap_channels_required`
+  walks `doc.media`, finds rtpmap PTs with encoding=AM824, and emits
+  the finding when `attr.channels == nil`. Paired with the existing
+  `check_am824_rtpmap_channels_even` (Phase 6.C.I) which only fires
+  when channels is present; the two together fully cover §6.1's
+  channels constraint.
+
+  **INTENTIONAL non-parity with 1.0.** The 1.0 parser also enforces
+  channels-required for L16 / L24 audio rtpmaps, citing an unverified
+  "ST 2110-30 tightens RFC 3551" annotation in
+  `audits/SPEC_INVENTORY.md` row 58. Primary text of ST 2110-30:2025
+  / AES67-2013 §8.4 / RFC 3551 §6 does NOT carry that SHALL — RFC
+  3551 §6 explicitly makes the channels field OPTIONAL (defaults to
+  1). The grammar tier ports only the well-grounded AM824 limb. The
+  1.0 L16/L24 channels-required check is flagged for audit-folder
+  follow-up.
+
+  5 new tests in `spec/grammar_st2110_spec.lua`: positive (AM824 with
+  channels), reject AM824 missing channels, multi-media-block per-pt
+  field-path, intentional accept on L24 missing channels, intentional
+  accept on L16 missing channels. Suite: 1511 green.
+
+Audit ref: ST 2110-31:2022 §6.1 (line 502 in pdftotext extract); RFC
+3551 §6; AES67-2013 §8.4. On-disk primary text at
+`smpte_standards_internal/st2110-31-2022.pdf`, `aes67-2013-f.pdf`. Out-
+of-parity-flag: 1.0 parser's L16 / L24 channels-required limb.
+
 ### Changed
 
 - The inline `errors` table in `parse_sdp.lua` now delegates to

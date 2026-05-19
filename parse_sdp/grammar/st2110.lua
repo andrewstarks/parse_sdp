@@ -747,6 +747,32 @@ end
 -- encoding=AM824 and verifies channels-mod-2 == 0. Channels-presence
 -- (required for all audio rtpmap per RFC 3551 §6) is a separate concern
 -- that belongs to Phase 6.D.
+-- Phase 6.D.C — ST 2110-31:2022 §6.1: "The number of AES3 Subframe
+-- sequences multiplexed within the payload shall be signaled in the
+-- SDP object on the a=rtpmap line ... a=rtpmap:<pt> AM824/<clock-rate>
+-- /<nchan>". The channels field is mandatory for AM824 rtpmaps.
+--
+-- L16 / L24 channels-presence is intentionally NOT enforced: RFC 3551
+-- §6 makes it OPTIONAL with a default of 1, and ST 2110-30:2025 does
+-- not tighten that. The 1.0 parser is over-strict here per the
+-- conformance-principle audit (silence is not a reason to reject).
+local function check_am824_rtpmap_channels_required(doc, ctx)
+  for i, m in ipairs(doc.media) do
+    for _, attr in ipairs(m.attributes) do
+      if attr.name == "rtpmap" and attr.encoding == "AM824"
+          and attr.channels == nil then
+        local cont = errors.record(ctx,
+          "st2110-31.a.rtpmap.am824-channels-required",
+          { field_path = string.format(
+              "media[%d].attributes[rtpmap:pt=%d]",
+              i - 1, attr.payload_type) })
+        if not cont then return false end
+      end
+    end
+  end
+  return true
+end
+
 local function check_am824_rtpmap_channels_even(doc, ctx)
   for i, m in ipairs(doc.media) do
     for _, attr in ipairs(m.attributes) do
@@ -1118,6 +1144,7 @@ local overrides = {
     check_jxsv_fmtp_cross_param,
     check_audio_fmtp_channel_order,
     check_am824_rtpmap_channels_even,
+    check_am824_rtpmap_channels_required,
     check_st2110_41_fmtp,
     check_ts_refclk_presence,
     check_mediaclk_presence,

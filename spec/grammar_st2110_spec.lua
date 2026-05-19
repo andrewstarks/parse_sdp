@@ -2291,3 +2291,87 @@ describe("ST 2110-30 — audio MAXUDP-forbidden (Phase 6.D.B)", function()
     assert.is_truthy(doc)
   end)
 end)
+
+-- ── Phase 6.D.C — ST 2110-31:2022 §6.1 AM824 rtpmap channels-required ───
+--
+-- §6.1: "The number of AES3 Subframe sequences multiplexed within the
+--        payload shall be signaled in the SDP object on the a=rtpmap
+--        line ... a=rtpmap:<pt> AM824/<clock-rate>/<nchan>"
+--
+-- The <nchan> channels field is mandatory for AM824. L16 / L24
+-- channels-presence is intentionally NOT enforced: RFC 3551 §6 makes
+-- it OPTIONAL (defaults to 1), and ST 2110-30 / AES67 don't override.
+-- The 1.0 parser's L16/L24 channels-required limb is over-strict per
+-- the conformance-principle audit.
+
+describe("ST 2110-31 — AM824 rtpmap channels-required (Phase 6.D.C)",
+    function()
+
+  local function audio_sdp(rtpmap_line)
+    return table.concat({
+      "v=0",
+      "o=- 1 1 IN IP4 192.0.2.1",
+      "s=Test",
+      "t=0 0",
+      "m=audio 30000 RTP/AVP 96",
+      "c=IN IP4 239.0.0.1/64",
+      rtpmap_line,
+      "a=ts-refclk:localmac=00-11-22-33-44-55",
+      "a=mediaclk:sender",
+    }, "\r\n") .. "\r\n"
+  end
+
+  it("accepts AM824 rtpmap with channels field", function()
+    assert.is_truthy(st2110.match(audio_sdp(
+      "a=rtpmap:96 AM824/48000/2")))
+  end)
+
+  it("rejects AM824 rtpmap missing the channels field", function()
+    local doc, ctx = st2110.match(audio_sdp(
+      "a=rtpmap:96 AM824/48000"))
+    assert.is_nil(doc)
+    local f = finding_for(ctx, "st2110-31.a.rtpmap.am824-channels-required")
+    assert.is_not_nil(f)
+    assert.equal("ST 2110-31:2022 §6.1", f.spec_ref)
+  end)
+
+  it("reports the offending media index on a multi-block SDP", function()
+    -- First block has channels (passes); second omits them.
+    local doc, ctx = st2110.match(table.concat({
+      "v=0",
+      "o=- 1 1 IN IP4 192.0.2.1",
+      "s=Test",
+      "t=0 0",
+      "m=audio 30000 RTP/AVP 96",
+      "c=IN IP4 239.0.0.1/64",
+      "a=rtpmap:96 AM824/48000/2",
+      "a=ts-refclk:localmac=00-11-22-33-44-55",
+      "a=mediaclk:sender",
+      "m=audio 30002 RTP/AVP 97",
+      "c=IN IP4 239.0.0.2/64",
+      "a=rtpmap:97 AM824/48000",
+      "a=ts-refclk:localmac=00-11-22-33-44-55",
+      "a=mediaclk:sender",
+    }, "\r\n") .. "\r\n")
+    assert.is_nil(doc)
+    local f = finding_for(ctx, "st2110-31.a.rtpmap.am824-channels-required")
+    assert.is_not_nil(f)
+    assert.equal("media[1].attributes[rtpmap:pt=97]", f.field_path)
+  end)
+
+  -- ── INTENTIONAL non-parity with 1.0 ──────────────────────────────────
+  -- ST 2110-30 / AES67-2013 / RFC 3551 §6 do NOT require channels on
+  -- L16 / L24 rtpmaps. The 1.0 parser enforces it citing a "ST 2110-30
+  -- tightens RFC 3551" annotation that is not supported by primary
+  -- text. Grammar tier accepts these.
+  it("does NOT fire on L24 rtpmap missing channels", function()
+    assert.is_truthy(st2110.match(audio_sdp(
+      "a=rtpmap:96 L24/48000")))
+  end)
+
+  it("does NOT fire on L16 rtpmap missing channels", function()
+    assert.is_truthy(st2110.match(audio_sdp(
+      "a=rtpmap:96 L16/48000")))
+  end)
+end)
+
