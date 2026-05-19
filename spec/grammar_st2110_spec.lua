@@ -430,6 +430,19 @@ describe("ST 2110-20 raw video fmtp — enum value sets", function()
         end
       end
     end
+
+    -- Cross-param companion adjustments per §7.6 (Phase 6.C.F):
+    -- floating-point linear TCS values are defined with `(depth=16f)`.
+    -- Pair the override so isolation of the per-key value-set check
+    -- isn't masked by the cross-param check.
+    if key == "TCS" and (val == "LINEAR" or val == "BT2100LINPQ"
+                          or val == "BT2100LINHLG" or val == "ST2065-1") then
+      for i, p in ipairs(parts) do
+        if p:sub(1, 6) == "depth=" then
+          parts[i] = "depth=16f"
+        end
+      end
+    end
     -- Replace the line for the named key in place; if optional (TCS / RANGE),
     -- append.
     local replaced = false
@@ -1029,5 +1042,167 @@ describe("ST 2110-20 raw video fmtp — cross-parameter SHALLs", function()
       .. "exactframerate=60;depth=10;colorimetry=BT2100;PM=2110BPM;"
       .. "SSN=ST2110-20:2017;TP=2110TPN;TCS=ST2115LOGS3;"
       .. "RANGE=FULLPROTECT;MAXUDP=1500;interlace;segmented")))
+  end)
+end)
+
+-- ───────────────────────────────────────────────────────────────────────────
+-- Phase 6.C.F — ST 2110-20 raw video fmtp 1.0-gap closes.
+-- Five cross-parameter SHALLs normatively in ST 2110-20:2022 but not
+-- enforced by the 1.0 parser. Grounded by CLAUDE.md strictness polarity
+-- #3 (defined value forms): §6.2.5 Table 3 defines the 4:2:0/depth
+-- pairing; §7.6 TCS rows include `(depth=16f)` parentheticals. Inventory
+-- rows 61, 115, 116, 117, 118.
+
+describe("ST 2110-20 raw video fmtp — 1.0-gap closes (Phase 6.C.F)",
+    function()
+
+  local RAW_MEDIA  = "m=video 30000 RTP/AVP 96"
+  local RAW_RTPMAP = "a=rtpmap:96 raw/90000"
+
+  -- Re-use the table-based builder structure for clarity.
+  local PARAM_ORDER = {
+    "sampling", "width", "height", "exactframerate", "depth",
+    "colorimetry", "PM", "SSN", "TP", "TCS",
+  }
+
+  local function fmtp_from(params)
+    local parts = {}
+    for _, k in ipairs(PARAM_ORDER) do
+      local v = params[k]
+      if v ~= nil then parts[#parts + 1] = k .. "=" .. tostring(v) end
+    end
+    return "a=fmtp:96 " .. table.concat(parts, ";")
+  end
+
+  local function defaults()
+    return {
+      sampling       = "YCbCr-4:2:2",
+      width          = "1920",
+      height         = "1080",
+      exactframerate = "60000/1001",
+      depth          = "10",
+      colorimetry    = "BT709",
+      PM             = "2110GPM",
+      SSN            = "ST2110-20:2022",
+      TP             = "2110TPN",
+    }
+  end
+
+  local function with(overrides)
+    local p = defaults()
+    for k, v in pairs(overrides) do p[k] = v end
+    return p
+  end
+
+  -- ── §6.2.5 Table 3: 4:2:0 sampling permits depth ∈ {8, 10, 12} ───────
+  describe("4:2:0 sampling × depth [ST 2110-20:2022 §6.2.5 Table 3]",
+      function()
+    -- Accept cases: every (4:2:0-sampling, allowed-depth) pair.
+    local SAMPLING_420 = { "YCbCr-4:2:0", "CLYCbCr-4:2:0", "ICtCp-4:2:0" }
+    local ALLOWED_DEPTHS = { "8", "10", "12" }
+    for _, s in ipairs(SAMPLING_420) do
+      for _, d in ipairs(ALLOWED_DEPTHS) do
+        it(("accepts %s + depth=%s"):format(s, d), function()
+          assert.is_truthy(st2110.match(build_with_fmtp(
+            RAW_MEDIA, RAW_RTPMAP, fmtp_from(with({
+              sampling = s, depth = d,
+            })))))
+        end)
+      end
+    end
+
+    -- Reject cases: every (4:2:0-sampling, forbidden-depth) pair.
+    local FORBIDDEN_DEPTHS = { "16", "16f" }
+    for _, s in ipairs(SAMPLING_420) do
+      for _, d in ipairs(FORBIDDEN_DEPTHS) do
+        it(("rejects %s + depth=%s"):format(s, d), function()
+          local doc, ctx = st2110.match(build_with_fmtp(
+            RAW_MEDIA, RAW_RTPMAP, fmtp_from(with({
+              sampling = s, depth = d,
+            }))))
+          assert.is_nil(doc)
+          assert.is_not_nil(finding_for(ctx,
+            "st2110-20.a.fmtp.subsampling-420-depth-restricted"))
+        end)
+      end
+    end
+
+    -- NOT-SPEC: non-4:2:0 sampling is unrestricted by Table 3.
+    it("accepts non-4:2:0 sampling with depth=16f", function()
+      assert.is_truthy(st2110.match(build_with_fmtp(
+        RAW_MEDIA, RAW_RTPMAP, fmtp_from(with({
+          sampling = "YCbCr-4:2:2", depth = "16f",
+          -- 16f also requires a floating-point TCS (§7.6) — pair them so
+          -- this test isolates the §6.2.5 Table 3 narrowing only.
+          TCS = "LINEAR",
+        })))))
+    end)
+  end)
+
+  -- ── §7.6 TCS rows: TCS=floating-point requires depth=16f ─────────────
+  describe("TCS floating-point × depth=16f [ST 2110-20:2022 §7.6]",
+      function()
+    -- Each TCS value in this set is row-defined with `(depth=16f)`.
+    local TCS_FLOATING_POINT = {
+      { "LINEAR",       "tcs-linear-requires-depth-16f" },
+      { "BT2100LINPQ",  "tcs-bt2100linpq-requires-depth-16f" },
+      { "BT2100LINHLG", "tcs-bt2100linhlg-requires-depth-16f" },
+      { "ST2065-1",     "tcs-st2065-1-requires-depth-16f" },
+    }
+
+    for _, p in ipairs(TCS_FLOATING_POINT) do
+      local tcs, id_slug = p[1], p[2]
+
+      it(("accepts TCS=%s + depth=16f"):format(tcs), function()
+        assert.is_truthy(st2110.match(build_with_fmtp(
+          RAW_MEDIA, RAW_RTPMAP, fmtp_from(with({
+            TCS = tcs, depth = "16f",
+          })))))
+      end)
+
+      for _, bad_depth in ipairs({ "8", "10", "12", "16" }) do
+        it(("rejects TCS=%s + depth=%s"):format(tcs, bad_depth),
+            function()
+          local doc, ctx = st2110.match(build_with_fmtp(
+            RAW_MEDIA, RAW_RTPMAP, fmtp_from(with({
+              TCS = tcs, depth = bad_depth,
+            }))))
+          assert.is_nil(doc)
+          assert.is_not_nil(finding_for(ctx,
+            "st2110-20.a.fmtp." .. id_slug))
+        end)
+      end
+    end
+
+    -- NOT-SPEC: non-floating-point TCS values are unrestricted by §7.6.
+    it("accepts TCS=SDR + depth=10 (not a floating-point TCS row)",
+        function()
+      assert.is_truthy(st2110.match(build_with_fmtp(
+        RAW_MEDIA, RAW_RTPMAP, fmtp_from(with({
+          TCS = "SDR", depth = "10",
+        })))))
+    end)
+
+    -- NOT-SPEC: TCS absent → check inert.
+    it("accepts absent TCS with arbitrary depth", function()
+      -- Drop TCS by passing the default (no TCS key in the params).
+      local p = defaults()
+      p.depth = "10"
+      assert.is_truthy(st2110.match(build_with_fmtp(
+        RAW_MEDIA, RAW_RTPMAP, fmtp_from(p))))
+    end)
+  end)
+
+  -- NOT-SPEC: library — base tier carries no 6.C.F narrowing.
+  it("base tier accepts 4:2:0 + depth=16 and TCS=LINEAR + depth=10",
+      function()
+    assert.is_truthy(base.match(build_with_fmtp(
+      RAW_MEDIA, RAW_RTPMAP, fmtp_from(with({
+        sampling = "YCbCr-4:2:0", depth = "16",
+      })))))
+    assert.is_truthy(base.match(build_with_fmtp(
+      RAW_MEDIA, RAW_RTPMAP, fmtp_from(with({
+        TCS = "LINEAR", depth = "10",
+      })))))
   end)
 end)

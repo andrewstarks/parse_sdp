@@ -569,31 +569,25 @@ ST 2110 check migrates under its new ID.
   presence-check (6.C.C) and value-form check (6.C.D), all sharing
   `each_raw_video_fmtp(doc)`. 29 new tests; suite 1282 green.
   Cross-param coverage now at parity with 1.0.
-- **6.C.F (pending — 1.0-gap close, not strictness creep)** —
-  five cross-parameter SHALLs that are normatively in
-  ST 2110-20:2022 but the 1.0 parser does NOT enforce. Inventoried
-  at `audits/SPEC_INVENTORY.md` rows 61, 115, 116, 117, 118:
+- **6.C.F (complete)** — five cross-parameter SHALLs normatively
+  in ST 2110-20:2022 that the 1.0 parser did NOT enforce, now in
+  the grammar tier (`audits/SPEC_INVENTORY.md` rows 61, 115, 116,
+  117, 118):
   - §6.2.5 Table 3 — 4:2:0 sampling permits only depth ∈ {8, 10,
-    12}; depth ∈ {16, 16f} not in the defined-value table.
-  - §7.6 LINEAR row — TCS=LINEAR is defined with `(depth=16f)`.
-  - §7.6 BT2100LINPQ row — TCS=BT2100LINPQ is defined with
-    `(depth=16f)`.
-  - §7.6 BT2100LINHLG row — TCS=BT2100LINHLG is defined with
-    `(depth=16f)`.
-  - §7.6 ST2065-1 row — TCS=ST2065-1 is defined with `(depth=16f)`.
+    12}; depth ∈ {16, 16f} rejected.
+  - §7.6 LINEAR row — TCS=LINEAR requires depth=16f.
+  - §7.6 BT2100LINPQ row — TCS=BT2100LINPQ requires depth=16f.
+  - §7.6 BT2100LINHLG row — TCS=BT2100LINHLG requires depth=16f.
+  - §7.6 ST2065-1 row — TCS=ST2065-1 requires depth=16f.
 
-  Verification status (completed 2026-05-19): all five audit rows
-  exist as cited; primary spec text on disk (`st2110-20-2022.md`
-  / PDF) supports each constraint; 1.0 parser confirmed not to
-  enforce any of them. The SHALL grounding is via CLAUDE.md
-  strictness polarity #3 — *defined value forms* — rather than
-  explicit SHALL prose. Per the principle: when the spec defines
-  a value set or a name/value pairing and an SDP signals a value
-  outside the defined set, the validator rejects.
-
-  Framing note: NOT "stricter-than-1.0" in the sense of going
-  beyond the spec; "spec-conformant gaps in 1.0" is the accurate
-  framing. The 1.0 parser is incomplete here, not lax.
+  5 new error ids in `errors.lua`. Two helper functions
+  (`check_420_depth_restricted`, `check_tcs_floating_point_depth`)
+  appended to the existing `check_raw_video_fmtp_cross_param`
+  semantic check. The SHALL grounding is CLAUDE.md strictness
+  polarity #3 (defined value forms — Table 3 and §7.6 row
+  parentheticals `(depth=16f)`), not explicit SHALL prose. 39 new
+  tests; suite 1321 green. The grammar tier is now strictly more
+  conformant than 1.0 for ST 2110-20 raw video fmtp.
 
 - **6.C remaining — encoding-specific fmtp porting** (separate
   from -20 and from 6.C.F; each represents a distinct shape, not

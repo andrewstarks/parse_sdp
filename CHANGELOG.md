@@ -792,6 +792,48 @@ ST 2110-20:2022 §7.2 / §7.3; ST 2110-10 §6.4.
 Audit ref: REFACTOR-PLAN.md §5 Phase 6.C; audits/SPEC_INVENTORY.md
 ST 2110-20:2022 §6.2.5 / §6.3.3 / §7.2 / §7.3 / §7.4.1.
 
+- **Phase 6.C.F:** five ST 2110-20:2022 cross-parameter SHALLs the
+  1.0 parser does NOT enforce, ported to the grammar tier so the
+  refactor closes the 1.0 gap. Each is grounded by CLAUDE.md
+  strictness polarity #3 (defined value forms) — Table 3 / §7.6
+  row prose — rather than explicit SHALL prose.
+
+  1. **§6.2.5 Table 3** — 4:2:0 sampling pgroup table defines depth
+     ∈ {8, 10, 12} only. `*-4:2:0` with depth ∈ {16, 16f} → reject.
+     New error id `st2110-20.a.fmtp.subsampling-420-depth-restricted`.
+  2. **§7.6 LINEAR row** — `TCS=LINEAR (depth=16f)`. Other depths →
+     reject. ID `st2110-20.a.fmtp.tcs-linear-requires-depth-16f`.
+  3. **§7.6 BT2100LINPQ row** — `TCS=BT2100LINPQ (depth=16f)`. ID
+     `…tcs-bt2100linpq-requires-depth-16f`.
+  4. **§7.6 BT2100LINHLG row** — `TCS=BT2100LINHLG (depth=16f)`. ID
+     `…tcs-bt2100linhlg-requires-depth-16f`.
+  5. **§7.6 ST2065-1 row** — `TCS=ST2065-1 (depth=16f)`. ID
+     `…tcs-st2065-1-requires-depth-16f`.
+
+  Two new helper functions appended to the existing tier-level
+  semantic check `check_raw_video_fmtp_cross_param`:
+  `check_420_depth_restricted` (§6.2.5 Table 3) and
+  `check_tcs_floating_point_depth` (§7.6, dispatched per-TCS via a
+  string→error_id lookup table). Helpers run after the 6.C.E
+  baseline so fail_on_first behaviour preserves the existing order.
+
+  39 new tests: every (4:2:0-sampling, allowed-depth) accept pair
+  (9), every (4:2:0-sampling, forbidden-depth) reject pair (6),
+  per-floating-point-TCS accept-with-16f (4), per-floating-point-TCS
+  reject-with-other-depth (16), TCS-absent / non-floating-point-TCS
+  / non-4:2:0 / base-tier sanity (4). The 6.C.D.1 enum-acceptance
+  helper updated to pair floating-point TCS values with depth=16f
+  so per-key acceptance isn't masked by the new §7.6 cross-param
+  check. Suite: 1321 green.
+
+  This completes the ST 2110-20 cross-parameter SHALL coverage:
+  6.C.E ported the 7 SHALLs already enforced by 1.0; 6.C.F adds the
+  5 SHALLs 1.0 missed. The grammar tier is now strictly more
+  conformant than 1.0 for ST 2110-20 raw video fmtp.
+
+Audit ref: REFACTOR-PLAN.md §5 Phase 6.C; audits/SPEC_INVENTORY.md
+rows 61, 115, 116, 117, 118; ST 2110-20:2022 §6.2.5 Table 3 + §7.6.
+
 ### Changed
 
 - The inline `errors` table in `parse_sdp.lua` now delegates to

@@ -39,7 +39,7 @@ and runs them through the parser. See
 
 ## Current State
 
-1282 hermetic tests passing. Every validation check is grounded in explicit
+1321 hermetic tests passing. Every validation check is grounded in explicit
 spec text; no opinion-based checks remain.
 
 The grammar-first refactor on branch `refactor/grammar-first` is **in
@@ -56,9 +56,9 @@ seven cross-parameter SHALLs from §6.2.5 / §6.3.3 / §7.2 / §7.3 /
 raw video fmtp coverage. Remaining work in 6.C is *spec-conformant
 gap-close*, not new strictness, plus encoding-specific fmtp ports:
 
-- **6.C.F** — five §6.2.5 Table 3 / §7.6 cross-param SHALLs that
-  are normatively in the spec but the 1.0 parser does NOT enforce
-  (defined-value-form grounding per CLAUDE.md polarity #3).
+- ~~**6.C.F**~~ — DONE. Five §6.2.5 Table 3 / §7.6 cross-param
+  SHALLs ported; grammar tier now strictly more conformant than
+  1.0 for ST 2110-20 raw video fmtp.
 - **-22 jxsv fmtp** — substantial 1.0 check block (parse_sdp.lua
   :1788-1970) to port.
 - **-30 L16/L24 fmtp** — minimal; channel-order syntax only.

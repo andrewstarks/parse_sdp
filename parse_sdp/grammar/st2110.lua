@@ -348,9 +348,51 @@ local function check_420_progressive_only(params, ctx, path)
   return true
 end
 
+-- §6.2.5 Table 3 (Phase 6.C.F): the 4:2:0 pgroup construction table lists
+-- 4:2:0 sampling tokens with depths {8, 10, 12} only. depth ∈ {16, 16f}
+-- is outside the defined value combination → reject. Detected the same
+-- way as check_420_progressive_only via the `-4:2:0` suffix.
+local RAW_420_FORBIDDEN_DEPTHS = { ["16"] = true, ["16f"] = true }
+
+local function check_420_depth_restricted(params, ctx, path)
+  local s = params.sampling
+  if s and type(s) == "string" and s:match("^[%w]+%-4:2:0$") then
+    if params.depth and RAW_420_FORBIDDEN_DEPTHS[tostring(params.depth)] then
+      local cont = errors.record(ctx,
+        "st2110-20.a.fmtp.subsampling-420-depth-restricted",
+        { field_path = path,
+          context    = { sampling = s, depth = params.depth } })
+      if not cont then return false end
+    end
+  end
+  return true
+end
+
+-- §7.6 TCS table (Phase 6.C.F): four "floating-point linear" TCS values
+-- are defined with `(depth=16f)` parenthetical. When the TCS is one of
+-- these, depth must be 16f. Per-TCS error IDs so each value-row is
+-- independently grep-able (matches inventory rows 115-118 one-for-one).
+local TCS_REQUIRES_16F = {
+  ["LINEAR"]       = "st2110-20.a.fmtp.tcs-linear-requires-depth-16f",
+  ["BT2100LINPQ"]  = "st2110-20.a.fmtp.tcs-bt2100linpq-requires-depth-16f",
+  ["BT2100LINHLG"] = "st2110-20.a.fmtp.tcs-bt2100linhlg-requires-depth-16f",
+  ["ST2065-1"]     = "st2110-20.a.fmtp.tcs-st2065-1-requires-depth-16f",
+}
+
+local function check_tcs_floating_point_depth(params, ctx, path)
+  local err_id = TCS_REQUIRES_16F[params.TCS]
+  if err_id and tostring(params.depth or "") ~= "16f" then
+    local cont = errors.record(ctx, err_id,
+      { field_path = path,
+        context    = { TCS = params.TCS, depth = params.depth } })
+    if not cont then return false end
+  end
+  return true
+end
+
 -- Tier-level driver: walks every raw video fmtp and runs each cross-param
--- helper in turn. Order matches 1.0's check sequence so fail_on_first
--- behaviour is stable across the tiers.
+-- helper in turn. Order matches 1.0's check sequence (with 6.C.F additions
+-- appended at the end) so fail_on_first behaviour is stable across tiers.
 local RAW_VIDEO_CROSS_PARAM_CHECKS = {
   check_ssn_conditional,
   check_bt2100_range,
@@ -358,6 +400,8 @@ local RAW_VIDEO_CROSS_PARAM_CHECKS = {
   check_bpm_forbids_maxudp,
   check_key_sampling,
   check_420_progressive_only,
+  check_420_depth_restricted,           -- 6.C.F
+  check_tcs_floating_point_depth,       -- 6.C.F
 }
 
 local function check_raw_video_fmtp_cross_param(doc, ctx)

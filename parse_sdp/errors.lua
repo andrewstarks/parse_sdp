@@ -739,4 +739,50 @@ M.register("st2110-20.a.fmtp.subsampling-420-with-interlace-forbidden", {
   verified         = true,
 })
 
+-- ── ST 2110-20 raw video fmtp 1.0-gap closes (Phase 6.C.F) ────────────────
+-- Five cross-parameter SHALLs that are normatively in ST 2110-20:2022 but
+-- the 1.0 parser does NOT enforce. Grounded by CLAUDE.md strictness
+-- polarity #3 (defined value forms) rather than explicit SHALL prose: each
+-- constraint is a *defined value combination* in a spec table or row that
+-- carries a `(depth=...)` parenthetical. Audit rows: 61, 115, 116, 117, 118.
+
+-- §6.2.5 Table 3 — 4:2:0 pgroup construction. The table lists 4:2:0
+-- sampling tokens (YCbCr-4:2:0, CLYCbCr-4:2:0, ICtCp-4:2:0) with depths
+-- {8, 10, 12} only. depth ∈ {16, 16f} is not in the defined table → reject.
+M.register("st2110-20.a.fmtp.subsampling-420-depth-restricted", {
+  kind             = "semantic",
+  default_severity = "error",
+  code             = "INVALID_VALUE",
+  message_template =
+    "4:2:0 sampling requires depth ∈ {8, 10, 12};"
+    .. " depths 16 and 16f are not defined by Table 3",
+  spec_ref         = "ST 2110-20:2022 §6.2.5 Table 3",
+  verified         = true,
+})
+
+-- §7.6 TCS table — four "floating-point linear" TCS values are defined
+-- with a `(depth=16f)` parenthetical in the row prose. When the TCS is
+-- one of these, depth must be 16f. Separate IDs per TCS value so an
+-- audit can grep each independently (matches the per-row inventory).
+local TCS_REQUIRES_16F = {
+  { "LINEAR",       "linear" },
+  { "BT2100LINPQ",  "bt2100linpq" },
+  { "BT2100LINHLG", "bt2100linhlg" },
+  { "ST2065-1",     "st2065-1" },
+}
+
+for _, p in ipairs(TCS_REQUIRES_16F) do
+  local _, slug = p[1], p[2]
+  M.register("st2110-20.a.fmtp.tcs-" .. slug .. "-requires-depth-16f", {
+    kind             = "semantic",
+    default_severity = "error",
+    code             = "INVALID_VALUE",
+    message_template =
+      "TCS=" .. p[1] .. " is defined with depth=16f;"
+      .. " other depth values are not permitted by §7.6",
+    spec_ref         = "ST 2110-20:2022 §7.6",
+    verified         = true,
+  })
+end
+
 return M
