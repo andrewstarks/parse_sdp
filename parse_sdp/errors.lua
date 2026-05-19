@@ -880,4 +880,36 @@ for _, key in ipairs(JXSV_FLAG_ONLY_PARAMS) do
   })
 end
 
+-- ── ST 2110-22 jxsv fmtp cross-parameter SHALLs (Phase 6.C.G.2) ───────────
+-- Two cross-parameter SHALLs in RFC 9134 §7.1 — same constraints the -20
+-- raw-video tier enforces but with their own normative source. Separate
+-- IDs from the -20 family so audit grep can target either independently.
+
+-- RFC 9134 §7.1 segmented row: "Signaling of this parameter without the
+-- interlace parameter is forbidden."
+M.register("st2110-22.a.fmtp.segmented-requires-interlace", {
+  kind             = "semantic",
+  default_severity = "error",
+  code             = "INVALID_VALUE",
+  message_template =
+    "fmtp 'segmented' requires 'interlace' to also be present",
+  spec_ref         = "RFC 9134 §7.1",
+  verified         = true,
+})
+
+-- RFC 9134 §7.1 RANGE row: "When paired with [BT.2100-2] colorimetry,
+-- the allowed values are NARROW and FULL, corresponding to the ranges
+-- specified in TABLE 9 of [BT.2100-2]." Implies FULLPROTECT forbidden
+-- when colorimetry=BT2100. Per-key RANGE value-set is enforced in 6.C.G.1.
+M.register("st2110-22.a.fmtp.bt2100-range-fullprotect-forbidden", {
+  kind             = "semantic",
+  default_severity = "error",
+  code             = "INVALID_VALUE",
+  message_template =
+    "RANGE=FULLPROTECT is not permitted with colorimetry=BT2100"
+    .. " (only NARROW and FULL are permitted per RFC 9134 §7.1)",
+  spec_ref         = "RFC 9134 §7.1",
+  verified         = true,
+})
+
 return M

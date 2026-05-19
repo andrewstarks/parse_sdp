@@ -1615,3 +1615,70 @@ describe("ST 2110-22 jxsv fmtp — flag-only [RFC 9134 §7.1]", function()
       "st2110-22.a.fmtp.segmented-invalid-value"))
   end)
 end)
+
+-- ───────────────────────────────────────────────────────────────────────────
+-- Phase 6.C.G.2 — jxsv cross-parameter SHALLs [RFC 9134 §7.1].
+
+describe("ST 2110-22 jxsv fmtp — cross-parameter SHALLs", function()
+
+  local JXSV_MEDIA  = "m=video 30000 RTP/AVP 96"
+  local JXSV_RTPMAP = "a=rtpmap:96 jxsv/90000"
+
+  describe("segmented requires interlace [RFC 9134 §7.1]", function()
+    it("accepts segmented + interlace (both bare flags)", function()
+      assert.is_truthy(st2110.match(build_with_fmtp(
+        JXSV_MEDIA, JXSV_RTPMAP,
+        JXSV_FMTP_COMPLETE_PT96 .. ";interlace;segmented")))
+    end)
+    it("rejects segmented without interlace", function()
+      local doc, ctx = st2110.match(build_with_fmtp(
+        JXSV_MEDIA, JXSV_RTPMAP,
+        JXSV_FMTP_COMPLETE_PT96 .. ";segmented"))
+      assert.is_nil(doc)
+      assert.is_not_nil(finding_for(ctx,
+        "st2110-22.a.fmtp.segmented-requires-interlace"))
+    end)
+    -- NOT-SPEC: interlace alone is fine (no SHALL on the reverse direction).
+    it("accepts interlace without segmented", function()
+      assert.is_truthy(st2110.match(build_with_fmtp(
+        JXSV_MEDIA, JXSV_RTPMAP,
+        JXSV_FMTP_COMPLETE_PT96 .. ";interlace")))
+    end)
+  end)
+
+  describe("BT2100 colorimetry + RANGE [RFC 9134 §7.1]", function()
+    it("accepts colorimetry=BT2100 + RANGE=NARROW", function()
+      assert.is_truthy(st2110.match(build_with_fmtp(
+        JXSV_MEDIA, JXSV_RTPMAP,
+        JXSV_FMTP_COMPLETE_PT96 .. ";colorimetry=BT2100;RANGE=NARROW")))
+    end)
+    it("accepts colorimetry=BT2100 + RANGE=FULL", function()
+      assert.is_truthy(st2110.match(build_with_fmtp(
+        JXSV_MEDIA, JXSV_RTPMAP,
+        JXSV_FMTP_COMPLETE_PT96 .. ";colorimetry=BT2100;RANGE=FULL")))
+    end)
+    it("rejects colorimetry=BT2100 + RANGE=FULLPROTECT", function()
+      local doc, ctx = st2110.match(build_with_fmtp(
+        JXSV_MEDIA, JXSV_RTPMAP,
+        JXSV_FMTP_COMPLETE_PT96 .. ";colorimetry=BT2100;RANGE=FULLPROTECT"))
+      assert.is_nil(doc)
+      assert.is_not_nil(finding_for(ctx,
+        "st2110-22.a.fmtp.bt2100-range-fullprotect-forbidden"))
+    end)
+    -- NOT-SPEC: non-BT2100 colorimetries are unrestricted.
+    it("accepts colorimetry=BT709 + RANGE=FULLPROTECT", function()
+      assert.is_truthy(st2110.match(build_with_fmtp(
+        JXSV_MEDIA, JXSV_RTPMAP,
+        JXSV_FMTP_COMPLETE_PT96 .. ";colorimetry=BT709;RANGE=FULLPROTECT")))
+    end)
+  end)
+
+  -- NOT-SPEC: library — base tier carries no jxsv cross-param narrowing.
+  it("base tier accepts all jxsv cross-param violations together",
+      function()
+    assert.is_truthy(base.match(build_with_fmtp(
+      JXSV_MEDIA, JXSV_RTPMAP,
+      JXSV_FMTP_COMPLETE_PT96
+      .. ";segmented;colorimetry=BT2100;RANGE=FULLPROTECT")))
+  end)
+end)

@@ -568,6 +568,47 @@ local function check_jxsv_fmtp_required(doc, ctx)
   return true
 end
 
+-- ── Cross-parameter SHALLs for jxsv fmtp (Phase 6.C.G.2) ─────────────────
+-- Two cross-parameter SHALLs in RFC 9134 §7.1, parallel in shape to two
+-- of the -20 SHALLs (segmented-requires-interlace; BT2100/RANGE) but
+-- with their own normative source.
+
+local function check_jxsv_segmented_requires_interlace(params, ctx, path)
+  if params.segmented and not params.interlace then
+    local cont = errors.record(ctx,
+      "st2110-22.a.fmtp.segmented-requires-interlace",
+      { field_path = path })
+    if not cont then return false end
+  end
+  return true
+end
+
+local function check_jxsv_bt2100_range(params, ctx, path)
+  if params.colorimetry == "BT2100" and params.RANGE == "FULLPROTECT" then
+    local cont = errors.record(ctx,
+      "st2110-22.a.fmtp.bt2100-range-fullprotect-forbidden",
+      { field_path = path })
+    if not cont then return false end
+  end
+  return true
+end
+
+local JXSV_CROSS_PARAM_CHECKS = {
+  check_jxsv_segmented_requires_interlace,
+  check_jxsv_bt2100_range,
+}
+
+local function check_jxsv_fmtp_cross_param(doc, ctx)
+  for _, e in ipairs(each_fmtp_for_encoding(doc, "jxsv")) do
+    local path = string.format(
+      "media[%d].attributes[fmtp:pt=%d]", e.media_index, e.payload_type)
+    for _, fn in ipairs(JXSV_CROSS_PARAM_CHECKS) do
+      if not fn(e.params, ctx, path) then return false end
+    end
+  end
+  return true
+end
+
 local function check_jxsv_fmtp_values(doc, ctx)
   for _, e in ipairs(each_fmtp_for_encoding(doc, "jxsv")) do
     local path = string.format(
@@ -818,6 +859,7 @@ local overrides = {
     check_raw_video_fmtp_cross_param,
     check_jxsv_fmtp_required,
     check_jxsv_fmtp_values,
+    check_jxsv_fmtp_cross_param,
   },
 }
 

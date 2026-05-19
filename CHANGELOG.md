@@ -885,6 +885,28 @@ rows 61, 115, 116, 117, 118; ST 2110-20:2022 §6.2.5 Table 3 + §7.6.
 Audit ref: REFACTOR-PLAN.md §5 Phase 6.C; audits/SPEC_INVENTORY.md
 RFC 9134 rows 31–58 + ST 2110-22:2022 rows 7, 9, 11–13, 20–26.
 
+- **Phase 6.C.G.2:** ST 2110-22 jxsv fmtp cross-parameter SHALLs.
+  Two constraints from RFC 9134 §7.1, parallel in shape to the
+  6.C.E pair on -20 but with their own normative source (separate
+  error ids so audit grep can target either independently):
+
+  1. **`segmented` requires `interlace`** — RFC 9134 §7.1
+     segmented row: *"Signaling of this parameter without the
+     interlace parameter is forbidden."*
+  2. **BT2100 colorimetry RANGE narrowing** — RFC 9134 §7.1
+     RANGE row: *"When paired with [BT.2100-2] colorimetry, the
+     allowed values are NARROW and FULL."* Implies
+     `RANGE=FULLPROTECT` rejected with `colorimetry=BT2100`.
+
+  2 new error ids: `st2110-22.a.fmtp.segmented-requires-interlace`
+  and `st2110-22.a.fmtp.bt2100-range-fullprotect-forbidden`. New
+  tier-level semantic check `check_jxsv_fmtp_cross_param` runs
+  both per-jxsv-PT. 8 new tests; suite 1445 green.
+
+  This closes the jxsv fmtp port (6.C.G).
+
+Audit ref: REFACTOR-PLAN.md §5 Phase 6.C; RFC 9134 §7.1.
+
 ### Changed
 
 - The inline `errors` table in `parse_sdp.lua` now delegates to
