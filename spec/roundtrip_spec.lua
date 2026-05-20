@@ -1098,3 +1098,351 @@ describe("parse_sdp.serialize — Phase 8.D.2 ssrc-group renderer", function()
     assert.matches("semantics", e.message)
   end)
 end)
+
+-- ── Phase 8.D.3: clock + grouping attribute renderers ──────────────────────
+
+describe("parse_sdp.serialize — Phase 8.D.3 ts-refclk renderer", function()
+
+  it("round-trips a=ts-refclk:ntp=<address>", function()
+    local text = lines_to_sdp({
+      "v=0", "o=- 1 1 IN IP4 127.0.0.1", "s=X", "t=0 0",
+      "a=ts-refclk:ntp=time.example.com",
+    })
+    local doc1, doc2, text2 = round_trip(text)
+    assert.same(doc1, doc2)
+    assert.truthy(text2:find("a=ts-refclk:ntp=time.example.com\r\n", 1, true))
+  end)
+
+  it("round-trips a=ts-refclk:ntp=/traceable/", function()
+    local text = lines_to_sdp({
+      "v=0", "o=- 1 1 IN IP4 127.0.0.1", "s=X", "t=0 0",
+      "a=ts-refclk:ntp=/traceable/",
+    })
+    local doc1, doc2, text2 = round_trip(text)
+    assert.same(doc1, doc2)
+    assert.truthy(text2:find("a=ts-refclk:ntp=/traceable/\r\n", 1, true))
+  end)
+
+  it("round-trips a=ts-refclk:ptp=<version>:<grandmaster>", function()
+    local text = lines_to_sdp({
+      "v=0", "o=- 1 1 IN IP4 127.0.0.1", "s=X", "t=0 0",
+      "a=ts-refclk:ptp=IEEE1588-2008:00-11-22-33-44-55-66-77",
+    })
+    local doc1, doc2, text2 = round_trip(text)
+    assert.same(doc1, doc2)
+    assert.truthy(text2:find(
+      "a=ts-refclk:ptp=IEEE1588-2008:00-11-22-33-44-55-66-77\r\n",
+      1, true))
+  end)
+
+  it("round-trips a=ts-refclk:ptp=<version>:<grandmaster>:<domain>", function()
+    local text = lines_to_sdp({
+      "v=0", "o=- 1 1 IN IP4 127.0.0.1", "s=X", "t=0 0",
+      "a=ts-refclk:ptp=IEEE1588-2008:00-11-22-33-44-55-66-77:127",
+    })
+    local doc1, doc2, text2 = round_trip(text)
+    assert.same(doc1, doc2)
+    assert.truthy(text2:find(
+      "a=ts-refclk:ptp=IEEE1588-2008:00-11-22-33-44-55-66-77:127\r\n",
+      1, true))
+  end)
+
+  it("round-trips a=ts-refclk:ptp=<version>:traceable", function()
+    local text = lines_to_sdp({
+      "v=0", "o=- 1 1 IN IP4 127.0.0.1", "s=X", "t=0 0",
+      "a=ts-refclk:ptp=IEEE1588-2008:traceable",
+    })
+    local doc1, doc2, text2 = round_trip(text)
+    assert.same(doc1, doc2)
+    assert.truthy(text2:find(
+      "a=ts-refclk:ptp=IEEE1588-2008:traceable\r\n", 1, true))
+  end)
+
+  it("round-trips a=ts-refclk:private (bare)", function()
+    local text = lines_to_sdp({
+      "v=0", "o=- 1 1 IN IP4 127.0.0.1", "s=X", "t=0 0",
+      "a=ts-refclk:private",
+    })
+    local doc1, doc2, text2 = round_trip(text)
+    assert.same(doc1, doc2)
+    assert.truthy(text2:find("a=ts-refclk:private\r\n", 1, true))
+  end)
+
+  it("round-trips a=ts-refclk:private:traceable", function()
+    local text = lines_to_sdp({
+      "v=0", "o=- 1 1 IN IP4 127.0.0.1", "s=X", "t=0 0",
+      "a=ts-refclk:private:traceable",
+    })
+    local doc1, doc2, text2 = round_trip(text)
+    assert.same(doc1, doc2)
+    assert.truthy(text2:find("a=ts-refclk:private:traceable\r\n", 1, true))
+  end)
+
+  it("round-trips a=ts-refclk:gps (bare clock-source)", function()
+    local text = lines_to_sdp({
+      "v=0", "o=- 1 1 IN IP4 127.0.0.1", "s=X", "t=0 0",
+      "a=ts-refclk:gps",
+    })
+    local doc1, doc2, text2 = round_trip(text)
+    assert.same(doc1, doc2)
+    assert.truthy(text2:find("a=ts-refclk:gps\r\n", 1, true))
+  end)
+
+  it("round-trips a=ts-refclk:<ext>=<value> (clksrc-ext)", function()
+    local text = lines_to_sdp({
+      "v=0", "o=- 1 1 IN IP4 127.0.0.1", "s=X", "t=0 0",
+      "a=ts-refclk:custom=opaque-clock-id",
+    })
+    local doc1, doc2, text2 = round_trip(text)
+    assert.same(doc1, doc2)
+    assert.truthy(text2:find(
+      "a=ts-refclk:custom=opaque-clock-id\r\n", 1, true))
+  end)
+
+  it("returns nil, err when ts-refclk:ntp is missing address", function()
+    local out, e = serialize.to_sdp({
+      version = "0",
+      origin = { username = "-", sess_id = "1", sess_version = "1",
+                 net_type = "IN", addr_type = "IP4",
+                 unicast_address = "127.0.0.1" },
+      session = { name = "X", time_descriptions = {{ start = 0, stop = 0 }},
+                  attributes = {{ name = "ts-refclk",
+                                  source = "ntp" }} }, -- missing address
+    })
+    assert.is_nil(out)
+    assert.matches("address", e.message)
+  end)
+
+  it("returns nil, err when ts-refclk:ptp non-traceable is missing grandmaster", function()
+    local out, e = serialize.to_sdp({
+      version = "0",
+      origin = { username = "-", sess_id = "1", sess_version = "1",
+                 net_type = "IN", addr_type = "IP4",
+                 unicast_address = "127.0.0.1" },
+      session = { name = "X", time_descriptions = {{ start = 0, stop = 0 }},
+                  attributes = {{ name = "ts-refclk",
+                                  source = "ptp",
+                                  version = "IEEE1588-2008" }} }, -- missing grandmaster
+    })
+    assert.is_nil(out)
+    assert.matches("grandmaster", e.message)
+  end)
+end)
+
+describe("parse_sdp.serialize — Phase 8.D.3 mediaclk renderer", function()
+
+  it("round-trips a=mediaclk:sender", function()
+    local text = lines_to_sdp({
+      "v=0", "o=- 1 1 IN IP4 127.0.0.1", "s=X", "t=0 0",
+      "a=mediaclk:sender",
+    })
+    local doc1, doc2, text2 = round_trip(text)
+    assert.same(doc1, doc2)
+    assert.truthy(text2:find("a=mediaclk:sender\r\n", 1, true))
+  end)
+
+  it("round-trips a=mediaclk:direct (bare)", function()
+    local text = lines_to_sdp({
+      "v=0", "o=- 1 1 IN IP4 127.0.0.1", "s=X", "t=0 0",
+      "a=mediaclk:direct",
+    })
+    local doc1, doc2, text2 = round_trip(text)
+    assert.same(doc1, doc2)
+    assert.truthy(text2:find("a=mediaclk:direct\r\n", 1, true))
+  end)
+
+  it("round-trips a=mediaclk:direct=<offset>", function()
+    local text = lines_to_sdp({
+      "v=0", "o=- 1 1 IN IP4 127.0.0.1", "s=X", "t=0 0",
+      "a=mediaclk:direct=963214424",
+    })
+    local doc1, doc2, text2 = round_trip(text)
+    assert.same(doc1, doc2)
+    assert.truthy(text2:find("a=mediaclk:direct=963214424\r\n", 1, true))
+  end)
+
+  it("round-trips a=mediaclk:direct=<offset> rate=<num>/<den>", function()
+    local text = lines_to_sdp({
+      "v=0", "o=- 1 1 IN IP4 127.0.0.1", "s=X", "t=0 0",
+      "a=mediaclk:direct=0 rate=90000/1",
+    })
+    local doc1, doc2, text2 = round_trip(text)
+    assert.same(doc1, doc2)
+    assert.truthy(text2:find(
+      "a=mediaclk:direct=0 rate=90000/1\r\n", 1, true))
+  end)
+
+  it("round-trips a=mediaclk:IEEE1722=<eui64>", function()
+    local text = lines_to_sdp({
+      "v=0", "o=- 1 1 IN IP4 127.0.0.1", "s=X", "t=0 0",
+      "a=mediaclk:IEEE1722=00-11-22-33-44-55-66-77",
+    })
+    local doc1, doc2, text2 = round_trip(text)
+    assert.same(doc1, doc2)
+    assert.truthy(text2:find(
+      "a=mediaclk:IEEE1722=00-11-22-33-44-55-66-77\r\n", 1, true))
+  end)
+
+  it("round-trips a=mediaclk:<ext>=<value> (mediaclock-ext)", function()
+    local text = lines_to_sdp({
+      "v=0", "o=- 1 1 IN IP4 127.0.0.1", "s=X", "t=0 0",
+      "a=mediaclk:custom=foo",
+    })
+    local doc1, doc2, text2 = round_trip(text)
+    assert.same(doc1, doc2)
+    assert.truthy(text2:find("a=mediaclk:custom=foo\r\n", 1, true))
+  end)
+
+  it("round-trips a=mediaclk with id= prefix", function()
+    local text = lines_to_sdp({
+      "v=0", "o=- 1 1 IN IP4 127.0.0.1", "s=X", "t=0 0",
+      "a=mediaclk:id=src:42 direct=0",
+    })
+    local doc1, doc2, text2 = round_trip(text)
+    assert.same(doc1, doc2)
+    assert.truthy(text2:find(
+      "a=mediaclk:id=src:42 direct=0\r\n", 1, true))
+  end)
+
+  it("returns nil, err when mediaclk:IEEE1722 is missing stream_id", function()
+    local out, e = serialize.to_sdp({
+      version = "0",
+      origin = { username = "-", sess_id = "1", sess_version = "1",
+                 net_type = "IN", addr_type = "IP4",
+                 unicast_address = "127.0.0.1" },
+      session = { name = "X", time_descriptions = {{ start = 0, stop = 0 }},
+                  attributes = {{ name = "mediaclk",
+                                  mode = "IEEE1722" }} }, -- missing stream_id
+    })
+    assert.is_nil(out)
+    assert.matches("stream_id", e.message)
+  end)
+end)
+
+describe("parse_sdp.serialize — Phase 8.D.3 group renderer", function()
+
+  it("round-trips a=group with multiple tags", function()
+    local text = lines_to_sdp({
+      "v=0", "o=- 1 1 IN IP4 127.0.0.1", "s=X", "t=0 0",
+      "a=group:LS audio video",
+    })
+    local doc1, doc2, text2 = round_trip(text)
+    assert.same(doc1, doc2)
+    assert.truthy(text2:find("a=group:LS audio video\r\n", 1, true))
+  end)
+
+  it("round-trips a=group with a single tag", function()
+    local text = lines_to_sdp({
+      "v=0", "o=- 1 1 IN IP4 127.0.0.1", "s=X", "t=0 0",
+      "a=group:DUP primary",
+    })
+    local doc1, doc2, text2 = round_trip(text)
+    assert.same(doc1, doc2)
+    assert.truthy(text2:find("a=group:DUP primary\r\n", 1, true))
+  end)
+
+  it("round-trips a=group with zero tags (ABNF allows)", function()
+    local text = lines_to_sdp({
+      "v=0", "o=- 1 1 IN IP4 127.0.0.1", "s=X", "t=0 0",
+      "a=group:FID",
+    })
+    local doc1, doc2, text2 = round_trip(text)
+    assert.same(doc1, doc2)
+    assert.truthy(text2:find("a=group:FID\r\n", 1, true))
+  end)
+
+  it("returns nil, err when group is missing semantics", function()
+    local out, e = serialize.to_sdp({
+      version = "0",
+      origin = { username = "-", sess_id = "1", sess_version = "1",
+                 net_type = "IN", addr_type = "IP4",
+                 unicast_address = "127.0.0.1" },
+      session = { name = "X", time_descriptions = {{ start = 0, stop = 0 }},
+                  attributes = {{ name = "group",
+                                  tags = {"audio", "video"} }} }, -- missing semantics
+    })
+    assert.is_nil(out)
+    assert.matches("semantics", e.message)
+  end)
+end)
+
+describe("parse_sdp.serialize — Phase 8.D.3 source-filter renderer", function()
+
+  it("round-trips a=source-filter incl with single src address", function()
+    local text = lines_to_sdp({
+      "v=0", "o=- 1 1 IN IP4 127.0.0.1", "s=X", "t=0 0",
+      "a=source-filter:incl IN IP4 224.2.1.1 192.0.2.10",
+    })
+    local doc1, doc2, text2 = round_trip(text)
+    assert.same(doc1, doc2)
+    assert.truthy(text2:find(
+      "a=source-filter:incl IN IP4 224.2.1.1 192.0.2.10\r\n", 1, true))
+  end)
+
+  it("round-trips a=source-filter incl with multiple src addresses", function()
+    local text = lines_to_sdp({
+      "v=0", "o=- 1 1 IN IP4 127.0.0.1", "s=X", "t=0 0",
+      "a=source-filter:incl IN IP4 224.2.1.1 192.0.2.10 192.0.2.11 192.0.2.12",
+    })
+    local doc1, doc2, text2 = round_trip(text)
+    assert.same(doc1, doc2)
+    assert.truthy(text2:find(
+      "a=source-filter:incl IN IP4 224.2.1.1 192.0.2.10 192.0.2.11 192.0.2.12\r\n",
+      1, true))
+  end)
+
+  it("round-trips a=source-filter excl with single src address", function()
+    local text = lines_to_sdp({
+      "v=0", "o=- 1 1 IN IP4 127.0.0.1", "s=X", "t=0 0",
+      "a=source-filter:excl IN IP4 224.2.1.1 192.0.2.99",
+    })
+    local doc1, doc2, text2 = round_trip(text)
+    assert.same(doc1, doc2)
+    assert.truthy(text2:find(
+      "a=source-filter:excl IN IP4 224.2.1.1 192.0.2.99\r\n", 1, true))
+  end)
+
+  it("round-trips a=source-filter with IP6 addr_type", function()
+    local text = lines_to_sdp({
+      "v=0", "o=- 1 1 IN IP4 127.0.0.1", "s=X", "t=0 0",
+      "a=source-filter:incl IN IP6 ff15::101 2001:db8::1",
+    })
+    local doc1, doc2, text2 = round_trip(text)
+    assert.same(doc1, doc2)
+    assert.truthy(text2:find(
+      "a=source-filter:incl IN IP6 ff15::101 2001:db8::1\r\n", 1, true))
+  end)
+
+  it("returns nil, err when source-filter is missing src_addresses", function()
+    local out, e = serialize.to_sdp({
+      version = "0",
+      origin = { username = "-", sess_id = "1", sess_version = "1",
+                 net_type = "IN", addr_type = "IP4",
+                 unicast_address = "127.0.0.1" },
+      session = { name = "X", time_descriptions = {{ start = 0, stop = 0 }},
+                  attributes = {{ name = "source-filter",
+                                  filter_mode = "incl",
+                                  net_type = "IN", addr_type = "IP4",
+                                  dest_address = "224.2.1.1" }} }, -- empty/missing src_addresses
+    })
+    assert.is_nil(out)
+    assert.matches("src_addresses", e.message)
+  end)
+
+  it("returns nil, err when source-filter has empty src_addresses list", function()
+    local out, e = serialize.to_sdp({
+      version = "0",
+      origin = { username = "-", sess_id = "1", sess_version = "1",
+                 net_type = "IN", addr_type = "IP4",
+                 unicast_address = "127.0.0.1" },
+      session = { name = "X", time_descriptions = {{ start = 0, stop = 0 }},
+                  attributes = {{ name = "source-filter",
+                                  filter_mode = "incl",
+                                  net_type = "IN", addr_type = "IP4",
+                                  dest_address = "224.2.1.1",
+                                  src_addresses = {} }} }, -- explicit empty
+    })
+    assert.is_nil(out)
+    assert.matches("src_addresses", e.message)
+  end)
+end)

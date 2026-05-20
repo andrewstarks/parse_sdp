@@ -499,6 +499,168 @@ ATTR_RENDERERS["ssrc-group"] = function(attr, field_path)
   return ln("a", "ssrc-group:" .. body)
 end
 
+-- ts-refclk (RFC 7273 §4.8):
+--   ts-refclk-attr = "ts-refclk:" clksrc
+--   clksrc         = "ntp=" (ntp-server-addr / "/traceable/")
+--                  / "ptp=" ptp-version ":" (ptp-gmid [":" ptp-domain]
+--                                            / "traceable")
+--                  / "gps" / "gal" / "glonass" / "local"
+--                  / "private" [":traceable"]
+--                  / clksrc-ext
+-- The a_ts_refclk rule branches on the leading source token; each branch
+-- captures its own per-branch fields via Cg. The renderer dispatches on
+-- attr.source to a small per-branch builder — the required-vs-optional
+-- field set differs enough between branches that one mega-function with
+-- conditional gates would be harder to read than five small builders.
+-- Required: source. Branch-specific required/optional fields per RFC 7273
+-- §4.8 ABNF (see per-branch comments).
+local function build_tsr_ntp(attr, field_path)
+  -- "ntp=" (ntp-server-addr / "/traceable/")
+  if attr.traceable == true then return "ntp=/traceable/" end
+  local vs, e = require_fields(attr, field_path, { "address" })
+  if not vs then return nil, e end
+  return "ntp=" .. tostring(vs[1])
+end
+
+local function build_tsr_ptp(attr, field_path)
+  -- "ptp=" ptp-version ":" (ptp-gmid [":" ptp-domain] / "traceable")
+  local vs, e = require_fields(attr, field_path, { "version" })
+  if not vs then return nil, e end
+  local head = "ptp=" .. tostring(vs[1]) .. ":"
+  if attr.traceable == true then return head .. "traceable" end
+  local gm, ge = require_field(attr, "grandmaster",
+    field_path .. ".grandmaster", field_path .. ".grandmaster")
+  if not gm then return nil, ge end
+  local body = head .. tostring(gm)
+  if attr.domain ~= nil then body = body .. ":" .. tostring(attr.domain) end
+  return body
+end
+
+local function build_tsr_private(attr, _)
+  -- "private" [":traceable"]
+  if attr.traceable == true then return "private:traceable" end
+  return "private"
+end
+
+-- Bare clock sources (gps / gal / glonass / local) — emit just the source.
+local function build_tsr_bare(attr, _) return tostring(attr.source) end
+
+local function build_tsr_ext(attr, _)
+  -- clksrc-ext: <token>[=<byte-string>]
+  local body = tostring(attr.source)
+  if attr.value ~= nil then body = body .. "=" .. tostring(attr.value) end
+  return body
+end
+
+local TSR_BUILDERS = {
+  ntp = build_tsr_ntp, ptp = build_tsr_ptp, private = build_tsr_private,
+  gps = build_tsr_bare, gal = build_tsr_bare, glonass = build_tsr_bare,
+  ["local"] = build_tsr_bare,
+}
+
+ATTR_RENDERERS["ts-refclk"] = function(attr, field_path)
+  local vs, e = require_fields(attr, field_path, { "source" })
+  if not vs then return nil, e end
+  local builder = TSR_BUILDERS[vs[1]] or build_tsr_ext
+  local body, be = builder(attr, field_path)
+  if not body then return nil, be end
+  return ln("a", "ts-refclk:" .. body)
+end
+
+-- mediaclk (RFC 7273 §5.4):
+--   media-clksrc = "mediaclk:" [media-clkid SP] mediaclock
+--   media-clkid  = "id=" [ "src:" ] media-clktag
+--   mediaclock   = "sender"
+--                / "direct" [ "=" 1*DIGIT ] [SP "rate=" integer "/" integer]
+--                / "IEEE1722=" eui64
+--                / mediaclock-ext
+-- Branches on attr.mode; the optional `id=` prefix (captured as attr.id by
+-- mediaclk_id_prefix) is emitted before the mode body regardless of branch.
+-- Required: mode. Optional id prefix. Branch-specific required/optional
+-- fields per the ABNF (see per-branch comments).
+local function build_mc_sender(_, _) return "sender" end
+
+local function build_mc_direct(attr, _)
+  -- "direct" [ "=" 1*DIGIT ] [SP "rate=" integer "/" integer]
+  local body = "direct"
+  if attr.offset ~= nil then body = body .. "=" .. tostring(attr.offset) end
+  if attr.rate ~= nil then
+    body = body .. " rate=" .. tostring(attr.rate.num)
+                .. "/" .. tostring(attr.rate.den)
+  end
+  return body
+end
+
+local function build_mc_ieee1722(attr, field_path)
+  -- "IEEE1722=" eui64
+  local vs, e = require_fields(attr, field_path, { "stream_id" })
+  if not vs then return nil, e end
+  return "IEEE1722=" .. tostring(vs[1])
+end
+
+local function build_mc_ext(attr, _)
+  -- mediaclock-ext: <token>[=<byte-string>]
+  local body = tostring(attr.mode)
+  if attr.value ~= nil then body = body .. "=" .. tostring(attr.value) end
+  return body
+end
+
+local MC_BUILDERS = {
+  sender = build_mc_sender, direct = build_mc_direct,
+  IEEE1722 = build_mc_ieee1722,
+}
+
+ATTR_RENDERERS.mediaclk = function(attr, field_path)
+  local vs, e = require_fields(attr, field_path, { "mode" })
+  if not vs then return nil, e end
+  local builder = MC_BUILDERS[vs[1]] or build_mc_ext
+  local mode_body, me = builder(attr, field_path)
+  if not mode_body then return nil, me end
+  local body = mode_body
+  if attr.id ~= nil then body = "id=" .. tostring(attr.id) .. " " .. body end
+  return ln("a", "mediaclk:" .. body)
+end
+
+-- group (RFC 5888 §5):
+--   group-attribute = "group:" semantics *(SP identification-tag)
+-- *(SP id-tag) is zero-or-more per the ABNF — `a=group:LS` with no tags
+-- is conformant (matches the a_group grammar shape).
+-- Required: semantics. Optional: tags (zero-or-more).
+ATTR_RENDERERS.group = function(attr, field_path)
+  local vs, e = require_fields(attr, field_path, { "semantics" })
+  if not vs then return nil, e end
+  local body = tostring(vs[1])
+  if attr.tags ~= nil then
+    for _, tag in ipairs(attr.tags) do
+      body = body .. " " .. tostring(tag)
+    end
+  end
+  return ln("a", "group:" .. body)
+end
+
+-- source-filter (RFC 4570 §3):
+--   filter-spec = "source-filter:" filter-mode SP nettype SP addrtype
+--                                  SP dest-address SP src-list
+--   src-list    = src-addr *(SP src-addr)         ; ≥1 src-addr required
+-- All five Cg fields (filter_mode, net_type, addr_type, dest_address,
+-- src_addresses) are required by the ABNF, and src_addresses must hold ≥1
+-- element. Required: filter_mode, net_type, addr_type, dest_address,
+-- src_addresses (≥1).
+ATTR_RENDERERS["source-filter"] = function(attr, field_path)
+  local vs, e = require_fields(attr, field_path,
+    { "filter_mode", "net_type", "addr_type", "dest_address" })
+  if not vs then return nil, e end
+  local srcs = attr.src_addresses
+  if srcs == nil or #srcs == 0 then
+    return nil, err_missing(field_path .. ".src_addresses",
+      field_path .. ".src_addresses (at least one source address)")
+  end
+  local body = tostring(vs[1]) .. " " .. tostring(vs[2])
+            .. " " .. tostring(vs[3]) .. " " .. tostring(vs[4])
+  for _, s in ipairs(srcs) do body = body .. " " .. tostring(s) end
+  return ln("a", "source-filter:" .. body)
+end
+
 -- ── Public entry point ─────────────────────────────────────────────────────
 
 --- Serialize a doc table back to RFC 8866 SDP text.
