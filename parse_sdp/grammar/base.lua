@@ -808,15 +808,16 @@ local rules = {
       * Cg(Cc("mid"), "name")
       * Cg(V"rfc8866_token", "tag"),
 
-  -- source-filter (RFC 4570 §3):
-  --   filter-spec = filter-mode SP nettype SP addrtype SP dest-address
-  --                                                    SP 1*(src-address SP)
+  -- source-filter (RFC 4570 Appendix A):
+  --   "source-filter" ":" SP filter-mode SP filter-spec
+  --   filter-spec = nettype SP address-types SP dest-address SP src-list
   -- filter-mode = "incl" / "excl"
   -- nettype is "IN" (RFC 8866 §5.7 / §9). addrtype = "IP4" / "IP6" / "*";
   -- when "*" the dest/src are FQDNs (no literal-IP grammar enforced at the
   -- base tier — address-form validation belongs to a tiered narrowing, like
-  -- ST 2110-10 §6.5 / §8.4).
-  a_source_filter = P("source-filter:")
+  -- ST 2110-10 §6.5 / §8.4). The SP between ":" and filter-mode is required
+  -- by the ABNF.
+  a_source_filter = P("source-filter:") * SP
       * Cg(Cc("source-filter"), "name")
       * Cg(C(P("incl") + P("excl")), "filter_mode") * SP
       * Cg(C(P("IN")),                   "net_type") * SP

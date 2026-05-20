@@ -1810,7 +1810,7 @@ describe("base SDP grammar — Phase 4.D source-filter (RFC 4570 §3)", function
     local doc = base.match(minimal(nil, {
       { "m=video 49170 RTP/AVP 0",
         "c=IN IP4 239.1.1.1/127",
-        "a=source-filter:incl IN IP4 239.1.1.1 192.0.2.1" },
+        "a=source-filter: incl IN IP4 239.1.1.1 192.0.2.1" },
     }))
     local a = doc.media[1].attributes[1]
     assert.equal("source-filter", a.name)
@@ -1828,7 +1828,7 @@ describe("base SDP grammar — Phase 4.D source-filter (RFC 4570 §3)", function
     local doc = base.match(minimal(nil, {
       { "m=video 49170 RTP/AVP 0",
         "c=IN IP4 239.1.1.1/127",
-        "a=source-filter:excl IN IP4 239.1.1.1 192.0.2.1 192.0.2.2 192.0.2.3" },
+        "a=source-filter: excl IN IP4 239.1.1.1 192.0.2.1 192.0.2.2 192.0.2.3" },
     }))
     local a = doc.media[1].attributes[1]
     assert.equal("excl", a.filter_mode)
@@ -1840,7 +1840,7 @@ describe("base SDP grammar — Phase 4.D source-filter (RFC 4570 §3)", function
   it("accepts '*' addrtype (FQDN form)", function()
     local doc = base.match(minimal(nil, {
       { "m=video 49170 RTP/AVP 0",
-        "a=source-filter:incl IN * sender.example.com source.example.com" },
+        "a=source-filter: incl IN * sender.example.com source.example.com" },
     }))
     local a = doc.media[1].attributes[1]
     assert.equal("*", a.addr_type)
@@ -1852,7 +1852,7 @@ describe("base SDP grammar — Phase 4.D source-filter (RFC 4570 §3)", function
   it("rejects source-filter with no source addresses", function()
     local doc = base.match(minimal(nil, {
       { "m=video 49170 RTP/AVP 0",
-        "a=source-filter:incl IN IP4 239.1.1.1" },
+        "a=source-filter: incl IN IP4 239.1.1.1" },
     }))
     assert.is_nil(doc)
   end)

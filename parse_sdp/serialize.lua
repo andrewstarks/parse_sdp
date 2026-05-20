@@ -638,14 +638,15 @@ ATTR_RENDERERS.group = function(attr, field_path)
   return ln("a", "group:" .. body)
 end
 
--- source-filter (RFC 4570 §3):
---   filter-spec = "source-filter:" filter-mode SP nettype SP addrtype
---                                  SP dest-address SP src-list
---   src-list    = src-addr *(SP src-addr)         ; ≥1 src-addr required
+-- source-filter (RFC 4570 Appendix A):
+--   "source-filter" ":" SP filter-mode SP nettype SP addrtype
+--                       SP dest-address SP src-list
+--   src-list    = *(unicast-address SP) unicast-address      ; ≥1 src-addr
 -- All five Cg fields (filter_mode, net_type, addr_type, dest_address,
 -- src_addresses) are required by the ABNF, and src_addresses must hold ≥1
 -- element. Required: filter_mode, net_type, addr_type, dest_address,
--- src_addresses (≥1).
+-- src_addresses (≥1). The SP between ":" and filter-mode is required by
+-- the ABNF.
 ATTR_RENDERERS["source-filter"] = function(attr, field_path)
   local vs, e = require_fields(attr, field_path,
     { "filter_mode", "net_type", "addr_type", "dest_address" })
@@ -658,7 +659,7 @@ ATTR_RENDERERS["source-filter"] = function(attr, field_path)
   local body = tostring(vs[1]) .. " " .. tostring(vs[2])
             .. " " .. tostring(vs[3]) .. " " .. tostring(vs[4])
   for _, s in ipairs(srcs) do body = body .. " " .. tostring(s) end
-  return ln("a", "source-filter:" .. body)
+  return ln("a", "source-filter: " .. body)
 end
 
 -- ── Phase 8.E IPMX-tier attribute renderers ────────────────────────────────

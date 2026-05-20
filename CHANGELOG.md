@@ -2147,6 +2147,18 @@ Audit ref: REFACTOR-PLAN.md §5 Phase 8.D (incl. 8.D.1 / 8.D.2 / 8.D.3).
 
 Audit ref: REFACTOR-PLAN.md §5 Phase 8.E.
 
+- **Phase 8.F:** fixture-wide round-trip. New describe block in
+  `spec/roundtrip_spec.lua` discovers every
+  `examples/{generic,st2110,ipmx}/valid/*.sdp` via
+  `io.popen("ls ...")` and drives each through
+  `parse → serialize → re-parse → deep-equal` under its tier matcher
+  (`base.match` / `st2110.match` / `ipmx.match`) with the default
+  `fail_on_first = true` opts. 19 fixture tests added (5 generic +
+  9 ST 2110 + 5 IPMX); suite 1852 green (was 1833). Closes Phase 8
+  in full.
+
+Audit ref: REFACTOR-PLAN.md §5 Phase 8.F.
+
 ### Changed
 
 - The inline `errors` table in `parse_sdp.lua` now delegates to
@@ -2168,6 +2180,41 @@ Audit ref: REFACTOR-PLAN.md §5 Phase 8.E.
   "RFC 8866 obsoletes RFC 4566" historical note also stays.
 
 ### Fixed
+
+- **`a=source-filter` grammar required no SP between `:` and the
+  filter-mode token** (Phase 8.F triage). RFC 4570 Appendix A
+  defines the ABNF as
+  `"source-filter" ":" SP filter-mode SP filter-spec` — the SP after
+  the colon is part of the grammar, not optional. Updated
+  `parse_sdp/grammar/base.lua` `a_source_filter` to insert `* SP`
+  immediately after `P("source-filter:")`. Updated
+  `parse_sdp/serialize.lua` to emit the SP between `source-filter:`
+  and the filter-mode token
+  so the renderer matches the ABNF. 12 existing test inputs across
+  `spec/grammar_base_spec.lua` (4), `spec/grammar_st2110_spec.lua`
+  (4), and `spec/roundtrip_spec.lua` (8 — 4 input strings + 4
+  expected-output strings) updated to the SP form. The 1.0 parser
+  at `parse_sdp.lua:802` accepts both forms via `P(" ")^-1` with
+  a comment ("Some senders include a leading space after the `:`
+  — accept it"); the grammar-tier port removes that opinion-based
+  loosening per CLAUDE.md's strictness principle. Surfaced by every
+  IPMX fixture in Phase 8.F (all of which write the
+  spec-conformant SP form).
+
+- **Three fixture files used `m=application` for `smpte291` ANC
+  streams** (Phase 8.F triage). RFC 8331 §4 reads, verbatim:
+  *"The type name ("video") goes in SDP "m=" as the media name."*
+  The new grammar tier's `st2110-40.a.rtpmap.smpte291-media-type`
+  check (and the 1.0 parser at `parse_sdp.lua:1617-1624`) reject
+  the construction. Fixed by changing the `m=` media name from
+  `application` to `video` (port + PT + rest of the block
+  unchanged):
+  - `examples/st2110/valid/05_typical_multistream.sdp` — 1 block
+    (port 10020).
+  - `examples/st2110/valid/06_pathological.sdp` — 2 blocks
+    (ports 22000, 22002).
+  - `examples/ipmx/valid/03_pathological.sdp` — 1 block
+    (port 32000).
 
 - **Audio `a=ptime` `spec_ref` audit completeness.** The shipping parser's
   `a=ptime`-missing and `a=ptime`-invalid checks previously reported

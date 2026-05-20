@@ -2796,7 +2796,7 @@ describe("ST 2110-10 — group:DUP leg coherence (Phase 6.E.B)", function()
         "a=group:DUP primary backup",
         "m=video 30000 RTP/AVP 96",
         "c=IN IP4 239.0.0.1/64",
-        "a=source-filter:incl IN IP4 239.0.0.1 198.51.100.1",
+        "a=source-filter: incl IN IP4 239.0.0.1 198.51.100.1",
         "a=rtpmap:96 raw/90000",
         RAW_FMTP_COMPLETE_PT96,
         "a=mid:primary",
@@ -2804,7 +2804,7 @@ describe("ST 2110-10 — group:DUP leg coherence (Phase 6.E.B)", function()
         "a=mediaclk:sender",
         "m=video 30002 RTP/AVP 96",
         "c=IN IP4 239.0.0.1/64",          -- same dst
-        "a=source-filter:incl IN IP4 239.0.0.1 198.51.100.1",  -- same src
+        "a=source-filter: incl IN IP4 239.0.0.1 198.51.100.1",  -- same src
         "a=rtpmap:96 raw/90000",
         RAW_FMTP_COMPLETE_PT96,
         "a=mid:backup",
@@ -2822,7 +2822,7 @@ describe("ST 2110-10 — group:DUP leg coherence (Phase 6.E.B)", function()
         "a=group:DUP primary backup",
         "m=video 30000 RTP/AVP 96",
         "c=IN IP4 239.0.0.1/64",
-        "a=source-filter:incl IN IP4 239.0.0.1 198.51.100.1",
+        "a=source-filter: incl IN IP4 239.0.0.1 198.51.100.1",
         "a=rtpmap:96 raw/90000",
         RAW_FMTP_COMPLETE_PT96,
         "a=mid:primary",
@@ -2830,7 +2830,7 @@ describe("ST 2110-10 — group:DUP leg coherence (Phase 6.E.B)", function()
         "a=mediaclk:sender",
         "m=video 30002 RTP/AVP 96",
         "c=IN IP4 239.0.0.1/64",          -- same dst
-        "a=source-filter:incl IN IP4 239.0.0.1 198.51.100.2",  -- DIFFERENT src
+        "a=source-filter: incl IN IP4 239.0.0.1 198.51.100.2",  -- DIFFERENT src
         "a=rtpmap:96 raw/90000",
         RAW_FMTP_COMPLETE_PT96,
         "a=mid:backup",

@@ -17,6 +17,7 @@
 -- fields → serializer returns nil + err, not a half-rendered string.
 
 local base      = require("parse_sdp.grammar.base")
+local st2110    = require("parse_sdp.grammar.st2110")
 local ipmx      = require("parse_sdp.grammar.ipmx")
 local serialize = require("parse_sdp.serialize")
 
@@ -1372,46 +1373,46 @@ describe("parse_sdp.serialize — Phase 8.D.3 source-filter renderer", function(
   it("round-trips a=source-filter incl with single src address", function()
     local text = lines_to_sdp({
       "v=0", "o=- 1 1 IN IP4 127.0.0.1", "s=X", "t=0 0",
-      "a=source-filter:incl IN IP4 224.2.1.1 192.0.2.10",
+      "a=source-filter: incl IN IP4 224.2.1.1 192.0.2.10",
     })
     local doc1, doc2, text2 = round_trip(text)
     assert.same(doc1, doc2)
     assert.truthy(text2:find(
-      "a=source-filter:incl IN IP4 224.2.1.1 192.0.2.10\r\n", 1, true))
+      "a=source-filter: incl IN IP4 224.2.1.1 192.0.2.10\r\n", 1, true))
   end)
 
   it("round-trips a=source-filter incl with multiple src addresses", function()
     local text = lines_to_sdp({
       "v=0", "o=- 1 1 IN IP4 127.0.0.1", "s=X", "t=0 0",
-      "a=source-filter:incl IN IP4 224.2.1.1 192.0.2.10 192.0.2.11 192.0.2.12",
+      "a=source-filter: incl IN IP4 224.2.1.1 192.0.2.10 192.0.2.11 192.0.2.12",
     })
     local doc1, doc2, text2 = round_trip(text)
     assert.same(doc1, doc2)
     assert.truthy(text2:find(
-      "a=source-filter:incl IN IP4 224.2.1.1 192.0.2.10 192.0.2.11 192.0.2.12\r\n",
+      "a=source-filter: incl IN IP4 224.2.1.1 192.0.2.10 192.0.2.11 192.0.2.12\r\n",
       1, true))
   end)
 
   it("round-trips a=source-filter excl with single src address", function()
     local text = lines_to_sdp({
       "v=0", "o=- 1 1 IN IP4 127.0.0.1", "s=X", "t=0 0",
-      "a=source-filter:excl IN IP4 224.2.1.1 192.0.2.99",
+      "a=source-filter: excl IN IP4 224.2.1.1 192.0.2.99",
     })
     local doc1, doc2, text2 = round_trip(text)
     assert.same(doc1, doc2)
     assert.truthy(text2:find(
-      "a=source-filter:excl IN IP4 224.2.1.1 192.0.2.99\r\n", 1, true))
+      "a=source-filter: excl IN IP4 224.2.1.1 192.0.2.99\r\n", 1, true))
   end)
 
   it("round-trips a=source-filter with IP6 addr_type", function()
     local text = lines_to_sdp({
       "v=0", "o=- 1 1 IN IP4 127.0.0.1", "s=X", "t=0 0",
-      "a=source-filter:incl IN IP6 ff15::101 2001:db8::1",
+      "a=source-filter: incl IN IP6 ff15::101 2001:db8::1",
     })
     local doc1, doc2, text2 = round_trip(text)
     assert.same(doc1, doc2)
     assert.truthy(text2:find(
-      "a=source-filter:incl IN IP6 ff15::101 2001:db8::1\r\n", 1, true))
+      "a=source-filter: incl IN IP6 ff15::101 2001:db8::1\r\n", 1, true))
   end)
 
   it("returns nil, err when source-filter is missing src_addresses", function()
@@ -1725,3 +1726,56 @@ describe("parse_sdp.serialize — Phase 8.E privacy renderer", function()
     assert.matches("params", e.message)
   end)
 end)
+
+-- ── Phase 8.F: fixture-wide round-trip ──────────────────────────────────────
+-- Every hand-curated valid fixture must parse-serialize-reparse to the same
+-- doc table under its appropriate tier matcher. Default opts (fail_on_first =
+-- true): any check that trips on round-trip is a real bug to investigate.
+
+local function read_file(path)
+  local f = assert(io.open(path, "r"))
+  local s = f:read("*a")
+  f:close()
+  return s
+end
+
+local function list_sdp_files(dir)
+  local h = assert(io.popen("ls " .. dir .. "/*.sdp 2>/dev/null", "r"))
+  local out = {}
+  for line in h:lines() do out[#out + 1] = line end
+  h:close()
+  table.sort(out)
+  return out
+end
+
+local TIERS = {
+  { name = "generic", dir = "examples/generic/valid", match = base.match    },
+  { name = "st2110",  dir = "examples/st2110/valid",  match = st2110.match  },
+  { name = "ipmx",    dir = "examples/ipmx/valid",    match = ipmx.match    },
+}
+
+for _, tier in ipairs(TIERS) do
+  describe("parse_sdp.serialize — Phase 8.F " .. tier.name .. " fixtures",
+    function()
+    for _, path in ipairs(list_sdp_files(tier.dir)) do
+      local basename = path:match("([^/]+)$")
+      it("round-trips " .. basename, function()
+        local text = read_file(path)
+        local doc1, ctx1 = tier.match(text)
+        assert.is_truthy(doc1,
+          "fixture failed to parse: " .. (ctx1 and ctx1.findings
+            and ctx1.findings[1] and ctx1.findings[1].message
+            or "no finding"))
+        local text2, e = serialize.to_sdp(doc1)
+        assert.is_nil(e, "serialize returned an error")
+        assert.is_string(text2)
+        local doc2, ctx2 = tier.match(text2)
+        assert.is_truthy(doc2,
+          "re-parse failed: " .. (ctx2 and ctx2.findings
+            and ctx2.findings[1] and ctx2.findings[1].message
+            or "no finding"))
+        assert.same(doc1, doc2)
+      end)
+    end
+  end)
+end

@@ -1098,9 +1098,46 @@ Sub-slice ordering (decided 2026-05-20 in planning conversation):
   aborting the match, so doc1 == doc2 even when the fixture isn't
   fully IPMX-conformant. Full-fixture validation lands in 8.F.
   16 new tests; suite 1833 green (was 1817).
-- **8.F (pending)** — final `spec/roundtrip_spec.lua` form: loop
-  every `examples/{generic,st2110,ipmx}/valid/*.sdp` file with
-  parse → serialize → re-parse → deep-equal.
+- **8.F (complete)** — fixture-wide round-trip. New describe block
+  in `spec/roundtrip_spec.lua` discovers every
+  `examples/{generic,st2110,ipmx}/valid/*.sdp` via `io.popen("ls ...")`
+  and runs each through `parse → serialize → re-parse → deep-equal`
+  under its tier matcher (`base.match` / `st2110.match` / `ipmx.match`)
+  with default opts (`fail_on_first = true`). 19 fixture tests
+  added (5 generic + 9 ST 2110 + 5 IPMX); suite 1852 green (was
+  1833). Triage surfaced two real bugs and three fixture bugs:
+  - **Grammar bug** (fixed): `a_source_filter` required no SP
+    between `:` and the filter-mode token, but RFC 4570 Appendix A
+    ABNF explicitly defines
+    `"source-filter" ":" SP filter-mode SP filter-spec`. The
+    `SP` after `:` is required by the spec; the IPMX fixtures
+    already write the spec-conformant form. Fixed
+    `parse_sdp/grammar/base.lua` (`P("source-filter:") * SP ...`)
+    and `parse_sdp/serialize.lua` (emit the SP between
+    `source-filter:` and the filter-mode token). Re-grounded the
+    rule comments against Appendix A. 12
+    existing test inputs across
+    `spec/grammar_base_spec.lua` (4),
+    `spec/grammar_st2110_spec.lua` (4), and
+    `spec/roundtrip_spec.lua` (4 source-filter cases × 2
+    input/output strings) were updated mechanically to the SP
+    form. The 1.0 parser at `parse_sdp.lua:802` accepted both
+    forms via `P(" ")^-1` with a comment ("Some senders include
+    a leading space after the `:` — accept it"); that was an
+    opinion-based loosening of the ABNF and is removed in the
+    grammar-tier port per CLAUDE.md's strictness principle.
+  - **Fixture bugs** (fixed): three fixtures used
+    `m=application` for `smpte291` ANC streams, violating
+    RFC 8331 §4: *"The type name ("video") goes in SDP "m=" as
+    the media name."* The new grammar tier enforces this via
+    `st2110-40.a.rtpmap.smpte291-media-type` (and the 1.0
+    parser rejects the same construction at
+    `parse_sdp.lua:1617-1624`). Fixed
+    `examples/st2110/valid/05_typical_multistream.sdp` (1 block),
+    `examples/st2110/valid/06_pathological.sdp` (2 blocks), and
+    `examples/ipmx/valid/03_pathological.sdp` (1 block) to use
+    `m=video` per the IANA registration; the test ANC port and
+    rtpmap PT are unchanged. No fixture renaming.
 
 Producer-side contract (8.D / 8.E renderer rules):
 
@@ -1124,15 +1161,101 @@ serializer. The grammar tier never produces that shape; `sdp.new`
 consumers must use `time_descriptions[]`. Migration cutover is a
 Phase 10 concern.
 
-**Phase 9 — Public API stabilization.**
-`sdp.parse(text, tier, opts)`, `doc:warnings()`, `doc:findings()`,
-`sdp.policy(table)` helper. Policy field accepted but treated as no-op for
-non-default values (defer behavior change).
+**Phase 9 — Pre-cutover refactor + public-API surface.**
 
-**Phase 10 — Migration cutover.**
-Delete the 1.0 implementation modules. `busted spec/` green.
-`busted spec_conformance/` green. CHANGELOG.md entry, GUIDE.md regenerated
-sections, README.md notes the doc-shape change.
+Four sub-slices, ordered so each one lands on a green tree.
+
+- **9.A — DRY sweep.** Walk every new module
+  (`parse_sdp/grammar/{base,st2110,ipmx}.lua`,
+  `parse_sdp/serialize.lua`, `parse_sdp/errors.lua`,
+  `parse_sdp/grammar/patterns.lua`, `parse_sdp/grammar/addresses.lua`)
+  for copy-paste, near-duplicate helpers, branch logic that already
+  has a primitive (`params_get`, `make_rtpmap_branch`,
+  `require_fields`, the shared `patterns` module, `each_*_fmtp` /
+  `each_fmtp_for_encoding`, `is_rtp_block` / `is_usb_block`). Spec
+  helpers in `spec/` get the same treatment. Tests stay green
+  throughout. No behavior change.
+
+- **9.B — Comment-tightening sweep.** Same modules. Convention:
+  each comment block briefly says (a) what it is, (b) what
+  problem it solves, (c) very briefly how. Tricky parts (e.g.
+  the fmtp accumulator dissolution from 6.C.A, the LPeg V-rule
+  sharing pitfall in `base.extend`, the rtpmap-before-fmtp ordering
+  caveat in 6.C.B) stay verbose — those are load-bearing context
+  for the next person to touch them. Paragraphs that paraphrase
+  what the code already says go. Per-spec citations stay; they are
+  the conformance audit trail.
+
+- **9.C — Policy + findings feature go live.** The infrastructure
+  is already in place from Phase 0:
+  [errors.record](parse_sdp/errors.lua#L179-L203) consults
+  `ctx.policy[id]`, every check has a registered `default_severity`,
+  and `sdp.checks()` / `sdp.default_policy()` already expose the
+  toggleable IDs. 9.C flips the switch:
+
+  - On `sdp.parse(text, tier, opts)` entry, validate every key in
+    `opts.policy` against the registry; an unknown ID is a caller
+    bug (typo / stale config) and returns `nil, err` pointing at
+    the offending key.
+  - Apply the override: `policy[id]` (when set) wins over
+    `default_severity`. `"off"` short-circuits the `record()` call.
+    `"warn"` records the finding and returns success.
+  - Default `fail_on_first` flips to `false` for the public-API
+    path. Error-severity findings still surface as a parse failure
+    (`sdp.parse` returns `nil, err`), but the doc carries every
+    finding the grammar saw via `ctx.findings`. The internal
+    `tier.match(text, { fail_on_first = true })` 1.0-compatible
+    semantics stay for spec helpers.
+  - The doc surfaces findings via `doc:findings()` (all),
+    `doc:warnings()` (severity = `"warn"`), and `doc:errors()`
+    (severity = `"error"`). Each finding is the registry shape
+    plus a `field_path` / `line` / `col`.
+
+  The user-facing usage pattern is: grep `sdp.checks()` for the
+  offending ID, drop `{ ["<id>"] = "warn" }` (or `"off"`) into
+  `opts.policy`, re-parse. No reach-into-internals.
+
+- **9.D — Cutover wiring.** Flip `mt:to_sdp()` from the 1.0
+  serializer to `parse_sdp/serialize.lua`. `sdp.parse(text, tier,
+  opts)` lands its final public-API shape (the `opts` argument
+  already accepted; 9.D promotes it from undocumented to
+  contracted). `doc:warnings()` / `doc:errors()` / `doc:findings()`
+  added on the metatable. The 1.0 grammar / validator code in
+  `parse_sdp.lua` stays in place but is no longer reachable from
+  the public API.
+
+**Phase 10 — Migration cutover + final audit.**
+
+- **10.A — Delete the 1.0 implementation.** Remove the
+  grammar / validator / serializer blocks from `parse_sdp.lua`;
+  the file shrinks to errors-shim re-export, public-API surface,
+  CLI dispatch. `busted spec/` and `busted spec_conformance/`
+  green.
+
+- **10.B — Coverage + size comparison.** Brief audit pass, three
+  questions:
+  1. **Coverage parity.** Walk `audits/SPEC_INVENTORY.md` +
+     `audits/SPEC_COVERAGE.md` against the grammar-tier registry.
+     Confirm every grounded check is enforced by the new tier.
+     The three 1.0-over-strict items (audio MAXUDP-forbidden on
+     AM824, channels-required on L16/L24, packet-payload-fit on
+     AM824) stay flagged as intentional drops without primary-
+     source SHALL.
+  2. **What's new since 1.0.** Enumerate checks added in the
+     refactor (e.g. ST 2110-20 §6.2.5 Table 3 4:2:0/depth, §7.6
+     TCS/depth=16f coupling, RFC 9134 enum corrections for jxsv,
+     RFC 4570 SP-after-`:` strictness from Phase 8.F, TR-10-X
+     SHALLs ported during Phase 7).
+  3. **Code size delta.** `wc -l` of the new module set vs.
+     `parse_sdp.lua` at the 1.0 tag, both raw and stripped of
+     comments + blank lines. Report both numbers.
+
+- **10.C — Append findings to CHANGELOG.md.** A brief
+  "Comparison with 1.0" section under `[Unreleased]`: one
+  paragraph for coverage, one for new checks, one for size delta.
+  Tight — the audit memos in `audits/` carry the full detail.
+  README.md + GUIDE.md regenerated sections cite the audit for
+  users tracking the migration.
 
 Estimated weight: phases 0–3 are small and gated by getting the architecture
 right; phases 4–7 are the bulk of the work; phases 8–10 are mechanical given

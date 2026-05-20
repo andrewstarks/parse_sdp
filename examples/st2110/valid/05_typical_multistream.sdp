@@ -19,7 +19,7 @@ c=IN IP4 239.200.0.3/64
 a=rtpmap:98 L24/48000/2
 a=fmtp:98 channel-order=SMPTE2110.(ST)
 a=mediaclk:direct=0
-m=application 10020 RTP/AVP 100
+m=video 10020 RTP/AVP 100
 c=IN IP4 239.200.0.4/64
 a=rtpmap:100 smpte291/90000
 a=fmtp:100 SSN=ST2110-40:2018; exactframerate=25; DID_SDID={0x41,0x45}; VPID_Code=148

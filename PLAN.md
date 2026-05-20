@@ -39,39 +39,47 @@ and runs them through the parser. See
 
 ## Current State
 
-1833 hermetic tests passing. Every validation check is grounded in explicit
+1852 hermetic tests passing. Every validation check is grounded in explicit
 spec text; no opinion-based checks remain.
 
 The grammar-first refactor on branch `refactor/grammar-first` is **in
 progress**. Phases 4 + 5 complete; **Phase 6 (all of 6.A–6.L except
 the deferred 6.I) is closed; Phase 7 (7.A–7.L IPMX tier composition
-via `extend(st2110_rules, ...)`) is closed; Phase 8 sub-slices
-8.A–8.E are closed.** The grammar tier matches or exceeds the 1.0
-parser on every check grounded in primary spec text — base SDP,
-ST 2110 family (-10/-20/-21/-22/-30/-31/-40/-41), and VSF TR-10
-(IPMX). Three 1.0-over-strict flags from 6.D (audio MAXUDP-forbidden
-on AM824, channels-required on L16/L24, packet-payload-fit on AM824)
-are intentionally not ported and remain flagged in `audits/` for
+via `extend(st2110_rules, ...)`) is closed; Phase 8 (8.A–8.F, the
+full serializer rewrite plus fixture-wide round-trip) is closed.**
+The grammar tier matches or exceeds the 1.0 parser on every check
+grounded in primary spec text — base SDP, ST 2110 family
+(-10/-20/-21/-22/-30/-31/-40/-41), and VSF TR-10 (IPMX). Three
+1.0-over-strict flags from 6.D (audio MAXUDP-forbidden on AM824,
+channels-required on L16/L24, packet-payload-fit on AM824) are
+intentionally not ported and remain flagged in `audits/` for
 separate follow-up.
 
 The new `parse_sdp/serialize.lua` renders every base-tier
 compound attribute from `parse_sdp/grammar/base.lua` (Phase 8.D —
 18 `ATTR_RENDERERS` entries) plus every IPMX-tier extension
 attribute from `parse_sdp/grammar/ipmx.lua` (Phase 8.E — infoframe,
-hkep, privacy). Module is internal-only until Phase 9 cutover; the
-public `doc:to_sdp()` still routes to the 1.0 serializer.
+hkep, privacy). Phase 8.F closes the slice with a fixture-wide
+round-trip suite — every `examples/{generic,st2110,ipmx}/valid/*.sdp`
+goes through `parse → serialize → re-parse → deep-equal` under the
+appropriate tier matcher. Module remains internal-only until Phase 9
+cutover; the public `doc:to_sdp()` still routes to the 1.0 serializer.
 
 Remaining phases:
 
-- **Phase 8.F** — fixture-wide round-trip suite. Loop every
-  `examples/{generic,st2110,ipmx}/valid/*.sdp` file through
-  parse → serialize → re-parse → deep-equal.
-- **Phase 9** — public API stabilization. `sdp.parse(text, tier,
-  opts)` accepts the policy table; `doc:warnings()` / `doc:findings()`
-  surfaces. Flip `mt:to_sdp()` to the new serializer.
-- **Phase 10** — migration cutover. Delete the 1.0 parser. Update
-  GUIDE.md / README.md / CHANGELOG.md for the breaking doc-shape
-  change.
+- **Phase 9** — pre-cutover refactor + public-API surface. Four
+  sub-slices: 9.A DRY sweep across the new modules; 9.B
+  comment-tightening sweep; 9.C policy + findings feature go live
+  (`opts.policy` validated against the registry; warnings stop
+  getting dropped; `doc:warnings()` / `doc:errors()` /
+  `doc:findings()` surfaces); 9.D cutover wiring (flip
+  `mt:to_sdp()` to `parse_sdp/serialize.lua` and contract
+  `sdp.parse(text, tier, opts)`).
+- **Phase 10** — migration cutover + final audit. Delete the 1.0
+  implementation. Produce a brief "Comparison with 1.0" audit
+  (coverage parity, what's new, code-size delta with and without
+  comments) and append it to CHANGELOG.md. Update GUIDE.md /
+  README.md for the breaking doc-shape change.
 
 The grammar tier covers (concrete list of per-spec coverage):
 
