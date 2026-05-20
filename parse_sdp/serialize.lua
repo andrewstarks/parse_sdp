@@ -389,6 +389,116 @@ ATTR_RENDERERS["rtcp-mux"] = function(_, _)
   return ln("a", "rtcp-mux")
 end
 
+-- fmtp (RFC 8866 §6.15):
+--   fmtp-value = fmt SP format-specific-params
+-- The grammar's a_fmtp rule (parse_sdp/grammar/base.lua) has two branches:
+--   * fmtp_params_branch — decomposed kv-list, doc shape carries `params`
+--     as an ordered Ct of `{key, value | true}` sub-tables (input order).
+--   * fmtp_raw_branch    — opaque byte-string, doc shape carries `raw`.
+-- The renderer walks `params` positionally to preserve input order (Phase
+-- 8.C landed this contract so 8.D.2 could round-trip text-identical). A
+-- `true` value renders as a bare flag; a string/number renders as `k=v`.
+-- Joined with `;`, no trailing separator.
+-- Required: payload_type, and one of {params, raw}.
+ATTR_RENDERERS.fmtp = function(attr, field_path)
+  local pt, e = require_field(attr, "payload_type",
+    field_path .. ".payload_type", field_path .. ".payload_type")
+  if not pt then return nil, e end
+  if attr.raw ~= nil then
+    return ln("a", "fmtp:" .. tostring(pt) .. " " .. tostring(attr.raw))
+  end
+  if attr.params ~= nil then
+    local toks = {}
+    for i, entry in ipairs(attr.params) do
+      local k, v = entry[1], entry[2]
+      if v == true then
+        toks[i] = tostring(k)
+      else
+        toks[i] = tostring(k) .. "=" .. tostring(v)
+      end
+    end
+    return ln("a", "fmtp:" .. tostring(pt) .. " " .. table.concat(toks, ";"))
+  end
+  return nil, err_missing(field_path .. ".params",
+    field_path .. ".params or " .. field_path .. ".raw")
+end
+
+-- rtcp (RFC 3605 §2.1):
+--   rtcp-attribute = "a=rtcp:" port [nettype SP addrtype SP connection-address]
+-- The optional nettype/addrtype/address triple is all-or-nothing per the
+-- ABNF — the grammar's a_rtcp rule binds the three with a single `^-1`
+-- group, so a hand-built doc populating only one or two is malformed.
+-- Required: port. Optional triple: net_type + addr_type + address (all
+-- three, or none — partial population returns nil + err).
+ATTR_RENDERERS.rtcp = function(attr, field_path)
+  local vs, e = require_fields(attr, field_path, { "port" })
+  if not vs then return nil, e end
+  local body = tostring(vs[1])
+  local n, a, addr = attr.net_type, attr.addr_type, attr.address
+  if n ~= nil or a ~= nil or addr ~= nil then
+    local triple, te = require_fields(attr, field_path,
+      { "net_type", "addr_type", "address" })
+    if not triple then return nil, te end
+    body = body .. " " .. tostring(triple[1])
+                .. " " .. tostring(triple[2])
+                .. " " .. tostring(triple[3])
+  end
+  return ln("a", "rtcp:" .. body)
+end
+
+-- rtcp-fb (RFC 4585 §4.2):
+--   rtcp-fb-syntax = "a=rtcp-fb:" rtcp-fb-pt SP rtcp-fb-val
+-- The grammar captures `payload_type` polymorphically — a number for a
+-- numeric fmt or the literal string "*"; tostring handles both.
+-- Required: payload_type, feedback_type. Optional: parameters.
+ATTR_RENDERERS["rtcp-fb"] = function(attr, field_path)
+  local vs, e = require_fields(attr, field_path,
+    { "payload_type", "feedback_type" })
+  if not vs then return nil, e end
+  local body = tostring(vs[1]) .. " " .. tostring(vs[2])
+  if attr.parameters ~= nil then
+    body = body .. " " .. tostring(attr.parameters)
+  end
+  return ln("a", "rtcp-fb:" .. body)
+end
+
+-- extmap (RFC 8285 §8):
+--   extmap-value = mapentry SP extensionname [SP extensionattributes]
+--   mapentry     = "extmap:" 1*5DIGIT ["/" direction]
+-- Direction (when present) is glued to the id with "/"; attributes (when
+-- present) are appended after the URI with a single SP.
+-- Required: id, uri. Optional: direction, attributes.
+ATTR_RENDERERS.extmap = function(attr, field_path)
+  local vs, e = require_fields(attr, field_path, { "id", "uri" })
+  if not vs then return nil, e end
+  local head = tostring(vs[1])
+  if attr.direction ~= nil then
+    head = head .. "/" .. tostring(attr.direction)
+  end
+  local body = head .. " " .. tostring(vs[2])
+  if attr.attributes ~= nil then
+    body = body .. " " .. tostring(attr.attributes)
+  end
+  return ln("a", "extmap:" .. body)
+end
+
+-- ssrc-group (RFC 5576 §10 Figure 5):
+--   ssrc-group-attr = "ssrc-group:" semantics *(SP ssrc-id)
+-- *(SP ssrc-id) is zero-or-more per the ABNF — `a=ssrc-group:LS` with no
+-- ids is conformant (matches the a_ssrc_group grammar shape).
+-- Required: semantics. Optional: ssrc_ids (zero-or-more).
+ATTR_RENDERERS["ssrc-group"] = function(attr, field_path)
+  local vs, e = require_fields(attr, field_path, { "semantics" })
+  if not vs then return nil, e end
+  local body = tostring(vs[1])
+  if attr.ssrc_ids ~= nil then
+    for _, id in ipairs(attr.ssrc_ids) do
+      body = body .. " " .. tostring(id)
+    end
+  end
+  return ln("a", "ssrc-group:" .. body)
+end
+
 -- ── Public entry point ─────────────────────────────────────────────────────
 
 --- Serialize a doc table back to RFC 8866 SDP text.
