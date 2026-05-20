@@ -39,32 +39,41 @@ and runs them through the parser. See
 
 ## Current State
 
-1569 hermetic tests passing. Every validation check is grounded in explicit
+1833 hermetic tests passing. Every validation check is grounded in explicit
 spec text; no opinion-based checks remain.
 
 The grammar-first refactor on branch `refactor/grammar-first` is **in
 progress**. Phases 4 + 5 complete; **Phase 6 (all of 6.A–6.L except
-the deferred 6.I) is now closed.** The grammar tier matches or
-exceeds the 1.0 parser on every check grounded in primary spec text.
-Three 1.0-over-strict flags from 6.D (audio MAXUDP-forbidden on
-AM824, channels-required on L16/L24, packet-payload-fit on AM824)
+the deferred 6.I) is closed; Phase 7 (7.A–7.L IPMX tier composition
+via `extend(st2110_rules, ...)`) is closed; Phase 8 sub-slices
+8.A–8.E are closed.** The grammar tier matches or exceeds the 1.0
+parser on every check grounded in primary spec text — base SDP,
+ST 2110 family (-10/-20/-21/-22/-30/-31/-40/-41), and VSF TR-10
+(IPMX). Three 1.0-over-strict flags from 6.D (audio MAXUDP-forbidden
+on AM824, channels-required on L16/L24, packet-payload-fit on AM824)
 are intentionally not ported and remain flagged in `audits/` for
-separate follow-up. Phase 6.F refactored 11 per-line ST 2110 checks
-out of `semantic_checks` into in-grammar Cmt callbacks. 6.G wired
-byte-position diagnostics through every in-grammar Cmt. 6.H applied
-the in-grammar treatment to base SDP's `check_connection_addresses`.
-6.J hoisted shared numeric-value-form LPeg patterns into a new
-`parse_sdp.grammar.patterns` module that base and st2110 both draw
-from. 6.K added a `media_section_checks` slot parallel to
-`semantic_checks`, migrated 5 per-block checks into it, and
-recovered the `media[N]` field_path prefix on every in-grammar
-finding via the new `ctx.media_index` plumbing. 6.L finished the
-LPeg sweep by rewriting `validate_channel_order` (the last inline-
-regex validator) as a small LPeg grammar.
+separate follow-up.
 
-Phases 7–10 remain (IPMX tier via `extend(st2110_rules, ...)`,
-serializer rewrite, public API stabilization, migration cutover).
-The grammar tier covers:
+The new `parse_sdp/serialize.lua` renders every base-tier
+compound attribute from `parse_sdp/grammar/base.lua` (Phase 8.D —
+18 `ATTR_RENDERERS` entries) plus every IPMX-tier extension
+attribute from `parse_sdp/grammar/ipmx.lua` (Phase 8.E — infoframe,
+hkep, privacy). Module is internal-only until Phase 9 cutover; the
+public `doc:to_sdp()` still routes to the 1.0 serializer.
+
+Remaining phases:
+
+- **Phase 8.F** — fixture-wide round-trip suite. Loop every
+  `examples/{generic,st2110,ipmx}/valid/*.sdp` file through
+  parse → serialize → re-parse → deep-equal.
+- **Phase 9** — public API stabilization. `sdp.parse(text, tier,
+  opts)` accepts the policy table; `doc:warnings()` / `doc:findings()`
+  surfaces. Flip `mt:to_sdp()` to the new serializer.
+- **Phase 10** — migration cutover. Delete the 1.0 parser. Update
+  GUIDE.md / README.md / CHANGELOG.md for the breaking doc-shape
+  change.
+
+The grammar tier covers (concrete list of per-spec coverage):
 
 - ST 2110-20 raw video: §7.1 no-whitespace-around-=, §7.2/§7.4.2
   required-param presence + -21 §8.1 TP, 7 enum value-sets, 6
@@ -72,23 +81,32 @@ The grammar tier covers:
   5 1.0-gap-close SHALLs from §6.2.5 Table 3 + §7.6.
 - ST 2110-22 jxsv: 4 required-param presence, 16 value-form /
   flag-only narrowings (RFC 9134-aligned enums for colorimetry /
-  TCS / sampling, correcting 1.0 mismatches), 2 cross-param SHALLs.
+  TCS / sampling, correcting 1.0 mismatches), 2 cross-param SHALLs,
+  §7.3 b=AS presence + value form.
 - ST 2110-30 / -31 audio: channel-order RFC 3190 syntax + SMPTE2110
-  group set + AES3-requires-AM824.
+  group set + AES3-requires-AM824 + L16/L24 packet-payload-fit.
 - ST 2110-31 AM824: rtpmap channel parity (§6.1).
 - ST 2110-41 Fast Metadata: required SSN with value form, optional
   DIT with hex-token value form, MAXUDP forbidden.
 - ST 2110-10 §8.2 + §8.3: per-media-block `a=ts-refclk` and
-  media-level `a=mediaclk` presence (Phase 6.D.A; 1.0 cited the
-  wrong sections, grammar tier corrects to §8.2 / §8.3).
+  media-level `a=mediaclk` presence (1.0 cited the wrong sections;
+  grammar tier corrects to §8.2 / §8.3). §8.5 + ST 2022-7 §6
+  `a=group:DUP` leg coherence.
+- TR-10-1 §10: FID-forbidden, IPMX fmtp marker, §10.2 video required
+  params (measuredpixclk / vtotal / htotal), §10.3 audio
+  measuredsamplerate. TR-10-2/-3/-4/-11/-12 §7: RTP port even + > 1024.
+- TR-10-5 §10: a=hkep (5 value-form SHALLs). TR-10-6 §7.6: FECPROFILE
+  value form and `FEC_ADD_LATENCY_*` non-negative-integer / requires-
+  FECPROFILE. TR-10-10 §8: a=infoframe (5 SHALLs incl. cross-section
+  port = media+3). TR-10-13 §13 + §20.1: a=privacy (13 SHALLs) plus
+  PEP IV-Counter extmap direction. TR-10-14 §14: USB transport block
+  (setup-required / setup-passive / privacy USB_KV).
+- Base SDP: RFC 5888 §6 group-mid invariants, §9.2 port-zero-mid.
 
-Phases 6.D.B+ and 6.E–10 remain (audio MAXUDP-forbidden, audio rtpmap
-channels-presence, packet-payload-fit; cross-stream invariants like
-group:DUP; serializer rewrite; public API stabilization; migration
-cutover). Tracking and design live in [REFACTOR-PLAN.md](REFACTOR-PLAN.md).
-The 1.0 parser at `parse_sdp.lua` remains the shipping artifact on
-`main`; the new grammar under `parse_sdp/grammar/` is internal-only
-until Phase 9 cutover.
+Tracking and design live in [REFACTOR-PLAN.md](REFACTOR-PLAN.md). The
+1.0 parser at `parse_sdp.lua` remains the shipping artifact on `main`;
+the new grammar under `parse_sdp/grammar/` and serializer at
+`parse_sdp/serialize.lua` are internal-only until Phase 9 cutover.
 
 **Former flake (resolved in 6.C.A):** the `sdp.a.fmtp.trailing-semicolon`
 tests in `spec/grammar_base_spec.lua` previously flaked at ~45% with
