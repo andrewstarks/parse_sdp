@@ -1037,13 +1037,44 @@ Sub-slice ordering (decided 2026-05-20 in planning conversation):
   by-key with `#a ~= #b` short-circuit, preserving its order-
   insensitive semantics. Suite 1742 green (unchanged — pure shape
   refactor, no behavior change).
-- **8.D (pending)** — base compound-attribute renderers. Per-name
-  dispatch table; one render fn per branch in base.lua's
-  `a_value` alternation (rtpmap, fmtp, ts-refclk, mediaclk,
-  source-filter, group, ssrc-group, ssrc, msid, mid, extmap,
-  rtcp-fb, rtcp-mux, rtcp, ptime, maxptime, framerate, quality).
-  Splits into 8.D.1/.2/.3 if the slice grows. Round-trips
-  every `examples/generic/valid/*.sdp` plus the M7 fixtures.
+- **8.D (complete)** — base compound-attribute renderers. Per-name
+  dispatch table `ATTR_RENDERERS` in `parse_sdp/serialize.lua`;
+  every `a_<name>` rule in `parse_sdp/grammar/base.lua` now has an
+  inverse. Bootstrap (rtpmap + `require_fields` helper + dispatch
+  scaffold) landed first, then three sub-slices closed the
+  remaining 17 renderers:
+  - **8.D.1 (complete)** — value-only attrs: mid, ptime, maxptime,
+    framerate, quality, msid (msid_id + optional appdata), ssrc
+    (ssrc_id + attribute + optional value), rtcp-mux (flag).
+    19 new tests; suite 1767 green (was 1748).
+  - **8.D.2 (complete)** — RTP-stack attrs: fmtp, rtcp, rtcp-fb,
+    extmap, ssrc-group. fmtp is the critical one — walks
+    `attr.params` (the ordered Ct from 8.C) positionally so
+    decomposed-kv round-trip is text-identical, falls through to
+    `attr.raw` for opaque byte-strings. rtcp enforces the
+    all-or-nothing optional `net_type+addr_type+address` triple via
+    `require_fields`. rtcp-fb handles polymorphic payload_type
+    (number or `"*"`) via `tostring`. 21 new tests; suite 1788 green.
+  - **8.D.3 (complete)** — clock + grouping: ts-refclk (branches
+    on `attr.source` to per-branch builders via TSR_BUILDERS table —
+    ntp / ptp / private / bare / ext), mediaclk (branches on
+    `attr.mode` via MC_BUILDERS — sender / direct / IEEE1722 / ext —
+    with optional `id=` prefix), group (semantics + zero-or-more
+    tags), source-filter (all five Cg fields required, ≥1
+    src_address). The `BUILDERS[key] or build_ext` idiom keeps
+    branch dispatch DRY without a mega-function. 29 new tests;
+    suite 1817 green.
+
+  Producer-side contract held throughout: required fields error
+  early via `require_fields`; optional fields silently omitted
+  when absent; no fallback to legacy `attr.value` string shape on
+  known-decomposed names. Grammar-tier worktree isolation was
+  attempted for 8.D.1/.2/.3 parallelism but the harness pointed
+  the worktrees at a stale 1.0.0 snapshot; 8.D.1 worked around it
+  by editing the main repo directly, and 8.D.2/.3 were run
+  sequentially without isolation. Pattern noted for future agent
+  dispatch (see [[project-phase8-tooling]] if memory captures the
+  lesson).
 - **8.E (pending)** — IPMX-tier attribute renderers (infoframe,
   hkep, privacy). Round-trips every `examples/ipmx/valid/*.sdp`.
 - **8.F (pending)** — final `spec/roundtrip_spec.lua` form: loop

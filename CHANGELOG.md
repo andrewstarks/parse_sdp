@@ -2077,6 +2077,51 @@ Audit ref: REFACTOR-PLAN.md §5 Phase 8.B.
 
 Audit ref: REFACTOR-PLAN.md §5 Phase 8.C.
 
+- **Phase 8.D:** base compound-attribute renderers — every base-tier
+  `a_<name>` rule in `parse_sdp/grammar/base.lua` now has an inverse in
+  the new `ATTR_RENDERERS` dispatch table in `parse_sdp/serialize.lua`.
+  18 total entries.
+
+  Bootstrap (rtpmap + `require_fields` helper + dispatch scaffold) landed
+  first as commit `40bc802`, then three sub-slices closed the remaining
+  17 renderers:
+
+  - **8.D.1** — value-only attrs: mid, ptime, maxptime, framerate,
+    quality, msid (msid_id with optional appdata), ssrc (ssrc_id and
+    attribute, with optional value), rtcp-mux (flag, no required fields). 19 new tests
+    in `spec/roundtrip_spec.lua`; suite 1767 green (was 1748).
+  - **8.D.2** — RTP-stack attrs: fmtp, rtcp, rtcp-fb, extmap, ssrc-group.
+    The fmtp renderer is the critical one — walks `attr.params` (the
+    ordered Ct from 8.C) positionally so decomposed-kv round-trip is
+    text-identical (`profile-level-id=42801f;max-mbps=108000;max-fs=3600`
+    renders byte-for-byte), falls through to `attr.raw` for opaque
+    byte-strings (DTMF telephone-event form). rtcp enforces the
+    all-or-nothing optional `net_type+addr_type+address` triple via
+    `require_fields`. rtcp-fb handles polymorphic `payload_type` (number
+    or literal `"*"`) via `tostring`. 21 new tests; suite 1788 green.
+  - **8.D.3** — clock + grouping: ts-refclk, mediaclk, group,
+    source-filter. ts-refclk and mediaclk both have branch-specific
+    field sets; the renderers dispatch on `attr.source` / `attr.mode` via
+    small `TSR_BUILDERS` / `MC_BUILDERS` tables to per-branch builders,
+    with `BUILDERS[key] or build_ext` as the ext-form fallback idiom.
+    Each branch builder owns its own required-field set. group emits
+    semantics + zero-or-more tags per RFC 5888 §5. source-filter requires
+    all five Cg fields (filter_mode, net_type, addr_type, dest_address,
+    src_addresses with ≥1 element). 29 new tests; suite 1817 green.
+
+  The renderer contract (established by rtpmap + the bootstrap) holds
+  throughout: required fields error early via `require_fields` (one
+  helper call replaces the per-required-field early-return ladder),
+  optional fields silently omitted when absent, no fallback to legacy
+  `attr.value` string shape on known-decomposed names — the decomposed
+  shape is the only producer surface for known attributes (generic /
+  unknown names keep the `{name, value?}` carrier).
+
+  Suite total: 1817 green (up from 1748 at Phase 8.C close). 69 new
+  round-trip tests across the four 8.D commits.
+
+Audit ref: REFACTOR-PLAN.md §5 Phase 8.D (incl. 8.D.1 / 8.D.2 / 8.D.3).
+
 ### Changed
 
 - The inline `errors` table in `parse_sdp.lua` now delegates to
