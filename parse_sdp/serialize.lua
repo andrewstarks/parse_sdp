@@ -317,6 +317,78 @@ ATTR_RENDERERS.rtpmap = function(attr, field_path)
   return ln("a", "rtpmap:" .. body)
 end
 
+-- mid (RFC 5888 §4): identification-tag = RFC 8866 §9 token.
+-- Required: tag.
+ATTR_RENDERERS.mid = function(attr, field_path)
+  local vs, e = require_fields(attr, field_path, { "tag" })
+  if not vs then return nil, e end
+  return ln("a", "mid:" .. tostring(vs[1]))
+end
+
+-- ptime (RFC 8866 §6.4): value = non-zero-int-or-real.
+-- Required: value.
+ATTR_RENDERERS.ptime = function(attr, field_path)
+  local vs, e = require_fields(attr, field_path, { "value" })
+  if not vs then return nil, e end
+  return ln("a", "ptime:" .. tostring(vs[1]))
+end
+
+-- maxptime (RFC 8866 §6.5): value = non-zero-int-or-real.
+-- Required: value.
+ATTR_RENDERERS.maxptime = function(attr, field_path)
+  local vs, e = require_fields(attr, field_path, { "value" })
+  if not vs then return nil, e end
+  return ln("a", "maxptime:" .. tostring(vs[1]))
+end
+
+-- framerate (RFC 8866 §6.13): value = non-zero-int-or-real.
+-- Required: value.
+ATTR_RENDERERS.framerate = function(attr, field_path)
+  local vs, e = require_fields(attr, field_path, { "value" })
+  if not vs then return nil, e end
+  return ln("a", "framerate:" .. tostring(vs[1]))
+end
+
+-- quality (RFC 8866 §6.14): value = zero-based-integer.
+-- Required: value.
+ATTR_RENDERERS.quality = function(attr, field_path)
+  local vs, e = require_fields(attr, field_path, { "value" })
+  if not vs then return nil, e end
+  return ln("a", "quality:" .. tostring(vs[1]))
+end
+
+-- msid (RFC 8830 §2):
+--   msid-value = msid-id [SP msid-appdata]
+-- Required: msid_id. Optional: appdata.
+ATTR_RENDERERS.msid = function(attr, field_path)
+  local vs, e = require_fields(attr, field_path, { "msid_id" })
+  if not vs then return nil, e end
+  local body = tostring(vs[1])
+  if attr.appdata ~= nil then
+    body = body .. " " .. tostring(attr.appdata)
+  end
+  return ln("a", "msid:" .. body)
+end
+
+-- ssrc (RFC 5576 §10):
+--   ssrc-attr = "ssrc:" ssrc-id SP attribute
+-- where `attribute` is the RFC 8866 §5.13 attribute body: name [":" value].
+-- Required: ssrc_id, attribute. Optional: value.
+ATTR_RENDERERS.ssrc = function(attr, field_path)
+  local vs, e = require_fields(attr, field_path, { "ssrc_id", "attribute" })
+  if not vs then return nil, e end
+  local body = tostring(vs[1]) .. " " .. tostring(vs[2])
+  if attr.value ~= nil then
+    body = body .. ":" .. tostring(attr.value)
+  end
+  return ln("a", "ssrc:" .. body)
+end
+
+-- rtcp-mux (RFC 5761 §5.1.3): flag attribute, no value.
+ATTR_RENDERERS["rtcp-mux"] = function(_, _)
+  return ln("a", "rtcp-mux")
+end
+
 -- ── Public entry point ─────────────────────────────────────────────────────
 
 --- Serialize a doc table back to RFC 8866 SDP text.

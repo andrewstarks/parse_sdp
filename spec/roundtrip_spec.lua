@@ -525,3 +525,270 @@ describe("parse_sdp.serialize — Phase 8.D rtpmap renderer", function()
     assert.matches("clock_rate", e.message)
   end)
 end)
+
+-- ── Phase 8.D.1: simple value-only attribute renderers ─────────────────────
+
+describe("parse_sdp.serialize — Phase 8.D.1 mid renderer", function()
+
+  it("round-trips a=mid:audio", function()
+    local text = lines_to_sdp({
+      "v=0", "o=- 1 1 IN IP4 127.0.0.1", "s=X", "t=0 0",
+      "m=audio 49170 RTP/AVP 0",
+      "a=mid:audio",
+    })
+    local doc1, doc2, text2 = round_trip(text)
+    assert.same(doc1, doc2)
+    assert.truthy(text2:find("a=mid:audio", 1, true))
+  end)
+
+  it("round-trips a=mid with a numeric-token tag", function()
+    local text = lines_to_sdp({
+      "v=0", "o=- 1 1 IN IP4 127.0.0.1", "s=X", "t=0 0",
+      "m=audio 49170 RTP/AVP 0",
+      "a=mid:1",
+    })
+    local doc1, doc2, text2 = round_trip(text)
+    assert.same(doc1, doc2)
+    assert.truthy(text2:find("a=mid:1", 1, true))
+  end)
+
+  it("returns nil, err when mid is missing tag", function()
+    local out, e = serialize.to_sdp({
+      version = "0",
+      origin = { username = "-", sess_id = "1", sess_version = "1",
+                 net_type = "IN", addr_type = "IP4",
+                 unicast_address = "127.0.0.1" },
+      session = { name = "X", time_descriptions = {{ start = 0, stop = 0 }} },
+      media = {{ media = "audio", port = 49170, proto = "RTP/AVP",
+                 fmts = {"0"},
+                 attributes = {{ name = "mid" }} }}, -- missing tag
+    })
+    assert.is_nil(out)
+    assert.matches("tag", e.message)
+  end)
+end)
+
+describe("parse_sdp.serialize — Phase 8.D.1 ptime renderer", function()
+
+  it("round-trips a=ptime:20", function()
+    local text = lines_to_sdp({
+      "v=0", "o=- 1 1 IN IP4 127.0.0.1", "s=X", "t=0 0",
+      "m=audio 49170 RTP/AVP 0",
+      "a=ptime:20",
+    })
+    local doc1, doc2, text2 = round_trip(text)
+    assert.same(doc1, doc2)
+    assert.truthy(text2:find("a=ptime:20", 1, true))
+  end)
+
+  it("returns nil, err when ptime is missing value", function()
+    local out, e = serialize.to_sdp({
+      version = "0",
+      origin = { username = "-", sess_id = "1", sess_version = "1",
+                 net_type = "IN", addr_type = "IP4",
+                 unicast_address = "127.0.0.1" },
+      session = { name = "X", time_descriptions = {{ start = 0, stop = 0 }} },
+      media = {{ media = "audio", port = 49170, proto = "RTP/AVP",
+                 fmts = {"0"},
+                 attributes = {{ name = "ptime" }} }}, -- missing value
+    })
+    assert.is_nil(out)
+    assert.matches("value", e.message)
+  end)
+end)
+
+describe("parse_sdp.serialize — Phase 8.D.1 maxptime renderer", function()
+
+  it("round-trips a=maxptime:120", function()
+    local text = lines_to_sdp({
+      "v=0", "o=- 1 1 IN IP4 127.0.0.1", "s=X", "t=0 0",
+      "m=audio 49170 RTP/AVP 0",
+      "a=maxptime:120",
+    })
+    local doc1, doc2, text2 = round_trip(text)
+    assert.same(doc1, doc2)
+    assert.truthy(text2:find("a=maxptime:120", 1, true))
+  end)
+
+  it("returns nil, err when maxptime is missing value", function()
+    local out, e = serialize.to_sdp({
+      version = "0",
+      origin = { username = "-", sess_id = "1", sess_version = "1",
+                 net_type = "IN", addr_type = "IP4",
+                 unicast_address = "127.0.0.1" },
+      session = { name = "X", time_descriptions = {{ start = 0, stop = 0 }} },
+      media = {{ media = "audio", port = 49170, proto = "RTP/AVP",
+                 fmts = {"0"},
+                 attributes = {{ name = "maxptime" }} }}, -- missing value
+    })
+    assert.is_nil(out)
+    assert.matches("value", e.message)
+  end)
+end)
+
+describe("parse_sdp.serialize — Phase 8.D.1 framerate renderer", function()
+
+  it("round-trips a=framerate:30", function()
+    local text = lines_to_sdp({
+      "v=0", "o=- 1 1 IN IP4 127.0.0.1", "s=X", "t=0 0",
+      "m=video 49170 RTP/AVP 33",
+      "a=framerate:30",
+    })
+    local doc1, doc2, text2 = round_trip(text)
+    assert.same(doc1, doc2)
+    assert.truthy(text2:find("a=framerate:30", 1, true))
+  end)
+
+  it("returns nil, err when framerate is missing value", function()
+    local out, e = serialize.to_sdp({
+      version = "0",
+      origin = { username = "-", sess_id = "1", sess_version = "1",
+                 net_type = "IN", addr_type = "IP4",
+                 unicast_address = "127.0.0.1" },
+      session = { name = "X", time_descriptions = {{ start = 0, stop = 0 }} },
+      media = {{ media = "video", port = 49170, proto = "RTP/AVP",
+                 fmts = {"33"},
+                 attributes = {{ name = "framerate" }} }}, -- missing value
+    })
+    assert.is_nil(out)
+    assert.matches("value", e.message)
+  end)
+end)
+
+describe("parse_sdp.serialize — Phase 8.D.1 quality renderer", function()
+
+  it("round-trips a=quality:5", function()
+    local text = lines_to_sdp({
+      "v=0", "o=- 1 1 IN IP4 127.0.0.1", "s=X", "t=0 0",
+      "m=video 49170 RTP/AVP 33",
+      "a=quality:5",
+    })
+    local doc1, doc2, text2 = round_trip(text)
+    assert.same(doc1, doc2)
+    assert.truthy(text2:find("a=quality:5", 1, true))
+  end)
+
+  it("returns nil, err when quality is missing value", function()
+    local out, e = serialize.to_sdp({
+      version = "0",
+      origin = { username = "-", sess_id = "1", sess_version = "1",
+                 net_type = "IN", addr_type = "IP4",
+                 unicast_address = "127.0.0.1" },
+      session = { name = "X", time_descriptions = {{ start = 0, stop = 0 }} },
+      media = {{ media = "video", port = 49170, proto = "RTP/AVP",
+                 fmts = {"33"},
+                 attributes = {{ name = "quality" }} }}, -- missing value
+    })
+    assert.is_nil(out)
+    assert.matches("value", e.message)
+  end)
+end)
+
+describe("parse_sdp.serialize — Phase 8.D.1 msid renderer", function()
+
+  it("round-trips a=msid with msid_id only (no appdata)", function()
+    local text = lines_to_sdp({
+      "v=0", "o=- 1 1 IN IP4 127.0.0.1", "s=X", "t=0 0",
+      "m=audio 49170 RTP/AVP 0",
+      "a=msid:stream-1",
+    })
+    local doc1, doc2, text2 = round_trip(text)
+    assert.same(doc1, doc2)
+    assert.truthy(text2:find("a=msid:stream-1", 1, true))
+  end)
+
+  it("round-trips a=msid with msid_id and appdata", function()
+    local text = lines_to_sdp({
+      "v=0", "o=- 1 1 IN IP4 127.0.0.1", "s=X", "t=0 0",
+      "m=audio 49170 RTP/AVP 0",
+      "a=msid:stream-1 track-a",
+    })
+    local doc1, doc2, text2 = round_trip(text)
+    assert.same(doc1, doc2)
+    assert.truthy(text2:find("a=msid:stream-1 track-a", 1, true))
+  end)
+
+  it("returns nil, err when msid is missing msid_id", function()
+    local out, e = serialize.to_sdp({
+      version = "0",
+      origin = { username = "-", sess_id = "1", sess_version = "1",
+                 net_type = "IN", addr_type = "IP4",
+                 unicast_address = "127.0.0.1" },
+      session = { name = "X", time_descriptions = {{ start = 0, stop = 0 }} },
+      media = {{ media = "audio", port = 49170, proto = "RTP/AVP",
+                 fmts = {"0"},
+                 attributes = {{ name = "msid", appdata = "track-a" }} }},
+    })
+    assert.is_nil(out)
+    assert.matches("msid_id", e.message)
+  end)
+end)
+
+describe("parse_sdp.serialize — Phase 8.D.1 ssrc renderer", function()
+
+  it("round-trips a=ssrc with attribute only (no value)", function()
+    local text = lines_to_sdp({
+      "v=0", "o=- 1 1 IN IP4 127.0.0.1", "s=X", "t=0 0",
+      "m=audio 49170 RTP/AVP 0",
+      "a=ssrc:12345 sendonly",
+    })
+    local doc1, doc2, text2 = round_trip(text)
+    assert.same(doc1, doc2)
+    assert.truthy(text2:find("a=ssrc:12345 sendonly", 1, true))
+  end)
+
+  it("round-trips a=ssrc with attribute:value", function()
+    local text = lines_to_sdp({
+      "v=0", "o=- 1 1 IN IP4 127.0.0.1", "s=X", "t=0 0",
+      "m=audio 49170 RTP/AVP 0",
+      "a=ssrc:12345 cname:user@example.com",
+    })
+    local doc1, doc2, text2 = round_trip(text)
+    assert.same(doc1, doc2)
+    assert.truthy(text2:find("a=ssrc:12345 cname:user@example.com", 1, true))
+  end)
+
+  it("returns nil, err when ssrc is missing ssrc_id", function()
+    local out, e = serialize.to_sdp({
+      version = "0",
+      origin = { username = "-", sess_id = "1", sess_version = "1",
+                 net_type = "IN", addr_type = "IP4",
+                 unicast_address = "127.0.0.1" },
+      session = { name = "X", time_descriptions = {{ start = 0, stop = 0 }} },
+      media = {{ media = "audio", port = 49170, proto = "RTP/AVP",
+                 fmts = {"0"},
+                 attributes = {{ name = "ssrc", attribute = "sendonly" }} }},
+    })
+    assert.is_nil(out)
+    assert.matches("ssrc_id", e.message)
+  end)
+
+  it("returns nil, err when ssrc is missing attribute", function()
+    local out, e = serialize.to_sdp({
+      version = "0",
+      origin = { username = "-", sess_id = "1", sess_version = "1",
+                 net_type = "IN", addr_type = "IP4",
+                 unicast_address = "127.0.0.1" },
+      session = { name = "X", time_descriptions = {{ start = 0, stop = 0 }} },
+      media = {{ media = "audio", port = 49170, proto = "RTP/AVP",
+                 fmts = {"0"},
+                 attributes = {{ name = "ssrc", ssrc_id = 12345 }} }},
+    })
+    assert.is_nil(out)
+    assert.matches("attribute", e.message)
+  end)
+end)
+
+describe("parse_sdp.serialize — Phase 8.D.1 rtcp-mux renderer", function()
+
+  it("round-trips a=rtcp-mux (flag attribute, no body)", function()
+    local text = lines_to_sdp({
+      "v=0", "o=- 1 1 IN IP4 127.0.0.1", "s=X", "t=0 0",
+      "m=audio 49170 RTP/AVP 0",
+      "a=rtcp-mux",
+    })
+    local doc1, doc2, text2 = round_trip(text)
+    assert.same(doc1, doc2)
+    assert.truthy(text2:find("a=rtcp-mux\r\n", 1, true))
+  end)
+end)
