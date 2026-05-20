@@ -2028,6 +2028,55 @@ Audit ref: REFACTOR-PLAN.md §5 Phase 8.A.
 
 Audit ref: REFACTOR-PLAN.md §5 Phase 8.B.
 
+- **Phase 8.C:** fmtp params shape change — hash → ordered list, with a
+  single `base.params_get(params, key)` lookup helper.
+
+  Grammar-tier change: `a_fmtp`'s decomposable branch (both base.lua's
+  `fmtp_params_branch` and st2110.lua's `fmtp_st2110_raw_params` override)
+  now captures `params` as an ordered Ct of `{key, value | true}` sub-
+  tables — the same shape `a=privacy` has used since 7.J. Input key
+  order is preserved, which is the prerequisite for the serializer's
+  text-identical round-trip on fmtp lines (Phase 8.D / 8.F).
+
+  The earlier `fmtp_entries_to_params` postprocessor that flattened the
+  capture into a key→value hash is gone, as is its `M.` export. In its
+  place: `base.params_get(params, key)` returns the value for `key`
+  (string for k=v entries, `true` for bare flags, nil for absent).
+  Threaded through `base.extend` so child tiers inherit it as
+  `<tier>.params_get`. Single source of truth for every consumer that
+  needs a by-key read off either an fmtp or a privacy params list.
+
+  44 consumer sites updated to the helper across the codebase:
+  `parse_sdp/grammar/st2110.lua` (27 sites across 14 functions —
+  `check_raw_video_fmtp`, `check_ssn_conditional`, `check_bt2100_range`,
+  `check_segmented_requires_interlace`, `check_bpm_forbids_maxudp`,
+  `check_key_sampling`, `check_420_progressive_only`,
+  `check_420_depth_restricted`, `check_tcs_floating_point_depth`,
+  `check_jxsv_segmented_requires_interlace`, `check_jxsv_bt2100_range`,
+  `check_st2110_41_fmtp`, `check_audio_maxudp_forbidden`,
+  `check_audio_fmtp_channel_order`, `check_jxsv_fmtp`);
+  `parse_sdp/grammar/ipmx.lua` (6 sites in `check_ipmx_fmtp_marker`,
+  `check_ipmx_video_fmtp`, `check_ipmx_audio_fmtp`,
+  `check_ipmx_fec_params`); `spec/grammar_base_spec.lua` (11
+  assertion sites in the fmtp-decomposition tests). Privacy code
+  (`a_privacy` / `check_a_privacy` / `check_usb_block`) was already on
+  the ordered-list shape and stayed untouched. Lookup tables that
+  happen to live alongside params consumers
+  (`RAW_VIDEO_ENUM_VALUES[key][val]`, `FMTP_REQUIRED_BY_ENCODING[enc]`,
+  `RAW_VIDEO_VALUE_VALIDATORS[key]`, etc.) keep their hash shape — they
+  are not params captures.
+
+  `params_equal` (group:DUP fmtp comparison) rewritten to compare
+  by-key via `params_get` with an `#a ~= #b` short-circuit, preserving
+  its existing order-insensitive semantics — ST 2110-22 §8.5 / ST
+  2022-7 §6 require packet-shape equivalence across DUP legs, not
+  identical SDP textual layout.
+
+  Pure shape refactor; no behavior change. Suite: 1742 green
+  (unchanged).
+
+Audit ref: REFACTOR-PLAN.md §5 Phase 8.C.
+
 ### Changed
 
 - The inline `errors` table in `parse_sdp.lua` now delegates to

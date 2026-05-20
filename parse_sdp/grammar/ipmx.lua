@@ -84,7 +84,7 @@ local function check_ipmx_fmtp_marker(block, ctx)
   for _, attr in ipairs(block.attributes) do
     if attr.name == "fmtp" then
       fmtp_count = fmtp_count + 1
-      if attr.params and attr.params["IPMX"] then
+      if base.params_get(attr.params, "IPMX") then
         marked = true
       end
     end
@@ -123,7 +123,7 @@ local IPMX_VIDEO_REQUIRED_PARAMS = {
 -- plate.
 local function check_ipmx_video_fmtp(params, ctx, pos, field_path)
   for _, key in ipairs(IPMX_VIDEO_REQUIRED_PARAMS) do
-    local v = params[key]
+    local v = base.params_get(params, key)
     if v == nil then
       local cont = errors.record(ctx,
         "tr-10-1.a.fmtp." .. key .. "-required",
@@ -150,7 +150,7 @@ end
 -- Single walk: absent → `-required`, present-but-malformed → `-invalid-
 -- value`. Same pattern as check_ipmx_video_fmtp above.
 local function check_ipmx_audio_fmtp(params, ctx, pos, field_path)
-  local v = params.measuredsamplerate
+  local v = base.params_get(params, "measuredsamplerate")
   if v == nil then
     local cont = errors.record(ctx,
       "tr-10-1.a.fmtp.measuredsamplerate-required",
@@ -181,16 +181,17 @@ local FEC_LATENCY_KEYS = {
 }
 
 local function check_ipmx_fec_params(params, ctx, pos, field_path)
-  if params.FECPROFILE ~= nil and params.FECPROFILE ~= "profile-a" then
+  local fecprofile = base.params_get(params, "FECPROFILE")
+  if fecprofile ~= nil and fecprofile ~= "profile-a" then
     local cont = errors.record(ctx,
       "tr-10-6.a.fmtp.fecprofile-invalid-value",
       { pos = pos, field_path = field_path })
     if not cont then return false end
   end
   for _, e in ipairs(FEC_LATENCY_KEYS) do
-    local v = params[e.key]
+    local v = base.params_get(params, e.key)
     if v ~= nil then
-      if params.FECPROFILE == nil then
+      if fecprofile == nil then
         local cont = errors.record(ctx,
           "tr-10-6.a.fmtp.fec-add-latency-" .. e.suffix .. "-requires-fecprofile",
           { pos = pos, field_path = field_path })

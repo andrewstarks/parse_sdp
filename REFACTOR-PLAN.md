@@ -1014,13 +1014,29 @@ Sub-slice ordering (decided 2026-05-20 in planning conversation):
   structural-completeness errors for missing m.media / empty
   m.fmts / missing r.offsets / missing b.type / missing c.address.
   Suite 1742 green (was 1721).
-- **8.C (pending)** — fmtp params order preservation. Grammar-tier
-  change: `a_fmtp` decomposable branch stores `params` as an
-  ordered `{{k, v|true}, ...}` list (matching privacy's shape)
-  instead of a key→value hash; ~12 consumers in
-  `parse_sdp/grammar/{base,st2110,ipmx}.lua` updated to walk the
-  list. Lands before 8.D so the fmtp renderer is built against
-  the final shape.
+- **8.C (complete)** — fmtp params order preservation. Grammar-tier
+  change: `a_fmtp`'s decomposable branch (both base.lua's
+  `fmtp_params_branch` and st2110.lua's `fmtp_st2110_raw_params`
+  override) now captures `params` as an ordered Ct of
+  `{key, value | true}` sub-tables — the same shape `a=privacy`
+  has used since 7.J. Input key order is preserved for the
+  serializer's text-identical round-trip. The
+  `fmtp_entries_to_params` postprocessor (and the `M.` export of
+  it) is gone; in its place a single helper
+  `M.params_get(params, key)` is the lookup primitive for any
+  consumer that needs a by-key read off either an fmtp or a
+  privacy params list. `params_get` is threaded through
+  `base.extend` so child tiers inherit it cleanly. 44 consumer
+  sites updated across `parse_sdp/grammar/st2110.lua` (27),
+  `parse_sdp/grammar/ipmx.lua` (6), and
+  `spec/grammar_base_spec.lua` (11) via a mechanical agent pass
+  (verified by the user against the full suite). Privacy code
+  (`a_privacy` / `check_a_privacy` / `check_usb_block`) was
+  already on the ordered-list shape and stayed untouched.
+  `params_equal` (group:DUP fmtp comparison) rewritten to compare
+  by-key with `#a ~= #b` short-circuit, preserving its order-
+  insensitive semantics. Suite 1742 green (unchanged — pure shape
+  refactor, no behavior change).
 - **8.D (pending)** — base compound-attribute renderers. Per-name
   dispatch table; one render fn per branch in base.lua's
   `a_value` alternation (rtpmap, fmtp, ts-refclk, mediaclk,

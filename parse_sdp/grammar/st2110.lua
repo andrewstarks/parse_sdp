@@ -168,8 +168,9 @@ local RAW_VIDEO_VALUE_FORM_KEYS = {
 
 -- §7.3: `interlace` and `segmented` are bare-attribute flags; signaling
 -- either with a `=value` is invalid. The base fmtp grammar captures flags
--- as params[key] == true and kv-pairs as params[key] == string; the check
--- fires when the captured shape is a string.
+-- as `base.params_get(params, key) == true` and kv-pairs as
+-- `base.params_get(params, key) == string`; the check fires when the
+-- captured shape is a string.
 local RAW_VIDEO_FLAG_ONLY_KEYS = { "interlace", "segmented" }
 
 -- Per-fmtp raw-video required-presence + value-form check, one walk per
@@ -185,7 +186,7 @@ local function check_raw_video_fmtp(params, ctx, pos, field_path)
   -- Required-presence: each key in RAW_VIDEO_REQUIRED_PARAMS (sampling,
   -- width, height, exactframerate, depth, colorimetry, PM, SSN, TP).
   for _, key in ipairs(RAW_VIDEO_REQUIRED_PARAMS) do
-    if params[key] == nil then
+    if base.params_get(params, key) == nil then
       local cont = errors.record(
         ctx, "st2110-20.a.fmtp." .. key .. "-required",
         { pos = pos, field_path = field_path })
@@ -194,7 +195,7 @@ local function check_raw_video_fmtp(params, ctx, pos, field_path)
   end
   -- Enum value-set narrowings (lookup in RAW_VIDEO_ENUM_VALUES).
   for _, key in ipairs(RAW_VIDEO_ENUM_KEYS) do
-    local val = params[key]
+    local val = base.params_get(params, key)
     if val ~= nil and not RAW_VIDEO_ENUM_VALUES[key][val] then
       local cont = errors.record(ctx,
         "st2110-20.a.fmtp." .. key .. "-invalid-value",
@@ -204,7 +205,7 @@ local function check_raw_video_fmtp(params, ctx, pos, field_path)
   end
   -- Non-enum value-form predicates (RAW_VIDEO_VALUE_VALIDATORS).
   for _, key in ipairs(RAW_VIDEO_VALUE_FORM_KEYS) do
-    local val = params[key]
+    local val = base.params_get(params, key)
     if val ~= nil and not RAW_VIDEO_VALUE_VALIDATORS[key](tostring(val)) then
       local cont = errors.record(ctx,
         "st2110-20.a.fmtp." .. key .. "-invalid-value",
@@ -213,10 +214,10 @@ local function check_raw_video_fmtp(params, ctx, pos, field_path)
     end
   end
   -- Flag-only keys: present iff the value is the boolean true emitted
-  -- by fmtp_entries_to_params for a bare flag; anything else (i.e. a
+  -- by the kv-list capture for a bare flag; anything else (i.e. a
   -- kv-string value on a flag-only key) is malformed.
   for _, key in ipairs(RAW_VIDEO_FLAG_ONLY_KEYS) do
-    local val = params[key]
+    local val = base.params_get(params, key)
     if val ~= nil and val ~= true then
       local cont = errors.record(ctx,
         "st2110-20.a.fmtp." .. key .. "-invalid-value",
@@ -238,9 +239,9 @@ end
 -- without :2022-only values forbidden") deferred per PLAN.md known items.
 local function check_ssn_conditional(params, ctx, pos, field_path)
   local trigger
-  if params.TCS         == "ST2115LOGS3" then trigger = "TCS=ST2115LOGS3" end
-  if params.colorimetry == "ALPHA"       then trigger = "colorimetry=ALPHA" end
-  if trigger and tostring(params.SSN or "") ~= "ST2110-20:2022" then
+  if base.params_get(params, "TCS")         == "ST2115LOGS3" then trigger = "TCS=ST2115LOGS3" end
+  if base.params_get(params, "colorimetry") == "ALPHA"       then trigger = "colorimetry=ALPHA" end
+  if trigger and tostring(base.params_get(params, "SSN") or "") ~= "ST2110-20:2022" then
     local cont = errors.record(ctx,
       "st2110-20.a.fmtp.ssn-required-for-2022-only-values",
       { pos = pos, field_path = field_path, context = { trigger = trigger } })
@@ -252,7 +253,8 @@ end
 -- §7.3: BT2100 colorimetry permits only NARROW and FULL — FULLPROTECT
 -- forbidden. Per-key RANGE value-set is in 6.C.D.1.
 local function check_bt2100_range(params, ctx, pos, field_path)
-  if params.colorimetry == "BT2100" and params.RANGE == "FULLPROTECT" then
+  if base.params_get(params, "colorimetry") == "BT2100"
+     and base.params_get(params, "RANGE") == "FULLPROTECT" then
     local cont = errors.record(ctx,
       "st2110-20.a.fmtp.bt2100-range-fullprotect-forbidden",
       { pos = pos, field_path = field_path })
@@ -263,7 +265,8 @@ end
 
 -- §7.3: segmented requires interlace also present.
 local function check_segmented_requires_interlace(params, ctx, pos, field_path)
-  if params.segmented and not params.interlace then
+  if base.params_get(params, "segmented")
+     and not base.params_get(params, "interlace") then
     local cont = errors.record(ctx,
       "st2110-20.a.fmtp.segmented-requires-interlace",
       { pos = pos, field_path = field_path })
@@ -275,7 +278,8 @@ end
 -- §6.3.3: PM=2110BPM forbids MAXUDP (Block Packing Mode is incompatible
 -- with the Extended UDP Size Limit).
 local function check_bpm_forbids_maxudp(params, ctx, pos, field_path)
-  if params.PM == "2110BPM" and params.MAXUDP ~= nil then
+  if base.params_get(params, "PM") == "2110BPM"
+     and base.params_get(params, "MAXUDP") ~= nil then
     local cont = errors.record(ctx,
       "st2110-20.a.fmtp.bpm-with-maxudp-forbidden",
       { pos = pos, field_path = field_path })
@@ -287,14 +291,14 @@ end
 -- §7.4.1: sampling=KEY requires colorimetry=ALPHA AND forbids TCS.
 -- Two separate registered IDs so an audit can target either independently.
 local function check_key_sampling(params, ctx, pos, field_path)
-  if params.sampling == "KEY" then
-    if params.colorimetry ~= "ALPHA" then
+  if base.params_get(params, "sampling") == "KEY" then
+    if base.params_get(params, "colorimetry") ~= "ALPHA" then
       local cont = errors.record(ctx,
         "st2110-20.a.fmtp.key-requires-alpha-colorimetry",
         { pos = pos, field_path = field_path })
       if not cont then return false end
     end
-    if params.TCS ~= nil then
+    if base.params_get(params, "TCS") ~= nil then
       local cont = errors.record(ctx,
         "st2110-20.a.fmtp.key-forbids-tcs",
         { pos = pos, field_path = field_path })
@@ -308,9 +312,9 @@ end
 -- combined with the interlace flag. Detected via the `-4:2:0` suffix on
 -- any sampling token (YCbCr-4:2:0 / CLYCbCr-4:2:0 / ICtCp-4:2:0).
 local function check_420_progressive_only(params, ctx, pos, field_path)
-  local s = params.sampling
+  local s = base.params_get(params, "sampling")
   if s and type(s) == "string" and s:match("^[%w]+%-4:2:0$") then
-    if params.interlace then
+    if base.params_get(params, "interlace") then
       local cont = errors.record(ctx,
         "st2110-20.a.fmtp.subsampling-420-with-interlace-forbidden",
         { pos = pos, field_path = field_path })
@@ -327,13 +331,14 @@ end
 local RAW_420_FORBIDDEN_DEPTHS = { ["16"] = true, ["16f"] = true }
 
 local function check_420_depth_restricted(params, ctx, pos, field_path)
-  local s = params.sampling
+  local s = base.params_get(params, "sampling")
   if s and type(s) == "string" and s:match("^[%w]+%-4:2:0$") then
-    if params.depth and RAW_420_FORBIDDEN_DEPTHS[tostring(params.depth)] then
+    local depth = base.params_get(params, "depth")
+    if depth and RAW_420_FORBIDDEN_DEPTHS[tostring(depth)] then
       local cont = errors.record(ctx,
         "st2110-20.a.fmtp.subsampling-420-depth-restricted",
         { pos = pos, field_path = field_path,
-          context = { sampling = s, depth = params.depth } })
+          context = { sampling = s, depth = depth } })
       if not cont then return false end
     end
   end
@@ -352,11 +357,13 @@ local TCS_REQUIRES_16F = {
 }
 
 local function check_tcs_floating_point_depth(params, ctx, pos, field_path)
-  local err_id = TCS_REQUIRES_16F[params.TCS]
-  if err_id and tostring(params.depth or "") ~= "16f" then
+  local tcs = base.params_get(params, "TCS")
+  local err_id = TCS_REQUIRES_16F[tcs]
+  local depth = base.params_get(params, "depth")
+  if err_id and tostring(depth or "") ~= "16f" then
     local cont = errors.record(ctx, err_id,
       { pos = pos, field_path = field_path,
-        context = { TCS = params.TCS, depth = params.depth } })
+        context = { TCS = tcs, depth = depth } })
     if not cont then return false end
   end
   return true
@@ -518,7 +525,8 @@ local JXSV_REQUIRED_PARAMS = { "width", "height", "TP", "packetmode" }
 -- with their own normative source.
 
 local function check_jxsv_segmented_requires_interlace(params, ctx, pos, field_path)
-  if params.segmented and not params.interlace then
+  if base.params_get(params, "segmented")
+     and not base.params_get(params, "interlace") then
     local cont = errors.record(ctx,
       "st2110-22.a.fmtp.segmented-requires-interlace",
       { pos = pos, field_path = field_path })
@@ -528,7 +536,8 @@ local function check_jxsv_segmented_requires_interlace(params, ctx, pos, field_p
 end
 
 local function check_jxsv_bt2100_range(params, ctx, pos, field_path)
-  if params.colorimetry == "BT2100" and params.RANGE == "FULLPROTECT" then
+  if base.params_get(params, "colorimetry") == "BT2100"
+     and base.params_get(params, "RANGE") == "FULLPROTECT" then
     local cont = errors.record(ctx,
       "st2110-22.a.fmtp.bt2100-range-fullprotect-forbidden",
       { pos = pos, field_path = field_path })
@@ -642,22 +651,22 @@ end
 
 local function check_st2110_41_fmtp(params, ctx, pos, field_path)
   -- §6: SSN required.
-  if params.SSN == nil then
+  local ssn = base.params_get(params, "SSN")
+  if ssn == nil then
     local cont = errors.record(ctx,
       "st2110-41.a.fmtp.SSN-required",
       { pos = pos, field_path = field_path })
     if not cont then return false end
-  elseif type(params.SSN) == "string"
-      and not validate_ssn41(params.SSN) then
+  elseif type(ssn) == "string" and not validate_ssn41(ssn) then
     local cont = errors.record(ctx,
       "st2110-41.a.fmtp.SSN-invalid-value",
       { pos = pos, field_path = field_path,
-        context = { value = params.SSN } })
+        context = { value = ssn } })
     if not cont then return false end
   end
 
   -- §6: DIT optional; when present, must match the hex-token form.
-  local dit = params.DIT
+  local dit = base.params_get(params, "DIT")
   if dit ~= nil and dit ~= true then
     if type(dit) ~= "string" or not validate_dit(dit) then
       local cont = errors.record(ctx,
@@ -669,11 +678,12 @@ local function check_st2110_41_fmtp(params, ctx, pos, field_path)
   end
 
   -- §5.4: MAXUDP forbidden on ST 2110-41 streams.
-  if params.MAXUDP ~= nil then
+  local maxudp = base.params_get(params, "MAXUDP")
+  if maxudp ~= nil then
     local cont = errors.record(ctx,
       "st2110-41.a.fmtp.maxudp-forbidden",
       { pos = pos, field_path = field_path,
-        context = { value = params.MAXUDP } })
+        context = { value = maxudp } })
     if not cont then return false end
   end
   return true
@@ -685,7 +695,7 @@ end
 -- L16 / L24 fmtp violates the §6.2.1 SHALL. AM824 intentionally excluded
 -- (ST 2110-31 has no UDP-size SHALL — see conformance-principle audit).
 local function check_audio_maxudp_forbidden(params, ctx, pos, field_path, encoding)
-  if params.MAXUDP ~= nil then
+  if base.params_get(params, "MAXUDP") ~= nil then
     local cont = errors.record(ctx,
       "st2110-30.a.fmtp.maxudp-forbidden",
       { pos = pos, field_path = field_path,
@@ -712,16 +722,21 @@ end
 -- essence attributes plus address coherence. All findings share
 -- spec_ref "ST 2110-10:2022 §8.5".
 
+-- Order-insensitive equality on two ordered kv-lists (each a Ct of
+-- {key, value | true} sub-tables — see base.params_get). Compares by
+-- key; element order is intentionally ignored so two fmtp lines that
+-- list the same params in different orders are treated as equal (the
+-- group:DUP coherence SHALL is on packet-shape equivalence, not on
+-- SDP textual layout).
 local function params_equal(a, b)
   if a == nil and b == nil then return true end
   if a == nil or b == nil then return false end
-  local count_a, count_b = 0, 0
-  for k, v in pairs(a) do
-    count_a = count_a + 1
-    if b[k] ~= v then return false end
+  if #a ~= #b then return false end
+  for i = 1, #a do
+    local e = a[i]
+    if base.params_get(b, e[1]) ~= e[2] then return false end
   end
-  for _ in pairs(b) do count_b = count_b + 1 end
-  return count_a == count_b
+  return true
 end
 
 local function first_attr(block, name)
@@ -866,7 +881,7 @@ local function check_audio_packet_payload_fit(block, ctx)
 end
 
 local function check_audio_fmtp_channel_order(params, ctx, pos, field_path, encoding)
-  local co = params["channel-order"]
+  local co = base.params_get(params, "channel-order")
   if co ~= nil and co ~= true then
     local ok, err_id = validate_channel_order(tostring(co), encoding)
     if not ok then
@@ -948,7 +963,7 @@ end
 local function check_jxsv_fmtp(params, ctx, pos, field_path)
   -- Required-presence (RFC 9134 §7.1).
   for _, key in ipairs(JXSV_REQUIRED_PARAMS) do
-    if params[key] == nil then
+    if base.params_get(params, key) == nil then
       local cont = errors.record(ctx,
         "st2110-22.a.fmtp." .. key .. "-required",
         { pos = pos, field_path = field_path })
@@ -957,7 +972,7 @@ local function check_jxsv_fmtp(params, ctx, pos, field_path)
   end
   -- Enum value-set narrowings.
   for _, key in ipairs(JXSV_ENUM_KEYS) do
-    local val = params[key]
+    local val = base.params_get(params, key)
     if val ~= nil and not JXSV_ENUM_VALUES[key][tostring(val)] then
       local cont = errors.record(ctx,
         "st2110-22.a.fmtp." .. key .. "-invalid-value",
@@ -967,7 +982,7 @@ local function check_jxsv_fmtp(params, ctx, pos, field_path)
   end
   -- Non-enum value-form predicates.
   for _, key in ipairs(JXSV_VALUE_FORM_KEYS) do
-    local val = params[key]
+    local val = base.params_get(params, key)
     if val ~= nil and not JXSV_VALUE_VALIDATORS[key](tostring(val)) then
       local cont = errors.record(ctx,
         "st2110-22.a.fmtp." .. key .. "-invalid-value",
@@ -977,7 +992,7 @@ local function check_jxsv_fmtp(params, ctx, pos, field_path)
   end
   -- Flag-only keys: present iff the value is the boolean true.
   for _, key in ipairs(JXSV_FLAG_ONLY_KEYS) do
-    local val = params[key]
+    local val = base.params_get(params, key)
     if val ~= nil and val ~= true then
       local cont = errors.record(ctx,
         "st2110-22.a.fmtp." .. key .. "-invalid-value",
@@ -1333,8 +1348,7 @@ local overrides = {
     fmtp_st2110_raw_params =
         Cg(
             Ct(V"fmtp_st2110_raw_entry"
-              * (V"fmtp_sep" * V"fmtp_st2110_raw_entry") ^ 0)
-              / base.fmtp_entries_to_params,
+              * (V"fmtp_sep" * V"fmtp_st2110_raw_entry") ^ 0),
             "params"
           )
         * V"fmtp_trailing_sep_record" ^ -1

@@ -836,7 +836,7 @@ describe("base SDP grammar — media line + attributes (Phase 2.E)", function()
     assert.is_nil(attrs[1].value)
     assert.equal("fmtp",   attrs[2].name)
     assert.equal(96,       attrs[2].payload_type)
-    assert.equal("42801f", attrs[2].params["profile-level-id"])
+    assert.equal("42801f", base.params_get(attrs[2].params, "profile-level-id"))
     assert.is_nil(attrs[2].value)
     assert.is_nil(attrs[2].raw)
     assert.equal("sendonly", attrs[3].name)
@@ -1492,7 +1492,7 @@ describe("base SDP grammar — Phase 4.B fmtp decomposition (RFC 8866 §6.15)", 
     assert.equal("fmtp", a.name)
     assert.equal(96,     a.payload_type)
     assert.is_table(a.params)
-    assert.equal("42801f", a.params["profile-level-id"])
+    assert.equal("42801f", base.params_get(a.params, "profile-level-id"))
     assert.is_nil(a.raw)
     assert.is_nil(a.value)
   end)
@@ -1504,24 +1504,24 @@ describe("base SDP grammar — Phase 4.B fmtp decomposition (RFC 8866 §6.15)", 
         "a=fmtp:96 profile-level-id=42e016;max-mbps=108000;max-fs=3600" },
     }))
     local p = doc.media[1].attributes[2].params
-    assert.equal("42e016", p["profile-level-id"])
-    assert.equal("108000", p["max-mbps"])
-    assert.equal("3600",   p["max-fs"])
+    assert.equal("42e016", base.params_get(p, "profile-level-id"))
+    assert.equal("108000", base.params_get(p, "max-mbps"))
+    assert.equal("3600",   base.params_get(p, "max-fs"))
   end)
 
   -- SPEC: RFC 8866 §6.15 + ST 2110-20:2022 §7.1 bare-flag tokens (interlace,
   -- segmented). At the base tier we accept bare tokens as flags; ST 2110-20
   -- narrowing comes in Phase 6.
-  it("decomposes bare-flag tokens as params[flag]=true", function()
+  it("decomposes bare-flag tokens as ordered-list entries with value=true", function()
     local doc = base.match(minimal(nil, {
       { "m=video 49170 RTP/AVP 96", "a=rtpmap:96 raw/90000",
         "a=fmtp:96 sampling=YCbCr-4:2:2;width=1920;interlace;segmented" },
     }))
     local p = doc.media[1].attributes[2].params
-    assert.equal("YCbCr-4:2:2", p.sampling)
-    assert.equal("1920",        p.width)
-    assert.is_true(p.interlace)
-    assert.is_true(p.segmented)
+    assert.equal("YCbCr-4:2:2", base.params_get(p, "sampling"))
+    assert.equal("1920",        base.params_get(p, "width"))
+    assert.is_true(base.params_get(p, "interlace"))
+    assert.is_true(base.params_get(p, "segmented"))
   end)
 
   -- SPEC: RFC 8866 §6.15
@@ -1547,8 +1547,8 @@ describe("base SDP grammar — Phase 4.B fmtp decomposition (RFC 8866 §6.15)", 
         "a=fmtp:96 profile-level-id=42e016; max-mbps=108000" },
     }))
     local p = doc.media[1].attributes[2].params
-    assert.equal("42e016", p["profile-level-id"])
-    assert.equal("108000", p["max-mbps"])
+    assert.equal("42e016", base.params_get(p, "profile-level-id"))
+    assert.equal("108000", base.params_get(p, "max-mbps"))
   end)
 
   -- NOT-SPEC: library — RFC 8866 §6.15 doesn't constrain whitespace around
@@ -1559,7 +1559,7 @@ describe("base SDP grammar — Phase 4.B fmtp decomposition (RFC 8866 §6.15)", 
         "a=fmtp:96 max-mbps = 108000" },
     }))
     local p = doc.media[1].attributes[2].params
-    assert.equal("108000", p["max-mbps"])
+    assert.equal("108000", base.params_get(p, "max-mbps"))
   end)
 
   -- NOT-SPEC: library — trailing semicolons are a common convention; spec
@@ -1572,7 +1572,7 @@ describe("base SDP grammar — Phase 4.B fmtp decomposition (RFC 8866 §6.15)", 
         "a=fmtp:96 profile-level-id=42e016;" },
     }))
     local p = doc.media[1].attributes[2].params
-    assert.equal("42e016", p["profile-level-id"])
+    assert.equal("42e016", base.params_get(p, "profile-level-id"))
   end)
 
   -- SPEC: RFC 8866 §6.15 (PT in fmtp-value)

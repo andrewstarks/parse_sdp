@@ -37,19 +37,23 @@ local P, R, S, V, C, Cc, Cg, Cb, Ct, Cmt, Carg =
 -- than V-rules because they are not candidates for per-tier override.
 local SP = P(" ")
 
--- Transform a captured list of fmtp entries — each a `{key, value}` or
--- `{flag, true}` sub-table — into the flat `{key = value, flag = true, …}`
--- params table the doc-shape contract exposes. Replaces an earlier
--- `Ct(P("")) * (entry % fold)` chain that triggered LPeg 1.1.0's
--- "no previous value for accumulator capture" intermittently under
--- specific harness conditions (see audits/FMTP_ACCUMULATOR_FLAKE.md).
-local function fmtp_entries_to_params(entries)
-  local t = {}
-  for i = 1, #entries do
-    local e = entries[i]
-    t[e[1]] = e[2]
+-- Look up a kv-list value by key. The kv-list shape is the same Ct-of-
+-- {key, value | true} sub-tables that `a_fmtp` and `a_privacy` capture
+-- — ordered (input key sequence preserved for round-trip determinism)
+-- rather than hash. Returns nil when absent, the value when present
+-- (string for k=v entries, true for bare flags). Single source of truth
+-- for every consumer that needs a by-key read off a params list.
+--
+-- Linear scan is fine here: real fmtp lines carry on the order of a
+-- dozen params; the check that walks the params N times pays O(N*K) per
+-- fmtp line for K lookups (K bounded by the check list).
+local function params_get(params, key)
+  if params == nil then return nil end
+  for i = 1, #params do
+    local e = params[i]
+    if e[1] == key then return e[2] end
   end
-  return t
+  return nil
 end
 
 -- ── Semantic checks ─────────────────────────────────────────────────────────
@@ -737,9 +741,8 @@ local rules = {
   -- into a non-empty sequence of k=v / flag entries (separated by `;` and
   -- optional horizontal whitespace) all the way to line_end. Each entry
   -- captures a 2-element sub-table — `{key, value}` for kv pairs and
-  -- `{flag, true}` for bare flags. The outer `Ct(...) / fmtp_entries_to_params`
-  -- transforms that list of pairs into the `{key = value, flag = true, …}`
-  -- shape the doc contract exposes.
+  -- `{flag, true}` for bare flags. The outer Ct collects them in input
+  -- order; consumers read by key via `M.params_get(params, key)`.
   --
   -- An earlier shape used LPeg 1.1.0's `%` accumulator
   -- (`Ct(P("")) * (entry % set_pair) * …`). That tripped LPeg's "no previous
@@ -750,10 +753,14 @@ local rules = {
   -- The optional trailing-';' detector lives OUTSIDE the params Cg now so a
   -- `^-1` Cmt(...; Carg(1), …) tail can't interact with the params capture's
   -- internal state.
+  -- params is captured as an ordered Ct of `{key, value}` / `{flag, true}`
+  -- sub-tables. Insertion order = input order, which the serializer
+  -- (parse_sdp.serialize, Phase 8) relies on for text-identical round-
+  -- trip. Consumers read values via `M.params_get(params, key)`. Privacy's
+  -- a_privacy emits the same shape so a single lookup helper covers both.
   fmtp_params_branch =
         Cg(
-            Ct(V"fmtp_entry" * (V"fmtp_sep" * V"fmtp_entry") ^ 0)
-              / fmtp_entries_to_params,
+            Ct(V"fmtp_entry" * (V"fmtp_sep" * V"fmtp_entry") ^ 0),
             "params"
           )
       * V"fmtp_trailing_sep_record" ^ -1
@@ -1174,7 +1181,7 @@ M.semantic_checks         = base_semantic_checks
 M.media_section_checks    = base_media_section_checks
 M.make_validate_doc       = make_validate_doc
 M.make_document_body      = make_document_body
-M.fmtp_entries_to_params  = fmtp_entries_to_params
+M.params_get              = params_get
 M.is_rtp_block            = is_rtp_block
 M.is_usb_block            = is_usb_block
 
@@ -1243,7 +1250,7 @@ function M.extend(parent, overrides)
     media_section_checks    = child_media_section_checks,
     make_validate_doc       = parent.make_validate_doc,
     make_document_body      = parent.make_document_body,
-    fmtp_entries_to_params  = parent.fmtp_entries_to_params,
+    params_get              = parent.params_get,
     is_rtp_block            = parent.is_rtp_block,
     is_usb_block            = parent.is_usb_block,
     extend                  = M.extend,
