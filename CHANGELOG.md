@@ -2161,6 +2161,19 @@ Audit ref: REFACTOR-PLAN.md §5 Phase 8.F.
 
 ### Changed
 
+- **Phase 9.B:** Comment-tightening sweep across the new grammar tier,
+  serializer, and errors module. Removed paraphrase comments,
+  "Phase N: did X" inline annotations whose history is now in
+  REFACTOR-PLAN, and module-header Phase X.Y enumerated lists.
+  Preserved the three named load-bearing blocks (fmtp accumulator
+  dissolution; the LPeg V-rule sharing pitfall in `base.extend`; the
+  rtpmap-before-fmtp ordering caveat in 6.C.B) verbatim, plus every
+  per-spec citation. Suite unchanged at 1852 green. Net delta: -188
+  lines across `base.lua`, `st2110.lua`, `ipmx.lua`, `serialize.lua`,
+  `errors.lua`.
+
+Audit ref: REFACTOR-PLAN.md §5 Phase 9.B.
+
 - **Phase 9.A:** DRY sweep across the grammar tier and spec helpers. No
   behavior change; suite unchanged at 1852 green.
   - `parse_sdp/grammar/ipmx.lua` `check_usb_block` now uses

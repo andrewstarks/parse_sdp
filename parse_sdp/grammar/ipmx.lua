@@ -2,27 +2,10 @@
 --
 -- Composed via `st2110.extend(st2110, overrides)`. IPMX is a TR-10-1 §7
 -- profile on top of ST 2110, so this module chains the ST 2110 tier and
--- adds TR-10-only narrowings (new attributes like a=hkep / a=privacy /
+-- adds TR-10-only narrowings (new attributes a=hkep / a=privacy /
 -- a=infoframe, fmtp IPMX marker, FEC parameters, b=AS bandwidth form,
 -- USB transport block constraints, etc.). Per CLAUDE.md and the audits/
--- folder, every check must cite explicit primary TR-10 / IPMX-profile
--- text.
---
--- Phase 7.A — composition shell.
--- Phase 7.B — TR-10-1 §10 baseline.
--- Phase 7.C — TR-10-1 §10.2 video fmtp required params.
--- Phase 7.D — TR-10-1 §10.3 audio measuredsamplerate.
--- Phase 7.E — TR-10-2 §7 RTP port even + > 1024.
--- Phase 7.F — TR-10-7 §11 b=AS bandwidth form for jxsv.
--- Phase 7.G — TR-10-10 §8 a=infoframe attribute.
--- Phase 7.H — TR-10-5 §10 a=hkep attribute.
--- Phase 7.I — TR-10-6 §7.6 FECPROFILE / FEC latency params.
--- Phase 7.J — TR-10-13 §13 a=privacy attribute.
--- Phase 7.K — TR-10-13 §20.1 a=extmap PEP direction.
--- Phase 7.L — TR-10-14 §14 USB transport block constraints (this commit).
---
--- Internal entry point only. The public `sdp.parse(text, "ipmx")` continues
--- to use the 1.0 validator chain until Phase 9 (REFACTOR-PLAN.md §5).
+-- folder, every check cites explicit primary TR-10 / IPMX-profile text.
 
 local lpeg     = require("lpeg")
 local base     = require("parse_sdp.grammar.base")
@@ -39,17 +22,11 @@ local SP = P(" ")
 local is_rtp_block = base.is_rtp_block
 local is_usb_block = base.is_usb_block
 
--- ── §10 FID prohibition (in-grammar) ────────────────────────────────────────
+-- ── §10 FID prohibition ────────────────────────────────────────────────────
 -- TR-10-1 §10: "Section 4.1 of IETF RFC 8331 permits the use of Flow
 -- Identification (FID) semantics to group streams within the SDP; such use
 -- is inconsistent with the 'one SDP object per RTP Stream' provision of
 -- SMPTE ST 2110-10 and shall not be used under this TR."
---
--- In-grammar override of base.a_group: appends a trailing Cmt that reads
--- the captured `semantics` token (via Cb) and emits a finding when it
--- equals "FID". Per [[lpeg-discipline]] taxonomy, this is a per-attribute
--- value-form narrowing and belongs in the grammar slot, not in
--- semantic_checks.
 local function check_a_group_fid(_, pos, semantics, ctx)
   if semantics == "FID" then
     local cont = errors.record(ctx, "tr-10-1.a.group.fid-forbidden",
@@ -62,22 +39,12 @@ end
 local a_group_with_fid_check =
   base.rules.a_group * Cmt(Cb"semantics" * Carg(1), check_a_group_fid)
 
--- ── §10.1 IPMX fmtp marker (per-block media_section_check) ──────────────────
+-- ── §10.1 IPMX fmtp marker ─────────────────────────────────────────────────
 -- TR-10-1 §10.1 (verbatim): "IPMX Senders shall include the ' IPMX'
--- declaration in the a=fmtp clause of the SDP file."
---
--- Parsing the SHALL literally — singular "the a=fmtp clause", singular
--- "the SDP file", no "every" — the requirement is that AT LEAST ONE
--- a=fmtp containing IPMX must exist (per RTP block, the natural
--- granularity for "an IPMX media stream"). The §10.1 example carries
--- a single audio fmtp with the IPMX flag; the spec does not require
--- the marker to be repeated on every fmtp clause within a block when
--- multiple PTs are present.
---
--- The check only fires when at least one a=fmtp is present on the
--- block AND none of them carries the IPMX flag. A block with no
--- a=fmtp at all is out of §10.1's scope (and is caught by ST 2110
--- tier rtpmap-requires-fmtp checks for raw/jxsv encodings).
+-- declaration in the a=fmtp clause of the SDP file." Singular "the a=fmtp
+-- clause" → at-least-one per RTP block satisfies the SHALL. Blocks with
+-- no a=fmtp at all are out of §10.1's scope (caught instead by the ST 2110
+-- tier's rtpmap-requires-fmtp checks for raw/jxsv encodings).
 local function check_ipmx_fmtp_marker(block, ctx)
   if not is_rtp_block(block) then return true end
   local fmtp_count, marked = 0, false
@@ -98,29 +65,19 @@ local function check_ipmx_fmtp_marker(block, ctx)
   return true
 end
 
--- ── §10.2 video IPMX fmtp required parameters (in-grammar dispatch) ────────
+-- ── §10.2 video IPMX fmtp required parameters ─────────────────────────────
 -- TR-10-1 §10.2: "the sender shall include the measuredpixclk, vtotal and
 -- htotal parameters in the a=fmtp clause of the SDP file." TR-10-9 §10
--- extends the same requirement to non-baseband senders (using substitute
--- values width*height*exactframerate / height / width — those specific
--- substitute values are not validatable from SDP alone since SDP doesn't
--- carry baseband state). The combined effect: every video IPMX block's
--- a=fmtp must carry these three params as positive integers.
---
--- Per [[lpeg-discipline]], per-fmtp-line checks belong in-grammar. The
--- IPMX tier appends a trailing Cmt to st2110's `a_fmtp` rule that
--- dispatches IPMX-tier-only checks keyed by the rtpmap encoding (the
--- same ctx-based encoding lookup st2110 uses for its dispatch).
+-- extends the same requirement to non-baseband senders, so presence +
+-- positive-integer value form (RFC 8866 §9 ABNF integer) is required on
+-- every video IPMX block's a=fmtp.
 
 local IPMX_VIDEO_REQUIRED_PARAMS = {
   "measuredpixclk", "vtotal", "htotal",
 }
 
--- Single walk over required keys: absent → `<key>-required`, present-
--- but-malformed (not RFC 8866 §9 ABNF integer) → `<key>-invalid-value`.
--- Each key carries the same two failure modes; merging the two passes
--- avoids walking the list twice and halves the error-recording boiler-
--- plate.
+-- Per-key: absent → `<key>-required`, present-but-malformed (not RFC 8866
+-- integer) → `<key>-invalid-value`. One walk emits both.
 local function check_ipmx_video_fmtp(params, ctx, pos, field_path)
   for _, key in ipairs(IPMX_VIDEO_REQUIRED_PARAMS) do
     local v = base.params_get(params, key)
@@ -147,8 +104,6 @@ end
 -- so presence is required regardless of sender type. Value form is
 -- positive integer (Hertz).
 
--- Single walk: absent → `-required`, present-but-malformed → `-invalid-
--- value`. Same pattern as check_ipmx_video_fmtp above.
 local function check_ipmx_audio_fmtp(params, ctx, pos, field_path)
   local v = base.params_get(params, "measuredsamplerate")
   if v == nil then

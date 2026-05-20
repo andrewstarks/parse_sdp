@@ -3,15 +3,6 @@
 -- Composed via `base.extend(base, overrides)`. ST 2110 narrowings are
 -- expressed as overrides of base leaf rules — the value-set restrictions
 -- live IN the grammar, not as a post-parse Lua walk over the captured doc.
---
--- Phase 6.A — composition shell.
--- Phase 6.B — per-encoding rtpmap narrowings (this commit).
--- Phase 6.C — fmtp parameter narrowings.
--- Phase 6.D — required-attribute presence (ts-refclk, mediaclk, ptime).
--- Phase 6.E — cross-stream invariants (RFC 7104 group:DUP, RFC 2022-7).
---
--- Internal entry point only. The public `sdp.parse(text, "st2110")` continues
--- to use the 1.0 validator chain until Phase 9 (REFACTOR-PLAN.md §5).
 
 local lpeg   = require("lpeg")
 local base   = require("parse_sdp.grammar.base")
@@ -24,47 +15,15 @@ local patterns = require("parse_sdp.grammar.patterns")
 
 local SP = P(" ")
 
--- ── Semantic checks ────────────────────────────────────────────────────────
--- Cross-section invariants the grammar alone can't express. Each check
--- inspects the captured doc and emits findings via errors.record. Functions
--- are appended to base.semantic_checks via the overrides table below.
-
--- ST 2110-20:2022 §7.2 (required parameters for raw video fmtp) +
--- ST 2110-21:2022 §8.1 (required TP for every raw video stream). Listed in
--- spec order so that on fail_on_first=true the first absent key emitted
--- matches the order a reader sees in §7.2.
+-- ST 2110-20:2022 §7.2 + ST 2110-21:2022 §8.1 — required raw video fmtp
+-- params. Spec order so fail_on_first emits absent keys in §7.2 reading
+-- order.
 local RAW_VIDEO_REQUIRED_PARAMS = {
   "sampling", "width", "height", "exactframerate", "depth",
   "colorimetry", "PM", "SSN", "TP",
 }
 
--- Shared helper: returns a list of {media_index, payload_type, params} tuples,
--- one per rtpmap PT whose encoding matches `encoding_name` in the document.
--- `params` is the fmtp params table for the matching PT or {} when no fmtp
--- Phase 6.F: per-fmtp-line dispatch is in-grammar (FMTP_CHECKS_BY_ENCODING
--- + the trailing Cmt on a_fmtp below). The previous each_fmtp_for_encoding
--- doc-walk helper is no longer needed — each check now receives a single
--- params table directly.
-
--- Walks every media block, finds payload types whose a=rtpmap encoding is
--- `raw`, locates the matching a=fmtp on that PT, and verifies every required
--- parameter is present. If no fmtp exists for a raw PT, the first required
--- key (sampling) is reported missing — the §7.2 SHALL on the parameter
--- itself is also a SHALL on the fmtp's existence.
--- Phase 6.F refactor: per-fmtp-line validators are dispatched in-grammar
--- from the a_fmtp Cmt (FMTP_CHECKS_BY_ENCODING below). Signature is
--- (params, ctx, encoding) — single fmtp instance, not a doc walk.
-
--- check_raw_video_fmtp is defined below the constants it references (see
--- the spec-table cluster around RAW_VIDEO_ENUM_VALUES /
--- RAW_VIDEO_VALUE_VALIDATORS / RAW_VIDEO_FLAG_ONLY_KEYS). Forward
--- references to those locals from here would not resolve, so the
--- function sits after them.
-
--- ST 2110-20:2022 / ST 2110-21:2022 — enum value sets for raw video fmtp
--- parameters. Each table maps the literal string value to true. Lifted
--- verbatim from the 1.0 parser's VALID_* constants (parse_sdp.lua:769–791,
--- :1073, :1146) so the grammar tier accepts the same set of values.
+-- Raw video fmtp enum value sets per ST 2110-20:2022 / -21:2022.
 local RAW_VIDEO_ENUM_VALUES = {
   sampling = {
     ["YCbCr-4:4:4"]   = true, ["YCbCr-4:2:2"]   = true, ["YCbCr-4:2:0"]   = true,
@@ -95,17 +54,13 @@ local RAW_VIDEO_ENUM_VALUES = {
   RANGE = { ["NARROW"] = true, ["FULLPROTECT"] = true, ["FULL"] = true },
 }
 
--- Enum keys validated by check_raw_video_fmtp_values. Order is stable for
--- fail_on_first=true determinism: each fmtp's keys are checked in this order
--- so the first finding is predictable across runs.
+-- Order is the fail_on_first emission order.
 local RAW_VIDEO_ENUM_KEYS = {
   "sampling", "depth", "colorimetry", "PM", "TP", "TCS", "RANGE",
 }
 
--- Non-enum value-form validators (Phase 6.C.D.2). Each takes the raw string
--- value as captured by the fmtp grammar and returns true when the value
--- satisfies the ST 2110-20 form rule, false otherwise. Order matches the
--- _KEYS list for stable fail_on_first behaviour.
+-- Non-enum value-form validators. Each takes the raw captured string and
+-- returns true iff it satisfies the ST 2110-20 form rule.
 
 local function gcd(a, b)
   while b ~= 0 do a, b = b, a % b end
@@ -166,25 +121,16 @@ local RAW_VIDEO_VALUE_FORM_KEYS = {
   "width", "height", "exactframerate", "MAXUDP", "PAR", "SSN",
 }
 
--- §7.3: `interlace` and `segmented` are bare-attribute flags; signaling
--- either with a `=value` is invalid. The base fmtp grammar captures flags
--- as `base.params_get(params, key) == true` and kv-pairs as
--- `base.params_get(params, key) == string`; the check fires when the
--- captured shape is a string.
+-- §7.3: `interlace` and `segmented` are bare-attribute flags; a `=value`
+-- on either is invalid (base captures flags as `true`, kv-pairs as
+-- string, so the check fires on string-valued entries below).
 local RAW_VIDEO_FLAG_ONLY_KEYS = { "interlace", "segmented" }
 
 -- Per-fmtp raw-video required-presence + value-form check, one walk per
--- key class. The function was originally two (`_required` from Phase
--- 6.C.C and `_values` from Phase 6.C.D); merging eliminates the
--- duplicate iteration over the same params table and unifies the
--- per-key error-recording boilerplate. Used by both the in-grammar
--- fmtp dispatch (Phase 6.F via FMTP_CHECKS_BY_ENCODING below) and the
--- no-fmtp media_section_check (Phase 6.K via FMTP_REQUIRED_BY_ENCODING
--- — called with empty params, in which case only the required-presence
--- pass emits findings since no values are present to fail their forms).
+-- key class. Called both from the in-grammar fmtp dispatch and from
+-- FMTP_REQUIRED_BY_ENCODING with empty params (no-fmtp case) — in that
+-- case only the required-presence pass fires.
 local function check_raw_video_fmtp(params, ctx, pos, field_path)
-  -- Required-presence: each key in RAW_VIDEO_REQUIRED_PARAMS (sampling,
-  -- width, height, exactframerate, depth, colorimetry, PM, SSN, TP).
   for _, key in ipairs(RAW_VIDEO_REQUIRED_PARAMS) do
     if base.params_get(params, key) == nil then
       local cont = errors.record(
@@ -193,7 +139,6 @@ local function check_raw_video_fmtp(params, ctx, pos, field_path)
       if not cont then return false end
     end
   end
-  -- Enum value-set narrowings (lookup in RAW_VIDEO_ENUM_VALUES).
   for _, key in ipairs(RAW_VIDEO_ENUM_KEYS) do
     local val = base.params_get(params, key)
     if val ~= nil and not RAW_VIDEO_ENUM_VALUES[key][val] then
@@ -203,7 +148,6 @@ local function check_raw_video_fmtp(params, ctx, pos, field_path)
       if not cont then return false end
     end
   end
-  -- Non-enum value-form predicates (RAW_VIDEO_VALUE_VALIDATORS).
   for _, key in ipairs(RAW_VIDEO_VALUE_FORM_KEYS) do
     local val = base.params_get(params, key)
     if val ~= nil and not RAW_VIDEO_VALUE_VALIDATORS[key](tostring(val)) then
@@ -213,9 +157,6 @@ local function check_raw_video_fmtp(params, ctx, pos, field_path)
       if not cont then return false end
     end
   end
-  -- Flag-only keys: present iff the value is the boolean true emitted
-  -- by the kv-list capture for a bare flag; anything else (i.e. a
-  -- kv-string value on a flag-only key) is malformed.
   for _, key in ipairs(RAW_VIDEO_FLAG_ONLY_KEYS) do
     local val = base.params_get(params, key)
     if val ~= nil and val ~= true then
@@ -228,12 +169,10 @@ local function check_raw_video_fmtp(params, ctx, pos, field_path)
   return true
 end
 
--- ── Cross-parameter SHALLs for raw video fmtp (Phase 6.C.E) ──────────────
--- Each helper below evaluates a single cross-parameter constraint on a raw
--- video fmtp's params table. Helpers return true to continue or false to
--- short-circuit the surrounding loop (under fail_on_first=true the first
--- recorded finding fails the match). Ordered to match the 1.0 parser's
--- check order for deterministic fail_on_first behaviour.
+-- ── Cross-parameter SHALLs for raw video fmtp ────────────────────────────
+-- Each helper evaluates one cross-parameter SHALL on a raw video fmtp's
+-- params table. List order matches 1.0's check sequence for deterministic
+-- fail_on_first emission.
 
 -- §7.2 SSN-conditional. Forward direction only — reverse ("SSN=:2022
 -- without :2022-only values forbidden") deferred per PLAN.md known items.
@@ -544,10 +483,8 @@ local JXSV_CROSS_PARAM_CHECKS = {
     "st2110-22.a.fmtp.bt2100-range-fullprotect-forbidden"),
 }
 
--- ST 2110-30 / -31 audio channel-order syntax (Phase 6.C.H, refactored in
--- 6.F to dispatch via the per-fmtp Cmt on a_fmtp). The previous
--- each_audio_fmtp helper went away with the doc-walk removal.
-
+-- ST 2110-30 / -31 audio channel-order syntax.
+--
 -- Validate a channel-order value against ST 2110-30 §6.2.2 + ST 2110-31
 -- §6.2 Table 2 + RFC 3190. Pure-LPeg structural parse; the AES3-on-AM824
 -- cross-encoding check is the only piece that needs Lua (it depends on
@@ -842,7 +779,6 @@ end
 local PCM_BYTES_PER_SAMPLE = { L16 = 2, L24 = 3 }
 local AUDIO_PACKET_PAYLOAD_LIMIT = 1448  -- 1460 (UDP) - 12 (RTP header)
 
--- Phase 6.K: per-media-block, lives in media_section_checks.
 local function check_audio_packet_payload_fit(block, ctx)
   local ptime
   for _, attr in ipairs(block.attributes) do
@@ -922,7 +858,6 @@ local function check_ts_refclk_presence(doc, ctx)
   return true
 end
 
--- Phase 6.K: per-media-block, lives in media_section_checks.
 local function check_mediaclk_presence(block, ctx)
   if not base.is_rtp_block(block) then return true end
   if has_attr(block.attributes, "mediaclk") then return true end
@@ -1097,16 +1032,11 @@ local function fmtp_dispatch(_, pos, pt, params, ctx)
   return pos
 end
 
--- Per-media-block cross-attribute check: when a raw / jxsv / ST 2110-41
--- rtpmap is present, its corresponding a=fmtp must also be present (the
--- §7.2 / §7.1 / §6 required-Media-Type-parameter SHALLs cannot be
--- satisfied otherwise). If no fmtp exists, run the same required-check
--- the in-grammar dispatch would have run, but against an empty params
--- table — yielding the same `<key>-required` finding set.
---
--- Phase 6.K: lives in media_section_checks (was a semantic_check bridge
--- before the media_section Cmt slot existed). Fires per block; ctx is
--- the doc-level context (carries findings, policy, media_index).
+-- When a raw / jxsv / ST 2110-41 rtpmap is present, the matching a=fmtp
+-- must also be present (the §7.2 / §7.1 / §6 required-Media-Type-parameter
+-- SHALLs can't be satisfied otherwise). If no fmtp exists, call the same
+-- per-encoding required-check against an empty params table — yields the
+-- same `<key>-required` finding set the in-grammar dispatch would emit.
 local FMTP_REQUIRED_BY_ENCODING = {
   raw           = check_raw_video_fmtp,
   jxsv          = check_jxsv_fmtp,
@@ -1365,19 +1295,10 @@ local overrides = {
           end),
   },
 
-  -- Phase 6.F: per-fmtp-line + per-rtpmap-line checks are in-grammar
-  -- (Cmts on a_fmtp / st2110_rtpmap_am824). semantic_checks is reserved
-  -- for genuine cross-section invariants — checks that need access to
-  -- the full doc (session-level cover semantics, cross-media-block
-  -- coherence, group:DUP leg comparison).
-  --
-  -- Phase 6.K: per-media-block cross-attribute checks moved to
-  -- media_section_checks below (check_rtpmap_requires_fmtp,
-  -- check_audio_packet_payload_fit). check_mediaclk_presence is also
-  -- strictly per-media-block (§8.3's "media-level" qualifier; session-
-  -- level mediaclk doesn't cover); it moves too. check_ts_refclk_presence
-  -- stays doc-level because RFC 7273 §4.8 session-level ts-refclk covers
-  -- all media — needs both scopes seen.
+  -- Doc-level only: cross-section invariants that need the full doc
+  -- (e.g. session-level ts-refclk coverage per RFC 7273 §4.8;
+  -- group:DUP leg comparison). Per-fmtp / per-rtpmap / per-media-block
+  -- checks live in-grammar (Cmts) or in media_section_checks below.
   semantic_checks = {
     check_ts_refclk_presence,
     check_group_dup_coherence,

@@ -11,14 +11,6 @@
 --   * No fallback to a stored attr.value string for known decomposed
 --     attribute names. The decomposed-shape contract is the only producer
 --     surface — known-name renderers are registered in ATTR_RENDERERS below.
---
--- Slice scope:
---   8.A — v / o / s / t.
---   8.B — i / u / e / p / c / b (session + media) + r= repeats + z= time
---         zones + media blocks (m, optional sub-fields) + generic / flag
---         a= via ATTR_RENDERERS dispatch (empty until 8.D / 8.E populate
---         decomposed-attribute renderers).
---   8.C / 8.D / 8.E — fmtp ordered-params + base + IPMX attribute renderers.
 
 local errors = require("parse_sdp.errors")
 
@@ -128,9 +120,9 @@ local function render_bandwidths(bws, field_prefix)
   return table.concat(parts)
 end
 
--- Known-name decomposed-attribute renderers register here (Phase 8.D / 8.E).
--- Generic / unknown attribute names fall through to the {name, value?}
--- carrier shape, which is also how flag attributes (a=recvonly) render.
+-- Known-name decomposed-attribute renderers register here. Generic /
+-- unknown attribute names fall through to the {name, value?} carrier
+-- shape (also how flag attributes like a=recvonly render).
 local ATTR_RENDERERS = {}
 
 local function render_attribute(attr, field_path)
@@ -289,17 +281,12 @@ local function render_media_block(m, idx)
   return table.concat(parts)
 end
 
--- ── Per-attribute renderers (Phase 8.D / 8.E) ──────────────────────────────
--- Each renderer is the inverse of a single `a_*` rule in
--- parse_sdp/grammar/base.lua (or the IPMX tier in grammar/ipmx.lua).
--- Contract:
+-- ── Per-attribute renderers ────────────────────────────────────────────────
+-- Each renderer inverts a single `a_*` rule in parse_sdp/grammar/base.lua
+-- (or the IPMX tier in grammar/ipmx.lua). Signature:
 --   ATTR_RENDERERS[name] = function(attr, field_path) -> "a=...\r\n", nil
 --                                                     | nil, err
--- The renderer pulls the spec-required Cg-captured fields off `attr` (via
--- require_fields), assembles the body in the order the grammar produced
--- it, and wraps with `ln("a", name .. ":" .. body)`. Optional fields are
--- silently omitted when absent. Per-rule comments below cite the RFC
--- clause whose grammar the renderer inverts.
+-- Per-rule comments cite the RFC clause whose grammar the renderer inverts.
 
 -- rtpmap (RFC 8866 §6.6):
 --   rtpmap-value = payload-type SP encoding-name "/" clock-rate
@@ -662,12 +649,12 @@ ATTR_RENDERERS["source-filter"] = function(attr, field_path)
   return ln("a", "source-filter: " .. body)
 end
 
--- ── Phase 8.E IPMX-tier attribute renderers ────────────────────────────────
--- Each inverts a rule the IPMX tier adds to base via the `a_tier_extensions`
--- hook (see parse_sdp/grammar/ipmx.lua's a_infoframe / a_hkep / a_privacy).
--- Round-trip is only meaningful when the producing doc was parsed by
--- ipmx.match — base.match doesn't know these names and routes them to the
--- generic carrier, which would land on the wrong renderer here.
+-- ── IPMX-tier attribute renderers ──────────────────────────────────────────
+-- Each inverts a rule the IPMX tier adds via `a_tier_extensions` (see
+-- grammar/ipmx.lua's a_infoframe / a_hkep / a_privacy). Round-trip is
+-- only meaningful when the producing doc was parsed by ipmx.match —
+-- base.match doesn't know these names and routes them to the generic
+-- carrier, which would land on the wrong renderer here.
 
 -- infoframe (TR-10-10 §8): "a=infoframe:<port> SSN=<ssn>;DIT=<dit>".
 -- The grammar fixes the literal "SSN=" and ";DIT=" punctuation; the

@@ -37,16 +37,10 @@ local P, R, S, V, C, Cc, Cg, Cb, Ct, Cmt, Carg =
 -- than V-rules because they are not candidates for per-tier override.
 local SP = P(" ")
 
--- Look up a kv-list value by key. The kv-list shape is the same Ct-of-
--- {key, value | true} sub-tables that `a_fmtp` and `a_privacy` capture
--- — ordered (input key sequence preserved for round-trip determinism)
--- rather than hash. Returns nil when absent, the value when present
--- (string for k=v entries, true for bare flags). Single source of truth
--- for every consumer that needs a by-key read off a params list.
---
--- Linear scan is fine here: real fmtp lines carry on the order of a
--- dozen params; the check that walks the params N times pays O(N*K) per
--- fmtp line for K lookups (K bounded by the check list).
+-- Look up a value in the ordered kv-list shape `a_fmtp` and `a_privacy`
+-- capture (Ct of {key, value | true} sub-tables, input order preserved
+-- for round-trip determinism). Returns nil when absent, the value when
+-- present (string for k=v entries, true for bare flags).
 local function params_get(params, key)
   if params == nil then return nil end
   for i = 1, #params do
@@ -172,9 +166,6 @@ end
 -- included to specify the format name and parameters as defined by the
 -- media type registration for the payload format."
 -- Dynamic range is PT 96–127 (RFC 3551 §6 / RFC 8866 §6.6).
---
--- Phase 6.K: per-media-block; lives in media_section_checks. Fires at
--- the end of each media_section's parse with the captured block.
 local function check_dynamic_pt_rtpmap(block, ctx)
   if not is_rtp_block(block) then return true end
   local rtpmap_pts = {}
@@ -211,11 +202,6 @@ end
 -- RFC 7273 §4.8: "Traceable time sources MUST NOT be mixed with non-traceable
 -- time sources at any given level." Checks each level (session, every media)
 -- independently — mixing across levels is permitted.
---
--- Phase 6.K split: the session-level pass stays a doc-level semantic_check
--- (cross-section by definition — the "session attributes" scope spans the
--- doc top); the per-media-block pass moves to media_section_checks so it
--- fires inline as each block parses, with ctx.media_index in field_path.
 local function check_tsrefclk_level(attrs, ctx, path)
   local saw_traceable, saw_non = false, false
   for _, attr in ipairs(attrs) do
@@ -266,11 +252,9 @@ local function check_mid_uniqueness(doc, ctx)
   return true
 end
 
--- Phase 6.E.A — RFC 5888 §6 group-requires-mid-on-all-media + §9.2
--- group-references-port-zero-mid. Both checks iterate session-level
--- a=group attributes; sharing one function keeps the doc walk in one
--- place. The checks are independent (either may fire alone, both may
--- fire together) and report distinct error IDs.
+-- RFC 5888 §6 group-requires-mid-on-all-media + §9.2 references-port-zero-mid.
+-- Both walk session-level a=group attrs; sharing one walk keeps it in one
+-- place. They are independent (either may fire alone) and emit distinct IDs.
 --
 -- §6:  "All of the 'm' lines of a session description that uses 'group'
 --       MUST be identified with a 'mid' attribute whether they appear in
@@ -347,40 +331,26 @@ local record_trailing_ws      = record_soft("sdp.line.trailing-whitespace")
 -- accumulator chain that folds entries into params.
 
 -- Ordered list of cross-section semantic checks the document-level Cmt
--- runs after capture. Phase 6 extends this list per tier via M.extend; the
--- order in which checks execute is the order they appear here.
---
--- Phase 6.H: check_connection_addresses moved in-grammar (Cmt on
--- c_value). The remaining four are genuine cross-section invariants —
--- check_dynamic_pt_rtpmap + check_tsrefclk_traceability are per-media-
--- block and could move to a `media_section` Cmt if that infrastructure
--- gets added; check_mid_uniqueness + check_group_attribute_invariants
--- span media blocks and stay doc-level either way.
+-- runs after capture. M.extend appends per-tier checks below this list;
+-- execution order matches the list.
 local base_semantic_checks = {
   check_mid_uniqueness,
   check_group_attribute_invariants,
   check_session_tsrefclk_traceability,
 }
 
--- ── Per-media-block checks (Phase 6.K) ──────────────────────────────────────
--- Functions taking `(block, ctx)` that fire at the end of each
--- media_section's parse (via the trailing Cmt on the media_section rule).
--- Populated as cross-attribute-within-block checks migrate out of
--- semantic_checks (which is reserved for genuine cross-section invariants).
+-- Per-media-block checks: `(block, ctx)` functions that fire from the
+-- trailing Cmt on the media_section rule. Cross-attribute checks scoped
+-- to one block live here; cross-section invariants live in base_semantic_checks.
 local base_media_section_checks = {
   check_dynamic_pt_rtpmap,
   check_media_tsrefclk_traceability,
 }
 
 -- Factory producing a document-level Cmt callback bound to a specific
--- check list. Walks the captured doc, runs each check in order, records
--- findings into ctx, and either continues (return position, doc) or fails
--- the match (return false) per ctx.fail_on_first.
---
--- Signature follows the LPeg manual's Cmt contract:
---   f(subject, position, capture1, ..., captureN) → control values
--- Capture pattern is `document_body * Carg(1)`, so callback receives
--- [doc, ctx].
+-- check list. Walks the captured doc, runs each check in order, and
+-- either continues (return position, doc) or fails the match (return
+-- false) per ctx.fail_on_first.
 local function make_validate_doc(checks)
   return function(_, position, doc, ctx)
     -- Grammar-only consumers (no extra-arg path) get ctx=nil; default to
@@ -421,10 +391,6 @@ local rules = {
   -- Start rule.
   "document",
 
-  -- Top-level captured document. Fields are added one Cg per phase; today
-  -- captured: version, origin, session.name, session.connection (Phase 2.A–2.B).
-  -- The remaining session and media fields are placeholder pattern matches
-  -- until their corresponding sub-commit (2.C–2.E) wraps the leaf in a Cg.
   document = V"bom_opt" * Cmt(make_document_body() * Carg(1),
                               make_validate_doc(base_semantic_checks))
            * -1,
@@ -441,9 +407,7 @@ local rules = {
                   return pos
                 end) ^ -1,
 
-  -- Session-level inner section: s= through a=*. Phase 2.A captures only
-  -- s= → name; 2.B–2.E will add Cg wrappers for i=, u=, e=, p=, c=, b=,
-  -- t/r/z, and a=.
+  -- Session-level inner section: s= through a=* (RFC 8866 §5).
   session_inner =
         Cg(V"s_line", "name")
       * (Cg(V"i_line", "info")) ^ -1
@@ -465,22 +429,17 @@ local rules = {
       * Cg(Ct(V"r_line" ^ 0), "repeats")
     ),
 
-  -- Media section (RFC 8866 §5):
-  --   m= (required), i=?, c=?, b=*, k=?, a=*
-  -- Wrapped in Ct so each media block lands as one table in doc.media[i].
-  -- The m= fields (media, port, port_count, proto, fmts) land *flat* at the
-  -- media-block top level rather than nested under "m" — to match the 1.0
-  -- doc shape and avoid one level of indirection.
+  -- Media section (RFC 8866 §5): m= (required), i=?, c=?, b=*, k=?, a=*.
+  -- Wrapped in Ct so each block lands as one table in doc.media[i]. m='s
+  -- fields (media, port, port_count, proto, fmts) land *flat* at the
+  -- block top level rather than nested under "m" (matches 1.0 doc shape).
   --
-  -- Phase 6.K: two Cmts bracket the block capture. The leading Cmt
-  -- increments ctx.media_index (0-indexed) BEFORE the block starts
-  -- parsing so per-attribute Cmts inside (a_rtpmap, a_fmtp dispatch,
-  -- AM824 channels) can read the index for field_path construction.
-  -- The trailing Cmt receives the captured block + ctx and dispatches
-  -- ctx.media_section_checks — the per-media-block analogue of the
-  -- document-level `semantic_checks` slot. The checks list is threaded
-  -- via ctx (set by make_match per-grammar) so the rule itself doesn't
-  -- need rebuilding per tier.
+  -- Two Cmts bracket the capture. The leading Cmt increments
+  -- ctx.media_index (0-indexed) BEFORE the block parses, so per-attribute
+  -- Cmts inside (a_rtpmap, a_fmtp dispatch, AM824 channels) can read it
+  -- for field_path construction. The trailing Cmt dispatches
+  -- ctx.media_section_checks (threaded by make_match per-grammar, so the
+  -- rule itself stays tier-agnostic).
   media_section =
         Cmt(Carg(1), function(_, pos, ctx)
               if ctx then

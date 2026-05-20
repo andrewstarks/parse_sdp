@@ -37,9 +37,8 @@ local VALID_CODES = {
   WRONG_ORDER    = true,
 }
 
--- Register a check definition. Validates the definition; errors loudly on
--- malformed input (this is a programmer mistake at module-load time, not a
--- parse-time failure).
+-- Register a check definition. error()s loudly on malformed input —
+-- a programmer mistake at module-load, not a parse-time failure.
 function M.register(id, def)
   if type(id) ~= "string" or id == "" then
     error("check id must be a non-empty string", 2)
@@ -142,12 +141,10 @@ end
 
 -- ─── Position helpers ───────────────────────────────────────────────────────
 
--- Translate an LPeg byte position into (line, col) against the original
--- input text. Lines are 1-indexed; columns are 1-indexed within each line.
--- LF terminates a line for both bare-LF and CRLF (we count LF only — CR
--- precedes LF and sits at the previous line's last column). Pure O(n)
--- scan; finding emission is rare enough that an indexed cache isn't worth
--- the complexity.
+-- Translate an LPeg byte position into 1-indexed (line, col). LF
+-- terminates a line for both bare-LF and CRLF (count LF only; CR sits
+-- at the previous line's last column). Pure O(n) — finding emission
+-- is rare enough that a position cache isn't worth the complexity.
 function M.pos_to_line_col(text, pos)
   if not text or not pos or pos < 1 then return 0, 0 end
   if pos > #text + 1 then pos = #text + 1 end
@@ -167,14 +164,11 @@ end
 -- id:  registered check id
 -- loc: { line=, col=, context=, field_path=, pos= }   (any field may be nil)
 --
--- Position resolution: when loc.pos and ctx.text are both present, line/col
--- are computed from pos. Otherwise loc.line/col are used as-is (0 when
--- absent). This lets in-grammar Cmt callbacks pass `pos` (cheap — they
--- already receive it) and get real positions in the formatted output,
--- without making semantic_checks doc walks (which have no pos) carry extra
--- machinery.
+-- Position: when loc.pos + ctx.text are present, line/col are computed
+-- from pos (in-grammar Cmts get them for free); otherwise loc.line/col
+-- are used directly (semantic_checks doc walks have no pos).
 --
--- Returns true to continue matching, false to fail the match (only when the
+-- Returns true to continue matching, false to fail the match (only when
 -- effective severity is "error" and ctx.fail_on_first is true).
 function M.record(ctx, id, loc)
   local def = CHECKS[id]
@@ -204,10 +198,10 @@ end
 
 -- ─── Deepest-failure tracker ────────────────────────────────────────────────
 
--- Carg-passable accumulator that grammar Cmt callbacks write to before
--- returning false. After a failed match, tracker_deepest() reports the
--- position closest to end-of-input — usually the most informative failure.
--- Tie-break: later record wins (most recent failure at that depth).
+-- Accumulator grammar Cmts write to before returning false. After a
+-- failed match, tracker_deepest() reports the position closest to
+-- end-of-input — usually the most informative failure. Tie-break:
+-- later record wins.
 
 function M.new_tracker()
   return { position = 0, info = nil }
@@ -245,11 +239,8 @@ function M.format(err)
   if not err then return "error: unknown" end
   local code_part = err.code and ("[" .. err.code .. "] ") or ""
   local out = { "error: " .. code_part .. (err.message or "unknown error") }
-  -- Phase 6.K: emit both field_path AND line/col when both are present.
-  -- field_path comes from the in-grammar Cmts (since 6.K's media-index
-  -- threading) or from doc-walk semantic_checks; line/col come from the
-  -- 6.G pos → line/col translation in errors.record. They're complementary
-  -- (field_path = where in the doc; line/col = where in the text).
+  -- field_path and line/col are complementary (where in the doc / where
+  -- in the text) and both render when present.
   local has_field = err.field_path and err.field_path ~= ""
   local has_line  = err.line and err.line > 0
   if has_field then
@@ -260,11 +251,10 @@ function M.format(err)
       "%s line %d, col %d",
       has_field and "      at" or " -->",
       err.line, err.col or 1)
-    -- `context` is overloaded: legacy 1.0 callers set it to the source-line
-    -- text for the `N | <line>` highlight block; in-grammar Cmts and the
-    -- newer doc-walk checks set it to a metadata table like
-    -- `{encoding = "L24", value = ...}` for downstream JSON consumers.
-    -- Render the highlight only when it's a string (legacy use).
+    -- `context` is overloaded: 1.0 callers set it to the source-line text
+    -- for the `N | <line>` highlight block; in-grammar Cmts use it for a
+    -- metadata table downstream JSON consumers read. Render the highlight
+    -- only when it's a string.
     if type(err.context) == "string" and err.context ~= "" then
       local col = err.col or 1
       out[#out + 1] = "  |"

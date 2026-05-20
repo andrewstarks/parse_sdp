@@ -1211,15 +1211,22 @@ Four sub-slices, ordered so each one lands on a green tree.
   grammar modules and three spec files; +32 lines for the new
   `spec/support.lua` module.
 
-- **9.B — Comment-tightening sweep.** Same modules. Convention:
-  each comment block briefly says (a) what it is, (b) what
-  problem it solves, (c) very briefly how. Tricky parts (e.g.
-  the fmtp accumulator dissolution from 6.C.A, the LPeg V-rule
-  sharing pitfall in `base.extend`, the rtpmap-before-fmtp ordering
-  caveat in 6.C.B) stay verbose — those are load-bearing context
-  for the next person to touch them. Paragraphs that paraphrase
-  what the code already says go. Per-spec citations stay; they are
-  the conformance audit trail.
+- **9.B (complete)** — comment-tightening sweep across the new
+  grammar tier, serializer, and errors module. Convention applied:
+  each comment briefly says (a) what it is, (b) what problem it
+  solves, (c) very briefly how. Removed: paragraphs paraphrasing
+  what the code says; "Phase N: did X" inline annotations that lost
+  value once the phase shipped; section banners that repeated their
+  own next-line description; module-header Phase X.Y enumerated
+  histories (now in REFACTOR-PLAN). Preserved verbatim per the
+  named load-bearing-context list: the fmtp accumulator dissolution
+  from 6.C.A (base.lua `fmtp_params_branch` and `fmtp_trailing_sep_record`),
+  the LPeg V-rule sharing pitfall in `base.extend` (base.lua
+  `make_document_body`), and the rtpmap-before-fmtp ordering caveat
+  in 6.C.B (st2110.lua a_fmtp dispatch). Every per-spec citation
+  (SHALL/MUST quote, `spec_ref` text, RFC/ST/TR section numbers)
+  stays. Suite unchanged at 1852 green. Net delta: -188 lines across
+  base.lua, st2110.lua, ipmx.lua, serialize.lua, errors.lua.
 
 - **9.C — Policy + findings feature go live.** The infrastructure
   is already in place from Phase 0:
