@@ -299,3 +299,19 @@ confirmed-against-primary-source findings get fixed.
 - IPMX validation runs ST 2110 validation first; never skip the lower tier.
 - `doc:to_sdp()` must produce output that re-parses cleanly. Round-trip is a
   hard invariant tested on every serializer change.
+- **Serializer never validates. Validate never serializes.** `to_sdp()` checks
+  only structural completeness (the fields RFC 8866 / per-attribute grammar
+  mark as required, so a renderable line can be produced) and emits faithfully
+  on success. Value-form correctness, enum membership, and cross-section
+  invariants live in `doc:validate()`. A missing-required field is the *only*
+  thing `to_sdp` errors on; a present-but-wrong field is stringified and
+  emitted (round-trip will then fail — that's the developer's signal). This
+  separation lets a developer build a doc piecemeal, render at any point to
+  see *structural* gaps, and validate when they think they're done.
+- No fallback to a stored `attr.value` string for known decomposed attribute
+  names. The grammar tier produces the decomposed shape (e.g. `rtpmap` carries
+  `payload_type` / `encoding` / `clock_rate`); the serializer renders only
+  from those fields. Hand-built docs constructed via `sdp.new(t)` must use
+  the same decomposed shape — the legacy `{name, value=string}` shape for
+  *known* attribute names is no longer a supported producer surface (generic /
+  unknown attributes keep that shape as the forward-compat carrier).

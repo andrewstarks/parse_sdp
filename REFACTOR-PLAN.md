@@ -979,6 +979,67 @@ Final test count: 1711 green.
 Render from structured doc, never from stored strings. Round-trip invariant
 test runs on every fixture in `examples/{generic,st2110,ipmx}/valid/`.
 
+Sub-slice ordering (decided 2026-05-20 in planning conversation):
+
+- **8.A (complete)** — bootstrap shell. New
+  `parse_sdp/serialize.lua` exporting `M.to_sdp(doc)`; new
+  `spec/roundtrip_spec.lua` whose helper parses via
+  `parse_sdp.grammar.base.match`, serializes via the new module,
+  re-parses, and deep-equals. 8.A scope: v / o / s / t only —
+  optional session fields, multi t-blocks, r= / z=, attributes,
+  and media blocks defer to 8.B. Structural-completeness contract
+  also established here: missing required fields → `nil, err`
+  (the "Serializer never validates. Validate never serializes."
+  invariant added to [CLAUDE.md](CLAUDE.md#things-to-watch-out-for)).
+  Public API stays on 1.0 serializer; the new module is internal
+  until Phase 9. 11 new tests; suite 1721 green (was 1710).
+- **8.B (pending)** — base SDP optional session fields + r= / z= +
+  media blocks (m + port_count + proto + fmts; i, c, b*, generic +
+  flag a* per media block). Round-trips
+  `examples/generic/valid/*.sdp` (with compound attrs absent or
+  stripped).
+- **8.C (pending)** — fmtp params order preservation. Grammar-tier
+  change: `a_fmtp` decomposable branch stores `params` as an
+  ordered `{{k, v|true}, ...}` list (matching privacy's shape)
+  instead of a key→value hash; ~12 consumers in
+  `parse_sdp/grammar/{base,st2110,ipmx}.lua` updated to walk the
+  list. Lands before 8.D so the fmtp renderer is built against
+  the final shape.
+- **8.D (pending)** — base compound-attribute renderers. Per-name
+  dispatch table; one render fn per branch in base.lua's
+  `a_value` alternation (rtpmap, fmtp, ts-refclk, mediaclk,
+  source-filter, group, ssrc-group, ssrc, msid, mid, extmap,
+  rtcp-fb, rtcp-mux, rtcp, ptime, maxptime, framerate, quality).
+  Splits into 8.D.1/.2/.3 if the slice grows. Round-trips
+  every `examples/generic/valid/*.sdp` plus the M7 fixtures.
+- **8.E (pending)** — IPMX-tier attribute renderers (infoframe,
+  hkep, privacy). Round-trips every `examples/ipmx/valid/*.sdp`.
+- **8.F (pending)** — final `spec/roundtrip_spec.lua` form: loop
+  every `examples/{generic,st2110,ipmx}/valid/*.sdp` file with
+  parse → serialize → re-parse → deep-equal.
+
+Producer-side contract (8.D / 8.E renderer rules):
+
+- **Required field absent → `nil, err`.** Per-attribute "required"
+  means what the RFC's ABNF marks as mandatory (e.g. `rtpmap`'s
+  `payload_type` + `encoding` + `clock_rate` are required;
+  `channels` is optional). Error message names the exact field
+  and field_path so the developer knows what to populate.
+- **Optional field absent → omit from the rendered output.**
+- **Present field of wrong type/value → stringified and emitted.**
+  The result may not re-parse; that's the developer's signal.
+  `validate()` would have caught the value-form issue.
+- **No fallback to legacy `{name, value=string}` shape for known
+  attribute names.** Renderer reads from decomposed fields only.
+  Generic / unknown attributes keep the `{name, value}` shape
+  as the forward-compat carrier.
+
+The 1.0 `s.timing` fallback at parse_sdp.lua:457-464 (single t=
+block via `s.timing.start/stop`) is dropped in the new
+serializer. The grammar tier never produces that shape; `sdp.new`
+consumers must use `time_descriptions[]`. Migration cutover is a
+Phase 10 concern.
+
 **Phase 9 — Public API stabilization.**
 `sdp.parse(text, tier, opts)`, `doc:warnings()`, `doc:findings()`,
 `sdp.policy(table)` helper. Policy field accepted but treated as no-op for
