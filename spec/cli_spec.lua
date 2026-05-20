@@ -72,8 +72,13 @@ describe("CLI: to_json subcommand", function()
     assert.is_table(decoded)
   end)
 
-  it("--mode st2110 with plain SDP → human-readable error on stderr, exit 1", function()
-    local stdout, stderr, code = run("to_json --mode st2110 spec/fixtures/minimal.sdp")
+  it("--mode st2110 with a non-conformant SDP → human-readable error on stderr, exit 1", function()
+    -- 01_missing_tsrefclk has a media block lacking the per-block
+    -- ts-refclk SHALL (ST 2110-10:2022 §8.2). Replaces the previous
+    -- minimal.sdp fixture: the grammar tier no longer rejects empty
+    -- SDPs at the st2110 mode (no spec text mandates ≥1 media block).
+    local stdout, stderr, code = run(
+      "to_json --mode st2110 examples/st2110/invalid/01_missing_tsrefclk.sdp")
     assert.equal(1, code)
     assert.equal("", stdout)
     assert.truthy(stderr:match("^error:"))

@@ -15,6 +15,22 @@ local P, R, S, V, C, Cp, Ct = lpeg.P, lpeg.R, lpeg.S, lpeg.V, lpeg.C, lpeg.Cp, l
 -- there. See parse_sdp/errors.lua for the API surface.
 local errors = require("parse_sdp.errors")
 
+-- ── Grammar tier + new serializer (Phase 9.D cutover) ─────────────────────────
+-- sdp.parse routes through these instead of the 1.0 parser; mt:to_sdp routes
+-- through the new serializer. The 1.0 grammar / validator / serializer code
+-- in this file remains for now but is unreachable from the public API.
+-- Phase 10.A removes it.
+local grammar_base       = require("parse_sdp.grammar.base")
+local grammar_st2110_mod = require("parse_sdp.grammar.st2110")
+local grammar_ipmx_mod   = require("parse_sdp.grammar.ipmx")
+local new_serialize      = require("parse_sdp.serialize")
+
+local TIER_MATCH = {
+  sdp    = grammar_base.match,
+  st2110 = grammar_st2110_mod.match,
+  ipmx   = grammar_ipmx_mod.match,
+}
+
 -- ── Util ──────────────────────────────────────────────────────────────────────
 local util = {}
 
@@ -3638,34 +3654,41 @@ local M  = {}
 local mt = {}
 mt.__index = mt
 
-local validators = {
-  sdp    = validate.sdp,
-  st2110 = st2110.validate,
-  ipmx   = ipmx.validate,
-}
-
 --- Validate the document against the given tier.
+--
+-- Implemented as serialize-then-reparse (round-trip): rendering the doc
+-- through `to_sdp()` produces a text the grammar tier can re-parse and
+-- validate. This works because the grammar tier validates during parsing
+-- (semantic_checks + media_section_checks fire from the document's Cmt);
+-- there is no separate "validate a table" entry point.
+--
 -- @param mode string  "sdp" (default), "st2110", or "ipmx".
 -- @return true  on success.
 -- @return nil, err  on failure; err is an error table from errors.new.
 function mt:validate(mode)
   mode = mode or "sdp"
-  local fn = validators[mode]
-  if not fn then return nil, errors.new("unknown mode: " .. tostring(mode)) end
-  return fn(self)
+  if TIER_MATCH[mode] == nil then
+    return nil, errors.new("unknown mode: " .. tostring(mode),
+                           { code = "INVALID_VALUE" })
+  end
+  local text, te = new_serialize.to_sdp(self)
+  if not text then return nil, te end
+  local doc, pe = M.parse(text, mode)
+  if not doc then return nil, pe end
+  return true
 end
 
 --- Test whether the document is a valid RFC 8866 SDP.
 -- @return boolean
-function mt:is_sdp()    return validate.sdp(self) == true end
+function mt:is_sdp()    return self:validate("sdp")    == true end
 
 --- Test whether the document satisfies SMPTE ST 2110 requirements.
 -- @return boolean
-function mt:is_st2110() return st2110.validate(self) == true end
+function mt:is_st2110() return self:validate("st2110") == true end
 
 --- Test whether the document satisfies IPMX requirements.
 -- @return boolean
-function mt:is_ipmx()   return ipmx.validate(self) == true end
+function mt:is_ipmx()   return self:validate("ipmx")   == true end
 
 --- Encode the document as a JSON string using dkjson.
 -- @return string  JSON representation of the document.
@@ -3676,7 +3699,7 @@ end
 --- Serialize the document back to RFC 8866 SDP text.
 -- @return string  SDP text with CRLF line endings.
 function mt:to_sdp()
-  return serialize.to_sdp(self)
+  return new_serialize.to_sdp(self)
 end
 
 -- Weak-keyed side table maps doc → ordered list of findings produced when
@@ -3714,22 +3737,52 @@ function mt:errors()   return findings_filter(self, "error") end
 
 --- Parse SDP text and return a doc object with metatable methods attached.
 -- @param text string  Raw SDP text (CRLF or LF line endings).
--- @param mode string  Optional validation tier: "st2110" or "ipmx".
+-- @param mode string  Optional validation tier: "sdp" (default), "st2110",
+--                     or "ipmx".
 -- @param opts table   Optional. Fields:
 --                     - policy (table) — id → "error" / "warn" / "off"
 --                       override map. Keys are validated against the
 --                       registry (sdp.checks()) at entry; an unknown id
 --                       returns nil + err pointing at the offending key.
---                     - fail_on_first (bool) — Phase 9.D wiring.
+--                     - fail_on_first (bool) — when true (1.0-compatible),
+--                       the first error-severity finding aborts the parse.
+--                       Default is false: collect every finding, then
+--                       partition (any error → nil, err; otherwise return
+--                       doc with findings reachable via doc:warnings()).
 -- @return doc  Parsed SDP document on success.
 -- @return nil, err  on parse or validation failure.
 function M.parse(text, mode, opts)
   opts = opts or {}
+  mode = mode or "sdp"
   local ok, perr = errors.validate_policy(opts.policy)
   if not ok then return nil, perr end
-  local doc, e = parser.parse(text, mode)
-  if not doc then return nil, e end
-  return setmetatable(doc, mt)
+  local match = TIER_MATCH[mode]
+  if not match then
+    return nil, errors.new("unknown mode: " .. tostring(mode),
+                           { code = "INVALID_VALUE" })
+  end
+  local doc, ctx = match(text, {
+    policy        = opts.policy,
+    fail_on_first = opts.fail_on_first == true,
+  })
+  if not doc then
+    -- Grammar match failed structurally. Use the deepest recorded finding
+    -- (if any) as the err; fall back to a generic message otherwise.
+    local first_err
+    for _, f in ipairs(ctx and ctx.findings or {}) do
+      if f.severity == "error" then first_err = f; break end
+    end
+    return nil, first_err or errors.new("SDP parse failed")
+  end
+  -- Match succeeded. Surface the first error-severity finding (if any) via
+  -- the conventional `nil, err` contract; otherwise attach all findings
+  -- (warnings) to the side table and return the doc.
+  for _, f in ipairs(ctx.findings or {}) do
+    if f.severity == "error" then return nil, f end
+  end
+  setmetatable(doc, mt)
+  doc_findings[doc] = ctx.findings
+  return doc
 end
 
 --- Wrap an existing table as a doc object without parsing or validation.

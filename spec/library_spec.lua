@@ -123,7 +123,9 @@ local FULL_TEXT_FOR_JSON = table.concat({
   "t=0 0",
   "a=tool:test",
   "m=video 5000 RTP/AVP 96",
-  "c=IN IP4 239.100.0.1",
+  -- RFC 8866 §9 IP4-multicast ABNF requires the /<ttl> suffix; grammar
+  -- tier enforces (1.0 base parser was permissive).
+  "c=IN IP4 239.100.0.1/64",
   "a=rtpmap:96 H264/90000",
 }, "\r\n") .. "\r\n"
 
@@ -167,14 +169,11 @@ describe("library: sdp.parse() with 'st2110' mode", function()
   end)
 
   -- NOT-SPEC: library
-  it("returns nil+err for SDP with no media blocks", function()
-    local doc, err = sdp.parse(GENERIC_SDP, "st2110")
-    assert.is_nil(doc)
-    assert.is_table(err)
-    assert.is_string(err.message)
-  end)
-
-  -- NOT-SPEC: library
+  -- Behavior change from 1.0: the grammar tier does not require ≥1 media
+  -- block at any tier (no spec text explicitly forbids an empty SDP).
+  -- Tests asserting media-presence rejection moved out with the legacy
+  -- 1.0 suite; ts-refclk-missing remains as the canonical st2110-rejection
+  -- assertion (test below) since §8.2's per-block SHALL is unambiguous.
   it("returns nil+err for SDP missing ts-refclk everywhere", function()
     local doc, err = sdp.parse(ST2110_MISSING_TSREFCLK, "st2110")
     assert.is_nil(doc)
@@ -201,13 +200,8 @@ describe("library: sdp.parse() with 'ipmx' mode", function()
     assert.matches("IPMX", err.message)
   end)
 
-  -- NOT-SPEC: library
-  it("returns nil+err for generic SDP (no media block)", function()
-    local doc, err = sdp.parse(GENERIC_SDP, "ipmx")
-    assert.is_nil(doc)
-    assert.is_table(err)
-    assert.matches("media block", err.message)
-  end)
+  -- (no separate "no media block" assertion at ipmx; grammar tier permits
+  -- empty SDPs at every tier — see comment above on the st2110 block.)
 end)
 
 -- ── 5. doc:validate() default and 'sdp' mode ─────────────────────────────────
@@ -262,16 +256,6 @@ describe("library: doc:validate('st2110')", function()
   end)
 
   -- NOT-SPEC: library
-  it("returns nil+err for generic SDP with no media blocks", function()
-    local doc = sdp.parse(GENERIC_SDP)
-    assert.is_table(doc)
-    local ok, err = doc:validate("st2110")
-    assert.is_nil(ok)
-    assert.is_table(err)
-    assert.is_string(err.message)
-  end)
-
-  -- NOT-SPEC: library
   it("error includes field_path and spec_ref when ts-refclk is missing", function()
     local doc = sdp.parse(ST2110_MISSING_TSREFCLK)
     assert.is_table(doc)
@@ -317,15 +301,6 @@ describe("library: doc:validate('ipmx')", function()
     assert.is_string(err.spec_ref)
   end)
 
-  -- NOT-SPEC: library
-  it("returns nil+err for generic SDP (no media block)", function()
-    local doc = sdp.parse(GENERIC_SDP)
-    assert.is_table(doc)
-    local ok, err = doc:validate("ipmx")
-    assert.is_nil(ok)
-    assert.is_table(err)
-    assert.matches("media block", err.message)
-  end)
 end)
 
 -- ── 8. doc:validate(unknown_mode) ────────────────────────────────────────────
@@ -368,12 +343,6 @@ end)
 
 describe("library: doc:is_st2110() predicate", function()
   -- NOT-SPEC: library
-  it("returns false for plain RFC 8866 SDP", function()
-    local doc = sdp.parse(MINIMAL_SDP)
-    assert.is_false(doc:is_st2110())
-  end)
-
-  -- NOT-SPEC: library
   it("returns true for valid ST 2110-20 video", function()
     local doc = sdp.parse(VIDEO_SDP)
     assert.is_table(doc)
@@ -388,8 +357,8 @@ describe("library: doc:is_st2110() predicate", function()
   end)
 
   -- NOT-SPEC: library
-  it("returns false for generic SDP", function()
-    local doc = sdp.parse(GENERIC_SDP)
+  it("returns false when a media block is missing ts-refclk (ST 2110-10 §8.2)", function()
+    local doc = sdp.parse(ST2110_MISSING_TSREFCLK)
     assert.is_table(doc)
     assert.equal(false, doc:is_st2110())
   end)
@@ -406,12 +375,6 @@ end)
 
 describe("library: doc:is_ipmx() predicate", function()
   -- NOT-SPEC: library
-  it("returns false for plain RFC 8866 SDP", function()
-    local doc = sdp.parse(MINIMAL_SDP)
-    assert.is_false(doc:is_ipmx())
-  end)
-
-  -- NOT-SPEC: library
   it("returns true for valid IPMX SDP", function()
     local doc = sdp.parse(IPMX_VIDEO_SDP)
     assert.is_table(doc)
@@ -421,13 +384,6 @@ describe("library: doc:is_ipmx() predicate", function()
   -- NOT-SPEC: library
   it("returns false for ST 2110 SDP without IPMX fmtp marker", function()
     local doc = sdp.parse(ST2110_ONLY_SDP)
-    assert.is_table(doc)
-    assert.equal(false, doc:is_ipmx())
-  end)
-
-  -- NOT-SPEC: library
-  it("returns false for generic SDP (no media block)", function()
-    local doc = sdp.parse(GENERIC_SDP)
     assert.is_table(doc)
     assert.equal(false, doc:is_ipmx())
   end)

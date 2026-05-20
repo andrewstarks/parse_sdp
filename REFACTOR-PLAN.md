@@ -1263,14 +1263,56 @@ Four sub-slices, ordered so each one lands on a green tree.
   10 new tests in `spec/library_spec.lua` (policy validation: 5;
   accessor methods: 5). Suite 1862 green (was 1852).
 
-- **9.D — Cutover wiring.** Flip `mt:to_sdp()` from the 1.0
-  serializer to `parse_sdp/serialize.lua`. `sdp.parse(text, tier,
-  opts)` lands its final public-API shape (the `opts` argument
-  already accepted; 9.D promotes it from undocumented to
-  contracted). `doc:warnings()` / `doc:errors()` / `doc:findings()`
-  added on the metatable. The 1.0 grammar / validator code in
-  `parse_sdp.lua` stays in place but is no longer reachable from
-  the public API.
+- **9.D (complete)** — cutover wiring. `sdp.parse(text, mode, opts)`
+  now routes through the grammar tier (`base.match` /
+  `st2110.match` / `ipmx.match`) instead of the 1.0
+  `parser.parse`; `mt:to_sdp()` routes through `parse_sdp/serialize.lua`;
+  `mt:validate(mode)` / `mt:is_sdp/st2110/ipmx()` re-implemented as
+  serialize-then-reparse against the grammar tier (the grammar
+  validates during parsing, so a round-trip is the natural way to
+  check a hand-built doc). The 1.0 grammar / validator / serializer
+  code in `parse_sdp.lua` stays in place but is no longer reachable
+  from the public API — Phase 10.A deletes it.
+
+  Default `fail_on_first` flips to `false` for the public-API path:
+  the grammar collects every finding, sdp.parse then partitions —
+  any error-severity finding surfaces as `nil, err` (the
+  conventional contract); warnings reach the caller via `doc:warnings()`.
+  The internal tier `match(text, { fail_on_first = true })` semantics
+  stay unchanged for spec helpers.
+
+  Doc-shape changes that surfaced during cutover (documented as
+  intentional, per CLAUDE.md strictness):
+  - The grammar tier permits an SDP with zero media blocks at every
+    tier — RFC 8866 / ST 2110 / TR-10 do not explicitly forbid
+    `#media == 0`. The 1.0 parser rejected this at the ST 2110 and
+    IPMX tiers with cite "ST 2110-10:2022 §7"; primary text doesn't
+    carry the SHALL. The drop joins the existing three 1.0-over-strict
+    flags from Phase 6.D for separate audit follow-up.
+  - The grammar tier enforces RFC 8866 §9 `IP4-multicast` ABNF at
+    the base tier (requires `/<ttl>` suffix on multicast c= lines).
+    The 1.0 base parser was permissive; only its st2110 / ipmx tier
+    callers invoked the check. This is the grammar tier being
+    correctly stricter at the base tier per the ABNF.
+
+  Test triage: the four 1.0-tied spec files (`spec/sdp_spec.lua`,
+  `spec/st2110_spec.lua`, `spec/ipmx_spec.lua`, `spec/grammar_spec.lua`)
+  moved to `spec_legacy_1.0/` — they assert against the 1.0 doc
+  shape (`session.timing.start/stop` vs the grammar tier's
+  `session.time_descriptions[]`) and the 1.0-over-strict checks
+  the grammar intentionally drops. Phase 10.A deletes them along
+  with the 1.0 implementation. `spec/library_spec.lua` had the
+  "no media → reject at st2110/ipmx" tests removed (behavior
+  change) and one fixture's c= line updated to include the
+  `/<ttl>` suffix per §9. `spec/cli_spec.lua` had one test's
+  fixture swapped for one that fails the grammar tier under a
+  spec-grounded SHALL.
+
+  Suite ends Phase 9 at 1079 green in `spec/` (was 1862 before
+  the legacy-test move; 783 tests moved out). The grammar-tier
+  suite (`spec/grammar_*_spec.lua`, `spec/roundtrip_spec.lua`,
+  `spec/library_spec.lua`, `spec/cli_spec.lua`, `spec/errors_spec.lua`,
+  `spec/error_registry_spec.lua`) is the going-forward authority.
 
 **Phase 10 — Migration cutover + final audit.**
 

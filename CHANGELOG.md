@@ -2161,6 +2161,52 @@ Audit ref: REFACTOR-PLAN.md §5 Phase 8.F.
 
 ### Changed
 
+- **Phase 9.D:** Cutover wiring — `sdp.parse(text, mode, opts)` now
+  routes through the grammar tier (`base.match` / `st2110.match` /
+  `ipmx.match`) instead of the 1.0 `parser.parse`; `mt:to_sdp()` routes
+  through the new `parse_sdp.serialize` module; `mt:validate(mode)` /
+  `mt:is_sdp/st2110/ipmx()` re-implemented as serialize-then-reparse
+  against the grammar tier. The 1.0 grammar / validator / serializer
+  code in `parse_sdp.lua` stays in place but is no longer reachable
+  from the public API; Phase 10.A deletes it.
+
+  Default `fail_on_first` flips to `false` for the public-API path —
+  the grammar collects every finding and `sdp.parse` partitions: any
+  error-severity finding surfaces as `nil, err`; warnings reach the
+  caller via `doc:warnings()`. The internal tier `match(text, opts)`
+  default of `fail_on_first = true` stays for spec helpers.
+
+  Two doc-shape / strictness changes surface (documented as
+  intentional per CLAUDE.md strictness):
+  - The grammar tier no longer rejects SDPs with zero media blocks at
+    the ST 2110 / IPMX tiers. RFC 8866 / ST 2110-10 / TR-10 do not
+    explicitly forbid `#media == 0`; the 1.0 parser's cite for the
+    rejection ("ST 2110-10:2022 §7") doesn't carry the SHALL on
+    primary read. Joins the existing three 1.0-over-strict flags
+    from Phase 6.D for audit follow-up.
+  - The grammar tier enforces RFC 8866 §9 `IP4-multicast` ABNF at the
+    base tier (requires `/<ttl>` suffix on multicast c= lines). The
+    1.0 base parser was permissive; only its st2110 / ipmx tier
+    callers invoked the check. Grammar tier is correctly stricter
+    per the ABNF.
+
+  Test triage: the four 1.0-tied spec files
+  (`spec/sdp_spec.lua`, `spec/st2110_spec.lua`, `spec/ipmx_spec.lua`,
+  `spec/grammar_spec.lua`) moved to `spec_legacy_1.0/`. They assert
+  against the 1.0 doc shape (`session.timing.start/stop` vs the
+  grammar tier's `session.time_descriptions[]`) and the 1.0-over-strict
+  checks the grammar intentionally drops. Phase 10.A deletes them
+  along with the 1.0 implementation. `spec/library_spec.lua` had the
+  "no media → reject at st2110/ipmx" assertions removed (behavior
+  change) and one JSON fixture's c= updated with the `/<ttl>` suffix.
+  `spec/cli_spec.lua` had one test's fixture swapped for one that
+  fails the grammar tier under a spec-grounded SHALL.
+
+  `spec/` ends Phase 9 at 1079 green (was 1862; 783 moved to
+  spec_legacy_1.0/). Grammar-tier suite is the going-forward authority.
+
+Audit ref: REFACTOR-PLAN.md §5 Phase 9.D.
+
 - **Phase 9.C:** Public-API surface for the policy / findings feature.
   Two surface additions to `parse_sdp.lua`:
   - `sdp.parse(text, mode, opts)` now accepts an `opts` table. On
