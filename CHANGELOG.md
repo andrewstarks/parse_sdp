@@ -2161,6 +2161,31 @@ Audit ref: REFACTOR-PLAN.md §5 Phase 8.F.
 
 ### Changed
 
+- **Phase 9.A:** DRY sweep across the grammar tier and spec helpers. No
+  behavior change; suite unchanged at 1852 green.
+  - `parse_sdp/grammar/ipmx.lua` `check_usb_block` now uses
+    `base.params_get(privacy.params, "protocol")` instead of an inline
+    linear scan (missed reuse of the existing primitive).
+  - `parse_sdp/grammar/st2110.lua` merged `media_block_has_attr` +
+    `session_has_attr` into one `has_attr(attrs, name)` taking the attrs
+    list directly.
+  - `parse_sdp/grammar/st2110.lua` extracted a
+    `make_param_check(predicate, error_id)` factory. The four raw + jxsv
+    cross-param check functions (`check_(jxsv_)?bt2100_range`,
+    `check_(jxsv_)?segmented_requires_interlace`) collapse to two named
+    predicates plus four factory invocations; the registered error IDs
+    keep -20 vs -22 spec authorship visible.
+  - New `spec/support.lua` carries shared spec helpers: `finding_for(ctx, id)`
+    (was duplicated in 3 spec files) and the `TIMING_TS_REFCLK` /
+    `TIMING_MEDIACLK` fixture constants (in 2). `grammar_base_spec.lua`,
+    `grammar_st2110_spec.lua`, and `grammar_ipmx_spec.lua` now alias the
+    support exports.
+
+  Net delta: -31 lines across the grammar modules and three spec files;
+  +32 lines for the new `spec/support.lua` module.
+
+Audit ref: REFACTOR-PLAN.md §5 Phase 9.A.
+
 - The inline `errors` table in `parse_sdp.lua` now delegates to
   `parse_sdp.errors`. Error struct shape, `errors.new()` signature, and
   `errors.format()` output are byte-identical to 1.0. Internal-only;

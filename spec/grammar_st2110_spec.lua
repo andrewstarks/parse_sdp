@@ -4,17 +4,18 @@
 -- type and clock rate. The grammar accepts an SDP under the base tier but
 -- fails it under the st2110 tier when either constraint is violated.
 
-local lpeg   = require("lpeg")
-local base   = require("parse_sdp.grammar.base")
-local st2110 = require("parse_sdp.grammar.st2110")
+local lpeg    = require("lpeg")
+local base    = require("parse_sdp.grammar.base")
+local st2110  = require("parse_sdp.grammar.st2110")
+local support = require("spec.support")
 
 -- ST 2110-10:2022 §8.2 + §8.3 require every media block to carry
 -- a=ts-refclk and a media-level a=mediaclk (Phase 6.D.A). The build
 -- helpers below include both by default so tests that aren't about
 -- per-attribute presence don't trip the new semantic checks. Use the
--- TIMING_* constants directly when constructing custom SDPs.
-local TIMING_TS_REFCLK = "a=ts-refclk:localmac=00-11-22-33-44-55"
-local TIMING_MEDIACLK  = "a=mediaclk:sender"
+-- support TIMING_* constants directly when constructing custom SDPs.
+local TIMING_TS_REFCLK = support.TIMING_TS_REFCLK
+local TIMING_MEDIACLK  = support.TIMING_MEDIACLK
 
 -- ST 2110-22:2022 §7.3 requires a media-level `b=AS:<kbps>` on every
 -- jxsv block. Helpers include the line whenever the rtpmap encoding
@@ -68,13 +69,7 @@ local function build_with_fmtp(media_line, rtpmap_line, fmtp_line)
   return table.concat(lines, "\r\n") .. "\r\n"
 end
 
--- Finding helper: returns the first finding with the matched id, or nil.
-local function finding_for(ctx, id)
-  for _, f in ipairs(ctx.findings or {}) do
-    if f.id == id then return f end
-  end
-  return nil
-end
+local finding_for = support.finding_for
 
 -- A complete raw video fmtp line containing every ST 2110-20:2022 §7.2 +
 -- §7.4.2 + ST 2110-21:2022 §8.1 required parameter. Acceptance tests that

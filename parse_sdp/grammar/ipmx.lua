@@ -677,11 +677,7 @@ local function check_usb_block(block, ctx)
     if not cont then return false end
   end
   if privacy ~= nil and privacy.params then
-    -- privacy.params is the {{key, value}, ...} list from a_privacy.
-    local protocol
-    for _, kv in ipairs(privacy.params) do
-      if kv[1] == "protocol" then protocol = kv[2]; break end
-    end
+    local protocol = base.params_get(privacy.params, "protocol")
     if protocol ~= nil and protocol ~= "USB_KV" then
       local cont = errors.record(ctx,
         "tr-10-14.a.privacy.usb-protocol-must-be-usb_kv",

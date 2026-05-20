@@ -6,16 +6,17 @@
 -- by section within. New IPMX checks (Phase 7.C+) slot into their TR-10
 -- section, not appended at the file end.
 
-local base   = require("parse_sdp.grammar.base")
-local st2110 = require("parse_sdp.grammar.st2110")
-local ipmx   = require("parse_sdp.grammar.ipmx")
+local base    = require("parse_sdp.grammar.base")
+local st2110  = require("parse_sdp.grammar.st2110")
+local ipmx    = require("parse_sdp.grammar.ipmx")
+local support = require("spec.support")
 
 -- ST 2110-10:2022 §8.2 + §8.3 require every RTP media block to carry
 -- a=ts-refclk and a media-level a=mediaclk (Phase 6.D.A). Include both
 -- in the build helpers so the ST 2110 tier doesn't reject IPMX fixtures
 -- before the IPMX-tier check runs.
-local TIMING_TS_REFCLK = "a=ts-refclk:localmac=00-11-22-33-44-55"
-local TIMING_MEDIACLK  = "a=mediaclk:sender"
+local TIMING_TS_REFCLK = support.TIMING_TS_REFCLK
+local TIMING_MEDIACLK  = support.TIMING_MEDIACLK
 
 -- A complete IPMX-conformant raw-video fmtp containing every ST 2110-20:2022
 -- §7.2 + §7.4.2 + ST 2110-21:2022 §8.1 required parameter, the TR-10-1
@@ -69,12 +70,7 @@ local function build_video_sdp(opts)
   return lines_to_sdp(lines)
 end
 
-local function finding_for(ctx, id)
-  for _, f in ipairs(ctx.findings or {}) do
-    if f.id == id then return f end
-  end
-  return nil
-end
+local finding_for = support.finding_for
 
 -- ── TR-10-1 §10 — FID prohibition (a=group:FID) ─────────────────────────────
 

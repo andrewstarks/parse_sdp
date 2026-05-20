@@ -250,30 +250,42 @@ local function check_ssn_conditional(params, ctx, pos, field_path)
   return true
 end
 
--- §7.3: BT2100 colorimetry permits only NARROW and FULL — FULLPROTECT
--- forbidden. Per-key RANGE value-set is in 6.C.D.1.
-local function check_bt2100_range(params, ctx, pos, field_path)
-  if base.params_get(params, "colorimetry") == "BT2100"
-     and base.params_get(params, "RANGE") == "FULLPROTECT" then
-    local cont = errors.record(ctx,
-      "st2110-20.a.fmtp.bt2100-range-fullprotect-forbidden",
-      { pos = pos, field_path = field_path })
-    if not cont then return false end
+-- Cross-param check factory: when `predicate(params)` is true, record
+-- `error_id` and (under fail_on_first) fail the match. Used for the
+-- pairs of -20 / -22 SHALLs that share an identical predicate but
+-- carry distinct error IDs because their authoring spec differs (see
+-- RAW_VIDEO_CROSS_PARAM_CHECKS / JXSV_CROSS_PARAM_CHECKS below).
+local function make_param_check(predicate, error_id)
+  return function(params, ctx, pos, field_path)
+    if predicate(params) then
+      local cont = errors.record(ctx, error_id,
+        { pos = pos, field_path = field_path })
+      if not cont then return false end
+    end
+    return true
   end
-  return true
 end
 
--- §7.3: segmented requires interlace also present.
-local function check_segmented_requires_interlace(params, ctx, pos, field_path)
-  if base.params_get(params, "segmented")
-     and not base.params_get(params, "interlace") then
-    local cont = errors.record(ctx,
-      "st2110-20.a.fmtp.segmented-requires-interlace",
-      { pos = pos, field_path = field_path })
-    if not cont then return false end
-  end
-  return true
+-- §7.3 / RFC 9134 §7.1: BT2100 colorimetry permits only NARROW and FULL —
+-- FULLPROTECT is forbidden. Per-key RANGE value-set is in 6.C.D.1.
+local function pred_bt2100_fullprotect(params)
+  return base.params_get(params, "colorimetry") == "BT2100"
+     and base.params_get(params, "RANGE") == "FULLPROTECT"
 end
+
+local check_bt2100_range = make_param_check(
+  pred_bt2100_fullprotect,
+  "st2110-20.a.fmtp.bt2100-range-fullprotect-forbidden")
+
+-- §7.3 / RFC 9134 §7.1: segmented requires interlace also present.
+local function pred_segmented_no_interlace(params)
+  return base.params_get(params, "segmented")
+     and not base.params_get(params, "interlace")
+end
+
+local check_segmented_requires_interlace = make_param_check(
+  pred_segmented_no_interlace,
+  "st2110-20.a.fmtp.segmented-requires-interlace")
 
 -- §6.3.3: PM=2110BPM forbids MAXUDP (Block Packing Mode is incompatible
 -- with the Extended UDP Size Limit).
@@ -521,34 +533,15 @@ local JXSV_REQUIRED_PARAMS = { "width", "height", "TP", "packetmode" }
 
 -- ── Cross-parameter SHALLs for jxsv fmtp (Phase 6.C.G.2) ─────────────────
 -- Two cross-parameter SHALLs in RFC 9134 §7.1, parallel in shape to two
--- of the -20 SHALLs (segmented-requires-interlace; BT2100/RANGE) but
--- with their own normative source.
-
-local function check_jxsv_segmented_requires_interlace(params, ctx, pos, field_path)
-  if base.params_get(params, "segmented")
-     and not base.params_get(params, "interlace") then
-    local cont = errors.record(ctx,
-      "st2110-22.a.fmtp.segmented-requires-interlace",
-      { pos = pos, field_path = field_path })
-    if not cont then return false end
-  end
-  return true
-end
-
-local function check_jxsv_bt2100_range(params, ctx, pos, field_path)
-  if base.params_get(params, "colorimetry") == "BT2100"
-     and base.params_get(params, "RANGE") == "FULLPROTECT" then
-    local cont = errors.record(ctx,
-      "st2110-22.a.fmtp.bt2100-range-fullprotect-forbidden",
-      { pos = pos, field_path = field_path })
-    if not cont then return false end
-  end
-  return true
-end
-
+-- of the -20 SHALLs (segmented-requires-interlace; BT2100/RANGE). The
+-- predicates are identical; only the registered error IDs differ
+-- (RFC 9134 authors the SHALL for jxsv, ST 2110-20 §7.3 for raw). The
+-- make_param_check factory above produces both pairs from one predicate.
 local JXSV_CROSS_PARAM_CHECKS = {
-  check_jxsv_segmented_requires_interlace,
-  check_jxsv_bt2100_range,
+  make_param_check(pred_segmented_no_interlace,
+    "st2110-22.a.fmtp.segmented-requires-interlace"),
+  make_param_check(pred_bt2100_fullprotect,
+    "st2110-22.a.fmtp.bt2100-range-fullprotect-forbidden"),
 }
 
 -- ST 2110-30 / -31 audio channel-order syntax (Phase 6.C.H, refactored in
@@ -904,15 +897,8 @@ end
 -- level — when present there it covers all media blocks. §8.3's
 -- "media-level" qualifier explicitly restricts mediaclk: a session-
 -- level mediaclk does NOT satisfy a per-stream block lacking its own.
-local function media_block_has_attr(m, name)
-  for _, attr in ipairs(m.attributes) do
-    if attr.name == name then return true end
-  end
-  return false
-end
-
-local function session_has_attr(doc, name)
-  for _, attr in ipairs(doc.session.attributes) do
+local function has_attr(attrs, name)
+  for _, attr in ipairs(attrs) do
     if attr.name == name then return true end
   end
   return false
@@ -924,10 +910,10 @@ end
 -- timing attributes don't apply; gate on base.is_rtp_block so a non-
 -- RTP block doesn't spuriously trip the ST 2110 presence checks.
 local function check_ts_refclk_presence(doc, ctx)
-  if session_has_attr(doc, "ts-refclk") then return true end
+  if has_attr(doc.session.attributes, "ts-refclk") then return true end
   for i, m in ipairs(doc.media) do
     if base.is_rtp_block(m)
-       and not media_block_has_attr(m, "ts-refclk") then
+       and not has_attr(m.attributes, "ts-refclk") then
       local cont = errors.record(ctx, "st2110.attr.ts-refclk-required",
         { field_path = string.format("media[%d]", i - 1) })
       if not cont then return false end
@@ -939,7 +925,7 @@ end
 -- Phase 6.K: per-media-block, lives in media_section_checks.
 local function check_mediaclk_presence(block, ctx)
   if not base.is_rtp_block(block) then return true end
-  if media_block_has_attr(block, "mediaclk") then return true end
+  if has_attr(block.attributes, "mediaclk") then return true end
   local cont = errors.record(ctx, "st2110.attr.mediaclk-required",
     { field_path = string.format("media[%d]", ctx.media_index or 0) })
   if not cont then return false end

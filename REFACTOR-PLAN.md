@@ -1165,16 +1165,51 @@ Phase 10 concern.
 
 Four sub-slices, ordered so each one lands on a green tree.
 
-- **9.A — DRY sweep.** Walk every new module
-  (`parse_sdp/grammar/{base,st2110,ipmx}.lua`,
-  `parse_sdp/serialize.lua`, `parse_sdp/errors.lua`,
-  `parse_sdp/grammar/patterns.lua`, `parse_sdp/grammar/addresses.lua`)
-  for copy-paste, near-duplicate helpers, branch logic that already
-  has a primitive (`params_get`, `make_rtpmap_branch`,
-  `require_fields`, the shared `patterns` module, `each_*_fmtp` /
-  `each_fmtp_for_encoding`, `is_rtp_block` / `is_usb_block`). Spec
-  helpers in `spec/` get the same treatment. Tests stay green
-  throughout. No behavior change.
+- **9.A (complete)** — DRY sweep across the grammar tier and spec
+  helpers. Four refactors landed:
+  - `parse_sdp/grammar/ipmx.lua` `check_usb_block` now calls
+    `base.params_get(privacy.params, "protocol")` instead of an inline
+    linear scan (missed reuse of an existing primitive).
+  - `parse_sdp/grammar/st2110.lua` `media_block_has_attr` +
+    `session_has_attr` collapsed into one `has_attr(attrs, name)` taking
+    the attrs list directly (both callers were one-liners differing only
+    in the parent table they indexed).
+  - `parse_sdp/grammar/st2110.lua` introduces a small
+    `make_param_check(predicate, error_id)` factory. The four cross-param
+    check pairs that share a predicate but carry distinct -20 / -22 error
+    IDs (`check_(jxsv_)?bt2100_range`,
+    `check_(jxsv_)?segmented_requires_interlace`) collapse to two named
+    predicates plus four factory invocations. Spec authorship stays
+    explicit via the registered error IDs.
+  - New `spec/support.lua` carries the three shared spec-helper bits:
+    `finding_for(ctx, id)` (was duplicated in `grammar_base_spec.lua`,
+    `grammar_st2110_spec.lua`, `grammar_ipmx_spec.lua`),
+    `TIMING_TS_REFCLK`, `TIMING_MEDIACLK` (duplicated in the latter two).
+    Each consumer aliases the support exports at the top of the file.
+
+  **Intentionally skipped** — call out, per CLAUDE.md "Don't add
+  abstractions beyond what the task requires":
+  - Unifying `check_raw_video_fmtp` + `check_jxsv_fmtp` into one driver.
+    The 4-pass loop bodies are structurally parallel, but the per-tier
+    keys / values / validators differ enough (RFC 9134 enum corrections,
+    -20 vs -22 spec authorship in error IDs) that consolidation would
+    obscure spec authorship and the grep-ability of per-essence checks.
+  - Extracting a shared `dispatch_fmtp_checks` loop helper between
+    `st2110.fmtp_dispatch` and `ipmx.ipmx_fmtp_dispatch`. The inner loops
+    are 2-line bodies; the meaningful difference is the outer
+    "which list when" control flow (st2110 has one list; ipmx has
+    universal + per-encoding). Net savings ~1 line for added indirection.
+  - Serializer `ts-refclk` / `mediaclk` dispatch consolidation. The
+    existing `BUILDERS[key] or build_ext` idiom is already tight; further
+    abstraction would obscure the per-branch builders, which are the
+    load-bearing parts.
+  - `errors.lua` registry-row consolidation. Already as DRY as Lua's
+    syntax permits given each row's unique strings (`id`,
+    `message_template`, `spec_ref`).
+
+  Suite unchanged at 1852 green. Net delta: -31 lines across the
+  grammar modules and three spec files; +32 lines for the new
+  `spec/support.lua` module.
 
 - **9.B — Comment-tightening sweep.** Same modules. Convention:
   each comment block briefly says (a) what it is, (b) what

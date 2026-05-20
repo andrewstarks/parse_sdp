@@ -4,7 +4,8 @@
 -- content" — Phase 2 will tighten leaves and add decomposition. These tests
 -- exercise document shape (RFC 8866 §5) only.
 
-local base = require("parse_sdp.grammar.base")
+local base    = require("parse_sdp.grammar.base")
+local support = require("spec.support")
 
 local function lines_to_sdp(lines)
   return table.concat(lines, "\r\n") .. "\r\n"
@@ -2454,12 +2455,7 @@ end)
 describe("base SDP grammar — group attribute invariants (Phase 6.E.A)",
     function()
 
-  local function finding_for(ctx, id)
-    for _, f in ipairs(ctx.findings or {}) do
-      if f.id == id then return f end
-    end
-    return nil
-  end
+  local finding_for = support.finding_for
 
   describe("§6 — every m= requires a=mid when a=group is present", function()
 
