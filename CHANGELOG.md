@@ -1986,6 +1986,48 @@ pushback. Final test count: 1711 green.
 
 Audit ref: REFACTOR-PLAN.md §5 Phase 8.A.
 
+- **Phase 8.B:** serializer base SDP optional fields, repeats, time zones,
+  generic / flag attributes, and media blocks.
+
+  Adds renderers for every RFC 8866 §5 field not in 8.A's bootstrap scope:
+  session-level `i`, `u`, `e*`, `p*`, `c`, `b*`; `r=` repeat-time inside
+  each time-description; `z=` time-zone-adjustments; session- and
+  media-level `a=` attributes via a new `ATTR_RENDERERS` dispatch table
+  (populated empty — 8.D / 8.E fill in the decomposed-attribute renderers);
+  media blocks with `m`, optional `port_count`, multiple fmts, and the
+  optional per-block `i` / `c` / `b*` / `a*` sub-fields. RFC 8866 §5
+  ordering is enforced by the order of the calls in `M.to_sdp(doc)`.
+
+  Compound attribute names (rtpmap, fmtp, mid, ts-refclk, mediaclk,
+  source-filter, group, ssrc, ssrc-group, msid, extmap, rtcp-fb, rtcp,
+  rtcp-mux, ptime, maxptime, framerate, quality) still fall through to
+  the generic `{name, value?}` carrier in 8.B; some round-trip "by
+  accident" because their decomposed shape (a number-typed `value`)
+  happens to match the carrier, others (mid, rtpmap, fmtp, …) cannot
+  yet round-trip and are deliberately not in 8.B's fixture set. 8.D
+  registers per-name renderers in `ATTR_RENDERERS` to close that gap.
+
+  21 new tests in `spec/roundtrip_spec.lua` covering: full session
+  round-trip with all optional session fields; multiple `e=` / `p=` /
+  `b=` lines preserving order; multiple `t=` blocks; `r=` repeats in
+  both numeric (`604800 3600 0 90000`) and typed-time (`7d 1h 0 25h`)
+  forms; multi-`r=` per `t=` block; `z=` with one and multiple pairs;
+  session-level flag attributes (`recvonly` / `sendonly` / `inactive` /
+  `sendrecv`) and generic `name:value` attributes (`tool` / `type` /
+  `charset` / `sdplang` / `lang`); attribute order preservation; media
+  blocks with all optional fields; `m=` with `port_count` (`49170/2`);
+  multi-fmts on `m=` (`0 8 9` static PTs); multiple media blocks
+  preserving order. Plus structural-completeness errors for missing
+  `m.media`, empty `m.fmts`, missing `r.offsets`, missing `b.type`,
+  missing `c.address`. Fixtures use static PTs (≤95) only so the
+  grammar's `check_dynamic_pt_rtpmap` doesn't trip — dynamic-PT
+  fixtures land in 8.D once `a=rtpmap` decomposes via
+  `ATTR_RENDERERS`.
+
+  Suite: 1742 green (up from 1721).
+
+Audit ref: REFACTOR-PLAN.md §5 Phase 8.B.
+
 ### Changed
 
 - The inline `errors` table in `parse_sdp.lua` now delegates to

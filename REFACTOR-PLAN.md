@@ -993,11 +993,27 @@ Sub-slice ordering (decided 2026-05-20 in planning conversation):
   invariant added to [CLAUDE.md](CLAUDE.md#things-to-watch-out-for)).
   Public API stays on 1.0 serializer; the new module is internal
   until Phase 9. 11 new tests; suite 1721 green (was 1710).
-- **8.B (pending)** — base SDP optional session fields + r= / z= +
-  media blocks (m + port_count + proto + fmts; i, c, b*, generic +
-  flag a* per media block). Round-trips
-  `examples/generic/valid/*.sdp` (with compound attrs absent or
-  stripped).
+- **8.B (complete)** — base SDP optional session fields (i, u, e*,
+  p*, c, b*), r= repeats inside time_descriptions, z= time zones,
+  session-level generic + flag a= attributes, and media blocks
+  (m + port_count + proto + fmts; i, c, b*, generic+flag a* per
+  block). `parse_sdp/serialize.lua` grows the section renderers
+  (`render_connection`, `render_bandwidths`, `render_repeats`,
+  `render_time_zones`, `render_attribute`, `render_media_block`)
+  and a `ATTR_RENDERERS` dispatch table populated empty (filled
+  by 8.D / 8.E). Compound attribute names (rtpmap, fmtp, mid,
+  ts-refclk, …) still fall through to the generic carrier in 8.B;
+  fixtures use static PTs only (≤95) so the grammar's
+  dynamic-PT-requires-rtpmap check doesn't trip. 21 new tests in
+  `spec/roundtrip_spec.lua` covering full session round-trip,
+  multi e=/p=/b=, multiple t= blocks with r= repeats (numeric and
+  typed-time `7d 1h 0 25h`), z= one-pair and multi-pair, flag and
+  generic name:value attributes, attribute order preservation,
+  media blocks with all optional fields, `m=video N/2 RTP/AVP 33`
+  port_count, multi-fmts, multi-block ordering, plus
+  structural-completeness errors for missing m.media / empty
+  m.fmts / missing r.offsets / missing b.type / missing c.address.
+  Suite 1742 green (was 1721).
 - **8.C (pending)** — fmtp params order preservation. Grammar-tier
   change: `a_fmtp` decomposable branch stores `params` as an
   ordered `{{k, v|true}, ...}` list (matching privacy's shape)
