@@ -20,6 +20,8 @@
 --   zero_based_int_raw  — "0" / POS-DIGIT *DIGIT, unanchored
 --   int_raw             — optional "-" + zero-based-integer, unanchored
 --   pos_int             — anchored POS-DIGIT *DIGIT
+--   zero_based_int      — anchored "0" / POS-DIGIT *DIGIT (non-negative
+--                          integer; used by IPMX FEC latency value forms)
 --   int                 — anchored signed integer (RFC 8866 doesn't define
 --                          a signed-integer ABNF; provided for spec-defined
 --                          parameters that are explicitly "any integer",
@@ -39,6 +41,7 @@ return {
   zero_based_int_raw  = zero_based_int_raw,
   int_raw             = int_raw,
   pos_int             = pos_int_raw * P(-1),
+  zero_based_int      = zero_based_int_raw * P(-1),
   int                 = int_raw * P(-1),
   fraction            = C(pos_int_raw) * P("/") * C(pos_int_raw) * P(-1),
   ratio               = C(pos_int_raw) * P(":") * C(pos_int_raw) * P(-1),

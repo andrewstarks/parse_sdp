@@ -55,17 +55,11 @@ local RAW_VIDEO_REQUIRED_PARAMS = {
 -- from the a_fmtp Cmt (FMTP_CHECKS_BY_ENCODING below). Signature is
 -- (params, ctx, encoding) — single fmtp instance, not a doc walk.
 
-local function check_raw_video_fmtp_required(params, ctx, pos, field_path)
-  for _, key in ipairs(RAW_VIDEO_REQUIRED_PARAMS) do
-    if params[key] == nil then
-      local cont = errors.record(
-        ctx, "st2110-20.a.fmtp." .. key .. "-required",
-        { pos = pos, field_path = field_path })
-      if not cont then return false end
-    end
-  end
-  return true
-end
+-- check_raw_video_fmtp is defined below the constants it references (see
+-- the spec-table cluster around RAW_VIDEO_ENUM_VALUES /
+-- RAW_VIDEO_VALUE_VALIDATORS / RAW_VIDEO_FLAG_ONLY_KEYS). Forward
+-- references to those locals from here would not resolve, so the
+-- function sits after them.
 
 -- ST 2110-20:2022 / ST 2110-21:2022 — enum value sets for raw video fmtp
 -- parameters. Each table maps the literal string value to true. Lifted
@@ -178,14 +172,27 @@ local RAW_VIDEO_VALUE_FORM_KEYS = {
 -- fires when the captured shape is a string.
 local RAW_VIDEO_FLAG_ONLY_KEYS = { "interlace", "segmented" }
 
--- For every raw video fmtp, validate every PRESENT value-typed parameter
--- against its spec rule. Three classes:
---   - enum keys: lookup in RAW_VIDEO_ENUM_VALUES
---   - non-enum value-form keys: predicate in RAW_VIDEO_VALUE_VALIDATORS
---   - flag-only keys: must be `true` (a kv-string value is invalid)
--- Absent parameters are the *-required check's concern. Each violation
--- records the corresponding -invalid-value finding.
-local function check_raw_video_fmtp_values(params, ctx, pos, field_path)
+-- Per-fmtp raw-video required-presence + value-form check, one walk per
+-- key class. The function was originally two (`_required` from Phase
+-- 6.C.C and `_values` from Phase 6.C.D); merging eliminates the
+-- duplicate iteration over the same params table and unifies the
+-- per-key error-recording boilerplate. Used by both the in-grammar
+-- fmtp dispatch (Phase 6.F via FMTP_CHECKS_BY_ENCODING below) and the
+-- no-fmtp media_section_check (Phase 6.K via FMTP_REQUIRED_BY_ENCODING
+-- — called with empty params, in which case only the required-presence
+-- pass emits findings since no values are present to fail their forms).
+local function check_raw_video_fmtp(params, ctx, pos, field_path)
+  -- Required-presence: each key in RAW_VIDEO_REQUIRED_PARAMS (sampling,
+  -- width, height, exactframerate, depth, colorimetry, PM, SSN, TP).
+  for _, key in ipairs(RAW_VIDEO_REQUIRED_PARAMS) do
+    if params[key] == nil then
+      local cont = errors.record(
+        ctx, "st2110-20.a.fmtp." .. key .. "-required",
+        { pos = pos, field_path = field_path })
+      if not cont then return false end
+    end
+  end
+  -- Enum value-set narrowings (lookup in RAW_VIDEO_ENUM_VALUES).
   for _, key in ipairs(RAW_VIDEO_ENUM_KEYS) do
     local val = params[key]
     if val ~= nil and not RAW_VIDEO_ENUM_VALUES[key][val] then
@@ -195,7 +202,7 @@ local function check_raw_video_fmtp_values(params, ctx, pos, field_path)
       if not cont then return false end
     end
   end
-
+  -- Non-enum value-form predicates (RAW_VIDEO_VALUE_VALIDATORS).
   for _, key in ipairs(RAW_VIDEO_VALUE_FORM_KEYS) do
     local val = params[key]
     if val ~= nil and not RAW_VIDEO_VALUE_VALIDATORS[key](tostring(val)) then
@@ -205,7 +212,9 @@ local function check_raw_video_fmtp_values(params, ctx, pos, field_path)
       if not cont then return false end
     end
   end
-
+  -- Flag-only keys: present iff the value is the boolean true emitted
+  -- by fmtp_entries_to_params for a bare flag; anything else (i.e. a
+  -- kv-string value on a flag-only key) is malformed.
   for _, key in ipairs(RAW_VIDEO_FLAG_ONLY_KEYS) do
     local val = params[key]
     if val ~= nil and val ~= true then
@@ -498,19 +507,10 @@ local JXSV_FLAG_ONLY_KEYS = { "interlace", "segmented" }
 
 -- RFC 9134 §7.1 — required parameters: width, height, TP (from
 -- ST 2110-22:2022 §7.2 Table 1) and packetmode (from RFC 9134 §7.1).
+-- The merged check_jxsv_fmtp below this section (after the JXSV_*
+-- constants) walks this list for required-presence and the other
+-- three lists for enum / value-form / flag validation.
 local JXSV_REQUIRED_PARAMS = { "width", "height", "TP", "packetmode" }
-
-local function check_jxsv_fmtp_required(params, ctx, pos, field_path)
-  for _, key in ipairs(JXSV_REQUIRED_PARAMS) do
-    if params[key] == nil then
-      local cont = errors.record(ctx,
-        "st2110-22.a.fmtp." .. key .. "-required",
-        { pos = pos, field_path = field_path })
-      if not cont then return false end
-    end
-  end
-  return true
-end
 
 -- ── Cross-parameter SHALLs for jxsv fmtp (Phase 6.C.G.2) ─────────────────
 -- Two cross-parameter SHALLs in RFC 9134 §7.1, parallel in shape to two
@@ -903,10 +903,16 @@ local function session_has_attr(doc, name)
   return false
 end
 
+-- ST 2110-10:2022 §8.2 / §8.3 ts-refclk and mediaclk SHALLs apply to
+-- RTP streams. IPMX-tier extensions allow non-RTP media blocks (e.g.,
+-- m=application TCP usb under TR-10-14) where these RTP-specific
+-- timing attributes don't apply; gate on base.is_rtp_block so a non-
+-- RTP block doesn't spuriously trip the ST 2110 presence checks.
 local function check_ts_refclk_presence(doc, ctx)
   if session_has_attr(doc, "ts-refclk") then return true end
   for i, m in ipairs(doc.media) do
-    if not media_block_has_attr(m, "ts-refclk") then
+    if base.is_rtp_block(m)
+       and not media_block_has_attr(m, "ts-refclk") then
       local cont = errors.record(ctx, "st2110.attr.ts-refclk-required",
         { field_path = string.format("media[%d]", i - 1) })
       if not cont then return false end
@@ -917,6 +923,7 @@ end
 
 -- Phase 6.K: per-media-block, lives in media_section_checks.
 local function check_mediaclk_presence(block, ctx)
+  if not base.is_rtp_block(block) then return true end
   if media_block_has_attr(block, "mediaclk") then return true end
   local cont = errors.record(ctx, "st2110.attr.mediaclk-required",
     { field_path = string.format("media[%d]", ctx.media_index or 0) })
@@ -931,7 +938,24 @@ local function check_jxsv_fmtp_cross_param(params, ctx, pos, field_path)
   return true
 end
 
-local function check_jxsv_fmtp_values(params, ctx, pos, field_path)
+-- Per-fmtp jxsv required-presence + value-form check, one walk per key
+-- class. Mirrors check_raw_video_fmtp's structure: the function was
+-- originally two (`_required` from Phase 6.C.G.1 and `_values` from
+-- 6.C.G.1) and is merged here for symmetry and to eliminate the
+-- duplicate iteration. Used by the in-grammar fmtp dispatch and by
+-- FMTP_REQUIRED_BY_ENCODING (called with empty params to emit just the
+-- required-presence half when no fmtp is present).
+local function check_jxsv_fmtp(params, ctx, pos, field_path)
+  -- Required-presence (RFC 9134 §7.1).
+  for _, key in ipairs(JXSV_REQUIRED_PARAMS) do
+    if params[key] == nil then
+      local cont = errors.record(ctx,
+        "st2110-22.a.fmtp." .. key .. "-required",
+        { pos = pos, field_path = field_path })
+      if not cont then return false end
+    end
+  end
+  -- Enum value-set narrowings.
   for _, key in ipairs(JXSV_ENUM_KEYS) do
     local val = params[key]
     if val ~= nil and not JXSV_ENUM_VALUES[key][tostring(val)] then
@@ -941,7 +965,7 @@ local function check_jxsv_fmtp_values(params, ctx, pos, field_path)
       if not cont then return false end
     end
   end
-
+  -- Non-enum value-form predicates.
   for _, key in ipairs(JXSV_VALUE_FORM_KEYS) do
     local val = params[key]
     if val ~= nil and not JXSV_VALUE_VALIDATORS[key](tostring(val)) then
@@ -951,7 +975,7 @@ local function check_jxsv_fmtp_values(params, ctx, pos, field_path)
       if not cont then return false end
     end
   end
-
+  -- Flag-only keys: present iff the value is the boolean true.
   for _, key in ipairs(JXSV_FLAG_ONLY_KEYS) do
     local val = params[key]
     if val ~= nil and val ~= true then
@@ -1032,13 +1056,11 @@ end
 -- encodings or essences with no spec-grounded fmtp narrowings.
 local FMTP_CHECKS_BY_ENCODING = {
   raw = {
-    check_raw_video_fmtp_required,
-    check_raw_video_fmtp_values,
+    check_raw_video_fmtp,
     check_raw_video_fmtp_cross_param,
   },
   jxsv = {
-    check_jxsv_fmtp_required,
-    check_jxsv_fmtp_values,
+    check_jxsv_fmtp,
     check_jxsv_fmtp_cross_param,
   },
   -- Audio channel-order syntax applies to all three audio encodings
@@ -1085,8 +1107,8 @@ end
 -- before the media_section Cmt slot existed). Fires per block; ctx is
 -- the doc-level context (carries findings, policy, media_index).
 local FMTP_REQUIRED_BY_ENCODING = {
-  raw           = check_raw_video_fmtp_required,
-  jxsv          = check_jxsv_fmtp_required,
+  raw           = check_raw_video_fmtp,
+  jxsv          = check_jxsv_fmtp,
   ["ST2110-41"] = check_st2110_41_fmtp,
 }
 
@@ -1105,6 +1127,44 @@ local function check_rtpmap_requires_fmtp(block, ctx)
       local check = FMTP_REQUIRED_BY_ENCODING[enc]
       if not check({}, ctx) then return false end
     end
+  end
+  return true
+end
+
+-- ST 2110-22:2022 §7.3 (verbatim): "The media-level section of the SDP
+-- object shall include the attribute listed in Table 3." Table 3's only
+-- row is `b=<brtype>:<brvalue>` with `<brtype> shall be AS` and
+-- `<brvalue>` an integer number of kilobits per second. Applies per
+-- media block that carries a jxsv rtpmap. (TR-10-7 §11 substitutes
+-- only the Table 3 cell semantics for IPMX-compressed-video; the
+-- §7.3 SHALL on presence is unchanged and inherited via composition.)
+local function check_jxsv_bandwidth(block, ctx)
+  local has_jxsv = false
+  for _, attr in ipairs(block.attributes) do
+    if attr.name == "rtpmap" and attr.encoding == "jxsv" then
+      has_jxsv = true
+      break
+    end
+  end
+  if not has_jxsv then return true end
+
+  local field_path = string.format(
+    "media[%d].bandwidths", ctx.media_index or 0)
+  local has_as = false
+  for _, b in ipairs(block.bandwidths or {}) do
+    if b.type == "AS" then
+      has_as = true
+      if type(b.value) ~= "number" or b.value <= 0 then
+        local cont = errors.record(ctx, "st2110-22.b.as-invalid-value",
+          { field_path = field_path })
+        if not cont then return false end
+      end
+    end
+  end
+  if not has_as then
+    local cont = errors.record(ctx, "st2110-22.b.as-required",
+      { field_path = field_path })
+    if not cont then return false end
   end
   return true
 end
@@ -1327,6 +1387,7 @@ local overrides = {
     check_rtpmap_requires_fmtp,
     check_mediaclk_presence,
     check_audio_packet_payload_fit,
+    check_jxsv_bandwidth,
   },
 }
 

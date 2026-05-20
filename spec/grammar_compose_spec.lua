@@ -188,3 +188,64 @@ describe("parse_sdp.grammar.st2110 — Phase 6.A shell", function()
     end
   end)
 end)
+
+describe("parse_sdp.grammar.ipmx — Phase 7.A shell", function()
+
+  local st2110 = require("parse_sdp.grammar.st2110")
+  local ipmx   = require("parse_sdp.grammar.ipmx")
+
+  -- NOT-SPEC: library
+  it("exposes the same shape as base.extend's return", function()
+    assert.is_table(ipmx.rules)
+    assert.is_function(ipmx.match)
+    assert.is_function(ipmx.extend)
+    assert.is_table(ipmx.semantic_checks)
+    assert.is_table(ipmx.media_section_checks)
+    assert.is_not_nil(ipmx.grammar)
+  end)
+
+  -- NOT-SPEC: library
+  it("matches every input the ST 2110 tier matches (empty overrides)", function()
+    assert.is_truthy(ipmx.match(MINIMAL))
+    assert.is_truthy(ipmx.match(MINIMAL_WITH_RTPMAP))
+  end)
+
+  -- NOT-SPEC: library
+  it("rejects every input the ST 2110 tier rejects (empty overrides)", function()
+    local bad = lines_to_sdp({
+      "v=1",
+      "o=- 1 1 IN IP4 192.0.2.1",
+      "s=x",
+      "t=0 0",
+    })
+    assert.is_nil((ipmx.match(bad)))
+  end)
+
+  -- NOT-SPEC: library — IPMX chains ST 2110, so its semantic_checks list
+  -- starts with every ST 2110 check in order (which itself starts with
+  -- every base check in order). Assert the inheritance property without
+  -- coupling to the eventual TR-10 check count.
+  it("inherits every ST 2110 check in order, then appends IPMX checks", function()
+    assert.is_true(#ipmx.semantic_checks >= #st2110.semantic_checks)
+    for i, fn in ipairs(st2110.semantic_checks) do
+      assert.equal(fn, ipmx.semantic_checks[i])
+    end
+  end)
+
+  -- NOT-SPEC: library — same chaining property for the per-media-block
+  -- check list (Phase 6.K infrastructure).
+  it("inherits every ST 2110 media_section_check in order", function()
+    assert.is_true(#ipmx.media_section_checks >= #st2110.media_section_checks)
+    for i, fn in ipairs(st2110.media_section_checks) do
+      assert.equal(fn, ipmx.media_section_checks[i])
+    end
+  end)
+
+  -- NOT-SPEC: library — distinct tables, not aliases of parent
+  it("returns distinct grammar / rules / check tables (not aliases of st2110)", function()
+    assert.are_not.equal(st2110.grammar, ipmx.grammar)
+    assert.are_not.equal(st2110.rules,   ipmx.rules)
+    assert.are_not.equal(st2110.semantic_checks,      ipmx.semantic_checks)
+    assert.are_not.equal(st2110.media_section_checks, ipmx.media_section_checks)
+  end)
+end)

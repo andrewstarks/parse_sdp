@@ -1323,4 +1323,523 @@ M.register("st2110.attr.mediaclk-required", {
   verified         = true,
 })
 
+-- ─── IPMX (TR-10 series) ────────────────────────────────────────────────────
+-- Phase 7.B: TR-10-1 §10 baseline. The two SHALLs that constitute "this SDP
+-- is IPMX": §10 forbids a=group:FID; §10.1 requires the 'IPMX' token in
+-- a=fmtp on every RTP media block.
+
+M.register("tr-10-1.a.group.fid-forbidden", {
+  kind             = "semantic",
+  default_severity = "error",
+  code             = "INVALID_VALUE",
+  message_template =
+    "a=group:FID is not permitted in IPMX"
+    .. " (RFC 8331 §4.1 FID grouping conflicts with the 'one SDP object"
+    .. " per RTP Stream' provision of SMPTE ST 2110-10)",
+  spec_ref         = "TR-10-1 §10",
+  verified         = true,
+})
+
+M.register("tr-10-1.a.fmtp.marker-required", {
+  kind             = "semantic",
+  default_severity = "error",
+  code             = "MISSING_FIELD",
+  message_template =
+    "a=fmtp on an IPMX RTP media block must contain the 'IPMX' declaration",
+  spec_ref         = "TR-10-1 §10.1",
+  verified         = true,
+})
+
+-- TR-10-1 §10.2 (baseband video) + TR-10-9 §10 (non-baseband video):
+-- every video IPMX block's a=fmtp MUST carry measuredpixclk, vtotal, and
+-- htotal. Baseband senders report measured values; non-baseband senders
+-- use substitute values (width*height*exactframerate, height, width).
+-- The "non-baseband uses substitute values" SHALL is not validatable
+-- from SDP alone (no baseband-vs-non-baseband state in SDP), but the
+-- COMBINED effect of §10.2 + TR-10-9 §10 is that presence + positive-
+-- integer form is required on every video IPMX block.
+
+M.register("tr-10-1.a.fmtp.measuredpixclk-required", {
+  kind             = "semantic",
+  default_severity = "error",
+  code             = "MISSING_FIELD",
+  message_template = "a=fmtp on a video IPMX media block must include 'measuredpixclk'",
+  spec_ref         = "TR-10-1 §10.2",
+  verified         = true,
+})
+
+M.register("tr-10-1.a.fmtp.vtotal-required", {
+  kind             = "semantic",
+  default_severity = "error",
+  code             = "MISSING_FIELD",
+  message_template = "a=fmtp on a video IPMX media block must include 'vtotal'",
+  spec_ref         = "TR-10-1 §10.2",
+  verified         = true,
+})
+
+M.register("tr-10-1.a.fmtp.htotal-required", {
+  kind             = "semantic",
+  default_severity = "error",
+  code             = "MISSING_FIELD",
+  message_template = "a=fmtp on a video IPMX media block must include 'htotal'",
+  spec_ref         = "TR-10-1 §10.2",
+  verified         = true,
+})
+
+M.register("tr-10-1.a.fmtp.measuredpixclk-invalid-value", {
+  kind             = "semantic",
+  default_severity = "error",
+  code             = "INVALID_VALUE",
+  message_template = "fmtp 'measuredpixclk' must be a positive integer (Hertz)",
+  spec_ref         = "TR-10-1 §10.2",
+  verified         = true,
+})
+
+M.register("tr-10-1.a.fmtp.vtotal-invalid-value", {
+  kind             = "semantic",
+  default_severity = "error",
+  code             = "INVALID_VALUE",
+  message_template = "fmtp 'vtotal' must be a positive integer (total lines per frame)",
+  spec_ref         = "TR-10-1 §10.2",
+  verified         = true,
+})
+
+M.register("tr-10-1.a.fmtp.htotal-invalid-value", {
+  kind             = "semantic",
+  default_severity = "error",
+  code             = "INVALID_VALUE",
+  message_template = "fmtp 'htotal' must be a positive integer (luminance sample periods per line)",
+  spec_ref         = "TR-10-1 §10.2",
+  verified         = true,
+})
+
+-- TR-10-1 §10.3 (baseband audio) + TR-10-9 §10 (non-baseband audio):
+-- every audio IPMX block's a=fmtp MUST carry `measuredsamplerate`.
+-- Baseband senders report the measured sample rate; non-baseband
+-- senders use the rtpmap rate as the substitute. Either way, presence
+-- + positive-integer Hertz form is required.
+
+M.register("tr-10-1.a.fmtp.measuredsamplerate-required", {
+  kind             = "semantic",
+  default_severity = "error",
+  code             = "MISSING_FIELD",
+  message_template = "a=fmtp on an audio IPMX media block must include 'measuredsamplerate'",
+  spec_ref         = "TR-10-1 §10.3",
+  verified         = true,
+})
+
+M.register("tr-10-1.a.fmtp.measuredsamplerate-invalid-value", {
+  kind             = "semantic",
+  default_severity = "error",
+  code             = "INVALID_VALUE",
+  message_template = "fmtp 'measuredsamplerate' must be a positive integer (Hertz)",
+  spec_ref         = "TR-10-1 §10.3",
+  verified         = true,
+})
+
+-- TR-10-2 §7 / TR-10-3 §7 / TR-10-4 §7 / TR-10-11 §7 / TR-10-12 §7 all
+-- carry the same SHALL: "All IPMX Media streams shall have a UDP
+-- destination port value that is even and that is greater than 1024."
+-- Cite TR-10-2 §7 as canonical; the rule is identical across the
+-- encoding-specific parts.
+
+M.register("ipmx.m.port-must-be-even", {
+  kind             = "semantic",
+  default_severity = "error",
+  code             = "INVALID_VALUE",
+  message_template = "m= UDP destination port must be even for IPMX RTP streams",
+  spec_ref         = "TR-10-2 §7",
+  verified         = true,
+})
+
+M.register("ipmx.m.port-must-exceed-1024", {
+  kind             = "semantic",
+  default_severity = "error",
+  code             = "INVALID_VALUE",
+  message_template = "m= UDP destination port must be greater than 1024 for IPMX RTP streams",
+  spec_ref         = "TR-10-2 §7",
+  verified         = true,
+})
+
+-- ST 2110-22:2022 §7.3 (verbatim): "The media-level section of the SDP
+-- object shall include the attribute listed in Table 3." Table 3's
+-- only row is `b=<brtype>:<brvalue>` with `<brtype> shall be AS` and
+-- `<brvalue>` an integer number of kilobits per second. Authored by
+-- ST 2110-22:2022; TR-10-7 §11 substitutes only the Table 3 row's
+-- cell contents (changes brvalue semantics from "average bit rate" to
+-- "maximum target bit rate") but the wrapping §7.3 "shall include"
+-- and per-row SHALLs persist verbatim by virtue of "shall be as
+-- defined in RFC 4566" + the substituted Table 1 row. The check
+-- therefore lives at the ST 2110 tier where its authoring SHALL
+-- lives; IPMX inherits via composition.
+
+M.register("st2110-22.b.as-required", {
+  kind             = "semantic",
+  default_severity = "error",
+  code             = "MISSING_FIELD",
+  message_template =
+    "media block carrying a jxsv rtpmap must include a media-level"
+    .. " b=AS:<kbps> attribute",
+  spec_ref         = "ST 2110-22:2022 §7.3",
+  verified         = true,
+})
+
+M.register("st2110-22.b.as-invalid-value", {
+  kind             = "semantic",
+  default_severity = "error",
+  code             = "INVALID_VALUE",
+  message_template =
+    "b=AS value must be a positive integer (kbps) on jxsv media blocks",
+  spec_ref         = "ST 2110-22:2022 §7.3",
+  verified         = true,
+})
+
+-- TR-10-10 §8 a=infoframe attribute (HDMI InfoFrame signaling).
+-- Format: `a=infoframe:<port> SSN=ST2110-41:<year>;DIT=100100`.
+-- SHALLs validated:
+--   (1) Attribute appears only at the session level.
+--   (2) SSN value starts with the literal "ST2110-41:" prefix.
+--   (3) DIT value equals "100100" (HDMI Data-Item-Type code).
+--   (4) Port equals one of the associated media blocks' port + 3.
+--   (5) Port is unique across all session-level a=infoframe attributes
+--       (a single device can carry multiple infoframe streams; one per
+--        associated media stream).
+
+M.register("tr-10-10.a.infoframe.must-be-session-level", {
+  kind             = "semantic",
+  default_severity = "error",
+  code             = "INVALID_VALUE",
+  message_template =
+    "a=infoframe must be a session-level attribute, not media-level",
+  spec_ref         = "TR-10-10 §8",
+  verified         = true,
+})
+
+M.register("tr-10-10.a.infoframe.ssn-invalid-form", {
+  kind             = "semantic",
+  default_severity = "error",
+  code             = "INVALID_VALUE",
+  message_template =
+    "a=infoframe SSN must use the form 'ST2110-41:<year>'",
+  spec_ref         = "TR-10-10 §8",
+  verified         = true,
+})
+
+M.register("tr-10-10.a.infoframe.dit-invalid-value", {
+  kind             = "semantic",
+  default_severity = "error",
+  code             = "INVALID_VALUE",
+  message_template =
+    "a=infoframe DIT must be '100100' (HDMI Data-Item-Type code)",
+  spec_ref         = "TR-10-10 §8",
+  verified         = true,
+})
+
+M.register("tr-10-10.a.infoframe.port-must-match-media-plus-3", {
+  kind             = "semantic",
+  default_severity = "error",
+  code             = "INVALID_VALUE",
+  message_template =
+    "a=infoframe port must equal some media block's UDP port + 3",
+  spec_ref         = "TR-10-10 §8",
+  verified         = true,
+})
+
+M.register("tr-10-10.a.infoframe.duplicate-port", {
+  kind             = "semantic",
+  default_severity = "error",
+  code             = "INVALID_VALUE",
+  message_template =
+    "a=infoframe port must be unique across session-level a=infoframe lines",
+  spec_ref         = "TR-10-10 §8",
+  verified         = true,
+})
+
+-- TR-10-5 §10 a=hkep attribute (HDCP key exchange protocol).
+-- Format: `a=hkep:<port> <nettype> <addrtype> <unicast-address>
+--                 <node-id> <port-id>`
+-- SHALLs validated when the attribute is present:
+--   (a) nettype = "IN"
+--   (b) addrtype ∈ {"IP4", "IP6"}
+--   (c) node-id form: 32 hex digits in xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx
+--   (d) port-id form: 10 hex digits in xx-xx-xx-xx-xx (5 hex pairs)
+-- The <unicast-address> field is captured but not format-validated per
+-- TR-10-5 §10 (it constrains presence, not syntax). Port is captured as
+-- a number without range-bounding (consistent with base's m= port
+-- handling — port-range narrowing is uniformly out of scope at the
+-- grammar tier today).
+
+M.register("tr-10-5.a.hkep.nettype-invalid-value", {
+  kind             = "semantic",
+  default_severity = "error",
+  code             = "INVALID_VALUE",
+  message_template = "a=hkep nettype must be 'IN'",
+  spec_ref         = "TR-10-5 §10",
+  verified         = true,
+})
+
+M.register("tr-10-5.a.hkep.addrtype-invalid-value", {
+  kind             = "semantic",
+  default_severity = "error",
+  code             = "INVALID_VALUE",
+  message_template = "a=hkep addrtype must be 'IP4' or 'IP6'",
+  spec_ref         = "TR-10-5 §10",
+  verified         = true,
+})
+
+M.register("tr-10-5.a.hkep.node-id-invalid-form", {
+  kind             = "semantic",
+  default_severity = "error",
+  code             = "INVALID_VALUE",
+  message_template =
+    "a=hkep node-id must be 32 hex digits formatted as"
+    .. " xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx",
+  spec_ref         = "TR-10-5 §10",
+  verified         = true,
+})
+
+M.register("tr-10-5.a.hkep.port-id-invalid-form", {
+  kind             = "semantic",
+  default_severity = "error",
+  code             = "INVALID_VALUE",
+  message_template =
+    "a=hkep port-id must be 10 hex digits formatted as xx-xx-xx-xx-xx",
+  spec_ref         = "TR-10-5 §10",
+  verified         = true,
+})
+
+-- TR-10-6 §7.6 FEC parameter signaling (in a=fmtp). The audit (rows 147
+-- + 151) extracts three normative constraints:
+--   (1) FECPROFILE value MUST be "profile-a" when present.
+--   (2) FEC_ADD_LATENCY_VIDEO / FEC_ADD_LATENCY_AUDIO are optional
+--       parameters with non-negative integer values (microseconds);
+--       presence of either implies a companion FEC stream is signaled,
+--       which in turn requires FECPROFILE.
+-- FECPROFILE itself is not unconditionally required by §7.6 — only by
+-- transitive context (presence of latency parameters). Per-encoding,
+-- presence-of-fmtp checks land in earlier IDs.
+
+M.register("tr-10-6.a.fmtp.fecprofile-invalid-value", {
+  kind             = "semantic",
+  default_severity = "error",
+  code             = "INVALID_VALUE",
+  message_template =
+    "fmtp 'FECPROFILE' must be 'profile-a'"
+    .. " (the only IPMX FEC profile currently defined)",
+  spec_ref         = "TR-10-6 §7.6",
+  verified         = true,
+})
+
+M.register("tr-10-6.a.fmtp.fec-add-latency-video-invalid-value", {
+  kind             = "semantic",
+  default_severity = "error",
+  code             = "INVALID_VALUE",
+  message_template =
+    "fmtp 'FEC_ADD_LATENCY_VIDEO' must be a non-negative integer (microseconds)",
+  spec_ref         = "TR-10-6 §7.6",
+  verified         = true,
+})
+
+M.register("tr-10-6.a.fmtp.fec-add-latency-audio-invalid-value", {
+  kind             = "semantic",
+  default_severity = "error",
+  code             = "INVALID_VALUE",
+  message_template =
+    "fmtp 'FEC_ADD_LATENCY_AUDIO' must be a non-negative integer (microseconds)",
+  spec_ref         = "TR-10-6 §7.6",
+  verified         = true,
+})
+
+M.register("tr-10-6.a.fmtp.fec-add-latency-video-requires-fecprofile", {
+  kind             = "semantic",
+  default_severity = "error",
+  code             = "MISSING_FIELD",
+  message_template =
+    "fmtp 'FEC_ADD_LATENCY_VIDEO' requires 'FECPROFILE' on the same fmtp line",
+  spec_ref         = "TR-10-6 §7.6",
+  verified         = true,
+})
+
+M.register("tr-10-6.a.fmtp.fec-add-latency-audio-requires-fecprofile", {
+  kind             = "semantic",
+  default_severity = "error",
+  code             = "MISSING_FIELD",
+  message_template =
+    "fmtp 'FEC_ADD_LATENCY_AUDIO' requires 'FECPROFILE' on the same fmtp line",
+  spec_ref         = "TR-10-6 §7.6",
+  verified         = true,
+})
+
+-- TR-10-13 §13 a=privacy attribute (Privacy Encryption Protocol signaling).
+-- Format (§13 line 338): "semicolon and an optional space separating the
+-- parameters and a CRLF to terminate the attribute line. There shall be
+-- no semicolon after the last parameter. ... Octet String represented
+-- in hexadecimal notation without spaces."
+--
+-- Required parameters (§13 line 324):
+--   protocol, mode, iv, key_generator, key_version, key_id
+--
+-- Per-parameter SHALLs:
+--   - protocol: §13 line 352 — NULL shall not be used in SDP
+--   - mode:     §20.1 line 679 — must be one of 12 enumerated values
+--               (NULL falls outside the enum, so the §13 line 362
+--                "NULL mode shall not be used in SDP" SHALL is subsumed)
+--   - iv:            64-bit Octet String (16 hex chars), §13 line 366
+--   - key_generator: 128-bit Octet String (32 hex chars), §13 line 372
+--   - key_version:   32-bit Octet String (8 hex chars), §13 line 376
+--   - key_id:        64-bit Octet String (16 hex chars), §13 line 386
+--
+-- a=privacy may appear at session level or media level (§13 line 324).
+-- USB-context narrowings (protocol = USB_KV, AAD-only modes) live in
+-- TR-10-14 §12 and are handled by a separate Phase 7.L slice.
+
+M.register("tr-10-13.a.privacy.protocol-required", {
+  kind             = "semantic", default_severity = "error",
+  code = "MISSING_FIELD",
+  message_template = "a=privacy must include the 'protocol' parameter",
+  spec_ref = "TR-10-13 §13", verified = true,
+})
+M.register("tr-10-13.a.privacy.mode-required", {
+  kind             = "semantic", default_severity = "error",
+  code = "MISSING_FIELD",
+  message_template = "a=privacy must include the 'mode' parameter",
+  spec_ref = "TR-10-13 §13", verified = true,
+})
+M.register("tr-10-13.a.privacy.iv-required", {
+  kind             = "semantic", default_severity = "error",
+  code = "MISSING_FIELD",
+  message_template = "a=privacy must include the 'iv' parameter",
+  spec_ref = "TR-10-13 §13", verified = true,
+})
+M.register("tr-10-13.a.privacy.key_generator-required", {
+  kind             = "semantic", default_severity = "error",
+  code = "MISSING_FIELD",
+  message_template = "a=privacy must include the 'key_generator' parameter",
+  spec_ref = "TR-10-13 §13", verified = true,
+})
+M.register("tr-10-13.a.privacy.key_version-required", {
+  kind             = "semantic", default_severity = "error",
+  code = "MISSING_FIELD",
+  message_template = "a=privacy must include the 'key_version' parameter",
+  spec_ref = "TR-10-13 §13", verified = true,
+})
+M.register("tr-10-13.a.privacy.key_id-required", {
+  kind             = "semantic", default_severity = "error",
+  code = "MISSING_FIELD",
+  message_template = "a=privacy must include the 'key_id' parameter",
+  spec_ref = "TR-10-13 §13", verified = true,
+})
+
+M.register("tr-10-13.a.privacy.trailing-semicolon", {
+  kind             = "semantic", default_severity = "error",
+  code = "INVALID_VALUE",
+  message_template =
+    "a=privacy must not end with a semicolon (no separator after the last parameter)",
+  spec_ref = "TR-10-13 §13", verified = true,
+})
+
+M.register("tr-10-13.a.privacy.protocol-null-forbidden", {
+  kind             = "semantic", default_severity = "error",
+  code = "INVALID_VALUE",
+  message_template =
+    "a=privacy 'protocol' value 'NULL' is forbidden in an SDP transport file"
+    .. " (omit the a=privacy attribute instead)",
+  spec_ref = "TR-10-13 §13", verified = true,
+})
+
+M.register("tr-10-13.a.privacy.mode-invalid-value", {
+  kind             = "semantic", default_severity = "error",
+  code = "INVALID_VALUE",
+  message_template =
+    "a=privacy 'mode' must be one of the 12 enumerated values (AES-128-CTR,"
+    .. " AES-256-CTR, ...CMAC-64, ...CMAC-64-AAD, and the six ECDH_ variants);"
+    .. " NULL is forbidden in an SDP transport file",
+  spec_ref = "TR-10-13 §20.1 (per §13 'NULL mode shall not be used')",
+  verified = true,
+})
+
+M.register("tr-10-13.a.privacy.iv-invalid-form", {
+  kind             = "semantic", default_severity = "error",
+  code = "INVALID_VALUE",
+  message_template =
+    "a=privacy 'iv' must be a 64-bit Octet String (16 hex digits, no spaces)",
+  spec_ref = "TR-10-13 §13", verified = true,
+})
+M.register("tr-10-13.a.privacy.key_generator-invalid-form", {
+  kind             = "semantic", default_severity = "error",
+  code = "INVALID_VALUE",
+  message_template =
+    "a=privacy 'key_generator' must be a 128-bit Octet String (32 hex digits, no spaces)",
+  spec_ref = "TR-10-13 §13", verified = true,
+})
+M.register("tr-10-13.a.privacy.key_version-invalid-form", {
+  kind             = "semantic", default_severity = "error",
+  code = "INVALID_VALUE",
+  message_template =
+    "a=privacy 'key_version' must be a 32-bit Octet String (8 hex digits, no spaces)",
+  spec_ref = "TR-10-13 §13", verified = true,
+})
+M.register("tr-10-13.a.privacy.key_id-invalid-form", {
+  kind             = "semantic", default_severity = "error",
+  code = "INVALID_VALUE",
+  message_template =
+    "a=privacy 'key_id' must be a 64-bit Octet String (16 hex digits, no spaces)",
+  spec_ref = "TR-10-13 §13", verified = true,
+})
+
+-- TR-10-13 §20.1 (line 751): "The a=extmap attribute shall be used to
+-- declare the RTP Extension Headers in the SDP transport file using
+-- 'sendonly' as the direction parameter." Applies when the extmap URI
+-- is one of the PEP IV-Counter URNs (§20.1 line 747). The check only
+-- fires when an a=extmap with a PEP URI is present; missing direction
+-- and any non-sendonly value both trigger this finding.
+
+M.register("tr-10-13.a.extmap.pep-direction-must-be-sendonly", {
+  kind             = "semantic",
+  default_severity = "error",
+  code             = "INVALID_VALUE",
+  message_template =
+    "a=extmap for a PEP IV-Counter URN must declare 'sendonly' as its direction",
+  spec_ref         = "TR-10-13 §20.1",
+  verified         = true,
+})
+
+-- TR-10-14 §14 USB block constraints (m=application TCP usb):
+-- §14 line 724: "The SDP shall follow RFC 4145 with the following
+-- restrictions." RFC 4145 §3 makes a=setup mandatory on TCP-based
+-- media streams; TR-10-14 §14 line 740 then narrows the value to
+-- "passive". When a=privacy is on a USB block, TR-10-14 §14 line 736
+-- requires protocol = USB_KV.
+
+M.register("tr-10-14.usb.setup-required", {
+  kind             = "semantic",
+  default_severity = "error",
+  code             = "MISSING_FIELD",
+  message_template =
+    "USB transport block (m=application TCP usb) must include a=setup"
+    .. " (RFC 4145 §3 'Endpoints MUST include the setup attribute')",
+  spec_ref         = "TR-10-14 §14 (per RFC 4145 §3)",
+  verified         = true,
+})
+
+M.register("tr-10-14.usb.setup-must-be-passive", {
+  kind             = "semantic",
+  default_severity = "error",
+  code             = "INVALID_VALUE",
+  message_template =
+    "a=setup on a USB transport block must be 'passive'",
+  spec_ref         = "TR-10-14 §14",
+  verified         = true,
+})
+
+M.register("tr-10-14.a.privacy.usb-protocol-must-be-usb_kv", {
+  kind             = "semantic",
+  default_severity = "error",
+  code             = "INVALID_VALUE",
+  message_template =
+    "a=privacy on a USB transport block must declare 'protocol=USB_KV'",
+  spec_ref         = "TR-10-14 §14",
+  verified         = true,
+})
+
 return M

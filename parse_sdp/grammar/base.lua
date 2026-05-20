@@ -141,6 +141,28 @@ local function c_value_validate(_, pos, addr_type, address, ctx)
   return pos
 end
 
+-- "RTP-bearing" predicate: matches the SDP `m=` proto field when it is
+-- exactly "RTP" or starts with "RTP/...". Anchored prefix match driven by
+-- LPeg (not string.find) so the codebase stays inside the parser per
+-- [[lpeg-discipline]]. Used by per-block checks that only apply to RTP
+-- streams (e.g. dynamic-PT-requires-rtpmap, IPMX fmtp marker).
+local PROTO_IS_RTP_PATTERN = lpeg.P("RTP") * (lpeg.P("/") + lpeg.P(-1))
+
+local function is_rtp_block(block)
+  return type(block.proto) == "string"
+     and PROTO_IS_RTP_PATTERN:match(block.proto) ~= nil
+end
+
+-- "USB transport" predicate: matches the IPMX TR-10-14 §14 USB block
+-- shape `m=application <port> TCP usb`. Returns true when media type
+-- is "application", proto is "TCP", and the first fmt token is "usb".
+-- Used by IPMX-tier checks that only apply to USB blocks.
+local function is_usb_block(block)
+  return block.media == "application"
+     and block.proto == "TCP"
+     and block.fmts and block.fmts[1] == "usb"
+end
+
 -- RFC 8866 §8.2.3: "If the payload type number is dynamically assigned by
 -- this session description, an additional 'a=rtpmap:' attribute MUST be
 -- included to specify the format name and parameters as defined by the
@@ -150,9 +172,7 @@ end
 -- Phase 6.K: per-media-block; lives in media_section_checks. Fires at
 -- the end of each media_section's parse with the captured block.
 local function check_dynamic_pt_rtpmap(block, ctx)
-  if type(block.proto) ~= "string" or not block.proto:find("RTP", 1, true) then
-    return true
-  end
+  if not is_rtp_block(block) then return true end
   local rtpmap_pts = {}
   for _, attr in ipairs(block.attributes) do
     if attr.name == "rtpmap" then
@@ -647,23 +667,37 @@ local rules = {
       + V"a_maxptime"
       + V"a_framerate"
       + V"a_quality"
+      + V"a_tier_extensions"
       + V"a_generic"
     ),
+
+  -- Tier-extension hook for new compound attributes added by IPMX or
+  -- future tiers (a=infoframe, a=hkep, a=privacy, ...). Default is
+  -- P(false) — never matches in base, so the alternation cleanly falls
+  -- through to a_generic. A child tier overrides this rule via
+  -- base.extend's `rules` table to add new attribute branches without
+  -- redeclaring a_value's full alternation.
+  a_tier_extensions = P(false),
 
   -- Look-ahead: a known compound-attribute name followed by ":" or
   -- end-of-line. Used as a negative lookahead in a_generic so malformed
   -- instances of a known attribute fail the match instead of degrading
   -- to the generic shape. Order: longer-prefix patterns before their
   -- shorter siblings (matters for "ssrc-group" vs "ssrc", "rtcp-mux" /
-  -- "rtcp-fb" vs "rtcp", and the "maxptime" vs "ptime" group).
+  -- "rtcp-fb" vs "rtcp", and the "maxptime" vs "ptime" group). The
+  -- V"tier_attr_names" hook lets a child tier add its own names to the
+  -- exclusion set without redeclaring this rule.
   known_attr_lookahead =
         (P("source-filter") + P("ssrc-group") + P("ts-refclk")
        + P("maxptime")      + P("framerate")  + P("mediaclk")
        + P("rtcp-mux")      + P("rtcp-fb")    + P("extmap")
        + P("rtpmap")        + P("quality")    + P("group")
        + P("ptime")         + P("msid")       + P("ssrc")
-       + P("rtcp")          + P("fmtp")       + P("mid"))
+       + P("rtcp")          + P("fmtp")       + P("mid")
+       + V"tier_attr_names")
       * (P(":") + V"line_end_chars"),
+
+  tier_attr_names = P(false),
 
   -- rtpmap (RFC 8866 §6.6):
   --   rtpmap-value = payload-type SP encoding-name "/" clock-rate
@@ -1141,6 +1175,8 @@ M.media_section_checks    = base_media_section_checks
 M.make_validate_doc       = make_validate_doc
 M.make_document_body      = make_document_body
 M.fmtp_entries_to_params  = fmtp_entries_to_params
+M.is_rtp_block            = is_rtp_block
+M.is_usb_block            = is_usb_block
 
 --- Compose a child tier from a parent.
 --
@@ -1208,6 +1244,8 @@ function M.extend(parent, overrides)
     make_validate_doc       = parent.make_validate_doc,
     make_document_body      = parent.make_document_body,
     fmtp_entries_to_params  = parent.fmtp_entries_to_params,
+    is_rtp_block            = parent.is_rtp_block,
+    is_usb_block            = parent.is_usb_block,
     extend                  = M.extend,
     match                   = make_match(child_grammar, child_media_section_checks),
   }

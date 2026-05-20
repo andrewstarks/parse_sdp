@@ -803,6 +803,178 @@ separate follow-up.
 Same pattern, IPMX-specific from TR-10 markdowns. Re-verify each citation
 against the TR-10 part it claims (per CLAUDE.md Spec Verification Protocol).
 
+- **7.A (complete)** — composition shell. New
+  `parse_sdp/grammar/ipmx.lua` chains st2110 via
+  `st2110.extend(st2110, {})`. Internal entry point only;
+  `sdp.parse(text, "ipmx")` remains on the 1.0 path until Phase 9.
+  6 new composition-parity tests in
+  `spec/grammar_compose_spec.lua` (shape, accept/reject parity with
+  st2110, semantic_checks + media_section_checks inheritance ordering,
+  distinct table identity). Suite 1575 green.
+- **7.B (complete)** — TR-10-1 §10 baseline ("this SDP is IPMX"):
+  §10 forbids `a=group:FID`, §10.1 requires the `IPMX` token in
+  `a=fmtp` on every RTP media block. 2 new error ids
+  `tr-10-1.a.group.fid-forbidden` and
+  `tr-10-1.a.fmtp.marker-required`. FID prohibition lands as an
+  in-grammar override of base's `a_group` rule (trailing Cmt reads
+  `Cb"semantics"` and emits the finding when the value is "FID"); the
+  fmtp marker check lands in `media_section_checks` (per-RTP-block).
+  Phase 7.B also introduced `base.is_rtp_block(block)` — an LPeg-
+  driven `proto = "RTP" / "RTP/..."` predicate that replaces the
+  pre-existing `block.proto:find("RTP", 1, true)` string-library calls
+  in base.lua's `check_dynamic_pt_rtpmap` and the new IPMX checks
+  (keeps the codebase inside the parser per [[lpeg-discipline]]). New
+  `spec/grammar_ipmx_spec.lua` with topical TR-10-1 §10 / §10.1
+  describe blocks. Suite 1586 green after the initial slice;
+  re-verified to literal spec text on review: §10.1 reads
+  "IPMX Senders shall include the ' IPMX' declaration in the a=fmtp
+  clause of the SDP file" — singular "the a=fmtp clause", no "every".
+  The check now fires per RTP block only when at-least-one a=fmtp is
+  present AND none of them carries the IPMX flag; field_path is
+  block-level (no `:pt=N` suffix). Earlier "audit-folder follow-up"
+  language removed.
+- **7.C (complete)** — TR-10-1 §10.2 (extended by TR-10-9 §10) video
+  IPMX fmtp required parameters. Every RTP video block's `a=fmtp`
+  must carry `measuredpixclk`, `vtotal`, and `htotal` as positive
+  integers (RFC 8866 §9 ABNF `POS-DIGIT *DIGIT` via
+  `patterns.pos_int:match`). 6 new error ids
+  (`tr-10-1.a.fmtp.<key>-required` and `<key>-invalid-value` for each
+  of the three keys). Wired via a new `ipmx_fmtp_dispatch` that
+  chains after st2110's per-encoding dispatch on the `a_fmtp` rule;
+  IPMX_FMTP_CHECKS_BY_ENCODING keys raw + jxsv to the IPMX video
+  check function (TR-10-2 §7 / TR-10-11 §7 inheritance). 18 new
+  tests; suite 1604 green. Single-walk merged-function refactor of
+  `check_ipmx_video_fmtp` (combines presence and value-form checks
+  into one walk per key, per the user's DRY pushback).
+- **7.D (complete)** — TR-10-1 §10.3 (extended by TR-10-9 §10) audio
+  IPMX fmtp required parameter `measuredsamplerate`. 2 new error ids
+  `tr-10-1.a.fmtp.measuredsamplerate-required` / `-invalid-value`.
+  IPMX_FMTP_CHECKS_BY_ENCODING also keys L16 / L24 / AM824 to
+  `check_ipmx_audio_fmtp`. 10 new tests; suite 1614 green.
+- **7.E (complete)** — TR-10-2/-3/-4/-11/-12 §7 IPMX RTP UDP port
+  constraints: port MUST be even AND > 1024. 2 new error ids
+  `ipmx.m.port-must-be-even` and `ipmx.m.port-must-exceed-1024`. New
+  per-block `check_ipmx_port_constraints` in `media_section_checks`,
+  gated by `is_rtp_block`. 8 new tests; suite 1622 green.
+- **7.F (complete)** — ST 2110-22:2022 §7.3 jxsv `b=AS:<kbps>`
+  requirement: every jxsv media block MUST carry `b=AS` with brvalue
+  a positive integer (RFC 8866 §9 ABNF `integer`). 2 new error ids
+  `st2110-22.b.as-required` / `as-invalid-value`. New per-block
+  `check_jxsv_bandwidth` in `media_section_checks`, encoding-gated
+  on rtpmap `jxsv`. The check lives at the ST 2110 tier where
+  §7.3 authors the SHALL ("The media-level section of the SDP
+  object shall include the attribute listed in Table 3"); TR-10-7
+  §11 substitutes only the Table 3 row's cell semantics (changes
+  brvalue from "average" to "maximum target bit rate") — the
+  wrapping presence SHALL is unchanged and inherited via composition
+  by the IPMX tier. Re-placement on review: the initial slice put
+  the check at the IPMX tier matching 1.0's placement, but the 1.0
+  placement conflated 1.0's monolithic file structure with spec
+  authorship; per CLAUDE.md the check belongs where the spec
+  authors it. Phase 6 jxsv test fixtures retro-fitted with b=AS
+  (build helpers in `spec/grammar_st2110_spec.lua` add
+  `b=AS:1500000` whenever the rtpmap encoding is jxsv, via an LPeg
+  substring match). New `b=AS` describe block topically placed
+  next to the jxsv rtpmap-narrowing block. 6 new ST 2110 tests
+  (8 IPMX tests were removed when the IPMX-tier mirror was
+  deleted); suite 1710 green.
+- **7.G (complete)** — TR-10-10 §8 `a=infoframe` HDMI InfoFrame
+  signaling attribute. Adds `a_tier_extensions` and `tier_attr_names`
+  hooks to base.lua's `a_value` alternation and `known_attr_lookahead`
+  (default `P(false)` — never matches; tiers override to add new
+  attributes without redeclaring the alternations). IPMX overrides
+  add the new `a_infoframe` rule that parses
+  `<port> SSN=<ssn>;DIT=<dit>` and validates: session-level only,
+  SSN matches `ST2110-41:<year>`, DIT equals literally "100100".
+  Cross-section semantic_check verifies port equals some media
+  port + 3 and ports are unique. 5 new error ids; 10 new tests;
+  suite 1639 green.
+- **7.H (complete)** — TR-10-5 §10 `a=hkep` HDCP Key Exchange Protocol
+  attribute. New `a_hkep` rule parses
+  `<port> <nettype> <addrtype> <addr> <node-id> <port-id>` with
+  in-grammar Cmt validating: nettype = "IN", addrtype ∈ {IP4, IP6},
+  node-id is `xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx` (32 hex digits in
+  5 groups, anchored LPeg pattern), port-id is `xx-xx-xx-xx-xx`
+  (10 hex digits in 5 pairs). Accepts session- and media-level per
+  TR-10-5 §17; addr syntax not validated per TR-10-5 §10. 4 new
+  error ids; 11 new tests; suite 1650 green.
+- **7.I (complete)** — TR-10-6 §7.6 FEC parameter signaling in
+  `a=fmtp`: `FECPROFILE` value MUST be `profile-a` when present, and
+  `FEC_ADD_LATENCY_VIDEO` / `FEC_ADD_LATENCY_AUDIO` (when present)
+  MUST (a) have a non-negative integer value and (b) require
+  `FECPROFILE` to also be present. New `IPMX_FMTP_UNIVERSAL_CHECKS`
+  slot in the IPMX fmtp dispatch — encoding-agnostic checks that run
+  on every RTP fmtp regardless of rtpmap encoding. New
+  `zero_based_int` export in `patterns.lua` for the non-negative
+  integer validation. 5 new error ids; 12 new tests; suite 1662 green.
+- **7.J (complete)** — TR-10-13 §13 `a=privacy` attribute. New
+  `a_privacy` rule parses the `<key>=<value>; <key>=<value>; ...`
+  kv-list and a trailing Cmt validates: 6 required params present
+  (protocol, mode, iv, key_generator, key_version, key_id), no
+  trailing semicolon, `protocol != "NULL"` (§13 line 352),
+  `mode` in the 12-value TR-10-13 §20.1 enum (subsumes the
+  NULL-mode prohibition since NULL is outside the enum), and per-key
+  hex form/length checks (iv = 16, key_generator = 32,
+  key_version = 8, key_id = 16 hex digits — all anchored LPeg
+  patterns built from a `HEX^n * P(-1)` helper). 13 new error ids;
+  32 new tests; suite 1694 green.
+- **7.K (complete)** — TR-10-13 §20.1 `a=extmap` direction for PEP
+  IV-Counter URNs. New semantic_check verifies that when an
+  `a=extmap` URI is one of the PEP IV-Counter URNs (full / short),
+  its direction MUST equal `sendonly`. Implemented as a post-parse
+  doc walk rather than in-grammar — base's `a_extmap` rule wraps
+  `direction` in an optional Cg, so a Cb back-reference inside a
+  trailing Cmt would raise "back reference not found" when the
+  optional didn't fire. The doc walk reads `attr.direction` cleanly
+  (nil when absent). 1 new error id; 8 new tests; suite 1702 green.
+- **7.L (complete)** — TR-10-14 §14 USB transport block
+  (`m=application TCP usb`) constraints. New `is_usb_block(block)`
+  helper in base.lua (LPeg/structural — matches the literal proto
+  triple). New media_section_check `check_usb_block` validates:
+  a=setup is present (RFC 4145 §3 via TR-10-14 §14 line 724) and
+  equals "passive" (line 740), and when a=privacy is present its
+  `protocol` parameter equals `USB_KV` (line 736). 3 new error ids.
+  Also gates the ST 2110 `ts-refclk-required` and `mediaclk-required`
+  checks on `is_rtp_block` so non-RTP USB blocks don't spuriously
+  trip RTP-specific timing-attribute SHALLs. Intentional
+  non-parity flag: 1.0 forbids rtpmap / fmtp / mediaclk /
+  ts-refclk on USB blocks; TR-10-14 §14 only says "follow RFC 4145"
+  without explicitly forbidding those attributes, so the
+  forbidden-attribute check is documented as a 1.0-over-strict
+  audit-folder follow-up rather than ported. 9 new tests; suite
+  1711 green.
+
+**Phase 7 closed (A–L).** Grammar tier covers every SDP-touching
+SHALL the 1.0 IPMX validator enforces that is grounded in primary
+TR-10 / ST 2110-22 spec text. After review, three earlier
+"non-parity flags" were re-verified against the primary spec text:
+
+- **7.B**: TR-10-1 §10.1 reads "shall include the ' IPMX' declaration
+  in the a=fmtp clause of the SDP file" — no "every", singular "the".
+  The check is at-least-one-per-RTP-block, not every-fmtp. Earlier
+  "strict reading deferred" language was a misread of the SHALL.
+- **7.F**: ST 2110-22:2022 §7.3 is the authoring SHALL ("The
+  media-level section of the SDP object shall include the attribute
+  listed in Table 3"). TR-10-7 §11 substitutes only the Table 3
+  row's cell semantics; the §7.3 presence SHALL is unchanged. The
+  check is now at the ST 2110 tier where it belongs; IPMX inherits
+  via composition.
+- **7.L**: TR-10-14 §14 says "follow RFC 4145 with the following
+  restrictions" and enumerates the restrictions ("media space port
+  set to 'application/usb'", "'role' of 'setup' shall be 'passive'",
+  privacy "protocol : USB_KV"). It does NOT say `rtpmap`, `fmtp`,
+  `mediaclk`, or `ts-refclk` are forbidden on USB blocks — the 1.0
+  validator's "RFC 4145 doesn't use RTP-specific attributes"
+  reasoning is interpretation, not spec text. Per CLAUDE.md's
+  strictness principle, the grammar tier does not enforce that
+  prohibition.
+
+Also two DRY cleanups landed during Phase 7: the
+`check_*_fmtp_required` + `_values` function pairs in ST 2110
+(raw_video and jxsv) and IPMX (video and audio) were merged into
+single-walk functions per the user's "neat and tidy" pushback.
+Final test count: 1711 green.
+
 **Phase 8 — Serializer rewrite.**
 Render from structured doc, never from stored strings. Round-trip invariant
 test runs on every fixture in `examples/{generic,st2110,ipmx}/valid/`.
