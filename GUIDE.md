@@ -121,19 +121,15 @@ The image includes Lua 5.5, LuaRocks, LPEG, dkjson, busted, and argparse.
 ## Quick Start
 
 ```lua
-local sdp = require("parse_sdp")
+local sdp    = require("parse_sdp")
+local errors = require("parse_sdp.errors")
 
 local text = io.open("session.sdp"):read("*a")
 
 -- Parse and validate as base SDP (RFC 8866)
 local doc, err = sdp.parse(text)
 if not doc then
-  io.stderr:write(string.format(
-    "Error at line %d col %d: %s\n  %s\n  %s\n",
-    err.line, err.col, err.message,
-    err.context,
-    string.rep(" ", err.col - 1) .. "^"
-  ))
+  io.stderr:write(errors.format(err) .. "\n")
   os.exit(1)
 end
 
@@ -141,6 +137,12 @@ end
 print(doc.session.name)
 print(doc.origin.unicast_address)
 print(#doc.media)
+
+-- Soft-syntactic findings (bare LF, trailing whitespace, BOM, etc.)
+-- come back as warnings without failing the parse.
+for _, w in ipairs(doc:warnings()) do
+  io.stderr:write("warn: " .. w.id .. " — " .. w.message .. "\n")
+end
 
 -- Validate at a stricter tier
 local ok, err2 = doc:validate("st2110")
@@ -164,7 +166,7 @@ print(doc:to_json())
 
 ### Module functions
 
-#### `sdp.parse(text [, mode])`
+#### `sdp.parse(text [, mode [, opts]])`
 
 Parses `text` and validates it.
 
@@ -172,8 +174,21 @@ Parses `text` and validates it.
 | --- | --- | --- | --- |
 | `text` | string | required | Raw SDP content |
 | `mode` | string | `"sdp"` | `"sdp"`, `"st2110"`, or `"ipmx"` |
+| `opts` | table  | `nil` | See below |
 
 Returns `doc, nil` on success; `nil, err` on failure.
+
+`opts` fields:
+
+| Field | Type | Default | Description |
+| --- | --- | --- | --- |
+| `policy` | table | `nil` | Per-check severity overrides — see below. |
+| `fail_on_first` | bool | `false` | When `true`, the first error-severity finding aborts the parse (the 1.0-compatible default). The new default collects every finding, then partitions: any error → `nil, err`; otherwise `doc` is returned with warnings reachable via `doc:warnings()`. |
+
+`opts.policy` is a `{[check_id] = "error"/"warn"/"off"}` map. Keys are
+validated against the registry at entry; an unknown id returns `nil, err`
+with `err.policy_key` naming the offending key. The registry is exposed
+via `sdp.checks()` and `sdp.default_policy()` — see the section below.
 
 The returned `doc` is a plain Lua table with the [doc methods](#doc-methods)
 attached via metatable.
@@ -182,12 +197,25 @@ attached via metatable.
 local doc, err = sdp.parse(text)
 local doc, err = sdp.parse(text, "st2110")
 local doc, err = sdp.parse(text, "ipmx")
+
+-- Suppress the BOM warning; downgrade an ST 2110 raw-fmtp value-form
+-- check from error to warn so the parse still returns a doc.
+local doc, err = sdp.parse(text, "st2110", {
+  policy = {
+    ["sdp.file.bom-present"]              = "off",
+    ["st2110-20.a.fmtp.depth-invalid-value"] = "warn",
+  },
+})
 ```
 
 #### `sdp.new(table)`
 
 Wraps an existing Lua table as a doc object by attaching the metatable. Does not
-validate. Useful for building SDP documents programmatically.
+validate. Useful for building SDP documents programmatically. Hand-built docs
+must use the decomposed shape documented in [Parsed Table Structure](#parsed-table-structure)
+— in particular `session.time_descriptions` (not `session.timing`) and per-name
+decomposed attributes (e.g. `rtpmap` carrying `payload_type` / `encoding` /
+`clock_rate` rather than a single `value` string).
 
 Returns `doc` (never fails).
 
@@ -195,11 +223,33 @@ Returns `doc` (never fails).
 local doc = sdp.new({
   version = "0",
   origin  = { username="-", sess_id="1", sess_version="1",
-               net_type="IN", addr_type="IP4", unicast_address="192.0.2.1" },
-  session = { name="My Session", timing={ start=0, stop=0 },
-               emails={}, phones={}, bandwidths={}, attributes={} },
+              net_type="IN", addr_type="IP4", unicast_address="192.0.2.1" },
+  session = {
+    name = "My Session",
+    time_descriptions = { { start=0, stop=0, repeats={} } },
+    emails={}, phones={}, bandwidths={}, attributes={},
+  },
   media   = {},
 })
+```
+
+#### `sdp.checks()` / `sdp.default_policy()`
+
+Inspect the parser's registry of toggleable checks.
+
+- `sdp.checks()` returns an array of every registered check, sorted by id:
+  `{id, kind, default_severity, code, spec_ref, message_template, verified}`.
+- `sdp.default_policy()` returns a `{[id] = default_severity}` table over
+  every registered check. Dump it, edit it, pass it back via `opts.policy`.
+
+```lua
+for _, c in ipairs(sdp.checks()) do
+  print(c.id, c.default_severity, c.spec_ref)
+end
+
+local policy = sdp.default_policy()
+policy["sdp.file.bom-present"] = "off"
+local doc, err = sdp.parse(text, "sdp", { policy = policy })
 ```
 
 ---
@@ -209,11 +259,10 @@ local doc = sdp.new({
 #### `doc:validate([mode])`
 
 Validates the doc against the given mode (`"sdp"`, `"st2110"`, or `"ipmx"`).
-Defaults to `"sdp"`.
+Defaults to `"sdp"`. Implemented as serialize-then-reparse (round-trip), so
+it works on hand-built docs from `sdp.new()` as well as parsed ones.
 
 Returns `true` on success; `nil, err` on failure.
-
-Re-runs validation each call — safe to use after mutating the doc.
 
 ```lua
 local ok, err = doc:validate()
@@ -222,27 +271,55 @@ local ok, err = doc:validate("st2110")
 
 #### `doc:is_sdp()` / `doc:is_st2110()` / `doc:is_ipmx()`
 
-Convenience boolean checks. Each runs the corresponding validation and returns
-`true` or `false`. Call `doc:validate(mode)` if you need the error detail.
+Convenience boolean checks. Each runs `doc:validate(mode)` and returns
+`true` or `false`. Call `doc:validate(mode)` directly if you need the error
+detail.
 
 ```lua
 if doc:is_st2110() then ... end
+```
+
+#### `doc:findings()` / `doc:warnings()` / `doc:errors()`
+
+Inspect findings recorded while parsing the doc.
+
+- `doc:findings()` returns every finding (warn + error).
+- `doc:warnings()` returns only the `"warn"`-severity findings.
+- `doc:errors()` returns only the `"error"`-severity findings.
+
+Each finding is a table with `{id, severity, message, spec_ref, code, line,
+col, field_path, context}`. With the default `fail_on_first = false`, every
+warning the grammar emits is reachable here; error-severity findings still
+surface via the `nil, err` return from `sdp.parse`, but the same finding
+is also accessible on the surviving doc when `fail_on_first` is set off
+explicitly.
+
+For `sdp.new()` docs (no parse happened) the lists are empty.
+
+```lua
+local doc, err = sdp.parse(text)
+if doc then
+  for _, w in ipairs(doc:warnings()) do
+    print(w.id, w.message)
+  end
+end
 ```
 
 #### `doc:to_sdp()`
 
 Converts the doc to a valid RFC 8866 SDP string.
 
-- Line endings are `\r\n` per RFC 8866 §5.
+- Line endings are `\r\n` per RFC 8866 §9 ABNF.
 - Field order follows RFC 8866 §5 exactly.
-- Output is not byte-identical to the original input, but it re-parses to an
-  equivalent table (functional round-trip).
+- Round-trip is a strong invariant: a successfully-parsed doc serializes back
+  to text that re-parses to an equivalent doc.
 
-Returns a `string`. Raises `error()` if the doc is structurally malformed (missing
-required fields) — call `doc:validate()` first if unsure.
+Returns a string on success; `nil, err` if the doc is missing a structurally-
+required field (the serializer never validates value forms; `doc:validate()`
+would have caught those). Optional fields are silently omitted when absent.
 
 ```lua
-local text = doc:to_sdp()
+local text, err = doc:to_sdp()
 ```
 
 #### `doc:to_json()`
@@ -322,6 +399,12 @@ parse_sdp to_json session.sdp | parse_sdp to_sdp > out.sdp
 
 ## Parsed Table Structure
 
+The doc is a fully-decomposed table — consumers never need to re-parse a
+string from it. Compound attributes (`rtpmap`, `fmtp`, `ts-refclk`,
+`mediaclk`, `group`, `source-filter`, `ssrc`, `extmap`, …) carry typed
+fields; only unknown / forward-compat attribute names use the generic
+`{name, value}` carrier.
+
 ```lua
 {
   version = "0",                   -- v=
@@ -343,7 +426,10 @@ parse_sdp to_json session.sdp | parse_sdp to_sdp > out.sdp
     phones      = {},              -- p=  (array, zero or more)
     connection  = nil,             -- c=  (optional)
     bandwidths  = {},              -- b=  (array, zero or more)
-    timing      = { start=0, stop=0 },  -- t=  (required)
+    time_descriptions = {          -- t= + r=*  (one entry per t= block)
+      { start = 0, stop = 0, repeats = {} },
+    },
+    time_zones  = nil,             -- z=  (optional; array of pairs)
     attributes  = {},              -- a=  (array, preserves order)
   },
 
@@ -358,22 +444,53 @@ parse_sdp to_json session.sdp | parse_sdp to_sdp > out.sdp
       connection = nil,            -- c=  (optional)
       bandwidths = {},             -- b=  (array, zero or more)
       attributes = {               -- a=  (array, preserves order)
-        { name = "rtpmap", value = "96 raw/90000" },
-        { name = "fmtp",   value = "96 sampling=YCbCr-4:2:2; width=1920; ..." },
+        -- Decomposed: a=rtpmap:96 raw/90000
+        { name = "rtpmap",
+          payload_type = 96, encoding = "raw", clock_rate = 90000 },
+        -- Decomposed: a=fmtp:96 sampling=YCbCr-4:2:2;width=1920;...
+        { name = "fmtp", payload_type = 96,
+          params = {
+            { "sampling", "YCbCr-4:2:2" },
+            { "width",    "1920" },
+            -- ... ordered list of {key, value | true} pairs
+          } },
+        -- Flag-only (no value): a=recvonly
+        { name = "recvonly" },
+        -- Unknown name → generic carrier
+        { name = "tool", value = "test-sender/1.0" },
       },
     },
   },
 }
 ```
 
-All array fields (`emails`, `phones`, `bandwidths`, `attributes`, `media`) are always
-present as tables, even when empty. Optional scalar fields absent from the source
-SDP are `nil`.
+All array fields (`emails`, `phones`, `bandwidths`, `attributes`,
+`time_descriptions`, `media`) are always present as tables, even when
+empty. Optional scalar fields absent from the source SDP are `nil`.
 
-`connection` (when present) is a table `{ net_type, addr_type, address }`.
-`bandwidths` entries are tables `{ type, value }` where `value` is a number.
-`attributes` entries are tables `{ name, value }` where `value` is `nil` for
-flag-only attributes (e.g. `a=recvonly`).
+`connection` (when present) is `{ net_type, addr_type, address }`.
+`bandwidths` entries are `{ type, value }` where `value` is a number.
+`time_descriptions` entries carry `repeats` as an array of
+`{ interval, duration, offsets = {...} }`.
+
+**Attribute decomposition.** Known attribute names land in typed shapes:
+`rtpmap` (`payload_type` / `encoding` / `clock_rate` / `channels?`),
+`fmtp` (`payload_type` + ordered `params`), `ts-refclk` (`source` plus
+per-source fields), `mediaclk` (`mode` plus per-mode fields), `group`
+(`semantics` + `tags`), `source-filter` (`filter_mode`, `net_type`,
+`addr_type`, `dest_address`, `src_addresses`), `ssrc` (`ssrc_id`,
+`attribute`, optional `value`), `extmap` (`id`, `uri`, optional
+`direction` / `attributes`), `rtcp` / `rtcp-fb` / `ssrc-group` / `mid` /
+`ptime` / `maxptime` / `framerate` / `quality` / `msid`, and the IPMX
+extensions `infoframe` / `hkep` / `privacy`. Flag-only attributes
+(`recvonly`, `sendonly`, `sendrecv`, `inactive`, `rtcp-mux`) have only a
+`name`. Any other attribute name keeps the forward-compat
+`{name, value}` carrier shape.
+
+`fmtp.params` and `privacy.params` are **ordered lists** of `{key, value}`
+sub-tables (input order preserved for byte-faithful round-trip). Use
+`parse_sdp.grammar.base.params_get(params, key)` to look one up; a bare
+flag has `true` as its value.
 
 ---
 
@@ -382,40 +499,43 @@ flag-only attributes (e.g. `a=recvonly`).
 Errors are returned as values. The library never calls `error()` for parse or
 validation failures.
 
+Every error or warning produced by a registered check carries the registry
+shape:
+
 | Field | Type | Description |
 | --- | --- | --- |
+| `id` | string | Stable check id (e.g. `"st2110-20.a.fmtp.depth-invalid-value"`); grep-able key into `sdp.checks()` |
+| `severity` | string | `"error"` or `"warn"` (per the effective policy) |
 | `message` | string | Human-readable description |
-| `line` | integer | 1-based line number |
-| `col` | integer | 1-based column number |
-| `context` | string | The full text of the offending line |
-| `code` | string | Machine-readable code: `MISSING_FIELD`, `INVALID_VALUE`, `WRONG_ORDER`, `MALFORMED_LINE` |
+| `code` | string | Machine-readable enum: `MISSING_FIELD`, `INVALID_VALUE`, `WRONG_ORDER`, `MALFORMED_LINE` |
+| `spec_ref` | string | e.g. `"ST 2110-20:2022 §7.4.2"` |
+| `field_path` | string | e.g. `"media[0].attributes[fmtp:pt=96]"`; empty when not applicable |
+| `line` | integer | 1-based line number (0 when not applicable) |
+| `col` | integer | 1-based column number (0 when not applicable) |
+| `context` | table or string | Optional structured metadata (e.g. `{encoding = "L24"}`) or, for legacy syntactic errors, the source-line text |
 
-ST 2110 and IPMX errors also include:
-
-| Field | Type | Description |
-| --- | --- | --- |
-| `field_path` | string | e.g. `"media[1].attributes.fmtp"` |
-| `spec_ref` | string | e.g. `"ST 2110-20 §7.2"` |
+Errors returned via `nil, err` from `sdp.parse` carry the same shape;
+`errors.format(err)` (in `parse_sdp.errors`) renders them to the standard
+multi-line text format. A policy-key validation failure additionally carries
+`err.policy_key` naming the offending id.
 
 ### Rendering an error
 
 ```lua
+local errors  = require("parse_sdp.errors")
 local doc, err = sdp.parse(text)
 if not doc then
-  local pointer = string.rep(" ", err.col - 1) .. "^"
-  io.stderr:write(string.format(
-    "Error at line %d, col %d: %s\n  %s\n  %s\n",
-    err.line, err.col, err.message, err.context, pointer
-  ))
+  io.stderr:write(errors.format(err) .. "\n")
+  os.exit(1)
 end
 ```
 
 Output:
 
 ```text
-Error at line 4, col 1: missing required field 't='
-  a=recvonly
-  ^
+error: [MISSING_FIELD] media block must include an 'a=ts-refclk' attribute (every ST 2110 stream description requires one)
+ --> field: media[0]
+  = note: required by ST 2110-10:2022 §8.2
 ```
 
 ---
@@ -444,8 +564,10 @@ library a liability rather than a guard.
     `exactframerate`, `colorimetry`, `PM`, or `SSN` — every one of these is a
     "shall be signaled" parameter under §7.2. (TCS lives in §7.3 and is
     optional; receivers assume `SDR` when absent per §7.6.)
-  - Audio `a=rtpmap` missing the channel count field (RFC 8866 §6 — channels
-    are required for audio).
+  - AM824 `a=rtpmap` missing the channel count field (ST 2110-31:2022 §6.1
+    — the AES3 Subframe sequence count is mandatory). L16 / L24 channel
+    count is optional per RFC 3551 §6 (defaults to 1 when absent), and the
+    library follows that.
   - Dynamic payload types (96–127) without a corresponding `a=rtpmap` to give
     them meaning (RFC 3551 §6).
 - **Explicit prohibitions.** Examples:
@@ -501,6 +623,17 @@ library a liability rather than a guard.
   signaled via NMOS Sender Capabilities, not via SDP. The library accepts any
   conformant single SDP and does not infer device-wide capability claims from
   it.
+- **SDPs with zero media blocks at any tier.** RFC 8866 / ST 2110-10 / TR-10
+  do not explicitly forbid `#media == 0`; the library follows the spec. The
+  per-block SHALLs (ts-refclk, mediaclk, IPMX fmtp marker, etc.) still fire
+  on any block that *is* present.
+- **Specific audio shapes that the 1.0 parser flagged without primary-text
+  grounding.** Three checks the 1.0 parser enforced are not enforced here
+  because their cites don't carry the SHALL in the primary spec text:
+  AM824 `MAXUDP`-forbidden (cite was "ST 2110-31 §5.x inherits"; -31 §5.2
+  actually defers to -10 which permits MAXUDP), L16/L24 channels-required
+  (RFC 3551 §6 makes channels optional), AM824 packet-payload-fit (no
+  -31 UDP-size SHALL of its own).
 
 ### A practical test
 
@@ -521,8 +654,6 @@ quote it in the code comment and as the `spec_ref` field on the error.
 `sdp.parse(text, "st2110")` or `doc:validate("st2110")` enforces:
 
 ### Session-level
-
-- At least one `m=` block must be present.
 
 #### ST 2022-7 redundancy grouping — `a=group:DUP` (ST 2110-10 §8.5)
 
@@ -937,8 +1068,8 @@ These checks apply at the **IPMX tier only**. ST 2110 mode accepts `a=rtcp-mux` 
 
 ## Serialization
 
-`doc:to_sdp()` produces RFC 4566-compliant SDP text. Field order follows the
-spec exactly (RFC 4566 §5):
+`doc:to_sdp()` produces RFC 8866-compliant SDP text. Field order follows
+RFC 8866 §5 exactly:
 
 ```text
 v=
@@ -952,73 +1083,90 @@ s=
 [b=]*
 (t= [r=]*)+
 [z=]
-[k=]
 [a=]*
 [m=
   [i=]
   [c=]
   [b=]*
-  [k=]
   [a=]*
 ]*
 ```
 
-Line endings are `\r\n`. The serializer never emits optional fields that are `nil`.
-Output is always a valid, strictly conformant SDP document.
+Line endings are `\r\n` per RFC 8866 §9 ABNF. The serializer never emits
+optional fields that are `nil`. `k=` (RFC 4566 §5.12) is obsolete per
+RFC 8866 §5 and is never emitted.
 
-`session.time_descriptions` is a list of `{ start, stop, repeats=[…] }` entries
-covering all `(t=, r=*)` blocks. `session.timing` mirrors the first entry's
-`{start, stop}` for back-compat. `session.time_zones` is a list of
-`{adjustment_time, offset}` pairs. `session.key` and `m.key` carry
-`{method, value?}` per RFC 4566 §5.12.
+**Serializer / validator separation.** `to_sdp()` checks only structural
+completeness (the fields RFC 8866 / per-attribute grammar mark as
+required, so a renderable line can be produced) and emits faithfully on
+success. Value-form correctness, enum membership, and cross-section
+invariants are `doc:validate()`'s job. A missing-required field is the
+only thing `to_sdp()` errors on; a present-but-wrong field is stringified
+and emitted (round-trip will then fail — that's the developer's signal).
+This separation lets a developer build a doc piecemeal, render at any
+point to see *structural* gaps, and validate when they think they're done.
+
+**Round-trip invariant.** Parsing valid text → serializing → re-parsing
+yields a doc deep-equal to the first, and the second serialization is
+byte-identical to the first. This is exercised across every fixture in
+`examples/{generic,st2110,ipmx}/valid/` by `spec/roundtrip_spec.lua`.
+
+**Doc-shape contracts the serializer relies on.** `session.time_descriptions`
+is a list of `{ start, stop, repeats }` entries (one per `t=` block);
+`session.time_zones` is a list of `{ adjustment_time, offset }` pairs.
+Known compound attributes (`rtpmap`, `fmtp`, `ts-refclk`, `mediaclk`,
+`group`, `source-filter`, etc.) are read from their decomposed fields —
+there is no fallback to a stored `attr.value` string for known names.
+Unknown / forward-compat attributes keep the `{name, value}` carrier
+shape.
 
 ## Test Suite Organization
 
-The hermetic test suite (`busted spec/`) splits into seven files along a
-single axis: **what kind of code each test exercises.** Every `it` block
-falls into exactly one of four buckets.
+The hermetic test suite (`busted spec/`) splits along a single axis:
+**what kind of code each test exercises.** Every `it` block falls into
+one of four buckets.
 
 | File | Bucket | What it tests |
 | --- | --- | --- |
-| `spec/sdp_spec.lua` | **standards** | RFC 4566 / RFC 8866 — base SDP behavior. Every test ties to a specific clause. |
-| `spec/st2110_spec.lua` | **standards** | SMPTE ST 2110 (-10, -20, -21, -22, -30, -31, -40, -41). Every test cites the section. |
-| `spec/ipmx_spec.lua` | **standards** | VSF TR-10 / IPMX. Every test cites the TR clause. |
-| `spec/library_spec.lua` | **library API** | The public surface — `sdp.parse`, `sdp.new`, `doc:validate`, `doc:is_sdp` / `is_st2110` / `is_ipmx`, `doc:to_json`. Sanity, mode dispatch, predicate behavior, error-table shape. Not tied to any spec. |
-| `spec/cli_spec.lua` | **library API** | The CLI surface — `parse_sdp to_json` / `to_sdp` subcommands, exit codes, `--help`, `--pretty`, `--mode`. Not tied to any spec. |
-| `spec/grammar_spec.lua` | **internal helpers** | The LPEG primitive parsers exposed as `parse_sdp._grammar`. Internal-only (not in the public contract); useful for parser-dev iteration and sharp regression diagnostics. White-box: a refactor that inlined these helpers into `parser.parse` would fail them even with identical public-API behavior. |
-| `spec/errors_spec.lua` | **internal helpers** | The error formatter exposed as `parse_sdp._errors`. Also internal-only and white-box. |
+| `spec/grammar_base_spec.lua` | **standards** | RFC 8866 base SDP — every leaf rule, every soft- and semantic-syntactic finding, doc shape. |
+| `spec/grammar_st2110_spec.lua` | **standards** | SMPTE ST 2110 overrides + per-block / cross-section checks (-10, -20, -21, -22, -30, -31, -40, -41). |
+| `spec/grammar_ipmx_spec.lua` | **standards** | VSF TR-10 / IPMX overrides + per-block / cross-section checks (TR-10-1 through TR-10-14). |
+| `spec/grammar_compose_spec.lua` | **standards** | Composition mechanism: `base.extend` parent/child rule merging, semantic-check inheritance, distinct grammars. |
+| `spec/grammar_addresses_spec.lua` | **standards** | IPv4 / IPv6 / hostname LPeg primitives in `parse_sdp.grammar.addresses`. |
+| `spec/grammar_patterns_spec.lua` | **standards** | Shared numeric value-form patterns in `parse_sdp.grammar.patterns`. |
+| `spec/roundtrip_spec.lua` | **standards** | Doc-shape round-trip per attribute + full-fixture parse → serialize → re-parse deep-equal across `examples/{generic,st2110,ipmx}/valid/*.sdp`. |
+| `spec/error_registry_spec.lua` | **standards** | Error-registry schema, severity resolution, `validate_policy`, `record()` semantics, deepest-failure tracker. |
+| `spec/library_spec.lua` | **library API** | Public surface — `sdp.parse(text, mode, opts)`, `sdp.new`, `sdp.checks` / `sdp.default_policy`, `doc:validate` / `doc:is_*` / `doc:to_sdp` / `doc:to_json` / `doc:findings` / `doc:warnings` / `doc:errors`. Policy validation, mode dispatch, accessor shape. Not tied to any single spec clause. |
+| `spec/cli_spec.lua` | **library API** | The CLI surface — `parse_sdp to_json` / `to_sdp` subcommands, exit codes, `--help`, `--pretty`, `--mode`. |
+| `spec/errors_spec.lua` | **internal helpers** | The 1.0 error formatter compatibility surface (`errors.new` / `errors.format`). Internal-only; white-box. |
+| `spec/support.lua` | (not a spec) | Shared spec helpers: `finding_for(ctx, id)`, `TIMING_*` fixture constants. |
 
-The split exists so that:
-
-- A reader looking at `sdp_spec.lua` / `st2110_spec.lua` / `ipmx_spec.lua`
-  knows every test is grounded in published spec text. There is no need
-  to wonder whether a given check is opinion or convention.
-- A reader looking at `library_spec.lua` / `cli_spec.lua` knows the tests
-  cover the user-facing API contract and can be updated freely when the
-  API evolves (as long as the spec-tied tests still pass).
-- A reader looking at `grammar_spec.lua` / `errors_spec.lua` knows the
-  tests are white-box characterization tests for internal helpers. If
-  the parser or error formatter is ever rewritten, these tests may need
-  to be rewritten or removed with no impact on observable behavior.
-
-Tests in the non-standards files carry an inline comment marker on the
-line above each `it`:
-
-```lua
-  -- NOT-SPEC: library         -- in library_spec / cli_spec
-  -- NOT-SPEC: implementation  -- in grammar_spec / errors_spec
-```
-
-The markers exist so the boundary stays grep-able even if a test is
-moved or copied between files.
+The standards-tied files cover every grounded check the grammar tier
+enforces — each test cites the relevant clause. The library/CLI tests
+exercise the public surface without asserting against a specific spec
+clause. The internal-helper file covers a 1.0-compatibility shim
+slated for removal in Phase 10.A.
 
 ### Running tests
 
 ```sh
-busted spec/                  # full hermetic suite
-busted spec/sdp_spec.lua      # one file
-busted spec/library_spec.lua  # just the library API tests
+busted spec/                            # full hermetic suite
+busted spec/grammar_base_spec.lua       # one file
+busted spec/library_spec.lua            # just the library API tests
 ```
+
+### Legacy 1.0 tests (`spec_legacy_1.0/`)
+
+The four spec files tied to the 1.0 parser's doc shape and over-strict
+checks live in `spec_legacy_1.0/`:
+`sdp_spec.lua`, `st2110_spec.lua`, `ipmx_spec.lua`, `grammar_spec.lua`.
+They assert against `session.timing.start/stop` (the 1.0 shape; the new
+shape is `session.time_descriptions[]`) and against three documented
+1.0-over-strict drops. They are **not** part of `busted spec/`; they
+remain on disk as the Phase 10.B coverage-parity reference. Phase 10.A
+will delete them along with the 1.0 implementation.
+
+### Conformance suite (`spec_conformance/`)
 
 There is also an opt-in conformance suite under `spec_conformance/` that
 downloads pinned AMWA fixtures and parses them; see that directory's
