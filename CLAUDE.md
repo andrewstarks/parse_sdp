@@ -107,8 +107,12 @@ one. *"Out of scope of spec X"* is not the same as *"forbidden by spec X."*
 
 When adding or auditing a check:
 
-- Quote the SHALL / SHALL-NOT / defined-value clause in the code comment and as
-  the `spec_ref` field on the error.
+- Quote the SHALL / SHALL-NOT / defined-value clause **verbatim** in the code
+  comment (literal quoted string) and cite it via the `spec_ref` field on the
+  error. Then read your interpretation against the quoted text — if your
+  interpretation introduces words the quote doesn't contain ("every",
+  "forbidden", "required"), that's the bug. Paraphrase-only is the failure
+  mode that lets overreach hide.
 - If you can't find one, don't add the check.
 - *"Physically silly but not forbidden"* — a configuration that probably can't
   work in practice — is **not** in scope. The validator tests for conformance,
@@ -150,9 +154,9 @@ for the user-facing version with worked examples.
 
 ## Spec Verification Protocol
 
-This protocol applies to *auditing* existing checks (e.g. when a conformance
-finding suggests a check may be wrong), not to writing new ones. New checks
-follow the strictness principle above. Audits follow these rules:
+Use this protocol both when writing new checks and when auditing existing
+ones. The strictness principle above tells you what to check; the rules
+below tell you how to be sure of the citation and the placement.
 
 1. **Get the primary spec on disk before forming a verdict.** Before claiming
    any check is over-strict, or that "the spec says X," locate the actual
@@ -213,6 +217,24 @@ follow the strictness principle above. Audits follow these rules:
    Media Info Block fields, not SDP fmtp requirements. Reading the bullets
    as SDP requirements (because SDP is in the section title) is the
    failure mode this rule prevents.
+
+7. **`spec_ref` ↔ tier-prefix invariant.** If `spec_ref` cites ST 2110-22:2022,
+   the error ID is `st2110-22.*` and the check lives at the ST 2110 tier. If
+   you find yourself writing a parenthetical that points to a different
+   authoring spec (`"TR-10-X §Y (per ST 2110-22 §Z)"`), the placement is
+   wrong — move the check to the authoring tier; downstream tiers inherit
+   via composition. The 1.0 parser's monolithic file structure colocates
+   work by spec-family, not by authorship, and is not a placement guide.
+
+8. **No "audit-folder follow-up" / "1.0 over-strict" / "intentional
+   non-parity" labels on the slice you're actively writing.** Those phrasings
+   are almost always stand-ins for an unverified spec claim. Before any of
+   them survives into a commit or REFACTOR-PLAN entry, `grep` the relevant
+   §-text for "shall not" / "MUST NOT" / "forbidden" / "prohibit" (and the
+   positive forms for required SHALLs) — if the text doesn't say what the
+   label implies, fix the label by verifying now or by splitting the work
+   off the current slice. The label is never the answer to "can I leave
+   this unverified?"
 
 When auditing a finding, the report should make clear which sources are
 primary and which are circumstantial. Suspected-but-unconfirmed findings stay
