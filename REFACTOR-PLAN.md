@@ -1228,34 +1228,40 @@ Four sub-slices, ordered so each one lands on a green tree.
   stays. Suite unchanged at 1852 green. Net delta: -188 lines across
   base.lua, st2110.lua, ipmx.lua, serialize.lua, errors.lua.
 
-- **9.C — Policy + findings feature go live.** The infrastructure
-  is already in place from Phase 0:
-  [errors.record](parse_sdp/errors.lua#L179-L203) consults
-  `ctx.policy[id]`, every check has a registered `default_severity`,
-  and `sdp.checks()` / `sdp.default_policy()` already expose the
-  toggleable IDs. 9.C flips the switch:
+- **9.C (complete)** — public-API surface for the policy / findings
+  feature. Two surface additions to `parse_sdp.lua`:
 
-  - On `sdp.parse(text, tier, opts)` entry, validate every key in
-    `opts.policy` against the registry; an unknown ID is a caller
-    bug (typo / stale config) and returns `nil, err` pointing at
-    the offending key.
-  - Apply the override: `policy[id]` (when set) wins over
-    `default_severity`. `"off"` short-circuits the `record()` call.
-    `"warn"` records the finding and returns success.
-  - Default `fail_on_first` flips to `false` for the public-API
-    path. Error-severity findings still surface as a parse failure
-    (`sdp.parse` returns `nil, err`), but the doc carries every
-    finding the grammar saw via `ctx.findings`. The internal
-    `tier.match(text, { fail_on_first = true })` 1.0-compatible
-    semantics stay for spec helpers.
-  - The doc surfaces findings via `doc:findings()` (all),
-    `doc:warnings()` (severity = `"warn"`), and `doc:errors()`
-    (severity = `"error"`). Each finding is the registry shape
-    plus a `field_path` / `line` / `col`.
+  - `sdp.parse(text, mode, opts)` now accepts an `opts` table; on
+    entry every key in `opts.policy` is validated against the
+    registry via `errors.validate_policy`. An unknown id (typo or
+    stale config) returns `nil, err` with `err.policy_key` naming
+    the offending key. Invalid severity values fail the same way.
+    Nil opts behaves as before (backward-compat).
+  - `doc:findings()` / `doc:warnings()` / `doc:errors()` accessors
+    are now on the metatable. Findings are stored in a weak-keyed
+    side table (`doc_findings`) so they stay out of `doc:to_json()`
+    output. For `sdp.new()` docs and 1.0-path parses (until 9.D
+    cuts over) the accessors return an empty list.
 
-  The user-facing usage pattern is: grep `sdp.checks()` for the
-  offending ID, drop `{ ["<id>"] = "warn" }` (or `"off"`) into
-  `opts.policy`, re-parse. No reach-into-internals.
+  Storage choice: a weak-keyed side table maps doc → ctx.findings.
+  Findings live there instead of on the doc itself so structured
+  output (JSON, serialize round-trip) stays unpolluted by transient
+  parse metadata.
+
+  Mechanism notes (no code change here — recording for 9.D consumer):
+  `errors.record` already consults `ctx.policy[id]`; `errors.validate_policy`
+  already exists; the grammar-tier match() already accepts
+  `opts.policy` and `opts.fail_on_first`. 9.C just lifts the
+  registry-key validation up to the public-API entry point and
+  adds the accessor methods.
+
+  The actual cut-over of `sdp.parse` from `parser.parse` (the 1.0
+  path) to the grammar-tier match() happens in 9.D, at which point
+  the side table starts populating and the policy overrides
+  actually apply during parsing.
+
+  10 new tests in `spec/library_spec.lua` (policy validation: 5;
+  accessor methods: 5). Suite 1862 green (was 1852).
 
 - **9.D — Cutover wiring.** Flip `mt:to_sdp()` from the 1.0
   serializer to `parse_sdp/serialize.lua`. `sdp.parse(text, tier,

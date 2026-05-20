@@ -560,3 +560,85 @@ describe("library: sdp.default_policy()", function()
     assert.equal("error", p2["sdp.v.must-be-zero"])
   end)
 end)
+
+describe("library: sdp.parse(text, mode, opts) policy validation", function()
+  -- NOT-SPEC: library
+  it("accepts opts.policy with all-known ids", function()
+    local doc, err = sdp.parse(MINIMAL_SDP, nil,
+      { policy = { ["sdp.v.must-be-zero"] = "warn" } })
+    assert.is_not_nil(doc)
+    assert.is_nil(err)
+  end)
+
+  -- NOT-SPEC: library
+  it("rejects opts.policy with an unknown id and names the offending key", function()
+    local doc, err = sdp.parse(MINIMAL_SDP, nil,
+      { policy = { ["bogus.check.id"] = "warn" } })
+    assert.is_nil(doc)
+    assert.is_table(err)
+    assert.equal("bogus.check.id", err.policy_key)
+  end)
+
+  -- NOT-SPEC: library
+  it("rejects opts.policy with an invalid severity value", function()
+    local doc, err = sdp.parse(MINIMAL_SDP, nil,
+      { policy = { ["sdp.v.must-be-zero"] = "fatal" } })
+    assert.is_nil(doc)
+    assert.is_table(err)
+    assert.equal("sdp.v.must-be-zero", err.policy_key)
+  end)
+
+  -- NOT-SPEC: library
+  it("accepts an empty opts table", function()
+    local doc = sdp.parse(MINIMAL_SDP, nil, {})
+    assert.is_not_nil(doc)
+  end)
+
+  -- NOT-SPEC: library
+  it("nil opts behaves as before (backward-compat)", function()
+    local doc = sdp.parse(MINIMAL_SDP)
+    assert.is_not_nil(doc)
+  end)
+end)
+
+describe("library: doc findings accessors", function()
+  -- NOT-SPEC: library
+  it("doc:findings() returns an empty list for sdp.new()", function()
+    local doc = sdp.new({})
+    assert.is_table(doc:findings())
+    assert.equal(0, #doc:findings())
+  end)
+
+  -- NOT-SPEC: library
+  it("doc:warnings() returns an empty list for sdp.new()", function()
+    local doc = sdp.new({})
+    assert.is_table(doc:warnings())
+    assert.equal(0, #doc:warnings())
+  end)
+
+  -- NOT-SPEC: library
+  it("doc:errors() returns an empty list for sdp.new()", function()
+    local doc = sdp.new({})
+    assert.is_table(doc:errors())
+    assert.equal(0, #doc:errors())
+  end)
+
+  -- NOT-SPEC: library
+  it("all three are methods on every parsed doc", function()
+    local doc = sdp.parse(MINIMAL_SDP)
+    assert.is_function(doc.findings)
+    assert.is_function(doc.warnings)
+    assert.is_function(doc.errors)
+  end)
+
+  -- NOT-SPEC: library
+  it("warnings() + errors() partition findings() by severity", function()
+    local doc = sdp.parse(MINIMAL_SDP)
+    local all  = doc:findings()
+    local warn = doc:warnings()
+    local errs = doc:errors()
+    assert.equal(#all, #warn + #errs)
+    for _, f in ipairs(warn) do assert.equal("warn", f.severity) end
+    for _, f in ipairs(errs) do assert.equal("error", f.severity) end
+  end)
+end)

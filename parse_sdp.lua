@@ -3679,12 +3679,54 @@ function mt:to_sdp()
   return serialize.to_sdp(self)
 end
 
+-- Weak-keyed side table maps doc → ordered list of findings produced when
+-- the doc was parsed. Findings live here rather than on the doc itself so
+-- to_json() / round-trip serialization stay clean. Phase 9.C wires the
+-- methods; Phase 9.D populates the table when sdp.parse cuts over to the
+-- grammar tier. For sdp.new() and 1.0-path parses the lookup yields nil
+-- and the accessors return the empty list.
+local doc_findings = setmetatable({}, { __mode = "k" })
+
+local function findings_for(doc) return doc_findings[doc] or {} end
+
+local function findings_filter(doc, severity)
+  local out = {}
+  for _, f in ipairs(findings_for(doc)) do
+    if f.severity == severity then out[#out + 1] = f end
+  end
+  return out
+end
+
+--- All findings (error + warn) emitted while parsing the doc.
+-- @return table  Array of finding tables; empty for sdp.new() or pre-9.D paths.
+function mt:findings() return findings_for(self) end
+
+--- Warn-severity findings only.
+-- @return table  Array of finding tables.
+function mt:warnings() return findings_filter(self, "warn") end
+
+--- Error-severity findings only. With the default fail_on_first behaviour
+-- on the public-API path, sdp.parse returns nil + err when this list is
+-- non-empty; this accessor lets a caller that disabled fail_on_first read
+-- them off the surviving doc.
+-- @return table  Array of finding tables.
+function mt:errors()   return findings_filter(self, "error") end
+
 --- Parse SDP text and return a doc object with metatable methods attached.
 -- @param text string  Raw SDP text (CRLF or LF line endings).
 -- @param mode string  Optional validation tier: "st2110" or "ipmx".
+-- @param opts table   Optional. Fields:
+--                     - policy (table) — id → "error" / "warn" / "off"
+--                       override map. Keys are validated against the
+--                       registry (sdp.checks()) at entry; an unknown id
+--                       returns nil + err pointing at the offending key.
+--                     - fail_on_first (bool) — Phase 9.D wiring.
 -- @return doc  Parsed SDP document on success.
 -- @return nil, err  on parse or validation failure.
-function M.parse(text, mode)
+function M.parse(text, mode, opts)
+  opts = opts or {}
+  local ok, perr = errors.validate_policy(opts.policy)
+  if not ok then return nil, perr end
   local doc, e = parser.parse(text, mode)
   if not doc then return nil, e end
   return setmetatable(doc, mt)

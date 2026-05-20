@@ -2161,6 +2161,28 @@ Audit ref: REFACTOR-PLAN.md §5 Phase 8.F.
 
 ### Changed
 
+- **Phase 9.C:** Public-API surface for the policy / findings feature.
+  Two surface additions to `parse_sdp.lua`:
+  - `sdp.parse(text, mode, opts)` now accepts an `opts` table. On
+    entry every key in `opts.policy` is validated against the
+    registry via `errors.validate_policy`. An unknown id (typo or
+    stale config) returns `nil, err` with `err.policy_key` naming the
+    offending key. Invalid severity values fail the same way. Nil opts
+    behaves as before (backward-compat).
+  - `doc:findings()` / `doc:warnings()` / `doc:errors()` accessors
+    added on the metatable. Findings live in a weak-keyed side table
+    (out of `doc:to_json()` output). For `sdp.new()` docs and
+    1.0-path parses the accessors return an empty list.
+
+  The actual cut-over of `sdp.parse` from the 1.0 parser to the
+  grammar-tier `match()` happens in 9.D — at that point findings
+  start populating and policy overrides apply during parsing. 9.C
+  prepares the surface so 9.D is just a routing flip.
+
+  10 new tests in `spec/library_spec.lua`. Suite 1862 green (was 1852).
+
+Audit ref: REFACTOR-PLAN.md §5 Phase 9.C.
+
 - **Phase 9.B:** Comment-tightening sweep across the new grammar tier,
   serializer, and errors module. Removed paraphrase comments,
   "Phase N: did X" inline annotations whose history is now in
