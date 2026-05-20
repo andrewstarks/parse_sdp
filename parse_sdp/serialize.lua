@@ -44,6 +44,25 @@ local function require_field(parent, key, field_path, what)
   return v
 end
 
+-- Pull each listed required key from `parent`, indexing into `field_path`
+-- to build a nested error path on the first missing one. Returns
+-- { v1, v2, ..., vN } on success or nil + err on the first miss. Used
+-- by per-attribute renderers (Phase 8.D / 8.E) to dissolve the
+-- per-required-field early-return ladder into one helper call.
+local function require_fields(parent, field_path, keys)
+  if parent == nil then
+    return nil, err_missing(field_path, field_path)
+  end
+  local out = {}
+  for i, key in ipairs(keys) do
+    local sub_path = field_path .. "." .. key
+    local v, e = require_field(parent, key, sub_path, sub_path)
+    if not v then return nil, e end
+    out[i] = v
+  end
+  return out
+end
+
 -- ── Top-level fields ────────────────────────────────────────────────────────
 
 local function render_version(doc)
@@ -268,6 +287,34 @@ local function render_media_block(m, idx)
   if not a_block then return nil, ae end
   parts[#parts + 1] = a_block
   return table.concat(parts)
+end
+
+-- ── Per-attribute renderers (Phase 8.D / 8.E) ──────────────────────────────
+-- Each renderer is the inverse of a single `a_*` rule in
+-- parse_sdp/grammar/base.lua (or the IPMX tier in grammar/ipmx.lua).
+-- Contract:
+--   ATTR_RENDERERS[name] = function(attr, field_path) -> "a=...\r\n", nil
+--                                                     | nil, err
+-- The renderer pulls the spec-required Cg-captured fields off `attr` (via
+-- require_fields), assembles the body in the order the grammar produced
+-- it, and wraps with `ln("a", name .. ":" .. body)`. Optional fields are
+-- silently omitted when absent. Per-rule comments below cite the RFC
+-- clause whose grammar the renderer inverts.
+
+-- rtpmap (RFC 8866 §6.6):
+--   rtpmap-value = payload-type SP encoding-name "/" clock-rate
+--                                                [ "/" encoding-params ]
+-- Required: payload_type, encoding, clock_rate. Optional: channels.
+ATTR_RENDERERS.rtpmap = function(attr, field_path)
+  local vs, e = require_fields(attr, field_path,
+    { "payload_type", "encoding", "clock_rate" })
+  if not vs then return nil, e end
+  local body = tostring(vs[1]) .. " " .. tostring(vs[2])
+            .. "/" .. tostring(vs[3])
+  if attr.channels ~= nil then
+    body = body .. "/" .. tostring(attr.channels)
+  end
+  return ln("a", "rtpmap:" .. body)
 end
 
 -- ── Public entry point ─────────────────────────────────────────────────────

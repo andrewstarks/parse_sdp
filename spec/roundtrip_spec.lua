@@ -439,3 +439,89 @@ describe("parse_sdp.serialize — Phase 8.B media blocks", function()
     assert.matches("address", e.message)
   end)
 end)
+
+-- ── Phase 8.D: per-attribute renderers (base tier) ──────────────────────────
+
+describe("parse_sdp.serialize — Phase 8.D rtpmap renderer", function()
+
+  it("round-trips a=rtpmap with required fields only (audio, no channels)", function()
+    local text = lines_to_sdp({
+      "v=0", "o=- 1 1 IN IP4 127.0.0.1", "s=X", "t=0 0",
+      "m=audio 49170 RTP/AVP 96",
+      "a=rtpmap:96 opus/48000",
+    })
+    local doc1, doc2, text2 = round_trip(text)
+    assert.same(doc1, doc2)
+    assert.truthy(text2:find("a=rtpmap:96 opus/48000", 1, true))
+  end)
+
+  it("round-trips a=rtpmap with channels (stereo)", function()
+    local text = lines_to_sdp({
+      "v=0", "o=- 1 1 IN IP4 127.0.0.1", "s=X", "t=0 0",
+      "m=audio 49170 RTP/AVP 96",
+      "a=rtpmap:96 opus/48000/2",
+    })
+    local doc1, doc2, text2 = round_trip(text)
+    assert.same(doc1, doc2)
+    assert.truthy(text2:find("a=rtpmap:96 opus/48000/2", 1, true))
+  end)
+
+  it("round-trips a=rtpmap video form (no channels)", function()
+    local text = lines_to_sdp({
+      "v=0", "o=- 1 1 IN IP4 127.0.0.1", "s=X", "t=0 0",
+      "m=video 49170 RTP/AVP 96",
+      "a=rtpmap:96 H264/90000",
+    })
+    local doc1, doc2, text2 = round_trip(text)
+    assert.same(doc1, doc2)
+    assert.truthy(text2:find("a=rtpmap:96 H264/90000", 1, true))
+  end)
+
+  it("round-trips multiple a=rtpmap lines in one media block preserving order", function()
+    local text = lines_to_sdp({
+      "v=0", "o=- 1 1 IN IP4 127.0.0.1", "s=X", "t=0 0",
+      "m=audio 49170 RTP/AVP 96 97",
+      "a=rtpmap:96 opus/48000/2",
+      "a=rtpmap:97 PCMA/8000",
+    })
+    local doc1, doc2, text2 = round_trip(text)
+    assert.same(doc1, doc2)
+    local p96 = text2:find("a=rtpmap:96", 1, true)
+    local p97 = text2:find("a=rtpmap:97", 1, true)
+    assert.is_true(p96 < p97)
+  end)
+
+  it("returns nil, err when rtpmap is missing payload_type", function()
+    local doc = {
+      version = "0",
+      origin = { username = "-", sess_id = "1", sess_version = "1",
+                 net_type = "IN", addr_type = "IP4",
+                 unicast_address = "127.0.0.1" },
+      session = { name = "X", time_descriptions = {{ start = 0, stop = 0 }} },
+      media = {{ media = "audio", port = 49170, proto = "RTP/AVP",
+                 fmts = {"96"},
+                 attributes = {{ name = "rtpmap", encoding = "opus",
+                                 clock_rate = 48000 }} }}, -- missing payload_type
+    }
+    local out, e = serialize.to_sdp(doc)
+    assert.is_nil(out)
+    assert.matches("payload_type", e.message)
+  end)
+
+  it("returns nil, err when rtpmap is missing clock_rate", function()
+    local doc = {
+      version = "0",
+      origin = { username = "-", sess_id = "1", sess_version = "1",
+                 net_type = "IN", addr_type = "IP4",
+                 unicast_address = "127.0.0.1" },
+      session = { name = "X", time_descriptions = {{ start = 0, stop = 0 }} },
+      media = {{ media = "audio", port = 49170, proto = "RTP/AVP",
+                 fmts = {"96"},
+                 attributes = {{ name = "rtpmap", payload_type = 96,
+                                 encoding = "opus" }} }}, -- missing clock_rate
+    }
+    local out, e = serialize.to_sdp(doc)
+    assert.is_nil(out)
+    assert.matches("clock_rate", e.message)
+  end)
+end)
