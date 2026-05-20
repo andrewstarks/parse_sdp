@@ -17,6 +17,7 @@
 -- fields → serializer returns nil + err, not a half-rendered string.
 
 local base      = require("parse_sdp.grammar.base")
+local ipmx      = require("parse_sdp.grammar.ipmx")
 local serialize = require("parse_sdp.serialize")
 
 local function lines_to_sdp(lines)
@@ -1444,5 +1445,283 @@ describe("parse_sdp.serialize — Phase 8.D.3 source-filter renderer", function(
     })
     assert.is_nil(out)
     assert.matches("src_addresses", e.message)
+  end)
+end)
+
+-- ── Phase 8.E: IPMX-tier attribute renderers ────────────────────────────────
+-- These attributes are added by the IPMX tier via base's a_tier_extensions
+-- hook (see parse_sdp/grammar/ipmx.lua). base.match doesn't know them and
+-- routes them through the generic carrier, so round-trip has to drive
+-- through ipmx.match.
+--
+-- We use `fail_on_first = false` so the round-trip exercise stays focused
+-- on serializer correctness: tier semantic checks (e.g. the infoframe
+-- port-must-match-media-plus-3 cross-section SHALL) record findings into
+-- ctx without aborting the match, so the captured doc shape is preserved
+-- and the deep-equal compare runs on doc tables only. Full fixture
+-- validation lands in Phase 8.F.
+
+local function ipmx_round_trip(text)
+  local doc1, ctx1 = ipmx.match(text, { fail_on_first = false })
+  assert.is_truthy(doc1,
+    "input failed to parse via ipmx.match: " .. (ctx1 and ctx1.findings
+      and ctx1.findings[1] and ctx1.findings[1].message or "no finding"))
+  local text2, e = serialize.to_sdp(doc1)
+  assert.is_nil(e, "serialize returned an error")
+  assert.is_string(text2)
+  local doc2 = ipmx.match(text2, { fail_on_first = false })
+  assert.is_truthy(doc2, "re-parse failed")
+  return doc1, doc2, text2
+end
+
+describe("parse_sdp.serialize — Phase 8.E infoframe renderer", function()
+
+  it("round-trips a=infoframe at session level", function()
+    local text = lines_to_sdp({
+      "v=0", "o=- 1 1 IN IP4 127.0.0.1", "s=X", "t=0 0",
+      "a=infoframe:30003 SSN=ST2110-41:2024;DIT=100100",
+    })
+    local doc1, doc2, text2 = ipmx_round_trip(text)
+    assert.same(doc1, doc2)
+    assert.truthy(text2:find(
+      "a=infoframe:30003 SSN=ST2110-41:2024;DIT=100100\r\n", 1, true))
+  end)
+
+  it("preserves decomposed fields (port / ssn / dit)", function()
+    local text = lines_to_sdp({
+      "v=0", "o=- 1 1 IN IP4 127.0.0.1", "s=X", "t=0 0",
+      "a=infoframe:30003 SSN=ST2110-41:2024;DIT=100100",
+    })
+    local doc1 = ipmx_round_trip(text)
+    local attr
+    for _, a in ipairs(doc1.session.attributes) do
+      if a.name == "infoframe" then attr = a; break end
+    end
+    assert.is_not_nil(attr)
+    assert.equal(30003,            attr.port)
+    assert.equal("ST2110-41:2024", attr.ssn)
+    assert.equal("100100",         attr.dit)
+  end)
+
+  it("returns nil, err when infoframe is missing port", function()
+    local out, e = serialize.to_sdp({
+      version = "0",
+      origin = { username = "-", sess_id = "1", sess_version = "1",
+                 net_type = "IN", addr_type = "IP4",
+                 unicast_address = "127.0.0.1" },
+      session = { name = "X", time_descriptions = {{ start = 0, stop = 0 }},
+                  attributes = {{ name = "infoframe",
+                                  ssn = "ST2110-41:2024",
+                                  dit = "100100" }} }, -- missing port
+    })
+    assert.is_nil(out)
+    assert.matches("port", e.message)
+  end)
+
+  it("returns nil, err when infoframe is missing ssn", function()
+    local out, e = serialize.to_sdp({
+      version = "0",
+      origin = { username = "-", sess_id = "1", sess_version = "1",
+                 net_type = "IN", addr_type = "IP4",
+                 unicast_address = "127.0.0.1" },
+      session = { name = "X", time_descriptions = {{ start = 0, stop = 0 }},
+                  attributes = {{ name = "infoframe", port = 30003,
+                                  dit = "100100" }} }, -- missing ssn
+    })
+    assert.is_nil(out)
+    assert.matches("ssn", e.message)
+  end)
+
+  it("returns nil, err when infoframe is missing dit", function()
+    local out, e = serialize.to_sdp({
+      version = "0",
+      origin = { username = "-", sess_id = "1", sess_version = "1",
+                 net_type = "IN", addr_type = "IP4",
+                 unicast_address = "127.0.0.1" },
+      session = { name = "X", time_descriptions = {{ start = 0, stop = 0 }},
+                  attributes = {{ name = "infoframe", port = 30003,
+                                  ssn = "ST2110-41:2024" }} }, -- missing dit
+    })
+    assert.is_nil(out)
+    assert.matches("dit", e.message)
+  end)
+end)
+
+describe("parse_sdp.serialize — Phase 8.E hkep renderer", function()
+
+  it("round-trips a=hkep at session level (IP4)", function()
+    local text = lines_to_sdp({
+      "v=0", "o=- 1 1 IN IP4 127.0.0.1", "s=X", "t=0 0",
+      "a=hkep:6001 IN IP4 192.0.2.10"
+        .. " 6b2a8d4f-1234-5678-9abc-def0123456ab 01-02-03-04-05",
+    })
+    local doc1, doc2, text2 = ipmx_round_trip(text)
+    assert.same(doc1, doc2)
+    assert.truthy(text2:find(
+      "a=hkep:6001 IN IP4 192.0.2.10"
+        .. " 6b2a8d4f-1234-5678-9abc-def0123456ab 01-02-03-04-05\r\n",
+      1, true))
+  end)
+
+  it("round-trips a=hkep with IP6 addrtype", function()
+    local text = lines_to_sdp({
+      "v=0", "o=- 1 1 IN IP4 127.0.0.1", "s=X", "t=0 0",
+      "a=hkep:6002 IN IP6 2001:db8::1"
+        .. " 11111111-2222-3333-4444-555555555555 aa-bb-cc-dd-ee",
+    })
+    local doc1, doc2, text2 = ipmx_round_trip(text)
+    assert.same(doc1, doc2)
+    assert.truthy(text2:find(
+      "a=hkep:6002 IN IP6 2001:db8::1"
+        .. " 11111111-2222-3333-4444-555555555555 aa-bb-cc-dd-ee\r\n",
+      1, true))
+  end)
+
+  it("preserves decomposed fields", function()
+    local text = lines_to_sdp({
+      "v=0", "o=- 1 1 IN IP4 127.0.0.1", "s=X", "t=0 0",
+      "a=hkep:6001 IN IP4 192.0.2.10"
+        .. " 6b2a8d4f-1234-5678-9abc-def0123456ab 01-02-03-04-05",
+    })
+    local doc1 = ipmx_round_trip(text)
+    local attr
+    for _, a in ipairs(doc1.session.attributes) do
+      if a.name == "hkep" then attr = a; break end
+    end
+    assert.is_not_nil(attr)
+    assert.equal(6001,                                   attr.port)
+    assert.equal("IN",                                   attr.nettype)
+    assert.equal("IP4",                                  attr.addrtype)
+    assert.equal("192.0.2.10",                           attr.addr)
+    assert.equal("6b2a8d4f-1234-5678-9abc-def0123456ab", attr.node_id)
+    assert.equal("01-02-03-04-05",                       attr.port_id)
+  end)
+
+  it("returns nil, err when hkep is missing port_id", function()
+    local out, e = serialize.to_sdp({
+      version = "0",
+      origin = { username = "-", sess_id = "1", sess_version = "1",
+                 net_type = "IN", addr_type = "IP4",
+                 unicast_address = "127.0.0.1" },
+      session = { name = "X", time_descriptions = {{ start = 0, stop = 0 }},
+                  attributes = {{ name = "hkep", port = 6001,
+                                  nettype = "IN", addrtype = "IP4",
+                                  addr = "192.0.2.10",
+                                  node_id =
+                                    "6b2a8d4f-1234-5678-9abc-def0123456ab"
+                                }} }, -- missing port_id
+    })
+    assert.is_nil(out)
+    assert.matches("port_id", e.message)
+  end)
+
+  it("returns nil, err when hkep is missing addr", function()
+    local out, e = serialize.to_sdp({
+      version = "0",
+      origin = { username = "-", sess_id = "1", sess_version = "1",
+                 net_type = "IN", addr_type = "IP4",
+                 unicast_address = "127.0.0.1" },
+      session = { name = "X", time_descriptions = {{ start = 0, stop = 0 }},
+                  attributes = {{ name = "hkep", port = 6001,
+                                  nettype = "IN", addrtype = "IP4",
+                                  node_id =
+                                    "6b2a8d4f-1234-5678-9abc-def0123456ab",
+                                  port_id = "01-02-03-04-05" }} }, -- missing addr
+    })
+    assert.is_nil(out)
+    assert.matches("addr", e.message)
+  end)
+end)
+
+describe("parse_sdp.serialize — Phase 8.E privacy renderer", function()
+
+  it("round-trips a=privacy with all six required params", function()
+    local text = lines_to_sdp({
+      "v=0", "o=- 1 1 IN IP4 127.0.0.1", "s=X", "t=0 0",
+      "a=privacy:protocol=RTP;mode=AES-128-CTR;iv=0123456789abcdef;"
+        .. "key_generator=0123456789abcdef0123456789abcdef;"
+        .. "key_version=00112233;key_id=fedcba9876543210",
+    })
+    local doc1, doc2, text2 = ipmx_round_trip(text)
+    assert.same(doc1, doc2)
+    assert.truthy(text2:find(
+      "a=privacy:protocol=RTP;mode=AES-128-CTR;iv=0123456789abcdef;"
+        .. "key_generator=0123456789abcdef0123456789abcdef;"
+        .. "key_version=00112233;key_id=fedcba9876543210\r\n",
+      1, true))
+  end)
+
+  it("preserves param key order across round-trip", function()
+    -- Order intentionally non-canonical to verify the ordered Ct shape
+    -- (the Phase 8.C invariant) survives serialize → re-parse.
+    local text = lines_to_sdp({
+      "v=0", "o=- 1 1 IN IP4 127.0.0.1", "s=X", "t=0 0",
+      "a=privacy:key_id=fedcba9876543210;iv=0123456789abcdef;"
+        .. "key_version=00112233;mode=AES-128-CTR;protocol=RTP;"
+        .. "key_generator=0123456789abcdef0123456789abcdef",
+    })
+    local doc1, doc2, text2 = ipmx_round_trip(text)
+    assert.same(doc1, doc2)
+    -- First emitted param is the first one captured (key_id).
+    assert.truthy(text2:find("a=privacy:key_id=", 1, true))
+  end)
+
+  it("normalizes spacing around ';' separators (no-space emission)", function()
+    -- The grammar tolerates ";<SP>" between entries, but the renderer
+    -- emits ";". Both forms decompose to the same params + trailing_semi
+    -- doc shape, so doc1 == doc2 even though text2 ≠ input text.
+    local text = lines_to_sdp({
+      "v=0", "o=- 1 1 IN IP4 127.0.0.1", "s=X", "t=0 0",
+      "a=privacy: protocol=RTP; mode=AES-128-CTR; iv=0123456789abcdef;"
+        .. " key_generator=0123456789abcdef0123456789abcdef;"
+        .. " key_version=00112233; key_id=fedcba9876543210",
+    })
+    local doc1, doc2, text2 = ipmx_round_trip(text)
+    assert.same(doc1, doc2)
+    assert.truthy(text2:find(
+      "a=privacy:protocol=RTP;mode=AES-128-CTR;", 1, true))
+  end)
+
+  it("preserves trailing semicolon when captured in doc shape", function()
+    -- The §13 trailing-semi-forbidden SHALL records a finding under
+    -- fail_on_first = false, but the doc still captures trailing_semi=true.
+    -- The renderer must round-trip that captured shape faithfully so a
+    -- consumer who parses a malformed line and re-serializes sees the
+    -- same malformed line (and the same finding) on the second parse.
+    local text = lines_to_sdp({
+      "v=0", "o=- 1 1 IN IP4 127.0.0.1", "s=X", "t=0 0",
+      "a=privacy:protocol=RTP;mode=AES-128-CTR;iv=0123456789abcdef;"
+        .. "key_generator=0123456789abcdef0123456789abcdef;"
+        .. "key_version=00112233;key_id=fedcba9876543210;",
+    })
+    local doc1, doc2, text2 = ipmx_round_trip(text)
+    assert.same(doc1, doc2)
+    assert.truthy(text2:find("key_id=fedcba9876543210;\r\n", 1, true))
+  end)
+
+  it("returns nil, err when privacy params list is empty", function()
+    local out, e = serialize.to_sdp({
+      version = "0",
+      origin = { username = "-", sess_id = "1", sess_version = "1",
+                 net_type = "IN", addr_type = "IP4",
+                 unicast_address = "127.0.0.1" },
+      session = { name = "X", time_descriptions = {{ start = 0, stop = 0 }},
+                  attributes = {{ name = "privacy", params = {} }} }, -- empty
+    })
+    assert.is_nil(out)
+    assert.matches("params", e.message)
+  end)
+
+  it("returns nil, err when privacy params field is absent", function()
+    local out, e = serialize.to_sdp({
+      version = "0",
+      origin = { username = "-", sess_id = "1", sess_version = "1",
+                 net_type = "IN", addr_type = "IP4",
+                 unicast_address = "127.0.0.1" },
+      session = { name = "X", time_descriptions = {{ start = 0, stop = 0 }},
+                  attributes = {{ name = "privacy" }} }, -- no params
+    })
+    assert.is_nil(out)
+    assert.matches("params", e.message)
   end)
 end)

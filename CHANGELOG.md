@@ -2122,6 +2122,31 @@ Audit ref: REFACTOR-PLAN.md §5 Phase 8.C.
 
 Audit ref: REFACTOR-PLAN.md §5 Phase 8.D (incl. 8.D.1 / 8.D.2 / 8.D.3).
 
+- **Phase 8.E:** IPMX-tier attribute renderers. Three new `ATTR_RENDERERS`
+  entries in `parse_sdp/serialize.lua` cover every attribute the IPMX tier
+  adds to base via `a_tier_extensions`:
+
+  - `infoframe` — `<port> SSN=<ssn>;DIT=<dit>` per TR-10-10 §8. Required:
+    port, ssn, dit.
+  - `hkep` — `<port> <nettype> <addrtype> <addr> <node_id> <port_id>` per
+    TR-10-5 §10. Required: all six fields. Doc-shape keys mirror the
+    grammar's `Cg` names (`nettype`/`addrtype`/`addr`), distinct from the
+    underscored `net_type`/`addr_type` on the c= line.
+  - `privacy` — `key=value;...[;]` per TR-10-13 §13. Walks `attr.params`
+    (the ordered Ct shape established for fmtp in 8.C) positionally and
+    emits with `;` separators (no space). The captured `trailing_semi`
+    boolean is honored so a doc that parsed a §13-malformed trailing-`;`
+    line round-trips faithfully (same finding fires on the re-parse).
+
+  Round-trip tests drive through `ipmx.match` with `fail_on_first = false`
+  so the renderer-correctness exercise stays focused on doc-shape
+  preservation; cross-section semantic checks (e.g. the infoframe
+  port-must-match-media-plus-3 SHALL) record findings without aborting
+  the match. Phase 8.F runs the full fixture suite with validation on.
+  16 new tests in `spec/roundtrip_spec.lua`; suite 1833 green (was 1817).
+
+Audit ref: REFACTOR-PLAN.md §5 Phase 8.E.
+
 ### Changed
 
 - The inline `errors` table in `parse_sdp.lua` now delegates to

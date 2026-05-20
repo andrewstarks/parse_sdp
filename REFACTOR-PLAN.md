@@ -1075,8 +1075,29 @@ Sub-slice ordering (decided 2026-05-20 in planning conversation):
   sequentially without isolation. Pattern noted for future agent
   dispatch (see [[project-phase8-tooling]] if memory captures the
   lesson).
-- **8.E (pending)** — IPMX-tier attribute renderers (infoframe,
-  hkep, privacy). Round-trips every `examples/ipmx/valid/*.sdp`.
+- **8.E (complete)** — IPMX-tier attribute renderers. Three new
+  `ATTR_RENDERERS` entries in `parse_sdp/serialize.lua` cover every
+  attribute the IPMX tier adds via `a_tier_extensions`:
+  - `infoframe` — `<port> SSN=<ssn>;DIT=<dit>` per TR-10-10 §8.
+    Required: port, ssn, dit.
+  - `hkep` — `<port> <nettype> <addrtype> <addr> <node_id> <port_id>`
+    per TR-10-5 §10. Required: all six fields. Doc-shape keys mirror
+    the grammar's Cg names (`nettype`/`addrtype`/`addr`), distinct
+    from the c= line's underscored field names.
+  - `privacy` — `key=value;...[;]` per TR-10-13 §13. Walks
+    `attr.params` (the ordered Ct shape from 8.C) positionally and
+    emits with `;` separators (no space — re-parses cleanly under
+    the grammar's `;` + SP^-1 separator). Honors the captured
+    `trailing_semi` boolean so a malformed §13 trailing-`;` line
+    round-trips faithfully (same finding fires on the re-parse).
+
+  Round-trip tests drive through `ipmx.match` with `fail_on_first =
+  false` so the renderer exercise stays focused on doc-shape
+  preservation; cross-section IPMX checks (e.g. infoframe
+  port-must-match-media-plus-3) record findings into ctx without
+  aborting the match, so doc1 == doc2 even when the fixture isn't
+  fully IPMX-conformant. Full-fixture validation lands in 8.F.
+  16 new tests; suite 1833 green (was 1817).
 - **8.F (pending)** — final `spec/roundtrip_spec.lua` form: loop
   every `examples/{generic,st2110,ipmx}/valid/*.sdp` file with
   parse → serialize → re-parse → deep-equal.

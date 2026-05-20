@@ -661,6 +661,66 @@ ATTR_RENDERERS["source-filter"] = function(attr, field_path)
   return ln("a", "source-filter:" .. body)
 end
 
+-- ── Phase 8.E IPMX-tier attribute renderers ────────────────────────────────
+-- Each inverts a rule the IPMX tier adds to base via the `a_tier_extensions`
+-- hook (see parse_sdp/grammar/ipmx.lua's a_infoframe / a_hkep / a_privacy).
+-- Round-trip is only meaningful when the producing doc was parsed by
+-- ipmx.match — base.match doesn't know these names and routes them to the
+-- generic carrier, which would land on the wrong renderer here.
+
+-- infoframe (TR-10-10 §8): "a=infoframe:<port> SSN=<ssn>;DIT=<dit>".
+-- The grammar fixes the literal "SSN=" and ";DIT=" punctuation; the
+-- renderer reproduces it byte-for-byte.
+-- Required: port, ssn, dit.
+ATTR_RENDERERS.infoframe = function(attr, field_path)
+  local vs, e = require_fields(attr, field_path, { "port", "ssn", "dit" })
+  if not vs then return nil, e end
+  return ln("a", "infoframe:" .. tostring(vs[1])
+              .. " SSN=" .. tostring(vs[2])
+              .. ";DIT=" .. tostring(vs[3]))
+end
+
+-- hkep (TR-10-5 §10):
+--   "a=hkep:" port SP nettype SP addrtype SP addr SP node_id SP port_id
+-- Six space-separated fields; all required by the ABNF. The doc-shape keys
+-- mirror the grammar's Cg names (nettype/addrtype/addr, not net_type/...),
+-- distinct from the c= line's underscored field names.
+ATTR_RENDERERS.hkep = function(attr, field_path)
+  local vs, e = require_fields(attr, field_path,
+    { "port", "nettype", "addrtype", "addr", "node_id", "port_id" })
+  if not vs then return nil, e end
+  return ln("a", "hkep:"
+              .. tostring(vs[1]) .. " " .. tostring(vs[2])
+              .. " " .. tostring(vs[3]) .. " " .. tostring(vs[4])
+              .. " " .. tostring(vs[5]) .. " " .. tostring(vs[6]))
+end
+
+-- privacy (TR-10-13 §13):
+--   "a=privacy:" key=value *( ";" [SP] key=value )
+-- The grammar's a_privacy rule captures `params` as the same ordered Ct of
+-- {key, value} sub-tables that fmtp uses (Phase 8.C contract), and a
+-- separate `trailing_semi` boolean for the §13 trailing-`;`-forbidden check.
+-- The renderer joins entries with `;` (no space — re-parses cleanly under
+-- the grammar's `;` + SP^-1 separator) and appends `;` when trailing_semi
+-- is true so a doc that captured a malformed trailing-semicolon line
+-- round-trips faithfully.
+-- Required: params (at least one entry — the grammar's `entry * (sep entry)^0`
+-- shape can't produce an empty list).
+ATTR_RENDERERS.privacy = function(attr, field_path)
+  local params = attr.params
+  if params == nil or #params == 0 then
+    return nil, err_missing(field_path .. ".params",
+      field_path .. ".params (at least one key=value pair)")
+  end
+  local toks = {}
+  for i, entry in ipairs(params) do
+    toks[i] = tostring(entry[1]) .. "=" .. tostring(entry[2])
+  end
+  local body = table.concat(toks, ";")
+  if attr.trailing_semi then body = body .. ";" end
+  return ln("a", "privacy:" .. body)
+end
+
 -- ── Public entry point ─────────────────────────────────────────────────────
 
 --- Serialize a doc table back to RFC 8866 SDP text.
