@@ -1349,53 +1349,70 @@ Four sub-slices, ordered so each one lands on a green tree.
      per-attribute serializer renderers, and the registry that
      gives every check a verified spec_ref + severity policy.
 
-- **10.A.0 — Port grounded parity gaps (blockers).** Six
+- **10.A.0 (complete) — Port grounded parity gaps (blockers).** Six
   grounded SHALLs the grammar tier silently dropped during the
-  refactor; primary text verified for each. Land as separate
-  commits per the standard gates (spec quote in code, pass+fail
-  tests, doc sync). Order chosen low-cognitive-cost first; the
-  smpte291 bundle is the largest and clears the failing
-  conformance fixture.
-    1. **10.A.0.1** — RFC 8866 §5.7 base-tier c=-required (every
-       SDP must have either session-level c= or per-media c=).
-       1 registry ID; doc-level semantic check.
-    2. **10.A.0.2** — ST 2110-10:2022 §6.2 m= proto must be
-       "RTP/AVP" (per RFC 3551 RTP Profile SHALL). 1 registry
-       ID; ST 2110-tier media_section check. 1.0 cited §8.1; the
-       correct §6.2 cite ports.
-    3. **10.A.0.3** — ST 2110-10:2022 §8.7 TSMODE value enum
+  refactor; primary text verified for each. Landed as separate
+  commits per the standard gates. Each sub-slice closed:
+    1. **10.A.0.1 (complete)** — RFC 8866 §5.7 base-tier c=-required.
+       1 registry ID `sdp.session.connection-required`. 6 new tests.
+       1.0 cite "ST 2110-10:2022 §6.3" corrected to the authoring
+       RFC 8866 §5.7.
+    2. **10.A.0.2 (complete)** — ST 2110-10:2022 §6.2 m= proto must
+       be "RTP/AVP" (per RFC 3551 RTP Profile SHALL). 1 registry ID
+       `st2110-10.m.proto-must-be-rtp-avp`. 6 new tests. 1.0 cite
+       "ST 2110-10:2022 §8.1" corrected to §6.2.
+    3. **10.A.0.3 (complete)** — ST 2110-10:2022 §8.7 TSMODE enum
        {SAMP, NEW, PRES} + TSDELAY positive-integer value form.
-       2 registry IDs; cross-encoding fmtp post-dispatch. The
-       1.0 TSMODE=SAMP→TSDELAY coupling does NOT port — §8.7
-       restricts that coupling to §7.9 time-preserving senders,
-       which SDP alone cannot identify.
-    4. **10.A.0.4** — RFC 8331 §4 + ST 2110-40:2023 §7 smpte291
-       fmtp bundle. ~7 registry IDs: VPID_Code-once + value form,
-       DID_SDID value form, TM ∈ {LLTM, CTM}, SSN required +
-       value (with 2021-receiver-equivalence per §7), exactframerate
-       required + value form (delegates to ST 2110-20 §7.2 form),
-       TROFF value form. New `check_smpte291_fmtp` +
-       `FMTP_CHECKS_BY_ENCODING[smpte291]`. Clears the failing
-       `nmos-testing:data.sdp` conformance fixture.
-    5. **10.A.0.5** — RFC 4570 §3.1 source-filter dest-address
-       cross-check (every `<dest-address>` must match an existing
-       SDP c= address; `*`-wildcard exempt). 1 registry ID;
-       base-tier doc semantic check. Reuses RFC 8866 §5.7
-       multicast `<base>/<ttl>/<numaddr>` expansion logic.
+       2 registry IDs `st2110-10.a.fmtp.tsmode-invalid-value` /
+       `st2110-10.a.fmtp.tsdelay-invalid-value`. 14 new tests. The
+       in-grammar fmtp_dispatch grew a new `FMTP_COMMON_CHECKS`
+       slot for cross-encoding checks. Intentional non-port: 1.0's
+       unconditional TSMODE=SAMP→TSDELAY coupling — §8.7 restricts
+       that pairing to §7.9 time-preserving senders, a
+       classification SDP alone cannot establish.
+    4. **10.A.0.4 (complete)** — RFC 8331 §4 + ST 2110-40:2023 §7
+       smpte291 fmtp bundle. 9 registry IDs covering VPID_Code
+       cardinality + value form, DID_SDID syntax, TM ∈ {LLTM,
+       CTM}, SSN required + value (with the §7 receiver-equivalence
+       clause accepting ST2110-40:2021 as equivalent to :2023 when
+       TM is signaled), exactframerate required + value form (-20
+       §7.2-delegated), TROFF value form (-21 §8.2-delegated). New
+       `check_smpte291_fmtp` + `smpte291=` entries in both
+       FMTP_CHECKS_BY_ENCODING and FMTP_REQUIRED_BY_ENCODING. 30
+       new tests. Clears the failing `nmos-testing:data.sdp`
+       conformance fixture; `busted spec_conformance/` returns to
+       10/10 green.
+    5. **10.A.0.5 (complete)** — RFC 4570 §3.1 source-filter
+       dest-address cross-check. 1 registry ID
+       `sdp.a.source-filter.dest-not-in-connections`. New base-tier
+       doc semantic check `check_source_filter_dests` using new
+       `addresses.expand_connection` + `addresses.canonicalize`
+       helpers (RFC 8866 §5.7 `<base>/<ttl>/<numaddr>` and
+       `<base>/<numaddr>` expansion; case-insensitive IPv6 match).
+       Wildcard addr_type `*` exempt per §3.1 carve-out. 11 new
+       tests; four pre-existing source-filter round-trip tests
+       updated to use a c= matching each test's dest. Suite ends
+       Phase 10.A.0 at 1146 green (was 1079 at the close of 9.D).
 
-- **10.A — Delete the 1.0 implementation.** Remove the
-  grammar / validator / serializer blocks from `parse_sdp.lua`;
-  the file shrinks to errors-shim re-export, public-API surface,
-  CLI dispatch. `busted spec/` and `busted spec_conformance/`
-  green.
+- **10.A (complete) — Delete the 1.0 implementation.** Removed the
+  1.0 grammar / validator / serializer / parser / util blocks from
+  `parse_sdp.lua` (3875 → 257 lines, -93%). Deleted
+  `spec_legacy_1.0/` in full. `M._grammar` removed (grammar
+  internals reached via direct `require("parse_sdp.grammar.base"|...)`
+  in tests). CLAUDE.md Repository Layout / LPEG-patterns convention
+  / `spec_ref` ↔ tier-prefix invariant regenerated for the new tree.
+  `busted spec/` 1146 green; `busted spec_conformance/` 10/10 green.
 
-- **10.C — Append findings to CHANGELOG.md.** A brief
-  "Comparison with 1.0" section under `[Unreleased]`: one
-  paragraph for coverage (now no-regressions after 10.A.0), one
-  for new checks, one for size delta. Tight — the audit memos in
-  `audits/` carry the full detail. README.md + GUIDE.md
-  regenerated sections cite the audit for users tracking the
-  migration.
+- **10.C (complete) — Comparison with 1.0 + doc refresh.** New
+  "Comparison with 1.0" section at the top of CHANGELOG's
+  `[Unreleased]` (one paragraph each for coverage, new checks, size
+  delta — 169 grammar-tier IDs vs ~80 inline 1.0 sites, ~90 brand-
+  new IDs, +81% raw / +59% stripped). PLAN.md Current State updated
+  to "refactor complete." README.md Project Layout regenerated to
+  match the post-10.A tree with a closing pointer to `audits/` for
+  the per-clause coverage maps the refactor was grounded in.
+
+**Phase 10 — and the grammar-first refactor — is now complete.**
 
 Estimated weight: phases 0–3 are small and gated by getting the architecture
 right; phases 4–7 are the bulk of the work; phases 8–10 are mechanical given
