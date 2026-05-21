@@ -19,18 +19,9 @@
 
 ## Introduction
 
-`parse_sdp` is a Lua 5.5 library for parsing, validating, and serializing SDP
-(Session Description Protocol) files used in professional media over IP workflows.
-It is built with [LPEG](https://www.inf.puc-rio.br/~roberto/lpeg/). Runtime
-dependencies: LPEG, [dkjson](https://github.com/LuaDist/dkjson), and argparse
-(CLI only — never loaded by `require("parse_sdp")`).
+`parse_sdp` is a Lua 5.3-5.5 library for parsing, validating, and serializing SDP (Session Description Protocol) files used in professional media over IP workflows. It is built with [LPEG](https://www.inf.puc-rio.br/~roberto/lpeg/). Runtime dependencies: LPEG, [dkjson](https://github.com/LuaDist/dkjson), and argparse (CLI only — never loaded by `require("parse_sdp")`).
 
-**Strictness is a primary feature.** The library enforces RFC 8866 (which
-obsoletes RFC 4566) exactly: required fields must be present, optional
-fields must appear in the correct position, and values must conform to
-their specified formats. SDP files that are "mostly valid" but technically
-non-conformant are rejected with a precise error message. The library will
-never produce an invalid SDP file.
+**Strictness is a primary feature.** The library enforces RFC 8866 (which obsoletes RFC 4566) exactly: required fields must be present, optional fields must appear in the correct position, and values must conform to their specified formats. SDP files that are "mostly valid" but technically non-conformant are rejected with a precise error message. The library will never produce an invalid SDP file.
 
 Three validation tiers:
 
@@ -48,16 +39,13 @@ Each tier is a strict superset of the previous.
 
 ### SDP (RFC 4566)
 
-Session Description Protocol describes multimedia sessions in a plain-text format.
-Each line has the form:
+Session Description Protocol describes multimedia sessions in a plain-text format. Each line has the form:
 
 ```text
 <type>=<value>
 ```
 
-Fields must appear in a mandatory order. A session description opens with a
-session-level block (`v=` through `t=`), followed by zero or more media blocks
-(each starting with `m=`).
+Fields must appear in a mandatory order. A session description opens with a session-level block (`v=` through `t=`), followed by zero or more media blocks (each starting with `m=`).
 
 Minimal valid SDP:
 
@@ -70,9 +58,7 @@ t=0 0
 
 ### SMPTE ST 2110
 
-ST 2110 defines professional uncompressed media transport over IP using RTP. It
-requires specific SDP attributes that fully describe the media format, removing
-the need for out-of-band negotiation.
+ST 2110 defines professional uncompressed media transport over IP using RTP. It requires specific SDP attributes that fully describe the media format, removing the need for out-of-band negotiation.
 
 Key sub-standards:
 
@@ -86,9 +72,7 @@ Key sub-standards:
 
 ### IPMX
 
-IPMX (IP Media Experience) is an interoperability profile layered on ST 2110. It
-adds RTP header extensions, capability negotiation, and device discovery for
-plug-and-play professional AV over IP.
+IPMX (IP Media Experience) is an interoperability profile layered on ST 2110. It adds RTP header extensions, capability negotiation, and device discovery for plug-and-play professional AV over IP.
 
 ---
 
@@ -100,13 +84,11 @@ plug-and-play professional AV over IP.
 luarocks install parse_sdp
 ```
 
-`lpeg`, `dkjson`, and `argparse` are installed automatically. `argparse` is only
-used by the CLI — `require("parse_sdp")` never loads it.
+`lpeg`, `dkjson`, and `argparse` are installed automatically. `argparse` is only used by the CLI — `require("parse_sdp")` never loads it.
 
 ### Manual
 
-Copy `parse_sdp.lua` into your project. Install `lpeg` and `dkjson` separately
-(and `argparse` if you want the CLI).
+Copy `parse_sdp.lua` into your project. Install `lpeg` and `dkjson` separately (and `argparse` if you want the CLI).
 
 ### Docker
 

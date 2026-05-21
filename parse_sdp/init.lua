@@ -1,11 +1,6 @@
-#!/usr/bin/env lua
 --- parse_sdp — RFC 8866 / ST 2110 / IPMX SDP parser, validator, and serializer.
--- Single file in name only: the parser, validator, and serializer live
--- under `parse_sdp/` as a small module set (`parse_sdp.grammar.base`,
--- `parse_sdp.grammar.st2110`, `parse_sdp.grammar.ipmx`,
--- `parse_sdp.serialize`, `parse_sdp.errors`). This file is the public
--- entry point: it wires the tier match functions, exposes the doc
--- metatable methods, and (when invoked directly) dispatches the CLI.
+-- Library entry point. `require("parse_sdp")` resolves here. The CLI
+-- shell lives at `bin/parse_sdp` and consumes this module.
 -- @module parse_sdp
 
 -- ── External dependencies ─────────────────────────────────────────────────────
@@ -86,10 +81,8 @@ end
 
 -- Weak-keyed side table maps doc → ordered list of findings produced when
 -- the doc was parsed. Findings live here rather than on the doc itself so
--- to_json() / round-trip serialization stay clean. Phase 9.C wires the
--- methods; Phase 9.D populates the table when sdp.parse cuts over to the
--- grammar tier. For sdp.new() and 1.0-path parses the lookup yields nil
--- and the accessors return the empty list.
+-- to_json() / round-trip serialization stay clean. For sdp.new() the
+-- lookup yields nil and the accessors return the empty list.
 local doc_findings = setmetatable({}, { __mode = "k" })
 
 local function findings_for(doc) return doc_findings[doc] or {} end
@@ -103,7 +96,7 @@ local function findings_filter(doc, severity)
 end
 
 --- All findings (error + warn) emitted while parsing the doc.
--- @return table  Array of finding tables; empty for sdp.new() or pre-9.D paths.
+-- @return table  Array of finding tables; empty for sdp.new() docs.
 function mt:findings() return findings_for(self) end
 
 --- Warn-severity findings only.
@@ -187,71 +180,6 @@ M.checks = errors.checks
 M.default_policy = errors.default_policy
 
 -- Exposed for spec access; not part of the public contract.
--- (M._grammar removed in Phase 10.A; the new tier exposes its own modules.)
-M._errors  = errors
-
--- ── CLI (detect-if-main) ──────────────────────────────────────────────────────
-if arg and arg[0] and arg[0]:match("parse_sdp") then
-  local argparse = require("argparse")
-
-  local function die(err_table)
-    io.stderr:write(errors.format(err_table) .. "\n")
-    os.exit(1)
-  end
-
-  local function read_input(file)
-    if file then
-      local f, ioerr = io.open(file, "r")
-      if not f then die(errors.new("cannot open file: " .. (ioerr or file))); return end
-      local text = f:read("*a")
-      f:close()
-      return text
-    end
-    return io.read("*a")
-  end
-
-  local ap = argparse("parse_sdp", "Parse, validate, and serialize SDP (RFC 8866 / ST 2110 / IPMX).")
-  ap:epilog(table.concat({
-    "Examples:",
-    "  parse_sdp to_json session.sdp",
-    "  parse_sdp to_json --mode st2110 --pretty session.sdp",
-    "  parse_sdp to_json < session.sdp | parse_sdp to_sdp",
-    "  parse_sdp to_sdp session.json",
-  }, "\n"))
-  ap:command_target("command")
-
-  local cmd_parse = ap:command("to_json", "Parse and validate an SDP file; output JSON.")
-  cmd_parse:argument("file", "Path to .sdp file. Reads stdin if omitted."):args("?")
-  cmd_parse:option("--mode", "Validation tier: 'st2110' or 'ipmx'. Defaults to RFC 8866 only.")
-  cmd_parse:flag("--pretty", "Pretty-print JSON output with indentation.")
-
-  local cmd_ser = ap:command("to_sdp", "Convert a JSON SDP document back to SDP text.")
-  cmd_ser:argument("file", "Path to .json file. Reads stdin if omitted."):args("?")
-
-  local parsed = ap:parse()
-
-  if parsed.command == "to_json" then
-    local text = read_input(parsed.file)
-    local doc, perr = M.parse(text, parsed.mode)
-    if not doc then die(perr) end
-    local encode_opts = parsed.pretty and { indent = true } or nil
-    io.write(dkjson.encode(doc, encode_opts) .. "\n")
-    os.exit(0)
-
-  elseif parsed.command == "to_sdp" then
-    local json_text = read_input(parsed.file)
-    local tbl, _, jsonerr = dkjson.decode(json_text)
-    if not tbl then
-      die(errors.new("invalid JSON: " .. (jsonerr or "parse error")))
-    end
-    local doc = M.new(tbl)
-    local ok, result = pcall(function() return doc:to_sdp() end)
-    if not ok then
-      die(errors.new("to_sdp error: " .. tostring(result)))
-    end
-    io.write(result)
-    os.exit(0)
-  end
-end
+M._errors = errors
 
 return M

@@ -30,12 +30,18 @@ Prefer fewer, well-named things over many small helpers.
 ## Repository Layout
 
 ```
-parse_sdp.lua        public entry point: wires the tier match functions,
-                     exposes the doc metatable methods, dispatches the CLI.
-                     `require("parse_sdp")` loads the library; running it
-                     directly (`lua parse_sdp.lua` or `./parse_sdp.lua`)
-                     activates the argparse CLI (to_json / to_sdp subcommands).
+bin/
+  parse_sdp          CLI shell. Requires `parse_sdp` (the library) and
+                     dispatches `to_json` / `to_sdp` subcommands via
+                     argparse. Library consumers never load argparse —
+                     it's pulled in here only.
 parse_sdp/
+  init.lua           library entry point. `require("parse_sdp")` resolves
+                     here. Wires the tier match functions, defines the
+                     doc metatable methods (mt:validate / mt:to_sdp /
+                     mt:to_json / mt:findings / mt:warnings / mt:errors),
+                     and exports M.parse / M.new / M.checks /
+                     M.default_policy / M._errors.
   errors.lua         error registry (stable check ids, severity policy,
                      record() emission helper, deepest-failure tracker),
                      plus legacy errors.new / errors.format.

@@ -16,6 +16,33 @@ silently-dropped during the refactor; Phase 10.A deleted the 1.0
 implementation. The on-disk artifact is no longer the 1.0 monolith
 on `main`.
 
+### Changed (post-Phase 10)
+
+- **CLI split into a dedicated shell script.** The dual-purpose top-level
+  `parse_sdp.lua` (library + detect-if-main CLI) is gone. Library code
+  moved to `parse_sdp/init.lua` so `require("parse_sdp")` resolves to it
+  naturally — no `?.lua`-shadows-`?/init.lua` ambiguity, and library
+  consumers no longer drag `argparse` into their runtime. The CLI lives
+  as `bin/parse_sdp` (a small shim that `require`s the library and
+  dispatches `to_json` / `to_sdp` subcommands). Local invocation is
+  `lua bin/parse_sdp ...`; after `luarocks install` it's just
+  `parse_sdp ...` per the rockspec's `install.bin` mapping.
+  
+  Rockspec updates:
+  
+  - `build.modules` now lists every submodule (`parse_sdp` →
+    `parse_sdp/init.lua`, plus `parse_sdp.errors`,
+    `parse_sdp.serialize`, `parse_sdp.grammar.{patterns,addresses,base,
+    st2110,ipmx}`). Earlier the rockspec only registered the top-level
+    file — a pre-existing bug that would have left submodules
+    uninstalled under LuaRocks.
+  - `install.bin.parse_sdp` now points at `bin/parse_sdp`.
+  - Lua dependency relaxed from `>= 5.5` to `>= 5.3, < 5.6` (verified
+    against 5.3).
+  
+  `spec/cli_spec.lua` updated to invoke `lua bin/parse_sdp`; CLAUDE.md +
+  README.md Repository Layout regenerated for the new tree.
+
 ### Added (post-Phase 10)
 
 - **Carrot highlight in error format.** Restored the 1.0-style
