@@ -1484,10 +1484,13 @@ end)
 
 describe("parse_sdp.serialize — Phase 8.D.3 source-filter renderer", function()
 
+  -- Phase 10.A.0.5: source-filter dest must match a c= address per RFC
+  -- 4570 §3.1. Each test sets c= to the source-filter dest.
+
   it("round-trips a=source-filter incl with single src address", function()
     local text = lines_to_sdp({
       "v=0", "o=- 1 1 IN IP4 127.0.0.1", "s=X",
-      "c=IN IP4 224.0.0.1/127",
+      "c=IN IP4 224.2.1.1/127",
       "t=0 0",
       "a=source-filter: incl IN IP4 224.2.1.1 192.0.2.10",
     })
@@ -1500,7 +1503,7 @@ describe("parse_sdp.serialize — Phase 8.D.3 source-filter renderer", function(
   it("round-trips a=source-filter incl with multiple src addresses", function()
     local text = lines_to_sdp({
       "v=0", "o=- 1 1 IN IP4 127.0.0.1", "s=X",
-      "c=IN IP4 224.0.0.1/127",
+      "c=IN IP4 224.2.1.1/127",
       "t=0 0",
       "a=source-filter: incl IN IP4 224.2.1.1 192.0.2.10 192.0.2.11 192.0.2.12",
     })
@@ -1514,7 +1517,7 @@ describe("parse_sdp.serialize — Phase 8.D.3 source-filter renderer", function(
   it("round-trips a=source-filter excl with single src address", function()
     local text = lines_to_sdp({
       "v=0", "o=- 1 1 IN IP4 127.0.0.1", "s=X",
-      "c=IN IP4 224.0.0.1/127",
+      "c=IN IP4 224.2.1.1/127",
       "t=0 0",
       "a=source-filter: excl IN IP4 224.2.1.1 192.0.2.99",
     })
@@ -1527,7 +1530,7 @@ describe("parse_sdp.serialize — Phase 8.D.3 source-filter renderer", function(
   it("round-trips a=source-filter with IP6 addr_type", function()
     local text = lines_to_sdp({
       "v=0", "o=- 1 1 IN IP4 127.0.0.1", "s=X",
-      "c=IN IP4 224.0.0.1/127",
+      "c=IN IP6 ff15::101",
       "t=0 0",
       "a=source-filter: incl IN IP6 ff15::101 2001:db8::1",
     })

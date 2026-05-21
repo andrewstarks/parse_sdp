@@ -465,6 +465,26 @@ M.register("sdp.session.connection-required", {
   verified         = true,
 })
 
+-- RFC 4570 §3.1: "The <dest-address> value in a 'source-filter' attribute
+-- MUST correspond to an existing <connection-field> value in the session
+-- description. The only exception to this is when a '*' wildcard is used
+-- to indicate that the source-filter applies to all <connection-field>
+-- values." Cross-check fires for every literal source-filter (IP4 / IP6
+-- addr_type) whose dest is not in the doc's canonicalized c= set; `*`
+-- wildcards are exempt. c= entries with `<base>/<ttl>/<numaddr>`
+-- (IPv4) or `<base>/<numaddr>` (IPv6) expand per RFC 8866 §5.7's
+-- "contiguously allocated above the base address" rule.
+M.register("sdp.a.source-filter.dest-not-in-connections", {
+  kind             = "semantic",
+  default_severity = "error",
+  code             = "INVALID_VALUE",
+  message_template =
+    "a=source-filter dest-address must match a c= connection-field"
+    .. " somewhere in the SDP (RFC 4570 §3.1)",
+  spec_ref         = "RFC 4570 §3.1",
+  verified         = true,
+})
+
 -- ── ST 2110 rtpmap narrowings per media type (Phase 6.B) ───────────────────
 -- Each ST 2110 essence has a defined encoding-name × media-type × clock-rate
 -- triple. Cited against primary spec text via the Phase-3 audit

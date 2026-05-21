@@ -15,6 +15,38 @@ parser remains the shipping artifact on `main`.
 
 ### Added
 
+- **Phase 10.A.0.5:** ported the RFC 4570 §3.1 source-filter
+  dest-address cross-check the grammar tier had silently dropped. The
+  1.0 parser walked every session- and media-level a=source-filter and
+  verified each `<dest-address>` matched some c= `<connection-field>`
+  value in the SDP, with RFC 8866 §5.7 multicast expansion
+  (`<base>/<ttl>/<numaddr>` → contiguously allocated addresses above
+  the base). Grammar tier parsed source-filter syntactically but
+  performed no cross-check.
+
+  1 new error id `sdp.a.source-filter.dest-not-in-connections` (RFC
+  4570 §3.1, error severity); new base-tier doc semantic check
+  `check_source_filter_dests`. Wildcard addr_type `*` exempt per the
+  §3.1 carve-out ("source-filter applies to all `<connection-field>`
+  values"). New helpers in `parse_sdp/grammar/addresses.lua`:
+  `expand_connection` (with RFC 8866 §5.7 multicast expansion for both
+  IPv4 `<base>/<ttl>/<numaddr>` and IPv6 `<base>/<numaddr>`) and
+  `canonicalize` (case-insensitive IPv6, integer-normalized IPv4)
+  for cross-set membership.
+
+  11 new tests in `spec/grammar_base_spec.lua` (session-level match,
+  per-media match, `*`-wildcard exempt, IPv4 /numaddr expansion,
+  IPv6 match, IPv6 /numaddr expansion, IPv6 case-insensitive match,
+  dest-mismatch reject, addr_type-mismatch reject, /numaddr boundary
+  reject, policy off). Four pre-existing source-filter round-trip
+  tests in `roundtrip_spec` updated to use a c= that matches each
+  test's source-filter dest (the original c= was set up before the
+  cross-check existed).
+
+  Suite 1146 green (was 1135).
+
+  Audit ref: REFACTOR-PLAN.md §5 Phase 10.A.0.
+
 - **Phase 10.A.0.4:** ported the RFC 8331 §4 + ST 2110-40:2023 §7
   smpte291 fmtp SHALLs the grammar tier had silently dropped. The
   failing `nmos-testing:data.sdp` conformance fixture (no `a=fmtp` on

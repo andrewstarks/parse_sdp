@@ -114,10 +114,155 @@ local function is_ipv6_multicast(addr)
   return _ipv6_mcast_prefix:match(addr) ~= nil
 end
 
+-- ── Address arithmetic + canonicalization ───────────────────────────────
+-- Supports the RFC 4570 §3.1 source-filter cross-check (Phase 10.A.0.5).
+-- RFC 8866 §5.7: multicast c= addresses with a `/<numaddr>` suffix
+-- describe `<numaddr>` contiguously allocated addresses above the base.
+-- The cross-check expands each c= entry into the full list of described
+-- addresses before comparing against source-filter dests.
+
+local function ipv4_to_int(addr)
+  local a, b, c, d = addr:match("^(%d+)%.(%d+)%.(%d+)%.(%d+)$")
+  if not a then return nil end
+  return (tonumber(a) * 0x1000000) + (tonumber(b) * 0x10000)
+       + (tonumber(c) * 0x100)     + tonumber(d)
+end
+
+local function int_to_ipv4(n)
+  return string.format("%d.%d.%d.%d",
+    (n >> 24) & 0xff, (n >> 16) & 0xff,
+    (n >> 8)  & 0xff,  n        & 0xff)
+end
+
+-- Parse an IPv6 textual address into 8 16-bit groups; expand "::" if
+-- present. Returns nil on malformed input — callers fall back to the
+-- literal string for cross-check membership (degrading gracefully).
+local function ipv6_to_groups(addr)
+  local lo = addr:lower()
+  if lo == "::" then return { 0, 0, 0, 0, 0, 0, 0, 0 } end
+  local dc = lo:find("::", 1, true)
+  local left, right
+  if dc then
+    left  = lo:sub(1, dc - 1)
+    right = lo:sub(dc + 2)
+  else
+    left, right = lo, ""
+  end
+  local function split(s)
+    local out = {}
+    if s == "" then return out end
+    for tok in (s .. ":"):gmatch("([^:]*):") do
+      out[#out + 1] = tok
+    end
+    return out
+  end
+  local lg, rg = split(left), split(right)
+  if #lg + #rg > 8 then return nil end
+  if not dc and #lg + #rg ~= 8 then return nil end
+  local groups = {}
+  for _, g in ipairs(lg) do
+    local n = tonumber(g, 16)
+    if not n or n < 0 or n > 0xffff then return nil end
+    groups[#groups + 1] = n
+  end
+  for _ = 1, 8 - (#lg + #rg) do groups[#groups + 1] = 0 end
+  for _, g in ipairs(rg) do
+    local n = tonumber(g, 16)
+    if not n or n < 0 or n > 0xffff then return nil end
+    groups[#groups + 1] = n
+  end
+  if #groups ~= 8 then return nil end
+  return groups
+end
+
+local function ipv6_canonical(groups)
+  return string.format("%04x:%04x:%04x:%04x:%04x:%04x:%04x:%04x",
+    groups[1], groups[2], groups[3], groups[4],
+    groups[5], groups[6], groups[7], groups[8])
+end
+
+-- Add a small non-negative integer to an IPv6 group vector, with carry
+-- propagating from the low-order group up. Used to enumerate the
+-- `<base>/<numaddr>` range for cross-check membership.
+local function ipv6_add(groups, n)
+  local g = { groups[1], groups[2], groups[3], groups[4],
+              groups[5], groups[6], groups[7], groups[8] }
+  local carry = n
+  for i = 8, 1, -1 do
+    local v = g[i] + carry
+    g[i] = v & 0xffff
+    carry = v >> 16
+    if carry == 0 then break end
+  end
+  return g
+end
+
+-- Expand a c= entry into a canonical-form address list per RFC 8866 §5.7
+-- "multicast addresses so assigned are contiguously allocated above the
+-- base address". Returns { addr_type, [addr1, addr2, ...] } where each
+-- addrN is in canonical form (matching canonicalize() output). For
+-- unparseable addresses (which the dedicated value-form check rejects
+-- upstream) returns a single-entry list with the literal so the cross-
+-- check degrades gracefully.
+local function expand_connection(addr_type, addr_value)
+  local out = { addr_type = addr_type }
+  if addr_type == "IP4" then
+    -- `<base>/<ttl>/<numaddr>` or `<base>/<ttl>` or bare `<base>`.
+    local base, _ttl, num = addr_value:match("^([%d%.]+)/(%d+)/(%d+)$")
+    if not base then
+      base, _ttl = addr_value:match("^([%d%.]+)/(%d+)$")
+      num = nil
+    end
+    if not base then base = addr_value end
+    local base_n = ipv4_to_int(base)
+    if not base_n then
+      out[1] = base
+      return out
+    end
+    local count = tonumber(num) or 1
+    for i = 0, count - 1 do
+      out[#out + 1] = int_to_ipv4(base_n + i)
+    end
+    return out
+  elseif addr_type == "IP6" then
+    -- `<base>/<numaddr>` or bare `<base>` (no TTL on IPv6 per §5.7).
+    local base, num = addr_value:match("^([^/]+)/(%d+)$")
+    if not base then base = addr_value end
+    local groups = ipv6_to_groups(base)
+    if not groups then
+      out[1] = base:lower()
+      return out
+    end
+    local count = tonumber(num) or 1
+    for i = 0, count - 1 do
+      out[#out + 1] = ipv6_canonical(ipv6_add(groups, i))
+    end
+    return out
+  end
+  -- Other addr_types (FQDN forms, "*") pass through verbatim.
+  out[1] = addr_value
+  return out
+end
+
+-- Normalize an address to the same canonical form `expand_connection`
+-- emits, so source-filter dest membership is comparable string-to-string.
+local function canonicalize(addr_type, addr)
+  if addr_type == "IP4" then
+    local n = ipv4_to_int(addr)
+    return n and int_to_ipv4(n) or addr
+  elseif addr_type == "IP6" then
+    local g = ipv6_to_groups(addr)
+    return g and ipv6_canonical(g) or addr:lower()
+  end
+  return addr
+end
+
 return {
-  ipv4_raw           = ipv4_raw,
-  ipv4               = ipv4,
-  ipv6               = ipv6,
-  is_ipv4_multicast  = is_ipv4_multicast,
-  is_ipv6_multicast  = is_ipv6_multicast,
+  ipv4_raw            = ipv4_raw,
+  ipv4                = ipv4,
+  ipv6                = ipv6,
+  is_ipv4_multicast   = is_ipv4_multicast,
+  is_ipv6_multicast   = is_ipv6_multicast,
+  expand_connection   = expand_connection,
+  canonicalize        = canonicalize,
 }

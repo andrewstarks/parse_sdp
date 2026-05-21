@@ -325,6 +325,56 @@ local function check_connection_required(doc, ctx)
   return true
 end
 
+-- RFC 4570 §3.1: every source-filter <dest-address> MUST correspond to a
+-- c= <connection-field> value in the SDP. Wildcard addr_type "*" is
+-- exempt (the filter applies to all c= values). Builds a per-addr-type
+-- set of canonicalized c= addresses (expanding `<base>/<ttl>/<numaddr>`
+-- per RFC 8866 §5.7), then walks every source-filter (session + per-
+-- media) and emits a finding when the dest is absent from the set.
+local function check_source_filter_dests(doc, ctx)
+  -- Collect once; many SDPs have multiple source-filter lines all
+  -- referencing the same c= set.
+  local sets = {}
+  local function add(conn)
+    if not conn then return end
+    local expanded = addresses.expand_connection(conn.addr_type, conn.address or "")
+    local set = sets[expanded.addr_type] or {}
+    for _, a in ipairs(expanded) do set[a] = true end
+    sets[expanded.addr_type] = set
+  end
+  add(doc.session.connection)
+  for _, m in ipairs(doc.media) do add(m.connection) end
+
+  local function check_attrs(attrs, path)
+    for ai, attr in ipairs(attrs) do
+      if attr.name == "source-filter" and attr.addr_type ~= "*" then
+        local dest = addresses.canonicalize(attr.addr_type, attr.dest_address or "")
+        local set  = sets[attr.addr_type]
+        if not (set and set[dest]) then
+          local cont = errors.record(ctx,
+            "sdp.a.source-filter.dest-not-in-connections",
+            { field_path = string.format("%s[%d]", path, ai - 1),
+              context    = { dest = attr.dest_address,
+                             addr_type = attr.addr_type } })
+          if not cont then return false end
+        end
+      end
+    end
+    return true
+  end
+
+  if not check_attrs(doc.session.attributes, "session.attributes") then
+    return false
+  end
+  for i, m in ipairs(doc.media) do
+    if not check_attrs(m.attributes,
+        string.format("media[%d].attributes", i - 1)) then
+      return false
+    end
+  end
+  return true
+end
+
 -- Soft-syntactic finding recorders (Phase 5). Each runs in a Cmt callback
 -- inside the grammar, records the finding via errors.record, and either
 -- continues the match (return pos) or fails it (return false) per ctx.policy
@@ -354,6 +404,7 @@ local record_trailing_ws      = record_soft("sdp.line.trailing-whitespace")
 -- execution order matches the list.
 local base_semantic_checks = {
   check_connection_required,
+  check_source_filter_dests,
   check_mid_uniqueness,
   check_group_attribute_invariants,
   check_session_tsrefclk_traceability,

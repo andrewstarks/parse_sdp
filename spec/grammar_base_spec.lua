@@ -1122,6 +1122,143 @@ describe("base SDP grammar — connection-address value-form (Phase 3.C, RFC 886
 
 end)
 
+-- ── RFC 4570 §3.1 — source-filter dest must match a c= address ───────────
+--
+-- "The <dest-address> value in a 'source-filter' attribute MUST correspond
+-- to an existing <connection-field> value in the session description. The
+-- only exception to this is when a '*' wildcard is used to indicate that
+-- the source-filter applies to all <connection-field> values."
+--
+-- Doc-level cross-check at the base tier. c= entries with multicast
+-- `<base>/<ttl>/<numaddr>` (IPv4) or `<base>/<numaddr>` (IPv6) expand
+-- per RFC 8866 §5.7's "contiguously allocated above the base address"
+-- rule so a source-filter dest matches any address the c= line covers.
+
+describe("base SDP grammar — source-filter dest cross-check (RFC 4570 §3.1)", function()
+
+  local finding_for = support.finding_for
+
+  it("accepts when source-filter dest matches the session-level c=", function()
+    assert.is_truthy(base.match(lines_to_sdp({
+      "v=0", "o=- 1 1 IN IP4 127.0.0.1", "s=X",
+      "c=IN IP4 239.0.0.1/64",
+      "t=0 0",
+      "a=source-filter: incl IN IP4 239.0.0.1 192.0.2.10",
+    })))
+  end)
+
+  it("accepts when source-filter dest matches a per-media c=", function()
+    assert.is_truthy(base.match(lines_to_sdp({
+      "v=0", "o=- 1 1 IN IP4 127.0.0.1", "s=X", "t=0 0",
+      "m=video 30000 RTP/AVP 96",
+      "c=IN IP4 239.1.1.1/64",
+      "a=rtpmap:96 H264/90000",
+      "a=source-filter: incl IN IP4 239.1.1.1 192.0.2.10",
+    })))
+  end)
+
+  it("accepts addr_type=* (wildcard exempt per §3.1)", function()
+    -- The `*` wildcard "indicates that the source-filter applies to
+    -- all <connection-field> values" — no dest-side cross-check.
+    assert.is_truthy(base.match(lines_to_sdp({
+      "v=0", "o=- 1 1 IN IP4 127.0.0.1", "s=X",
+      "c=IN IP4 239.0.0.1/64",
+      "t=0 0",
+      "a=source-filter: incl IN * any.example.org host.example.org",
+    })))
+  end)
+
+  it("accepts /numaddr expansion (RFC 8866 §5.7 'contiguous above the base')", function()
+    -- c= 233.252.0.1/127/3 expands to {233.252.0.1, 233.252.0.2,
+    -- 233.252.0.3}. A source-filter dest of any of the three matches.
+    assert.is_truthy(base.match(lines_to_sdp({
+      "v=0", "o=- 1 1 IN IP4 127.0.0.1", "s=X",
+      "c=IN IP4 233.252.0.1/127/3",
+      "t=0 0",
+      "a=source-filter: incl IN IP4 233.252.0.3 192.0.2.10",
+    })))
+  end)
+
+  it("accepts IPv6 dest matching IPv6 c=", function()
+    assert.is_truthy(base.match(lines_to_sdp({
+      "v=0", "o=- 1 1 IN IP4 127.0.0.1", "s=X",
+      "c=IN IP6 ff15::101",
+      "t=0 0",
+      "a=source-filter: incl IN IP6 ff15::101 2001:db8::1",
+    })))
+  end)
+
+  it("accepts IPv6 /numaddr expansion", function()
+    -- c= ff15::100/4 expands to {ff15::100, ff15::101, ff15::102, ff15::103}.
+    assert.is_truthy(base.match(lines_to_sdp({
+      "v=0", "o=- 1 1 IN IP4 127.0.0.1", "s=X",
+      "c=IN IP6 ff15::100/4",
+      "t=0 0",
+      "a=source-filter: incl IN IP6 ff15::102 2001:db8::1",
+    })))
+  end)
+
+  it("accepts case-insensitive IPv6 match (ff15::101 vs FF15::101)", function()
+    assert.is_truthy(base.match(lines_to_sdp({
+      "v=0", "o=- 1 1 IN IP4 127.0.0.1", "s=X",
+      "c=IN IP6 FF15::101",
+      "t=0 0",
+      "a=source-filter: incl IN IP6 ff15::101 2001:db8::1",
+    })))
+  end)
+
+  it("rejects when dest does not match any c= (the §3.1 SHALL)", function()
+    local doc, ctx = base.match(lines_to_sdp({
+      "v=0", "o=- 1 1 IN IP4 127.0.0.1", "s=X",
+      "c=IN IP4 239.0.0.1/64",
+      "t=0 0",
+      "a=source-filter: incl IN IP4 239.99.99.99 192.0.2.10",
+    }))
+    assert.is_nil(doc)
+    local f = finding_for(ctx, "sdp.a.source-filter.dest-not-in-connections")
+    assert.is_not_nil(f)
+    assert.equal("RFC 4570 §3.1", f.spec_ref)
+    assert.equal("INVALID_VALUE", f.code)
+    assert.equal("239.99.99.99", f.context.dest)
+    assert.equal("IP4", f.context.addr_type)
+  end)
+
+  it("rejects when addr_type mismatches (IP6 dest with IP4 c=)", function()
+    local doc, ctx = base.match(lines_to_sdp({
+      "v=0", "o=- 1 1 IN IP4 127.0.0.1", "s=X",
+      "c=IN IP4 239.0.0.1/64",
+      "t=0 0",
+      "a=source-filter: incl IN IP6 ff15::101 2001:db8::1",
+    }))
+    assert.is_nil(doc)
+    assert.is_not_nil(finding_for(ctx, "sdp.a.source-filter.dest-not-in-connections"))
+  end)
+
+  it("rejects when dest falls outside a /numaddr range", function()
+    -- c= 233.252.0.1/127/3 covers .1, .2, .3 — .4 is outside.
+    local doc, ctx = base.match(lines_to_sdp({
+      "v=0", "o=- 1 1 IN IP4 127.0.0.1", "s=X",
+      "c=IN IP4 233.252.0.1/127/3",
+      "t=0 0",
+      "a=source-filter: incl IN IP4 233.252.0.4 192.0.2.10",
+    }))
+    assert.is_nil(doc)
+    assert.is_not_nil(finding_for(ctx, "sdp.a.source-filter.dest-not-in-connections"))
+  end)
+
+  it("policy = 'off' bypasses the check", function()
+    local doc, ctx = base.match(lines_to_sdp({
+      "v=0", "o=- 1 1 IN IP4 127.0.0.1", "s=X",
+      "c=IN IP4 239.0.0.1/64",
+      "t=0 0",
+      "a=source-filter: incl IN IP4 239.99.99.99 192.0.2.10",
+    }), { policy = { ["sdp.a.source-filter.dest-not-in-connections"] = "off" } })
+    assert.is_table(doc)
+    assert.is_nil(finding_for(ctx, "sdp.a.source-filter.dest-not-in-connections"))
+  end)
+
+end)
+
 -- ── RFC 8866 §5.7 — c= required at session or per-media level ─────────────
 --
 -- "A session description MUST contain either at least one 'c=' line in each
