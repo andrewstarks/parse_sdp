@@ -21,7 +21,7 @@ Built with [LPEG](https://www.inf.puc-rio.br/~roberto/lpeg/) for precise, compos
 ## What an error looks like
 
 ```text
-$ parse_sdp to_json --mode st2110 04_bad_tsrefclk_gmid.sdp
+$ parse_sdp validate --mode st2110 04_bad_tsrefclk_gmid.sdp
 error: [INVALID_VALUE] ts-refclk:ptp= value must be '<version>:<EUI-64>[:<domain>]' or '<version>:traceable' (EUI-64 = 8 hex octets, RFC 7273 §4.8)
  --> line 10, col 17
   |
@@ -41,7 +41,7 @@ output and library output are the same data.
 - Validates SMPTE ST 2110 and IPMX media session descriptions
 - Reports exact line and column on parse failure, with the offending source line highlighted
 - Round-trip support: parse → mutate → serialize back to valid SDP text
-- CLI with JSON output and subcommands for both directions
+- CLI with four subcommands: `validate` (yes/no), `diagnose` (tier ladder), `to_json` / `to_sdp` (round-trip)
 
 ## Install
 
@@ -99,16 +99,22 @@ docker compose run --rm test lua examples/examples.lua
 ## CLI Example
 
 ```sh
+# Yes/no validation
+parse_sdp validate --mode st2110 session.sdp
+
+# Which tiers does this SDP pass? (ladder report, always exit 0)
+parse_sdp diagnose customer.sdp
+
 # SDP → JSON
 parse_sdp to_json session.sdp
-parse_sdp to_json --mode st2110 --pretty session.sdp
-cat session.sdp | parse_sdp to_json --mode ipmx
+parse_sdp to_json --mode ipmx --pretty session.sdp
+cat session.sdp | parse_sdp to_json --mode st2110
 
 # JSON → SDP
 parse_sdp to_sdp doc.json > out.sdp
 ```
 
-Exit code `0` on success, `1` on error (human-readable detail on stderr).
+Exit code `0` on success, `1` on parse / validation failure (human-readable detail on stderr). `parse_sdp diagnose` always exits `0` — the verdict is the output.
 
 ## Project Layout
 

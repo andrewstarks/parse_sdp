@@ -472,11 +472,83 @@ local json = doc:to_json()
 parse_sdp <subcommand> [options] [file]
 ```
 
-If `file` is omitted, reads from stdin.
+Four subcommands. `file` is a path to an SDP (or JSON, for `to_sdp`); pass
+`-` or omit it to read from stdin. Exit code is `0` on success, `1` on
+parse / validation failure (detail on stderr) — with one exception:
+`diagnose` exits `0` whether the file passes a tier or not, because the
+diagnostic ran. Run `parse_sdp <subcommand> --help` for per-command
+flags.
+
+| Subcommand | When to reach for it |
+| --- | --- |
+| [`validate`](#parse_sdp-validate) | "Is this SDP valid at tier X?" Yes/no with structured error on failure. |
+| [`diagnose`](#parse_sdp-diagnose) | "Which tiers does this SDP pass?" Ladder report; always exit 0. |
+| [`to_json`](#parse_sdp-to_json) | Convert SDP to JSON for tooling / inspection. |
+| [`to_sdp`](#parse_sdp-to_sdp) | Render a JSON doc back to SDP text. |
+
+### `parse_sdp validate`
+
+Validates and reports a single yes/no verdict. Use when you want the
+answer without the JSON.
+
+```text
+parse_sdp validate [--mode sdp|st2110|ipmx] [file]
+```
+
+| Flag | Description |
+| --- | --- |
+| `--mode MODE` | Validation tier (default: `sdp`) |
+
+```sh
+$ parse_sdp validate --mode st2110 session.sdp
+OK
+$ echo $?
+0
+
+$ parse_sdp validate --mode st2110 examples/st2110/invalid/04_bad_tsrefclk_gmid.sdp
+error: [INVALID_VALUE] ts-refclk:ptp= value must be '<version>:<EUI-64>[:<domain>]' or '<version>:traceable' (EUI-64 = 8 hex octets, RFC 7273 §4.8)
+ --> line 10, col 17
+  |
+10 | a=ts-refclk:ptp=IEEE1588-2008:AA-BB-CC-DD-EE:0
+   |                 ^
+  = note: required by RFC 7273 §4.8 (ptp / ptp-server / EUI64 ABNF)
+$ echo $?
+1
+```
+
+### `parse_sdp diagnose`
+
+Runs every tier and prints a ladder. Always exits 0 — the verdict *is*
+the output. The natural CLI for "what does this SDP claim compliance
+with, and where does it fall short?"
+
+```text
+parse_sdp diagnose [file]
+```
+
+```sh
+$ parse_sdp diagnose customer.sdp
+  ✓ RFC 8866 (base SDP)
+  ✗ SMPTE ST 2110
+      st2110.attr.ts-refclk-required
+      media block must include an 'a=ts-refclk' attribute ...
+      ST 2110-10:2022 §8.2
+      at media[0]
+  ✗ IPMX (VSF TR-10)
+      tr-10-1.a.fmtp.measuredpixclk-required
+      a=fmtp on a video IPMX media block must include 'measuredpixclk'
+      TR-10-1 §10.2
+      at media[0].attributes[fmtp:pt=96]
+```
+
+When a higher tier's finding matches a lower tier's, the higher row
+collapses to `(inherits <lower-tier> failure — fix it first)`.
 
 ### `parse_sdp to_json`
 
-Parse and validate an SDP file. Outputs JSON to stdout.
+Parse SDP, validate, and emit JSON. JSON shape matches the parsed
+`doc` table — every known attribute is decomposed into typed
+sub-fields (see [Parsed Table Structure](#parsed-table-structure)).
 
 ```text
 parse_sdp to_json [--mode sdp|st2110|ipmx] [--pretty] [file]
@@ -484,10 +556,8 @@ parse_sdp to_json [--mode sdp|st2110|ipmx] [--pretty] [file]
 
 | Flag | Description |
 | --- | --- |
-| `--mode MODE` | Validation mode (default: `sdp`) |
+| `--mode MODE` | Validation tier (default: `sdp`) |
 | `--pretty` | Pretty-print JSON output |
-
-On success, prints a JSON object to stdout:
 
 ```json
 {
@@ -498,11 +568,11 @@ On success, prints a JSON object to stdout:
 }
 ```
 
-On failure, prints an error message to stderr and exits `1`.
-
 ### `parse_sdp to_sdp`
 
-Convert a JSON doc back to SDP text. Outputs to stdout.
+Render a JSON doc back to SDP text. Output uses CRLF line endings and
+strict RFC 8866 field ordering; piping `to_json | to_sdp` always
+round-trips.
 
 ```text
 parse_sdp to_sdp [file.json]
@@ -516,11 +586,14 @@ cat doc.json | parse_sdp to_sdp
 ### Examples
 
 ```sh
-# Validate a file as generic SDP
-parse_sdp to_json session.sdp
+# Quick yes/no check at the ST 2110 tier
+parse_sdp validate --mode st2110 session.sdp
 
-# Validate as ST 2110 with pretty JSON output
-parse_sdp to_json --mode st2110 --pretty session.sdp
+# Tier ladder — useful when you don't know what the file claims to be
+parse_sdp diagnose customer.sdp
+
+# SDP → JSON, pretty-printed, IPMX-validated
+parse_sdp to_json --mode ipmx --pretty session.sdp
 
 # Pipe-friendly
 cat session.sdp | parse_sdp to_json --mode ipmx

@@ -9,6 +9,28 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 
+### CLI
+
+- **`parse_sdp validate` subcommand.** Plain yes/no validation —
+  prints `OK` to stdout and exits 0 on success, or the formatted error
+  block to stderr and exits 1 on failure. Accepts `--mode sdp|st2110|ipmx`
+  (default `sdp`). The natural invocation for "is this a valid ST 2110
+  SDP?" that previously required running `to_json --mode st2110 … >/dev/null`
+  and inspecting exit code + stderr.
+- **`parse_sdp diagnose` subcommand.** Runs all three tiers and prints
+  a ladder report — `✓`/`✗` per tier with the structured finding's
+  `id`, `message`, `spec_ref`, and `field_path` indented beneath each
+  failure. When a higher tier's finding matches a lower tier's
+  (same `id` or same `message`+`line`), the higher row collapses to
+  `(inherits <lower-tier> failure — fix it first)`. Always exits 0 —
+  the verdict *is* the output.
+- **`-` reads from stdin** for every input-taking subcommand (file
+  position previously only honored omission for stdin).
+- **Polished help text** across every subcommand. The parent help lists
+  short one-line summaries per command (via argparse `:summary()`);
+  each `<subcommand> --help` shows the longer description with full
+  context. Top-level help adds an "Exit code" footer line.
+
 ### Documentation
 
 - **GUIDE.md gains a "Producer Workflow" section** covering the

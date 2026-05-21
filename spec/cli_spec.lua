@@ -37,6 +37,142 @@ local function run(args_str, stdin_text)
   return stdout, stderr, code or 0
 end
 
+-- ── validate subcommand ─────────────────────────────────────────────────────
+
+describe("CLI: validate subcommand", function()
+
+  -- NOT-SPEC: library
+  it("valid SDP → 'OK' on stdout, exit 0", function()
+    local stdout, stderr, code = run("validate spec/fixtures/minimal.sdp")
+    assert.equal(0, code)
+    assert.equal("", stderr)
+    assert.equal("OK\n", stdout)
+  end)
+
+  -- NOT-SPEC: library
+  it("invalid SDP → formatted error on stderr, exit 1", function()
+    local stdout, stderr, code = run("validate spec/fixtures/invalid.sdp")
+    assert.equal(1, code)
+    assert.equal("", stdout)
+    assert.truthy(stderr:match("^error:"))
+  end)
+
+  it("--mode st2110 accepts a valid ST 2110 file", function()
+    local _, _, code = run("validate --mode st2110 spec/fixtures/st2110_video.sdp")
+    assert.equal(0, code)
+  end)
+
+  it("--mode st2110 rejects a non-conformant SDP", function()
+    -- 01_missing_tsrefclk lacks the per-media a=ts-refclk required by
+    -- ST 2110-10:2022 §8.2. Same fixture the to_json test uses.
+    local stdout, stderr, code = run(
+      "validate --mode st2110 examples/st2110/invalid/01_missing_tsrefclk.sdp")
+    assert.equal(1, code)
+    assert.equal("", stdout)
+    assert.truthy(stderr:match("^error:"))
+  end)
+
+  -- NOT-SPEC: library
+  it("reads from stdin when '-' is given", function()
+    local sdp_text = "v=0\r\no=- 1 1 IN IP4 127.0.0.1\r\ns=Test\r\nt=0 0\r\n"
+    local _, _, code = run("validate -", sdp_text)
+    assert.equal(0, code)
+  end)
+
+  -- NOT-SPEC: library
+  it("reads from stdin when file is omitted", function()
+    local sdp_text = "v=0\r\no=- 1 1 IN IP4 127.0.0.1\r\ns=Test\r\nt=0 0\r\n"
+    local _, _, code = run("validate", sdp_text)
+    assert.equal(0, code)
+  end)
+
+  -- NOT-SPEC: library
+  it("unknown mode → formatted error on stderr, exit 1", function()
+    local _, stderr, code = run("validate --mode bogus spec/fixtures/minimal.sdp")
+    assert.equal(1, code)
+    assert.truthy(stderr:match("unknown mode"))
+  end)
+
+  -- NOT-SPEC: library
+  it("missing file → error on stderr, exit 1", function()
+    local _, stderr, code = run("validate spec/fixtures/no_such.sdp")
+    assert.equal(1, code)
+    assert.truthy(stderr:match("^error:"))
+  end)
+
+  -- NOT-SPEC: library
+  it("--help exits 0 and mentions --mode", function()
+    local stdout, _, code = run("validate --help")
+    assert.equal(0, code)
+    assert.truthy(stdout:find("--mode", 1, true))
+  end)
+
+end)
+
+-- ── diagnose subcommand ─────────────────────────────────────────────────────
+
+describe("CLI: diagnose subcommand", function()
+
+  -- NOT-SPEC: library
+  it("media-less SDP shows ✓ at every tier and exits 0", function()
+    -- An SDP with no m= blocks has nothing to violate at higher tiers;
+    -- ST 2110 / IPMX checks are per-media-block.
+    local stdout, _, code = run("diagnose spec/fixtures/minimal.sdp")
+    assert.equal(0, code)
+    assert.truthy(stdout:find("✓ RFC 8866", 1, true))
+    assert.truthy(stdout:find("✓ SMPTE ST 2110", 1, true))
+    assert.truthy(stdout:find("✓ IPMX", 1, true))
+  end)
+
+  -- NOT-SPEC: library
+  it("ST 2110 failure shows ✓/✗ with finding detail, exits 0", function()
+    -- 01_missing_tsrefclk is RFC 8866-valid but lacks the per-media
+    -- a=ts-refclk that ST 2110-10:2022 §8.2 requires.
+    local stdout, _, code = run(
+      "diagnose examples/st2110/invalid/01_missing_tsrefclk.sdp")
+    assert.equal(0, code)
+    assert.truthy(stdout:find("✓ RFC 8866", 1, true))
+    assert.truthy(stdout:find("✗ SMPTE ST 2110", 1, true))
+    assert.truthy(stdout:find("st2110.attr.ts-refclk-required", 1, true))
+    assert.truthy(stdout:find("ST 2110-10:2022 §8.2", 1, true))
+  end)
+
+  -- NOT-SPEC: library
+  it("base SDP failure cascades, with 'inherits' note on higher tiers", function()
+    local stdout, _, code = run("diagnose spec/fixtures/invalid.sdp")
+    assert.equal(0, code)
+    assert.truthy(stdout:find("✗ RFC 8866", 1, true))
+    assert.truthy(stdout:find("✗ SMPTE ST 2110", 1, true))
+    assert.truthy(stdout:find("✗ IPMX", 1, true))
+    assert.truthy(stdout:find("inherits", 1, true))
+  end)
+
+  -- NOT-SPEC: library
+  it("reads from stdin when '-' is given", function()
+    local sdp_text = "v=0\r\no=- 1 1 IN IP4 127.0.0.1\r\ns=Test\r\nt=0 0\r\n"
+    local stdout, _, code = run("diagnose -", sdp_text)
+    assert.equal(0, code)
+    assert.truthy(stdout:find("✓ RFC 8866", 1, true))
+  end)
+
+  -- NOT-SPEC: library
+  it("missing file → error on stderr, exit 1", function()
+    -- The diagnostic itself can't run if input can't be read; that's an
+    -- exit-1 condition, distinct from a per-tier failure.
+    local _, stderr, code = run("diagnose spec/fixtures/no_such.sdp")
+    assert.equal(1, code)
+    assert.truthy(stderr:match("^error:"))
+  end)
+
+  -- NOT-SPEC: library
+  it("--help exits 0", function()
+    local stdout, _, code = run("diagnose --help")
+    assert.equal(0, code)
+    assert.truthy(stdout:find("tier", 1, true))
+  end)
+
+end)
+
 -- ── to_json subcommand ───────────────────────────────────────────────────────
 
 describe("CLI: to_json subcommand", function()

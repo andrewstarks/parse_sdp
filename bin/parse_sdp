@@ -1,17 +1,20 @@
 #!/usr/bin/env lua
 -- parse_sdp — CLI shell. Loads the parse_sdp library via `require` and
--- dispatches the to_json / to_sdp subcommands. Run directly:
+-- dispatches subcommands.
 --
---     lua bin/parse_sdp to_json session.sdp
---     lua bin/parse_sdp to_json --mode st2110 --pretty session.sdp
---     lua bin/parse_sdp to_sdp doc.json
+--   parse_sdp validate session.sdp
+--   parse_sdp validate --mode st2110 session.sdp
+--   parse_sdp diagnose customer.sdp
+--   parse_sdp to_json session.sdp
+--   parse_sdp to_sdp doc.json
 --
--- Or, after `luarocks install parse_sdp`, just `parse_sdp ...`.
+-- After `luarocks install parse_sdp`, the shebang above makes the binary
+-- runnable as `parse_sdp`.
 --
 -- The library this consumes is `require("parse_sdp")`; it resolves to
--- `parse_sdp/init.lua` (LuaRocks-installed module path). No top-level
--- `parse_sdp.lua` exists — that ensures importing the library doesn't
--- drag CLI dependencies (argparse) into the consumer's runtime.
+-- `parse_sdp/init.lua`. No top-level `parse_sdp.lua` exists — that ensures
+-- importing the library doesn't drag CLI dependencies (argparse) into the
+-- consumer's runtime.
 
 local sdp      = require("parse_sdp")
 local errors   = sdp._errors
@@ -23,8 +26,9 @@ local function die(err_table)
   os.exit(1)
 end
 
+-- Read SDP / JSON input from `file` (path), `-` (stdin), or nil (stdin).
 local function read_input(file)
-  if file then
+  if file and file ~= "-" then
     local f, ioerr = io.open(file, "r")
     if not f then die(errors.new("cannot open file: " .. (ioerr or file))); return end
     local text = f:read("*a")
@@ -34,25 +38,128 @@ local function read_input(file)
   return io.read("*a")
 end
 
-local ap = argparse("parse_sdp", "Parse, validate, and serialize SDP (RFC 8866 / ST 2110 / IPMX).")
+-- ─── argparse setup ──────────────────────────────────────────────────────────
+
+local ap = argparse("parse_sdp", [[
+Parse, validate, and serialize SDP (Session Description Protocol).
+
+Validates at three tiers — RFC 8866 (base) → SMPTE ST 2110 → IPMX —
+extending the lower tier each step. Every validation check cites a
+primary-source spec clause; errors report exact line and column with
+a stable `id` you can grep for.]])
+
 ap:epilog(table.concat({
   "Examples:",
-  "  parse_sdp to_json session.sdp",
-  "  parse_sdp to_json --mode st2110 --pretty session.sdp",
-  "  parse_sdp to_json < session.sdp | parse_sdp to_sdp",
-  "  parse_sdp to_sdp session.json",
+  "  parse_sdp validate --mode st2110 session.sdp",
+  "  parse_sdp diagnose customer.sdp",
+  "  parse_sdp to_json --mode ipmx --pretty session.sdp",
+  "  parse_sdp to_json < session.sdp | parse_sdp to_sdp > out.sdp",
+  "",
+  "Exit code: 0 on success, 1 on parse / validation failure (detail on stderr).",
+  "Full docs: https://github.com/andrewstarks/parse_sdp",
 }, "\n"))
 ap:command_target("command")
 
-local cmd_parse = ap:command("to_json", "Parse and validate an SDP file; output JSON.")
-cmd_parse:argument("file", "Path to .sdp file. Reads stdin if omitted."):args("?")
-cmd_parse:option("--mode", "Validation tier: 'st2110' or 'ipmx'. Defaults to RFC 8866 only.")
-cmd_parse:flag("--pretty", "Pretty-print JSON output with indentation.")
+-- ─── validate ──────────────────────────────────────────────────────────────
+--
+-- "Is this SDP valid?" Plain yes/no with a structured error on failure.
+-- Companion to to_json for diagnostic use — no JSON in the output path.
 
-local cmd_ser = ap:command("to_sdp", "Convert a JSON SDP document back to SDP text.")
-cmd_ser:argument("file", "Path to .json file. Reads stdin if omitted."):args("?")
+local cmd_validate = ap:command("validate", [[
+Validate an SDP file and report a single yes/no verdict.
+
+Prints "OK" to stdout and exits 0 on success; prints the formatted
+error block (id, spec_ref, line:col, carrot-highlighted source) to
+stderr and exits 1 on failure. Use --mode to pick the validation
+tier.]])
+cmd_validate:summary("Validate an SDP file; print OK or a formatted error.")
+cmd_validate:argument("file",
+  "Path to an .sdp file. Reads stdin if omitted or '-'."):args("?")
+cmd_validate:option("--mode",
+  "Validation tier: 'sdp' (default, RFC 8866 base), 'st2110' (SMPTE ST 2110), or 'ipmx' (VSF TR-10).")
+
+-- ─── diagnose ──────────────────────────────────────────────────────────────
+--
+-- Runs every tier and reports a ladder. Always exits 0 — the verdict is
+-- the output, not the exit code. Intended for "what does this SDP claim
+-- compliance with, and where does it fall short?"
+
+local cmd_diagnose = ap:command("diagnose", [[
+Report which validation tiers an SDP passes.
+
+Runs RFC 8866 → SMPTE ST 2110 → IPMX and prints a tier ladder with
+✓/✗ per tier. On failure, shows the structured finding's id, message,
+spec_ref, and field_path indented under the row. When a higher tier
+re-emits a lower tier's finding, the row collapses to "(inherits …
+failure — fix it first)". Always exits 0 — the verdict is the
+output.]])
+cmd_diagnose:summary("Report which validation tiers an SDP passes (✓/✗ ladder).")
+cmd_diagnose:argument("file",
+  "Path to an .sdp file. Reads stdin if omitted or '-'."):args("?")
+
+-- ─── to_json ───────────────────────────────────────────────────────────────
+
+local cmd_parse = ap:command("to_json", [[
+Parse SDP, validate, and emit JSON to stdout.
+
+JSON shape matches the library's `doc` table — every known attribute
+is decomposed into typed sub-fields (rtpmap, fmtp, ts-refclk, group,
+source-filter, ...). See GUIDE.md "Parsed Table Structure" for the
+schema.]])
+cmd_parse:summary("Parse SDP, validate, and emit JSON.")
+cmd_parse:argument("file",
+  "Path to an .sdp file. Reads stdin if omitted or '-'."):args("?")
+cmd_parse:option("--mode",
+  "Validation tier: 'sdp' (default, RFC 8866 base), 'st2110' (SMPTE ST 2110), or 'ipmx' (VSF TR-10).")
+cmd_parse:flag("--pretty",
+  "Pretty-print the JSON output.")
+
+-- ─── to_sdp ────────────────────────────────────────────────────────────────
+
+local cmd_ser = ap:command("to_sdp", [[
+Render a JSON SDP document back to SDP text on stdout.
+
+Output uses CRLF line endings and strict RFC 8866 field ordering. The
+JSON must match the parsed-doc schema; piping `to_json | to_sdp`
+always round-trips.]])
+cmd_ser:summary("Render a JSON SDP document back to SDP text.")
+cmd_ser:argument("file",
+  "Path to a .json file. Reads stdin if omitted or '-'."):args("?")
 
 local parsed = ap:parse()
+
+-- ─── Dispatch ──────────────────────────────────────────────────────────────
+
+-- Pretty-printed finding block, indented under a diagnose tier row.
+-- Renders id (if present), message, spec_ref (if present), and
+-- field_path / line:col (whichever the finding carries).
+local function format_finding_indented(err, indent)
+  indent = indent or "      "
+  local lines = {}
+  if err.id and err.id ~= "" then
+    lines[#lines + 1] = indent .. err.id
+  end
+  lines[#lines + 1] = indent .. (err.message or "unknown error")
+  if err.spec_ref and err.spec_ref ~= "" then
+    lines[#lines + 1] = indent .. err.spec_ref
+  end
+  if err.field_path and err.field_path ~= "" then
+    lines[#lines + 1] = indent .. "at " .. err.field_path
+  elseif err.line and err.line > 0 then
+    lines[#lines + 1] = string.format("%sat line %d, col %d",
+      indent, err.line, err.col or 1)
+  end
+  return table.concat(lines, "\n")
+end
+
+-- True when two error tables represent the same finding (so the higher
+-- tier's verdict is a re-emission of the lower tier's). Falls back to
+-- message equality for parser-syntactic errors that carry no `id`.
+local function same_finding(a, b)
+  if not a or not b then return false end
+  if a.id and b.id then return a.id == b.id end
+  return a.message == b.message and a.line == b.line
+end
 
 if parsed.command == "to_json" then
   local text = read_input(parsed.file)
@@ -74,5 +181,48 @@ elseif parsed.command == "to_sdp" then
     die(errors.new("to_sdp error: " .. tostring(result)))
   end
   io.write(result)
+  os.exit(0)
+
+elseif parsed.command == "validate" then
+  local text = read_input(parsed.file)
+  local doc, perr = sdp.parse(text, parsed.mode)
+  if not doc then die(perr) end
+  io.write("OK\n")
+  os.exit(0)
+
+elseif parsed.command == "diagnose" then
+  local text = read_input(parsed.file)
+  local tiers = {
+    { mode = "sdp",    label = "RFC 8866 (base SDP)" },
+    { mode = "st2110", label = "SMPTE ST 2110" },
+    { mode = "ipmx",   label = "IPMX (VSF TR-10)" },
+  }
+  local results = {}
+  for _, tier in ipairs(tiers) do
+    local _, err = sdp.parse(text, tier.mode)
+    results[#results + 1] = { tier = tier, err = err }
+  end
+  -- Render ladder. If a higher tier's finding matches a lower tier's,
+  -- collapse the detail block — fixing the lower tier resolves both.
+  for i, r in ipairs(results) do
+    if not r.err then
+      io.write(string.format("  ✓ %s\n", r.tier.label))
+    else
+      io.write(string.format("  ✗ %s\n", r.tier.label))
+      local prior_match
+      for j = 1, i - 1 do
+        if results[j].err and same_finding(results[j].err, r.err) then
+          prior_match = results[j].tier.label
+          break
+        end
+      end
+      if prior_match then
+        io.write(string.format(
+          "      (inherits %s failure — fix it first)\n", prior_match))
+      else
+        io.write(format_finding_indented(r.err) .. "\n")
+      end
+    end
+  end
   os.exit(0)
 end

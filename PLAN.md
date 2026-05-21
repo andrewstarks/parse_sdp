@@ -67,7 +67,7 @@ Pick items in order — each builds on the prior. Every CLI subcommand
 should ship with: spec tests in `spec/cli_spec.lua`, a section in
 GUIDE.md "CLI Reference", and a row in README's CLI example block.
 
-### N.1 — `parse_sdp validate` subcommand
+### N.1 — `parse_sdp validate` subcommand ✓ (landed)
 
 **Why.** The natural CLI invocation for "is this a valid ST 2110 SDP?" is
 `parse_sdp validate --mode st2110 file.sdp`. Today the only way to do
@@ -99,7 +99,7 @@ unknown mode rejected with a non-zero exit + helpful message.
 **Doc.** GUIDE.md § CLI Reference: new subsection right after `to_json`.
 README: add the validate line to the CLI Example block.
 
-### N.2 — `parse_sdp diagnose` subcommand
+### N.2 — `parse_sdp diagnose` subcommand ✓ (landed)
 
 **Why.** A field engineer working a customer's SDP often doesn't know
 which tier the customer *claims* compliance with — only that the stream
