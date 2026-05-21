@@ -53,6 +53,39 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
   hex-formatting conventions SDP uses across them (dash-separated
   octets, UUID-dashed, bare fixed-length, `0x`-prefixed RFC 8331
   octet pairs).
+- **README first-impression polish.** New "Who is this for?" stanza
+  (field troubleshooting / compliance verification / SDK integration),
+  plus a realistic-error block showing the CLI's carrot-highlight
+  output with `id` / `spec_ref` so a reader sees the diagnostic story
+  before the install instructions. Feature list reordered so
+  spec-citation + structured-error points come first.
+
+### Repository reorg
+
+- `REFACTOR-PLAN.md` (1500-line historical planning artifact that
+  drove the 1.1.0 refactor) moved to `audits/REFACTOR-PLAN.md`
+  alongside the other refactor-era audit memos. 50+ CHANGELOG
+  audit-trail references updated to the new path.
+- `SDPOKER_BACKLOG.md` moved to `spec_conformance/SDPOKER_BACKLOG.md`
+  — it's conceptually a companion to the conformance suite, not a
+  top-level project doc. Internal links updated to relative.
+- Check-taxonomy table (hard-syntactic / soft-syntactic / semantic +
+  where each lives in the grammar) preserved from REFACTOR-PLAN §3.3
+  into CLAUDE.md, which is now the agent-facing reference for kind
+  discipline.
+
+### Plan
+
+`PLAN.md` rewritten. Removed the stale "Current State" block from
+before 1.1.0 shipped (talked about phases that are all closed and
+the 1.0 parser that's been deleted). Replaced with a concise
+current-state summary + a verbose "Next pass" section detailing
+seven diagnostic-CLI / docs items: `parse_sdp validate`,
+`parse_sdp diagnose`, `--all-findings` flag, `parse_sdp checks`,
+`parse_sdp conformance`, README polish, GUIDE.md troubleshooting
+recipes. Each item carries enough per-item context (why, what it
+does, where it lives, tests, doc placement) for a fresh-thread Claude
+to execute. Known Deferred Items section preserved.
 
 ## [1.1.1] — 2026-05-21
 
@@ -134,7 +167,7 @@ Patch release. Restores a strict-validation guarantee that regressed in
 
 ## [1.1.0] — 2026-05-20
 
-Ground-up rewrite of the parser per [REFACTOR-PLAN.md](REFACTOR-PLAN.md).
+Ground-up rewrite of the parser per [audits/REFACTOR-PLAN.md](audits/REFACTOR-PLAN.md).
 Phase 9.D cut sdp.parse / mt:to_sdp over to the grammar tier; Phase
 10.A.0 ported the six grounded SHALLs the 10.B audit surfaced as
 silently-dropped during the refactor; Phase 10.A deleted the 1.0
@@ -283,7 +316,7 @@ policy.
 
   Suite 1146 green in `spec/`; conformance 10/10 green.
 
-  Audit ref: REFACTOR-PLAN.md §5 Phase 10.A.
+  Audit ref: audits/REFACTOR-PLAN.md §5 Phase 10.A.
 
 ### Added
 
@@ -317,7 +350,7 @@ policy.
 
   Suite 1146 green (was 1135).
 
-  Audit ref: REFACTOR-PLAN.md §5 Phase 10.A.0.
+  Audit ref: audits/REFACTOR-PLAN.md §5 Phase 10.A.0.
 
 - **Phase 10.A.0.4:** ported the RFC 8331 §4 + ST 2110-40:2023 §7
   smpte291 fmtp SHALLs the grammar tier had silently dropped. The
@@ -364,7 +397,7 @@ policy.
   -40 SHALLs. Suite 1135 green (was 1105); `busted spec_conformance/`
   10/10 green (was 9 + 1 error).
 
-  Audit ref: REFACTOR-PLAN.md §5 Phase 10.A.0.
+  Audit ref: audits/REFACTOR-PLAN.md §5 Phase 10.A.0.
 
 - **Phase 10.A.0.3:** ported the ST 2110-10:2022 §8.7 TSMODE / TSDELAY
   value-form SHALLs the grammar tier had silently dropped. §8.7:
@@ -386,7 +419,7 @@ policy.
   cannot identify. CLAUDE.md strictness principle disallows the
   unconditional reading. Suite 1105 green (was 1091).
 
-  Audit ref: REFACTOR-PLAN.md §5 Phase 10.A.0.
+  Audit ref: audits/REFACTOR-PLAN.md §5 Phase 10.A.0.
 
 - **Phase 10.A.0.2:** ported the ST 2110-10:2022 §6.2 RTP-Profile SHALL
   that the grammar tier had silently dropped. The 1.0 parser enforced
@@ -403,7 +436,7 @@ policy.
   severity); 6 new tests in `spec/grammar_st2110_spec.lua`. Suite
   1091 green (was 1085).
 
-  Audit ref: REFACTOR-PLAN.md §5 Phase 10.A.0.
+  Audit ref: audits/REFACTOR-PLAN.md §5 Phase 10.A.0.
 
 - **Phase 10.A.0.1:** ported the base-tier RFC 8866 §5.7 c=-required SHALL
   that the grammar tier had silently dropped during the refactor (surfaced
@@ -420,7 +453,7 @@ policy.
   hand-built SDPs and `grammar_compose_spec`'s `MINIMAL_WITH_RTPMAP`
   carry an explicit session-level c=. Suite 1085 green (was 1079).
 
-  Audit ref: REFACTOR-PLAN.md §5 Phase 10.A.0.
+  Audit ref: audits/REFACTOR-PLAN.md §5 Phase 10.A.0.
 
 - `parse_sdp/errors.lua` — new error-handling module: registry of
   checkable spec clauses with stable IDs, severity-policy infrastructure
@@ -732,7 +765,7 @@ of Phase 2; was 964 at start of Phase 3).
 - 10 new tests in `spec/grammar_base_spec.lua`. Suite: 1094 green.
 
 Phase 4 close: every compound attribute named in
-REFACTOR-PLAN.md §5 is decomposed. The base SDP grammar produces
+audits/REFACTOR-PLAN.md §5 is decomposed. The base SDP grammar produces
 a rich, fully-typed doc table — no consumer needs to re-parse a
 captured string. 64 new tests across Phase 4 (1030 → 1094).
 
@@ -796,7 +829,7 @@ Audit ref: `audits/SPEC_INVENTORY.md` row 9 — RFC 7273 §4.8.
   trailing whitespace discrimination, and the BOM-absent path.
   Suite: 1115 green.
 
-Audit ref: REFACTOR-PLAN.md §3.3 (Soft-syntactic candidates) +
+Audit ref: audits/REFACTOR-PLAN.md §3.3 (Soft-syntactic candidates) +
 LPeg-skill `references/idioms.md` §18 (accumulator caveat).
 
 - **Phase 6.A:** compile-time grammar composition mechanism. Refactor of
@@ -841,7 +874,7 @@ LPeg-skill `references/idioms.md` §18 (accumulator caveat).
   across extend calls, chaining (grandchild composition), and the
   `parse_sdp.grammar.st2110` shell. Suite: 1127 green.
 
-Audit ref: REFACTOR-PLAN.md §3.1 (Three composed grammars / option C).
+Audit ref: audits/REFACTOR-PLAN.md §3.1 (Three composed grammars / option C).
 
 - **Phase 6.B:** ST 2110 rtpmap narrowings per media type, expressed as
   layered grammar overrides (not a post-parse doc walk). The empty
@@ -906,7 +939,7 @@ established.
   asserts the inheritance shape without coupling to the per-phase
   count of appended checks.
 
-Audit ref: REFACTOR-PLAN.md §5 Phase 6.B; audits/SPEC_INVENTORY.md
+Audit ref: audits/REFACTOR-PLAN.md §5 Phase 6.B; audits/SPEC_INVENTORY.md
 rows ST 2110-20 §7.1 #78–79, ST 2110-22 §5.2 #7 / §6.2 #12, ST 2110-31
 §6.1 #31/#36, ST 2110-40 §5.3 #13.
 
@@ -1009,7 +1042,7 @@ rows ST 2110-20 §7.1 #78–79, ST 2110-22 §5.2 #7 / §6.2 #12, ST 2110-31
   `=` for jxsv or smpte291 (no narrowing applies); confirm base tier
   still accepts what ST 2110 rejects. Suite: 1152 green.
 
-Audit ref: REFACTOR-PLAN.md §5 Phase 6.C; audits/SPEC_INVENTORY.md
+Audit ref: audits/REFACTOR-PLAN.md §5 Phase 6.C; audits/SPEC_INVENTORY.md
 ST 2110-20:2022 §7.1.
 
 - **Phase 6.C.C:** ST 2110-20:2022 §7.2 (raw video required Media Type
@@ -1053,7 +1086,7 @@ ST 2110-20:2022 §7.1.
   to append the new `RAW_FMTP_COMPLETE_PT96` helper so they don't
   trip the new §7.2 check. Suite: 1166 green.
 
-Audit ref: REFACTOR-PLAN.md §5 Phase 6.C; audits/SPEC_INVENTORY.md
+Audit ref: audits/REFACTOR-PLAN.md §5 Phase 6.C; audits/SPEC_INVENTORY.md
 ST 2110-20:2022 §7.2 / §7.4.2; ST 2110-21:2022 §8.1.
 
 - **Phase 6.C.D.1:** ST 2110-20:2022 enum value-set narrowings for seven
@@ -1087,7 +1120,7 @@ ST 2110-20:2022 §7.2 / §7.4.2; ST 2110-21:2022 §8.1.
   predicates (integer range, gcd, pattern match); they land in
   6.C.D.2.
 
-Audit ref: REFACTOR-PLAN.md §5 Phase 6.C; audits/SPEC_INVENTORY.md
+Audit ref: audits/REFACTOR-PLAN.md §5 Phase 6.C; audits/SPEC_INVENTORY.md
 ST 2110-20:2022 §7.2 / §7.3 / §7.4.2 / §7.5 / §7.6 / §6.3;
 ST 2110-21:2022 §8.1.
 
@@ -1123,7 +1156,7 @@ ST 2110-21:2022 §8.1.
   height, exactframerate, MAXUDP, PAR, SSN, interlace, segmented.
   33 new tests; suite: 1259 green.
 
-Audit ref: REFACTOR-PLAN.md §5 Phase 6.C; audits/SPEC_INVENTORY.md
+Audit ref: audits/REFACTOR-PLAN.md §5 Phase 6.C; audits/SPEC_INVENTORY.md
 ST 2110-20:2022 §7.2 / §7.3; ST 2110-10 §6.4.
 
 - **Phase 6.C.E:** ST 2110-20:2022 cross-parameter SHALLs for raw video
@@ -1194,9 +1227,9 @@ ST 2110-20:2022 §7.2 / §7.3; ST 2110-10 §6.4.
   prose. Verification status as of this commit (2026-05-19): all
   five audit rows confirmed against `st2110-20-2022.md`, and the
   1.0 parser confirmed not to enforce any of them. Tracked in
-  REFACTOR-PLAN.md for a separate 6.C.F slice.
+  audits/REFACTOR-PLAN.md for a separate 6.C.F slice.
 
-Audit ref: REFACTOR-PLAN.md §5 Phase 6.C; audits/SPEC_INVENTORY.md
+Audit ref: audits/REFACTOR-PLAN.md §5 Phase 6.C; audits/SPEC_INVENTORY.md
 ST 2110-20:2022 §6.2.5 / §6.3.3 / §7.2 / §7.3 / §7.4.1.
 
 - **Phase 6.C.F:** five ST 2110-20:2022 cross-parameter SHALLs the
@@ -1238,7 +1271,7 @@ ST 2110-20:2022 §6.2.5 / §6.3.3 / §7.2 / §7.3 / §7.4.1.
   5 SHALLs 1.0 missed. The grammar tier is now strictly more
   conformant than 1.0 for ST 2110-20 raw video fmtp.
 
-Audit ref: REFACTOR-PLAN.md §5 Phase 6.C; audits/SPEC_INVENTORY.md
+Audit ref: audits/REFACTOR-PLAN.md §5 Phase 6.C; audits/SPEC_INVENTORY.md
 rows 61, 115, 116, 117, 118; ST 2110-20:2022 §6.2.5 Table 3 + §7.6.
 
 - **Phase 6.C.G.1:** ST 2110-22 jxsv fmtp required-parameter presence
@@ -1289,7 +1322,7 @@ rows 61, 115, 116, 117, 118; ST 2110-20:2022 §6.2.5 Table 3 + §7.6.
 
   133 new tests total (310 in the file). Suite: 1437 green.
 
-Audit ref: REFACTOR-PLAN.md §5 Phase 6.C; audits/SPEC_INVENTORY.md
+Audit ref: audits/REFACTOR-PLAN.md §5 Phase 6.C; audits/SPEC_INVENTORY.md
 RFC 9134 rows 31–58 + ST 2110-22:2022 rows 7, 9, 11–13, 20–26.
 
 - **Phase 6.C.G.2:** ST 2110-22 jxsv fmtp cross-parameter SHALLs.
@@ -1312,7 +1345,7 @@ RFC 9134 rows 31–58 + ST 2110-22:2022 rows 7, 9, 11–13, 20–26.
 
   This closes the jxsv fmtp port (6.C.G).
 
-Audit ref: REFACTOR-PLAN.md §5 Phase 6.C; RFC 9134 §7.1.
+Audit ref: audits/REFACTOR-PLAN.md §5 Phase 6.C; RFC 9134 §7.1.
 
 - **Phase 6.C.H:** ST 2110-30 / -31 audio `channel-order` fmtp
   syntax. Optional `a=fmtp` parameter on L16 / L24 / AM824 audio:
@@ -1348,7 +1381,7 @@ Audit ref: REFACTOR-PLAN.md §5 Phase 6.C; RFC 9134 §7.1.
   (per-encoding required-attribute / cross-attribute checks) and
   are deferred there.
 
-Audit ref: REFACTOR-PLAN.md §5 Phase 6.C; ST 2110-30:2025 §6.2.2;
+Audit ref: audits/REFACTOR-PLAN.md §5 Phase 6.C; ST 2110-30:2025 §6.2.2;
 ST 2110-31:2022 §6.2 Table 2; RFC 3190 §6.
 
 - **Phase 6.C.I:** ST 2110-31:2022 §6.1 AM824 rtpmap channel-count
@@ -1378,7 +1411,7 @@ ST 2110-31:2022 §6.2 Table 2; RFC 3190 §6.
   accepts AM824 with odd channels (no -31 narrowing in base).
   Suite: 1481 green.
 
-Audit ref: REFACTOR-PLAN.md §5 Phase 6.C; ST 2110-31:2022 §6.1.
+Audit ref: audits/REFACTOR-PLAN.md §5 Phase 6.C; ST 2110-31:2022 §6.1.
 
 - **Phase 6.C.J:** ST 2110-41:2024 (Fast Metadata) fmtp narrowings.
   Distinct shape from the -20 family: SSN is the only required
@@ -1426,7 +1459,7 @@ Audit ref: REFACTOR-PLAN.md §5 Phase 6.C; ST 2110-31:2022 §6.1.
   combinations from §6.2.5 Table 3 and §7.6; RFC 9134 enum
   corrections for jxsv).
 
-Audit ref: REFACTOR-PLAN.md §5 Phase 6.C; ST 2110-41:2024 §5.4 + §6.
+Audit ref: audits/REFACTOR-PLAN.md §5 Phase 6.C; ST 2110-41:2024 §5.4 + §6.
 
 - **Phase 6.D.A:** ST 2110-10:2022 §8.2 + §8.3 per-media-block
   required-attribute presence. First slice of Phase 6.D; lifts
@@ -1468,7 +1501,7 @@ Audit ref: REFACTOR-PLAN.md §5 Phase 6.C; ST 2110-41:2024 §5.4 + §6.
   session-level non-cover for mediaclk (§8.3 "media-level"), and
   multi-media-block per-index field-path reporting. Suite: 1501 green.
 
-Audit ref: [REFACTOR-PLAN.md](REFACTOR-PLAN.md) §5 Phase 6.D; ST 2110-10:2022 §8.2 + §8.3;
+Audit ref: [audits/REFACTOR-PLAN.md](audits/REFACTOR-PLAN.md) §5 Phase 6.D; ST 2110-10:2022 §8.2 + §8.3;
 on-disk primary text at [`smpte_standards_internal/st2110-10-2022.pdf`](../../Standards Related/smpte_standards_internal/st2110-10-2022.pdf).
 
 - **Phase 6.D.B:** ST 2110-30:2025 §6.2.1 audio MAXUDP-forbidden
@@ -1609,7 +1642,7 @@ of-parity-flag: 1.0 parser's L16 / L24 channels-required limb.
   ports), reject (port-0 referenced), and skip (port-0 not in any
   group). Suite: 1527 green.
 
-Audit ref: REFACTOR-PLAN.md §5 Phase 6.E; RFC 5888 §6 + §9.2
+Audit ref: audits/REFACTOR-PLAN.md §5 Phase 6.E; RFC 5888 §6 + §9.2
 verified against primary text via WebFetch.
 
 - **Phase 6.E.B:** ST 2110-10 §8.5 group:DUP leg coherence
@@ -1687,7 +1720,7 @@ flags (audio MAXUDP / channels-required / packet-payload-fit
 limbs for AM824 or L16/L24) are intentionally not ported and
 remain flagged in `audits/` for follow-up.
 
-Audit ref: REFACTOR-PLAN.md §5 Phase 6.E; ST 2110-10:2022 §8.5,
+Audit ref: audits/REFACTOR-PLAN.md §5 Phase 6.E; ST 2110-10:2022 §8.5,
 ST 2022-7:2019 §6 verified against on-disk primary text.
 
 - **Phase 6.F:** in-grammar refactor of per-line checks that shipped
@@ -1759,7 +1792,7 @@ ST 2022-7:2019 §6 verified against on-disk primary text.
   Suite unchanged at 1538 green; no error registry entries added or
   removed; no behavioral regression detected.
 
-Audit ref: REFACTOR-PLAN.md §5 Phase 6.F; [[lpeg-discipline]]
+Audit ref: audits/REFACTOR-PLAN.md §5 Phase 6.F; [[lpeg-discipline]]
 memory note updated with the per-category placement rule and the
 explicit naming of `semantic_checks` as a Lua-massage pipeline
 worth scrutinizing.
@@ -1833,7 +1866,7 @@ worth scrutinizing.
   integration tests use `fail_on_first=false` to dodge this and
   inspect findings directly.
 
-Audit ref: REFACTOR-PLAN.md §5 Phase 6.G.
+Audit ref: audits/REFACTOR-PLAN.md §5 Phase 6.G.
 
 - **Phase 6.H:** in-grammar refactor for base SDP's connection-address
   validation; follow-up audit of base.lua's remaining
@@ -1881,7 +1914,7 @@ Audit ref: REFACTOR-PLAN.md §5 Phase 6.G.
 
   Suite: 1546 green.
 
-Audit ref: REFACTOR-PLAN.md §5 Phase 6.H.
+Audit ref: audits/REFACTOR-PLAN.md §5 Phase 6.H.
 
 - **Phase 6.J:** shared numeric-value-form patterns + validator sweep.
 
@@ -1952,7 +1985,7 @@ Audit ref: REFACTOR-PLAN.md §5 Phase 6.H.
   module also gives any future TR-10 / IPMX rule-table the same
   hoisted `rfc8866_pos_int_raw` etc. that base.lua now references.
 
-Audit ref: REFACTOR-PLAN.md §5 Phase 6.J; RFC 8866 §9 ABNF
+Audit ref: audits/REFACTOR-PLAN.md §5 Phase 6.J; RFC 8866 §9 ABNF
 verified for the integer / zero-based-integer grammar.
 
 - **Phase 6.K:** `media_section` Cmt infrastructure + per-block
@@ -2058,7 +2091,7 @@ verified for the integer / zero-based-integer grammar.
   and gets the same in-grammar dispatch + field_path + pos
   plumbing for free.
 
-Audit ref: REFACTOR-PLAN.md §5 Phase 6.K.
+Audit ref: audits/REFACTOR-PLAN.md §5 Phase 6.K.
 
 - **Phase 6.L:** `validate_channel_order` LPeg sweep — last of the
   inline-regex validators in `parse_sdp/grammar/st2110.lua`.
@@ -2105,7 +2138,7 @@ Audit ref: REFACTOR-PLAN.md §5 Phase 6.K.
 
   Suite unchanged at 1569 green — accept / reject set preserved.
 
-Audit ref: REFACTOR-PLAN.md §5 Phase 6.L; [[lpeg-discipline]].
+Audit ref: audits/REFACTOR-PLAN.md §5 Phase 6.L; [[lpeg-discipline]].
 
 The grammar tier now matches 1.0 parity on every well-grounded
 per-encoding required-attribute and cross-attribute SHALL. Three
@@ -2115,7 +2148,7 @@ out-of-parity flags carry forward for separate audit follow-up:
 2. 1.0 enforces channels-required on L16/L24 (no -30 SHALL grounds it)
 3. 1.0 enforces packet-payload-fit on AM824 (no -31 SHALL grounds it)
 
-Audit ref: REFACTOR-PLAN.md §5 Phase 6.D; ST 2110-30:2025 §6.2.1 +
+Audit ref: audits/REFACTOR-PLAN.md §5 Phase 6.D; ST 2110-30:2025 §6.2.1 +
 ST 2110-10:2022 §6.4 + RFC 3550 §5.1 + AES67-2013 §8.1.
 
 - **Phase 7.A:** IPMX grammar composition shell. New
@@ -2129,7 +2162,7 @@ ST 2110-10:2022 §6.4 + RFC 3550 §5.1 + AES67-2013 §8.1.
   st2110, `semantic_checks` + `media_section_checks` inheritance
   ordering, distinct table identity). Suite: 1575 green.
 
-Audit ref: REFACTOR-PLAN.md §5 Phase 7.A.
+Audit ref: audits/REFACTOR-PLAN.md §5 Phase 7.A.
 
 - **Phase 7.B:** TR-10-1 §10 baseline ("this SDP is IPMX") — `a=group:FID`
   prohibition + per-RTP-block `a=fmtp` IPMX marker requirement.
@@ -2164,7 +2197,7 @@ Audit ref: REFACTOR-PLAN.md §5 Phase 7.A.
   Earlier "audit-folder follow-up" language was a misread of the
   SHALL and has been removed.
 
-Audit ref: REFACTOR-PLAN.md §5 Phase 7.B; TR-10-1 §10 + §10.1.
+Audit ref: audits/REFACTOR-PLAN.md §5 Phase 7.B; TR-10-1 §10 + §10.1.
 
 - **Phase 7.C:** TR-10-1 §10.2 (extended by TR-10-9 §10) IPMX video fmtp
   required parameters — `measuredpixclk`, `vtotal`, `htotal`.
@@ -2184,7 +2217,7 @@ Audit ref: REFACTOR-PLAN.md §5 Phase 7.B; TR-10-1 §10 + §10.1.
   checks into one walk per key, per the user's DRY pushback).
   18 new tests; suite: 1604 green.
 
-Audit ref: REFACTOR-PLAN.md §5 Phase 7.C; TR-10-1 §10.2 +
+Audit ref: audits/REFACTOR-PLAN.md §5 Phase 7.C; TR-10-1 §10.2 +
 TR-10-9 §10; TR-10-2 §7 + TR-10-11 §7.
 
 - **Phase 7.D:** TR-10-1 §10.3 (extended by TR-10-9 §10) IPMX audio fmtp
@@ -2197,7 +2230,7 @@ TR-10-9 §10; TR-10-2 §7 + TR-10-11 §7.
   / L24 / AM824 to `check_ipmx_audio_fmtp`. 10 new tests; suite:
   1614 green.
 
-Audit ref: REFACTOR-PLAN.md §5 Phase 7.D; TR-10-1 §10.3 +
+Audit ref: audits/REFACTOR-PLAN.md §5 Phase 7.D; TR-10-1 §10.3 +
 TR-10-9 §10.
 
 - **Phase 7.E:** TR-10-2/-3/-4/-11/-12 §7 IPMX RTP UDP port constraints —
@@ -2209,7 +2242,7 @@ TR-10-9 §10.
   by `is_rtp_block` (USB / non-RTP transport blocks don't trip
   the RTP port constraints). 8 new tests; suite: 1622 green.
 
-Audit ref: REFACTOR-PLAN.md §5 Phase 7.E; TR-10-2 §7 + TR-10-3
+Audit ref: audits/REFACTOR-PLAN.md §5 Phase 7.E; TR-10-2 §7 + TR-10-3
 §7 + TR-10-4 §7 + TR-10-11 §7 + TR-10-12 §7.
 
 - **Phase 7.F:** ST 2110-22:2022 §7.3 jxsv `b=AS:<kbps>` requirement —
@@ -2243,7 +2276,7 @@ Audit ref: REFACTOR-PLAN.md §5 Phase 7.E; TR-10-2 §7 + TR-10-3
   tests (8 IPMX tests were removed when the IPMX-tier mirror was
   deleted); suite: 1710 green.
 
-Audit ref: REFACTOR-PLAN.md §5 Phase 7.F; ST 2110-22:2022 §7.3;
+Audit ref: audits/REFACTOR-PLAN.md §5 Phase 7.F; ST 2110-22:2022 §7.3;
 TR-10-7 §11.
 
 - **Phase 7.G:** TR-10-10 §8 `a=infoframe` HDMI InfoFrame signaling
@@ -2260,7 +2293,7 @@ TR-10-7 §11.
   some media port + 3 and ports are unique. 5 new error ids;
   10 new tests; suite: 1639 green.
 
-Audit ref: REFACTOR-PLAN.md §5 Phase 7.G; TR-10-10 §8.
+Audit ref: audits/REFACTOR-PLAN.md §5 Phase 7.G; TR-10-10 §8.
 
 - **Phase 7.H:** TR-10-5 §10 `a=hkep` HDCP Key Exchange Protocol attribute.
 
@@ -2273,7 +2306,7 @@ Audit ref: REFACTOR-PLAN.md §5 Phase 7.G; TR-10-10 §8.
   and media-level per TR-10-5 §17; addr syntax not validated per
   TR-10-5 §10. 4 new error ids; 11 new tests; suite: 1650 green.
 
-Audit ref: REFACTOR-PLAN.md §5 Phase 7.H; TR-10-5 §10 + §17.
+Audit ref: audits/REFACTOR-PLAN.md §5 Phase 7.H; TR-10-5 §10 + §17.
 
 - **Phase 7.I:** TR-10-6 §7.6 FEC parameter signaling in `a=fmtp` —
   `FECPROFILE` value-set narrowing + `FEC_ADD_LATENCY_*` cross-parameter
@@ -2289,7 +2322,7 @@ Audit ref: REFACTOR-PLAN.md §5 Phase 7.H; TR-10-5 §10 + §17.
   `patterns.lua` for the non-negative integer validation. 5 new
   error ids; 12 new tests; suite: 1662 green.
 
-Audit ref: REFACTOR-PLAN.md §5 Phase 7.I; TR-10-6 §7.6.
+Audit ref: audits/REFACTOR-PLAN.md §5 Phase 7.I; TR-10-6 §7.6.
 
 - **Phase 7.J:** TR-10-13 §13 `a=privacy` attribute — required parameters,
   value forms, and enum narrowing.
@@ -2306,7 +2339,7 @@ Audit ref: REFACTOR-PLAN.md §5 Phase 7.I; TR-10-6 §7.6.
   `HEX^n * P(-1)` helper). 13 new error ids; 32 new tests;
   suite: 1694 green.
 
-Audit ref: REFACTOR-PLAN.md §5 Phase 7.J; TR-10-13 §13 + §20.1.
+Audit ref: audits/REFACTOR-PLAN.md §5 Phase 7.J; TR-10-13 §13 + §20.1.
 
 - **Phase 7.K:** TR-10-13 §20.1 `a=extmap` direction for PEP IV-Counter
   URNs — direction MUST equal `sendonly`.
@@ -2321,7 +2354,7 @@ Audit ref: REFACTOR-PLAN.md §5 Phase 7.J; TR-10-13 §13 + §20.1.
   cleanly (nil when absent). 1 new error id; 8 new tests;
   suite: 1702 green.
 
-Audit ref: REFACTOR-PLAN.md §5 Phase 7.K; TR-10-13 §20.1.
+Audit ref: audits/REFACTOR-PLAN.md §5 Phase 7.K; TR-10-13 §20.1.
 
 - **Phase 7.L:** TR-10-14 §14 USB transport block (`m=application TCP
   usb`) constraints.
@@ -2353,7 +2386,7 @@ Audit ref: REFACTOR-PLAN.md §5 Phase 7.K; TR-10-13 §20.1.
 
   9 new tests; suite: 1711 green.
 
-Audit ref: REFACTOR-PLAN.md §5 Phase 7.L; TR-10-14 §14;
+Audit ref: audits/REFACTOR-PLAN.md §5 Phase 7.L; TR-10-14 §14;
 RFC 4145 §3.
 
 **Phase 7 closed (A–L).** Grammar tier covers every SDP-touching
@@ -2391,7 +2424,7 @@ pushback. Final test count: 1711 green.
   the 1.0 serializer until Phase 9 cutover; `parse_sdp.serialize` is
   internal-only for the rest of Phase 8. Suite: 1721 green (up from 1710).
 
-Audit ref: REFACTOR-PLAN.md §5 Phase 8.A.
+Audit ref: audits/REFACTOR-PLAN.md §5 Phase 8.A.
 
 - **Phase 8.B:** serializer base SDP optional fields, repeats, time zones,
   generic / flag attributes, and media blocks.
@@ -2433,7 +2466,7 @@ Audit ref: REFACTOR-PLAN.md §5 Phase 8.A.
 
   Suite: 1742 green (up from 1721).
 
-Audit ref: REFACTOR-PLAN.md §5 Phase 8.B.
+Audit ref: audits/REFACTOR-PLAN.md §5 Phase 8.B.
 
 - **Phase 8.C:** fmtp params shape change — hash → ordered list, with a
   single `base.params_get(params, key)` lookup helper.
@@ -2482,7 +2515,7 @@ Audit ref: REFACTOR-PLAN.md §5 Phase 8.B.
   Pure shape refactor; no behavior change. Suite: 1742 green
   (unchanged).
 
-Audit ref: REFACTOR-PLAN.md §5 Phase 8.C.
+Audit ref: audits/REFACTOR-PLAN.md §5 Phase 8.C.
 
 - **Phase 8.D:** base compound-attribute renderers — every base-tier
   `a_<name>` rule in `parse_sdp/grammar/base.lua` now has an inverse in
@@ -2527,7 +2560,7 @@ Audit ref: REFACTOR-PLAN.md §5 Phase 8.C.
   Suite total: 1817 green (up from 1748 at Phase 8.C close). 69 new
   round-trip tests across the four 8.D commits.
 
-Audit ref: REFACTOR-PLAN.md §5 Phase 8.D (incl. 8.D.1 / 8.D.2 / 8.D.3).
+Audit ref: audits/REFACTOR-PLAN.md §5 Phase 8.D (incl. 8.D.1 / 8.D.2 / 8.D.3).
 
 - **Phase 8.E:** IPMX-tier attribute renderers. Three new `ATTR_RENDERERS`
   entries in `parse_sdp/serialize.lua` cover every attribute the IPMX tier
@@ -2552,7 +2585,7 @@ Audit ref: REFACTOR-PLAN.md §5 Phase 8.D (incl. 8.D.1 / 8.D.2 / 8.D.3).
   the match. Phase 8.F runs the full fixture suite with validation on.
   16 new tests in `spec/roundtrip_spec.lua`; suite 1833 green (was 1817).
 
-Audit ref: REFACTOR-PLAN.md §5 Phase 8.E.
+Audit ref: audits/REFACTOR-PLAN.md §5 Phase 8.E.
 
 - **Phase 8.F:** fixture-wide round-trip. New describe block in
   `spec/roundtrip_spec.lua` discovers every
@@ -2564,7 +2597,7 @@ Audit ref: REFACTOR-PLAN.md §5 Phase 8.E.
   9 ST 2110 + 5 IPMX); suite 1852 green (was 1833). Closes Phase 8
   in full.
 
-Audit ref: REFACTOR-PLAN.md §5 Phase 8.F.
+Audit ref: audits/REFACTOR-PLAN.md §5 Phase 8.F.
 
 ### Changed
 
@@ -2612,7 +2645,7 @@ Audit ref: REFACTOR-PLAN.md §5 Phase 8.F.
   `spec/` ends Phase 9 at 1079 green (was 1862; 783 moved to
   spec_legacy_1.0/). Grammar-tier suite is the going-forward authority.
 
-Audit ref: REFACTOR-PLAN.md §5 Phase 9.D.
+Audit ref: audits/REFACTOR-PLAN.md §5 Phase 9.D.
 
 - **Phase 9.C:** Public-API surface for the policy / findings feature.
   Two surface additions to `parse_sdp.lua`:
@@ -2634,7 +2667,7 @@ Audit ref: REFACTOR-PLAN.md §5 Phase 9.D.
 
   10 new tests in `spec/library_spec.lua`. Suite 1862 green (was 1852).
 
-Audit ref: REFACTOR-PLAN.md §5 Phase 9.C.
+Audit ref: audits/REFACTOR-PLAN.md §5 Phase 9.C.
 
 - **Phase 9.B:** Comment-tightening sweep across the new grammar tier,
   serializer, and errors module. Removed paraphrase comments,
@@ -2647,7 +2680,7 @@ Audit ref: REFACTOR-PLAN.md §5 Phase 9.C.
   lines across `base.lua`, `st2110.lua`, `ipmx.lua`, `serialize.lua`,
   `errors.lua`.
 
-Audit ref: REFACTOR-PLAN.md §5 Phase 9.B.
+Audit ref: audits/REFACTOR-PLAN.md §5 Phase 9.B.
 
 - **Phase 9.A:** DRY sweep across the grammar tier and spec helpers. No
   behavior change; suite unchanged at 1852 green.
@@ -2672,7 +2705,7 @@ Audit ref: REFACTOR-PLAN.md §5 Phase 9.B.
   Net delta: -31 lines across the grammar modules and three spec files;
   +32 lines for the new `spec/support.lua` module.
 
-Audit ref: REFACTOR-PLAN.md §5 Phase 9.A.
+Audit ref: audits/REFACTOR-PLAN.md §5 Phase 9.A.
 
 - The inline `errors` table in `parse_sdp.lua` now delegates to
   `parse_sdp.errors`. Error struct shape, `errors.new()` signature, and

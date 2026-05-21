@@ -27,169 +27,342 @@
 ## Test Command
 
 ```sh
-busted spec/                  # hermetic suite (~850 tests)
-busted spec_conformance/      # opt-in upstream-fixture suite
-docker compose run test       # Docker (hermetic)
+busted spec/                  # hermetic suite (1162 tests)
+busted spec_conformance/      # opt-in pinned AMWA + SDPoker fixtures
 ```
-
-The opt-in `spec_conformance/` suite downloads pinned SDP fixtures from
-`AMWA-TV/nmos-testing` and `AMWA-TV/bcp-006-01` into a gitignored cache
-and runs them through the parser. See
-[spec_conformance/README.md](spec_conformance/README.md).
 
 ## Current State
 
-1162 hermetic tests passing in `spec/`; 10/10 in `spec_conformance/`.
-Every validation check is grounded in explicit spec text; no
-opinion-based checks remain.
+1.1.1 shipped on 2026-05-21. 1162 hermetic tests passing. Every validation
+check is grounded in explicit spec text; no opinion-based checks remain.
+Public API surface is `parse_sdp/init.lua` (library) + `bin/parse_sdp`
+(CLI). Grammar tier under `parse_sdp/grammar/{base,st2110,ipmx}.lua`;
+serializer under `parse_sdp/serialize.lua`; registry under
+`parse_sdp/errors.lua`. The 1.0 monolith has been deleted.
 
-Post-1.1.0 patch (1.1.1): restored EUI-64 enforcement on
-`a=ts-refclk:ptp=` GMID — a Phase-4.C regression where the new
-`clksrc-ext` fallback silently swallowed malformed reserved-literal
-bodies. New `sdp.a.ts-refclk.ptp-malformed` check + a `tsr_reserved`
-negative-lookahead guard on `tsr_ext` (the same discipline
-`known_attr_lookahead` uses at the `a=` level). `examples/examples.lua`
-also synced to the 1.1 decomposed doc shape — see CHANGELOG.
+Recent doc additions (post-1.1.1):
 
-Post-1.1.1 doc add: GUIDE.md gains a "Producer Workflow" section for
-device manufacturers and SDK developers emitting SDP — the
-build-then-validate loop with a worked ST 2110-20 sender that uses the
-validator's own error messages to drive each step. Runnable companion
-at `examples/producer_walkthrough.lua`. Plus four runnable "kitchen
-sink" references: `examples/kitchen_sink.lua` (RFC 8866 + base RFC
-extensions), `examples/kitchen_sink_st2110.lua` (every ST 2110
-attribute, asserts is_st2110), `examples/kitchen_sink_ipmx.lua`
-(every IPMX TR-10 extension, asserts is_ipmx),
-`examples/kitchen_sink_conflicts.lua` (eight per-conflict micro
-fixtures for forbidden combinations).
+- GUIDE.md "Producer Workflow" section + runnable
+  `examples/producer_walkthrough.lua` — the build-then-validate loop
+  for device manufacturers / SDK engineers.
+- Four runnable kitchen-sink references in `examples/`:
+  - `kitchen_sink.lua` (RFC 8866 + base RFC extensions)
+  - `kitchen_sink_st2110.lua` (every ST 2110 attribute, asserts `is_st2110()`)
+  - `kitchen_sink_ipmx.lua` (every IPMX TR-10 extension, asserts `is_ipmx()`)
+  - `kitchen_sink_conflicts.lua` (eight per-conflict micro-fixtures)
+- GUIDE.md "Kitchen-sink references" subsection (with the table of
+  four hex-format conventions SDP uses).
 
-The grammar-first refactor on branch `refactor/grammar-first` is
-**complete**. Phases 4 + 5 closed; **Phase 6 (all of 6.A–6.L except
-the deferred 6.I) closed; Phase 7 (7.A–7.L IPMX tier composition
-via `extend(st2110_rules, ...)`) closed; Phase 8 (8.A–8.F, full
-serializer rewrite plus fixture-wide round-trip) closed; Phase 9
-(9.A–9.D, pre-cutover refactor + public-API surface + cutover)
-closed; Phase 10 (10.B audit + 10.A.0 six grounded-SHALL ports +
-10.A delete + 10.C comparison) closed.** `sdp.parse(text, mode,
-opts)` and `mt:to_sdp()` route through the grammar tier and
-`parse_sdp/serialize.lua`; the 1.0 grammar / validator / serializer
-have been removed from `parse_sdp.lua` (3875 → 257 lines). Five
-1.0-over-strict items stay intentional drops without primary-source
-SHALL (audio MAXUDP-forbidden on AM824, channels-required on
-L16/L24, packet-payload-fit on AM824, empty-media-block rejection
-at st2110/ipmx tier, and ST 2110-10 §8.7's §7.9-conditional
-TSMODE=SAMP→TSDELAY coupling).
+## Next pass — diagnostic CLI + README polish
 
-The new `parse_sdp/serialize.lua` renders every base-tier
-compound attribute from `parse_sdp/grammar/base.lua` (Phase 8.D —
-18 `ATTR_RENDERERS` entries) plus every IPMX-tier extension
-attribute from `parse_sdp/grammar/ipmx.lua` (Phase 8.E — infoframe,
-hkep, privacy). Phase 8.F closes the slice with a fixture-wide
-round-trip suite — every `examples/{generic,st2110,ipmx}/valid/*.sdp`
-goes through `parse → serialize → re-parse → deep-equal` under the
-appropriate tier matcher. Module remains internal-only until Phase 9
-cutover; the public `doc:to_sdp()` still routes to the 1.0 serializer.
+A field engineer with a customer's SDP, a compliance tester verifying a
+product, and a SaaS engineer wiring `parse_sdp` into a service all want
+slightly different things from the CLI. The library already produces
+everything they need (structured findings with `id` / `spec_ref` / line+col,
+introspectable `sdp.checks()` registry, conformance suite under
+`spec_conformance/`); the gap is **CLI surface area** and **first-impression
+positioning**. This pass closes both.
 
-Remaining phases:
+Pick items in order — each builds on the prior. Every CLI subcommand
+should ship with: spec tests in `spec/cli_spec.lua`, a section in
+GUIDE.md "CLI Reference", and a row in README's CLI example block.
 
-- **Phase 10.A.0** — port the six grounded SHALLs the grammar
-  tier silently dropped during the refactor (see REFACTOR-PLAN.md
-  §5 Phase 10.A.0 for the per-blocker list and primary-text
-  cites). One commit per blocker (or small grouping) with
-  pass+fail tests + spec quote per gates. The smpte291 fmtp
-  bundle (RFC 8331 §4 + ST 2110-40:2023 §7) clears the failing
-  `nmos-testing:data.sdp` conformance fixture.
-- **Phase 10.A** — delete the 1.0 implementation from
-  `parse_sdp.lua` (grammar / validator / serializer blocks; the
-  file shrinks to errors-shim re-export, public-API surface, CLI
-  dispatch). Delete `spec_legacy_1.0/`. `busted spec/` and
-  `busted spec_conformance/` green.
-- **Phase 10.C** — append a brief "Comparison with 1.0" section
-  to CHANGELOG.md under `[Unreleased]` (coverage, new checks,
-  code-size delta). GUIDE.md + README.md call out the breaking
-  doc-shape change.
+### N.1 — `parse_sdp validate` subcommand
 
-The grammar tier covers (concrete list of per-spec coverage):
+**Why.** The natural CLI invocation for "is this a valid ST 2110 SDP?" is
+`parse_sdp validate --mode st2110 file.sdp`. Today the only way to do
+this is `parse_sdp to_json --mode st2110 file.sdp >/dev/null`, ignore
+stdout, read stderr, and inspect exit code. That buries the diagnostic
+intent inside a converter and signals "this tool is for producing JSON,
+not for telling me about my SDP."
 
-- ST 2110-20 raw video: §7.1 no-whitespace-around-=, §7.2/§7.4.2
-  required-param presence + -21 §8.1 TP, 7 enum value-sets, 6
-  non-enum value forms, 2 flag-only, 7 cross-parameter SHALLs +
-  5 1.0-gap-close SHALLs from §6.2.5 Table 3 + §7.6.
-- ST 2110-22 jxsv: 4 required-param presence, 16 value-form /
-  flag-only narrowings (RFC 9134-aligned enums for colorimetry /
-  TCS / sampling, correcting 1.0 mismatches), 2 cross-param SHALLs,
-  §7.3 b=AS presence + value form.
-- ST 2110-30 / -31 audio: channel-order RFC 3190 syntax + SMPTE2110
-  group set + AES3-requires-AM824 + L16/L24 packet-payload-fit.
-- ST 2110-31 AM824: rtpmap channel parity (§6.1).
-- ST 2110-41 Fast Metadata: required SSN with value form, optional
-  DIT with hex-token value form, MAXUDP forbidden.
-- ST 2110-10 §8.2 + §8.3: per-media-block `a=ts-refclk` and
-  media-level `a=mediaclk` presence (1.0 cited the wrong sections;
-  grammar tier corrects to §8.2 / §8.3). §8.5 + ST 2022-7 §6
-  `a=group:DUP` leg coherence.
-- TR-10-1 §10: FID-forbidden, IPMX fmtp marker, §10.2 video required
-  params (measuredpixclk / vtotal / htotal), §10.3 audio
-  measuredsamplerate. TR-10-2/-3/-4/-11/-12 §7: RTP port even + > 1024.
-- TR-10-5 §10: a=hkep (5 value-form SHALLs). TR-10-6 §7.6: FECPROFILE
-  value form and `FEC_ADD_LATENCY_*` non-negative-integer / requires-
-  FECPROFILE. TR-10-10 §8: a=infoframe (5 SHALLs incl. cross-section
-  port = media+3). TR-10-13 §13 + §20.1: a=privacy (13 SHALLs) plus
-  PEP IV-Counter extmap direction. TR-10-14 §14: USB transport block
-  (setup-required / setup-passive / privacy USB_KV).
-- Base SDP: RFC 5888 §6 group-mid invariants, §9.2 port-zero-mid.
+**What it does.**
 
-Tracking and design live in [REFACTOR-PLAN.md](REFACTOR-PLAN.md). The
-1.0 parser at `parse_sdp.lua` remains the shipping artifact on `main`;
-the new grammar under `parse_sdp/grammar/` and serializer at
-`parse_sdp/serialize.lua` are internal-only until Phase 9 cutover.
+- Reads SDP from a file path (or stdin if `-` or no positional arg).
+- Validates at `--mode` (default `sdp`; also accepts `st2110`, `ipmx`).
+- On success: prints `OK` to stdout (one line, no JSON), exits 0.
+- On failure: prints the human-formatted error block (same renderer as
+  the other subcommands use via `errors.format`) to stderr, exits 1.
+- Pairs with `--all-findings` (see N.3) to dump *every* finding the
+  validator collected, not just the first error.
 
-**Former flake (resolved in 6.C.A):** the `sdp.a.fmtp.trailing-semicolon`
-tests in `spec/grammar_base_spec.lua` previously flaked at ~45% with
-*"no previous value for accumulator capture"*. The 6.C.A rewrite
-replaced `fmtp_params_branch`'s `Ct(P("")) * (entry % set_pair) * …`
-chain with `Ct(entry * (sep * entry)^0) / fmtp_entries_to_params`,
-sidestepping LPeg's accumulator-capture runtime path. 30 fresh full-suite
-runs and 30 fresh `--filter "trailing semicolon"` runs went 30/30 green
-afterward. The root cause was not definitively isolated; see
-[audits/FMTP_ACCUMULATOR_FLAKE.md](audits/FMTP_ACCUMULATOR_FLAKE.md) for
-the investigation record.
+**Where it lives.**
 
-The test suite is split along a single axis — *what kind of code each
-test exercises*. Refactor-era files (`grammar_base_spec`,
-`grammar_addresses_spec`, `error_registry_spec`) are not yet enumerated
-in the table below.
+- New subcommand in `bin/parse_sdp` (argparse :command()).
+- Reuses `sdp.parse(text, mode, { fail_on_first = not opts.all_findings })`.
+- No new library code — pure CLI plumbing.
 
-| File | Tests | What it covers |
-| --- | ---: | --- |
-| `spec/sdp_spec.lua` | 99 | RFC 4566 / RFC 8866 (base SDP) — 100% standards-tied |
-| `spec/st2110_spec.lua` | 405 | SMPTE ST 2110 — 100% standards-tied |
-| `spec/ipmx_spec.lua` | 190 | VSF TR-10 / IPMX — 100% standards-tied |
-| `spec/library_spec.lua` | 42 | Public API (parse / validate / doc methods / to_json) |
-| `spec/cli_spec.lua` | 15 | CLI subcommands |
-| `spec/grammar_spec.lua` | 35 | LPEG primitive parsers (internal, white-box) |
-| `spec/errors_spec.lua` | 16 | Error formatter (internal, white-box) |
+**Tests.** `spec/cli_spec.lua` — at least: valid SDP at each tier exits 0,
+invalid SDP exits 1 with formatted error on stderr, stdin works with `-`,
+unknown mode rejected with a non-zero exit + helpful message.
 
-Non-standards `it` blocks carry an inline `-- NOT-SPEC: library` or
-`-- NOT-SPEC: implementation` marker.
+**Doc.** GUIDE.md § CLI Reference: new subsection right after `to_json`.
+README: add the validate line to the CLI Example block.
+
+### N.2 — `parse_sdp diagnose` subcommand
+
+**Why.** A field engineer working a customer's SDP often doesn't know
+which tier the customer *claims* compliance with — only that the stream
+isn't working. The natural question is "what tier does this pass at?"
+
+**What it does.** Runs validation at every tier and reports a tier
+ladder. Example output:
+
+```text
+$ parse_sdp diagnose customer.sdp
+  ✓ RFC 8866 (base SDP)
+  ✗ SMPTE ST 2110
+      sdp.m.ts-refclk-required
+      media block must include an 'a=ts-refclk' attribute
+      ST 2110-10:2022 §8.2
+      at media[1].attributes[ts-refclk]
+  ✗ IPMX (VSF TR-10)
+      (inherits ST 2110 failure — fix it first)
+```
+
+- Always exits 0 (the diagnostic ran; the *file* may or may not be valid
+  at a tier, but that's data, not error).
+- For each tier the report shows: pass/fail glyph, tier name, and on
+  failure the structured finding's `id`, `message`, `spec_ref`, and
+  `field_path` indented under it.
+- The IPMX line should say "(inherits ST 2110 failure)" when the
+  preceding ST 2110 check failed — running IPMX validation under the
+  hood will reproduce the same finding, but the report should be
+  honest that fixing ST 2110 is the prerequisite.
+
+**Where it lives.** `bin/parse_sdp` new subcommand. The "inheritance"
+hint is just a check in the CLI code: if the ST 2110 finding's `id` is
+also produced by the IPMX run, collapse the IPMX line.
+
+**Tests.** `spec/cli_spec.lua` — at minimum: an RFC-8866-only-valid SDP
+shows ✓/✗/✗ with both ✗ rows populated; an ST-2110-valid SDP shows
+✓/✓/✗ with the IPMX row carrying a real IPMX-tier finding; a
+malformed-at-base SDP shows ✗/✗/✗ with the base finding on the first
+row and a clear "inherits" hint on the other two.
+
+**Doc.** GUIDE.md § CLI Reference: new subsection. README's CLI Example
+block gets a line for this — it's probably the most quotable subcommand
+for first-impression positioning.
+
+### N.3 — `--all-findings` flag
+
+**Why.** Default `sdp.parse` returns at the first error finding (the
+public-API contract: `nil, err`). For a field engineer, "show me
+everything wrong" is the natural ask — they don't want to re-run after
+every fix. The library already supports this via `fail_on_first = false`
+combined with policy demotion (documented in GUIDE.md § "Findings,
+warnings, and errors"), but the CLI doesn't expose it.
+
+**What it does.** A `--all-findings` flag on `to_json`, `validate`, and
+`diagnose`:
+
+- Internally sets `opts.fail_on_first = false` and demotes every
+  registered error-severity check to `"warn"` in `opts.policy`.
+- Parse proceeds to completion; every finding lands in `doc:findings()`.
+- Output: instead of one error, the CLI prints a numbered list of every
+  finding (id, message, spec_ref, line:col) in the order they were
+  recorded.
+- Exit code: 0 if all findings would have been warnings under default
+  severity, 1 if any were errors (the severity is computed against the
+  default policy — `--all-findings` only changes *collection*, not
+  whether the file is "really" valid).
+
+**Where it lives.** `bin/parse_sdp` argparse global flag; CLI code
+constructs the demotion policy by iterating `sdp.checks()` and writing
+`policy[c.id] = "warn"` for every `c.default_severity == "error"`.
+
+**Tests.** `spec/cli_spec.lua` — a file with multiple errors shows all
+of them in the output (count matches the registry's expected hits);
+a clean file shows nothing-new behaviour (`--all-findings` is a no-op).
+
+**Doc.** GUIDE.md § CLI Reference flag table; one line in README CLI
+example.
+
+### N.4 — `parse_sdp checks` subcommand
+
+**Why.** Compliance testers and downstream tooling want machine-readable
+access to the registry — "every check the validator enforces, what
+clause it cites, what its severity is." Today this is a Lua-only API
+(`sdp.checks()`). Exposing it via the CLI is one of the highest-leverage
+moves for the compliance-tester persona.
+
+**What it does.** Dumps the registry, with filtering and formatting
+options. Default format is a tabular human-readable list; `--format json`
+emits the full registry as a JSON array (for piping into `jq`);
+`--filter <pattern>` matches against `id` for selective lookup.
+
+```text
+$ parse_sdp checks --filter 'sdp.a.ts-refclk.*'
+sdp.a.ts-refclk.ptp-malformed                error  RFC 7273 §4.8 (ptp / ptp-server / EUI64 ABNF)
+sdp.a.ts-refclk.traceable-mix                error  RFC 7273 §4.8
+
+$ parse_sdp checks --format json --filter 'tr-10-1.*' | jq '.[] | .id'
+"tr-10-1.a.fmtp.htotal-invalid-value"
+"tr-10-1.a.fmtp.htotal-required"
+...
+```
+
+- Default tabular: `id   severity   spec_ref` (column-aligned).
+- `--format json`: array of registry entries, one object per check,
+  with all fields (`id`, `kind`, `default_severity`, `code`,
+  `message_template`, `spec_ref`, `verified`, `verification_note`).
+- `--filter <pattern>`: Lua-pattern (or simple glob — pick one and
+  document it) match against `id`. Multiple filters AND together.
+- `--unverified`: only checks with `verified=false` (matters to
+  compliance testers — "what checks are pending primary-source
+  re-verification?"). The library already tracks this; just surface it.
+- Exit code 0; 1 only on usage errors (e.g. malformed `--format`).
+
+**Where it lives.** `bin/parse_sdp` new subcommand. Pure CLI plumbing
+over `sdp.checks()`.
+
+**Tests.** `spec/cli_spec.lua` — default format is parseable, `--format
+json` decodes cleanly to an array matching `sdp.checks()`, filter works,
+`--unverified` matches the registry's `verified=false` rows.
+
+**Doc.** GUIDE.md § CLI Reference: new subsection. Also worth a short
+GUIDE.md § "Compliance audit workflow" using `parse_sdp checks` +
+`parse_sdp validate --all-findings` as the building blocks. README:
+mention briefly in the CLI block.
+
+### N.5 — `parse_sdp conformance` subcommand
+
+**Why.** `spec_conformance/` runs against pinned AMWA-TV + SDPoker
+fixtures. Today the way to find out "does this version pass the
+reference suite?" is to run `busted spec_conformance/` and read busted's
+pass/fail dots. For an outside evaluator (or a CI gate, or anyone
+quoting "this build passes the AMWA suite"), a single-line summary
+suitable for piping into a report is the right shape.
+
+**What it does.**
+
+```text
+$ parse_sdp conformance
+AMWA-TV fixtures (pinned @ <commit>):       10/10 ✓
+SDPoker valid fixtures (pinned @ <commit>): 47/47 ✓
+SDPoker invalid fixtures (pinned @ <commit>): 32/32 correctly rejected
+Total: 89/89 ✓
+```
+
+- Reuses `spec_conformance/manifest.lua` + `conformance_spec.lua`
+  logic without going through busted — call the underlying
+  fetcher/runner module directly from the CLI.
+- One line per fixture group; final aggregate line.
+- Exits 0 only if everything passes; 1 otherwise (output then includes
+  per-failure detail beneath the affected group).
+- A `--verbose` flag enumerates each fixture name + verdict.
+
+**Where it lives.** `bin/parse_sdp` new subcommand. The logic in
+`spec_conformance/conformance_spec.lua` may need a small extraction to
+a plain Lua module so the CLI can call it without depending on busted.
+
+**Tests.** `spec/cli_spec.lua` — at minimum a smoke test that running
+the subcommand prints something parse-able and exits with a sensible
+code. The substance of "did it actually work" is already covered by
+`busted spec_conformance/`.
+
+**Doc.** GUIDE.md gets a "Conformance suite" section explaining what
+the pinned fixtures are and how to interpret the verdict. README adds
+the line + badge-able output to the CLI Example block.
+
+### N.6 — README first-impression polish
+
+**Why.** Today the README opens with "A Lua 5.3-5.5 library for parsing,
+validating, and serializing SDP files…" — accurate, but doesn't tell
+a reader within 30 seconds whether the project is for *them*. A field
+engineer scanning won't immediately see "this will tell me exactly
+what's wrong with this SDP and which spec clause it violates." A
+compliance tester won't immediately see "every check carries a
+primary-source citation."
+
+**What changes.**
+
+- Add a 3-line "Who is this for?" stanza near the top, just under the
+  one-paragraph intro. Three personas (field troubleshooting, compliance
+  verification, SDK/product integration), one sentence each.
+- Add a small CLI demo snippet showing realistic error output (the
+  1.0-style carrot highlight + `err.id` + `err.spec_ref`). The
+  `examples/st2110/invalid/03_missing_fmtp.sdp` fixture run via
+  `parse_sdp validate --mode st2110` (once N.1 lands) is the right
+  source.
+- Keep the existing Features bullet list (it's useful) but reorder so
+  spec-citation + structured-error points come first.
+
+**Where it lives.** README.md, between the intro and the existing
+Features section. Should add ~15-25 lines.
+
+**Tests.** N/A (doc-only).
+
+### N.7 — Troubleshooting recipes (GUIDE.md)
+
+**Why.** A field engineer with an unfamiliar `err.id` wants "what does
+this usually mean in the wild?" The error message says *what* the
+validator found; a troubleshooting note can add *why this usually
+happens* and *what to check next*. **Keep this tight** — the user
+explicitly asked not to invent edge cases. Use real cases sourced from:
+
+- The [SDPoker repository](https://github.com/AMWA-TV/sdpoker) — its
+  test fixtures + issues + PRs are the canonical "things real senders
+  get wrong" corpus. Search for closed issues with "fixed" labels and
+  for the fixtures named `*_invalid*` in the SDPoker repo.
+- The [AMWA nmos-testing repo](https://github.com/AMWA-TV/nmos-testing) —
+  similar corpus from JT-NM Tested.
+- The 1.1.1 incident itself: 5-octet PTP GMID. Real-world, recently
+  fixed, has a citable `err.id`.
+
+**What changes.** New GUIDE.md section "Troubleshooting" near the end
+(after Serialization, before Test Suite Organization). Format: a small
+table of *the most commonly seen errors in real-world senders*,
+keyed by `err.id`, with one column for "common cause" and one for
+"what to check on the device side." Cap at 6-8 entries — better tight
+and useful than exhaustive.
+
+Suggested seed entries (verify each against the SDPoker / AMWA-testing
+corpora before adding):
+
+| err.id | Common cause | Check |
+| --- | --- | --- |
+| `sdp.a.ts-refclk.ptp-malformed` | Device emitting a non-EUI-64 GMID (5- or 6-octet form) | Provisioning logic for the PTP grandmaster ID; must be exactly 8 hex octets |
+| `sdp.c.ipv4-multicast.ttl-required` | IPv4 multicast c= line without /TTL — common when porting from RFC 4566 examples that pre-date strict ABNF | Append `/64` or `/127` per ST 2110-10 §6.5 |
+| `st2110-20.a.fmtp.sampling-required` | Raw video fmtp missing `sampling=` — happens when the device falls back to JPEG-XS-style defaults on a raw stream | Check rtpmap encoding vs fmtp param set |
+| `tr-10-1.a.fmtp.marker-required` | IPMX fmtp without the bare `IPMX` flag — typical when porting an ST 2110 SDP to IPMX | Add `;IPMX` to the fmtp params |
+| `sdp.a.ts-refclk.traceable-mix` | A device with both PTP-traceable and PTP-not-traceable ts-refclk lines at the same level | One source-of-truth per scope |
+
+**Where it lives.** GUIDE.md § Troubleshooting (new section). Cross-link
+to the error registry CLI (N.4) and to `parse_sdp.checks()`.
+
+**Tests.** N/A (doc-only). But the `err.id` strings in the table should
+all exist in the registry — add a `spec/library_spec.lua` test
+asserting that every cited `err.id` is in `sdp.checks()` so the
+documentation can't go stale silently.
+
+### Future (lower priority — track here, don't schedule yet)
+
+- **Audit-trail export.** A compliance-tester workflow: run validation
+  against a corpus of vendor SDPs and emit CSV / JSON of `(file, tier,
+  pass/fail, err.id, err.spec_ref)`. The CLI primitives from N.1–N.4
+  are enough to build this externally with shell + jq; an integrated
+  `parse_sdp audit <directory>` subcommand would package it. Defer
+  until the N.1–N.5 work is in users' hands and the actual ergonomics
+  ask is clearer.
 
 ## Next phase: per-test citation labels in `it` names
 
-Every `it` block in the three standards-tied files (`sdp_spec`,
-`st2110_spec`, `ipmx_spec`) currently ties to a published clause, but the
-citation lives in the describe name or in the parser-side `spec_ref` — not
-on the test name itself. The next phase puts it on the test name so:
+(Pre-existing item — orthogonal to the diagnostic-CLI work above.
+Mechanical pass over the three standards-tied spec files.)
 
-1. **Citations show up in busted output.** When a test fails, the spec
-   clause it was enforcing is on the same line as the test name. No need
-   to grep back into the surrounding describe.
-2. **The cite is grep-able from the command line.** A single regex
-   extracts `(file, line, doc, section)` tuples across the suite — useful
-   for auditing, for cross-referencing against fixture sets, and for
-   downstream tooling that wants to know which clauses a passing build
-   actually exercised.
-3. **Every cite is re-verified against primary spec text** before
-   landing — the Spec Verification Protocol from CLAUDE.md applies.
+Every `it` block in `spec/grammar_base_spec.lua`,
+`spec/grammar_st2110_spec.lua`, and `spec/grammar_ipmx_spec.lua`
+currently ties to a published clause, but the citation lives in the
+describe name or in the parser-side `spec_ref` — not on the test name
+itself. The next phase puts it on the test name so:
+
+1. Citations show up in busted output — when a test fails the spec
+   clause it was enforcing is on the same line.
+2. The cite is grep-able from the command line — a single regex
+   extracts `(file, line, doc, section)` tuples across the suite.
+3. Every cite is re-verified against primary spec text before landing
+   (Spec Verification Protocol from CLAUDE.md applies).
 
 ### Pattern
 
@@ -199,45 +372,28 @@ Suffix bracket at the end of the test name:
 it("<description> [<doc> §<section>]", function()
 ```
 
-- **Document token:** `RFC NNNN`, `ST 2110-NN`, `ST 2110-NN:YYYY`
+- Document token: `RFC NNNN`, `ST 2110-NN`, `ST 2110-NN:YYYY`
   (year-pinned when the section number depends on the revision),
   `TR-10-NN`, `TR-10-NN-PartN`.
-- **Section token:** `§N`, `§N.M`, `§N.M.L`. No other punctuation;
-  uses the same separator the spec uses internally.
-- **Multiple cites:** comma-separated, no "and":
+- Section token: `§N`, `§N.M`, `§N.M.L`.
+- Multiple cites comma-separated, no "and":
   `[RFC 8866 §5.7, ST 2110-10 §6.5]`.
-- **No URLs.** Document IDs are the bibliographic anchor; readers look
-  the document up themselves.
-
-Examples:
-
-```lua
-it("rejects b=AS:0 (must be positive) [TR-10-7 §11]", function()
-it("rejects IPv6 unicast with /suffix [RFC 8866 §5.7]", function()
-it("accepts width=32767 (boundary) [ST 2110-22:2022 §7.2]", function()
-```
-
-Grep:
-
-```sh
-grep -nE '\[(RFC |ST 2110-|TR-10-)[^]]+\]' spec/sdp_spec.lua spec/st2110_spec.lua spec/ipmx_spec.lua
-```
+- No URLs — document IDs are the bibliographic anchor.
 
 ### Workflow (per file, one commit per file)
 
 1. Walk every describe top to bottom.
-2. For each `it`, locate the parser-side check it exercises and read the
-   `spec_ref` value the validator emits — that is the authoritative
+2. For each `it`, locate the parser-side check it exercises and read
+   the `spec_ref` value the validator emits — that is the authoritative
    citation.
-3. Re-read the cited clause in the on-disk spec. If the wording does not
-   unambiguously support the test, **stop and flag for discussion**
-   before modifying. (Same protocol as audit pass #31.)
+3. Re-read the cited clause in the on-disk spec. If the wording does
+   not unambiguously support the test, **stop and flag for discussion**
+   before modifying.
 4. Append the bracketed citation to the `it` name.
 5. Confirm `busted spec/` still passes. Test count must not change.
 6. Commit.
 
-Coverage target: 100% of `it` blocks in `sdp_spec.lua` / `st2110_spec.lua`
-/ `ipmx_spec.lua` carry an inline citation.
+Coverage target: 100% of `it` blocks in the three standards-tied files.
 
 ## Known Deferred Items
 

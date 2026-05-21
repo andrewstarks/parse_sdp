@@ -258,7 +258,7 @@ below tell you how to be sure of the citation and the placement.
 8. **No "audit-folder follow-up" / "1.0 over-strict" / "intentional
    non-parity" labels on the slice you're actively writing.** Those phrasings
    are almost always stand-ins for an unverified spec claim. Before any of
-   them survives into a commit or REFACTOR-PLAN entry, `grep` the relevant
+   them survives into a commit or PLAN.md entry, `grep` the relevant
    §-text for "shall not" / "MUST NOT" / "forbidden" / "prohibit" (and the
    positive forms for required SHALLs) — if the text doesn't say what the
    label implies, fix the label by verifying now or by splitting the work
@@ -290,6 +290,32 @@ confirmed-against-primary-source findings get fixed.
   input that omits it — no silent defaults, no forgiveness.
 - **dkjson** is the only external runtime dependency beyond LPEG.
 - Lua 5.5: use `local` and `global` declarations explicitly; no implicit globals.
+
+## Check Taxonomy
+
+Every registered check is one of three `kind` values (enforced by
+`parse_sdp.errors.register`'s `VALID_KINDS` table). Knowing which kind a
+check is determines where it lives in the grammar and how it behaves
+under `opts.fail_on_first` / policy demotion:
+
+| Kind | Definition | Site | Toggleable? |
+| --- | --- | --- | --- |
+| **hard-syntactic** | Input shape — parsing cannot continue past a violation | Pattern algebra and `Cmt` that returns false to fail the match | No — these define parseability |
+| **soft-syntactic** | Spec demands a strict form but a lax form is unambiguously interpretable | Ordered choice; lax branch is a `Cmt` that records a finding and returns success | Yes; default severity `warn` |
+| **semantic** | Captured value violates a value-set / presence / cross-section rule | `Cmt` that records a finding and either continues (`warn` / `off`) or fails the match (`error` under `fail_on_first=true`) | Yes; default severity per rule |
+
+Hard-syntactic examples: field with no `=`, unrecognized line letter,
+malformed `m=` value-form, malformed `o=` value-form, malformed `ptp=`
+body (`sdp.a.ts-refclk.ptp-malformed`).
+
+Soft-syntactic examples: `sdp.line.lf-only-line-ending`,
+`sdp.line.trailing-whitespace`, `sdp.file.trailing-newline-missing`,
+`sdp.file.bom-present`, `sdp.a.fmtp.trailing-semicolon`.
+
+Semantic examples: encoding-name set membership, presence of required
+attributes per tier, cross-section invariants like `a=group:DUP`
+reference symmetry, dynamic-PT-requires-rtpmap, RFC 4570 §3.1
+`a=source-filter` dest-in-c= check.
 
 ## Development Workflow
 

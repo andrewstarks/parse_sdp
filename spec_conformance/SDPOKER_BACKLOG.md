@@ -19,11 +19,11 @@ Three layers, in increasing order of bite:
    it. Any change that breaks an SDPoker test fails the build.
 3. **Upstream-fixture conformance suite** — `busted spec_conformance/` runs
    the parser against pinned `AMWA-TV/nmos-testing` and `AMWA-TV/bcp-006-01`
-   fixtures. See [spec_conformance/README.md](spec_conformance/README.md).
-   The allowlist ([spec_conformance/allowlist.lua](spec_conformance/allowlist.lua))
+   fixtures. See [README.md](README.md).
+   The allowlist ([allowlist.lua](allowlist.lua))
    is empty — every divergence has either been resolved in the parser or
    declared a negative test with `expect = "fail"` in
-   [spec_conformance/manifest.lua](spec_conformance/manifest.lua).
+   [manifest.lua](manifest.lua).
 
 ## Update protocol
 

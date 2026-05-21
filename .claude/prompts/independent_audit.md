@@ -36,7 +36,7 @@ There is no third option called "ship some small refactors." Don't do that.
    - `/Users/andrewstarks/src/parse_sdp/CHANGELOG.md`
    - `/Users/andrewstarks/src/parse_sdp/PLAN.md` ("Resolved", "Known
      Deferred Items", "Pre-1.0 Conformance Audit" sections)
-   - `/Users/andrewstarks/src/parse_sdp/SDPOKER_BACKLOG.md`
+   - `/Users/andrewstarks/src/parse_sdp/spec_conformance/SDPOKER_BACKLOG.md`
    - Prior audit reports anywhere in `.claude/`
 
    You may read `parse_sdp.lua` and the test files during Phase 1 *only to
@@ -276,7 +276,7 @@ collapsed back into confirmation-biased mode — restart.
 - `/Users/andrewstarks/src/parse_sdp/CHANGELOG.md` `[Unreleased]`
 - `/Users/andrewstarks/src/parse_sdp/PLAN.md` (Resolved, Known Deferred
   Items, Pre-1.0 Conformance Audit)
-- `/Users/andrewstarks/src/parse_sdp/SDPOKER_BACKLOG.md`
+- `/Users/andrewstarks/src/parse_sdp/spec_conformance/SDPOKER_BACKLOG.md`
 
 ---
 
@@ -393,7 +393,7 @@ no longer matches.
 ### G. Reconciliation against prior audits (Phase 3 read)
 
 Only after A–F are written: read CHANGELOG.md, PLAN.md "Known Deferred
-Items," and SDPOKER_BACKLOG.md. For each of your findings, note whether
+Items," and spec_conformance/SDPOKER_BACKLOG.md. For each of your findings, note whether
 prior audits already addressed it. For each prior-audit conclusion that
 your independent pass disagrees with, flag for the user.
 

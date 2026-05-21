@@ -22,7 +22,7 @@ spec grounding — the project's strictness is spec-bounded, not opinion-bounded
 
 ## What to read first (in order)
 
-1. `/Users/andrewstarks/src/parse_sdp/SDPOKER_BACKLOG.md` — the canonical index
+1. `/Users/andrewstarks/src/parse_sdp/spec_conformance/SDPOKER_BACKLOG.md` — the canonical index
    of every finding, with source identifier, spec citation, resolution, and
    regression-test link. Start here. Treat each row as a claim to re-verify.
 2. `/Users/andrewstarks/src/parse_sdp/CLAUDE.md` — the **Validation Strictness
@@ -52,7 +52,7 @@ spec grounding — the project's strictness is spec-bounded, not opinion-bounded
 - `/Users/andrewstarks/src/parse_sdp/spec_conformance/conformance_spec.lua` —
   runner. Read once to understand pass/fail/allowlist semantics.
 - `/Users/andrewstarks/src/parse_sdp/spec_conformance/README.md` — suite docs.
-- `/Users/andrewstarks/src/parse_sdp/SDPOKER_BACKLOG.md` — update if you add
+- `/Users/andrewstarks/src/parse_sdp/spec_conformance/SDPOKER_BACKLOG.md` — update if you add
   rows, change resolutions, or move citations.
 - `/Users/andrewstarks/src/parse_sdp/cspell.json` — add new technical terms
   here if the spell-checker flags them; verbatim RFC/SMPTE tokens are not

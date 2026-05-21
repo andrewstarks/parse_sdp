@@ -6,11 +6,40 @@ A Lua 5.3 - 5.5 library for parsing, validating, and serializing SDP (Session De
 
 Built with [LPEG](https://www.inf.puc-rio.br/~roberto/lpeg/) for precise, composable parsing and structured error reporting.
 
+## Who is this for?
+
+- **Field engineers troubleshooting an SDP file.** Every error names the
+  exact line + column, the spec clause it violates, and a stable id you
+  can grep for.
+- **Compliance testers verifying a product against ST 2110 / IPMX.**
+  Every check carries a primary-source `spec_ref`. The registry is
+  introspectable (`sdp.checks()`); no opinion-based checks.
+- **Engineers adding SDP support to a product.** Stable public API,
+  decomposed doc shape, round-trip-guaranteed serializer, structured
+  findings you can route into your own UX.
+
+## What an error looks like
+
+```text
+$ parse_sdp to_json --mode st2110 04_bad_tsrefclk_gmid.sdp
+error: [INVALID_VALUE] ts-refclk:ptp= value must be '<version>:<EUI-64>[:<domain>]' or '<version>:traceable' (EUI-64 = 8 hex octets, RFC 7273 §4.8)
+ --> line 10, col 17
+  |
+10 | a=ts-refclk:ptp=IEEE1588-2008:AA-BB-CC-DD-EE:0
+   |                 ^
+  = note: required by RFC 7273 §4.8 (ptp / ptp-server / EUI64 ABNF)
+```
+
+The error carries the same `id`, `message`, `code`, `line`, `col`,
+`field_path`, and `spec_ref` fields on the Lua-API side, so the CLI
+output and library output are the same data.
+
 ## Features
 
 - Parses RFC 8866 SDP files into plain Lua tables (RFC 8866 obsoletes RFC 4566)
+- Every check cites a primary-source spec clause via stable id + `spec_ref`
 - Validates SMPTE ST 2110 and IPMX media session descriptions
-- Reports exact line and column on parse failure, with a helpful message
+- Reports exact line and column on parse failure, with the offending source line highlighted
 - Round-trip support: parse → mutate → serialize back to valid SDP text
 - CLI with JSON output and subcommands for both directions
 
