@@ -7,7 +7,9 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ---
 
-## [Unreleased] — `refactor/grammar-first` branch
+## [Unreleased]
+
+## [1.1.0] — 2026-05-20
 
 Ground-up rewrite of the parser per [REFACTOR-PLAN.md](REFACTOR-PLAN.md).
 Phase 9.D cut sdp.parse / mt:to_sdp over to the grammar tier; Phase
@@ -15,6 +17,13 @@ Phase 9.D cut sdp.parse / mt:to_sdp over to the grammar tier; Phase
 silently-dropped during the refactor; Phase 10.A deleted the 1.0
 implementation. The on-disk artifact is no longer the 1.0 monolith
 on `main`.
+
+Post-Phase 10 follow-ups in this release: 1.0-style carrot highlight
+restored in error output; the CLI was split out of the library
+(library is now `parse_sdp/init.lua`, CLI lives at `bin/parse_sdp`,
+rockspec finally lists every submodule); Lua dependency relaxed to
+`>= 5.3, < 5.6` (verified against 5.3); GUIDE.md clarified that
+optional array session fields accept nil and `{}` interchangeably.
 
 ### Changed (post-Phase 10)
 

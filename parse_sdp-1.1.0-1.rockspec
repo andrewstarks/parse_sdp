@@ -1,18 +1,18 @@
 package = "parse_sdp"
-version = "0.1.1-1"
+version = "1.1.0-1"
 
 source = {
   url  = "git+https://github.com/andrewstarks/parse_sdp.git",
-  tag  = "v0.1.1",
+  tag  = "v1.1.0",
 }
 
 description = {
-  summary  = "Strict SDP parser, validator, and serializer for RFC 4566 / SMPTE ST 2110 / IPMX",
+  summary  = "Strict SDP parser, validator, and serializer for RFC 8866 / SMPTE ST 2110 / IPMX",
   detailed = [[
 parse_sdp is a Lua library that parses, validates, and serializes Session
 Description Protocol (SDP) documents at three conformance tiers:
 
-  1. RFC 4566 — generic SDP well-formedness
+  1. RFC 8866 — generic SDP well-formedness (RFC 8866 obsoletes RFC 4566)
   2. SMPTE ST 2110 — broadcast-grade media transport
   3. IPMX (VSF TR-10 suite) — interoperability profile for ST 2110
 
@@ -28,9 +28,10 @@ and writes SDP files from the command line.
   license  = "MIT",
 }
 
--- argparse is only used by the CLI binary; require("parse_sdp") never loads it.
+-- argparse is only used by the CLI binary at bin/parse_sdp;
+-- require("parse_sdp") loads only the library and never pulls argparse in.
 dependencies = {
-  "lua >= 5.5",
+  "lua >= 5.3, < 5.6",
   "lpeg",
   "dkjson",
   "argparse",
@@ -39,11 +40,18 @@ dependencies = {
 build = {
   type    = "builtin",
   modules = {
-    parse_sdp = "parse_sdp.lua",
+    parse_sdp                        = "parse_sdp/init.lua",
+    ["parse_sdp.errors"]             = "parse_sdp/errors.lua",
+    ["parse_sdp.serialize"]          = "parse_sdp/serialize.lua",
+    ["parse_sdp.grammar.patterns"]   = "parse_sdp/grammar/patterns.lua",
+    ["parse_sdp.grammar.addresses"]  = "parse_sdp/grammar/addresses.lua",
+    ["parse_sdp.grammar.base"]       = "parse_sdp/grammar/base.lua",
+    ["parse_sdp.grammar.st2110"]     = "parse_sdp/grammar/st2110.lua",
+    ["parse_sdp.grammar.ipmx"]       = "parse_sdp/grammar/ipmx.lua",
   },
   install = {
     bin = {
-      parse_sdp = "parse_sdp.lua",
+      parse_sdp = "bin/parse_sdp",
     },
   },
 }
