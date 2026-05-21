@@ -158,6 +158,26 @@ function M.pos_to_line_col(text, pos)
   return line, pos - last_lf
 end
 
+-- Extract the source line containing a byte position, stripped of any
+-- trailing CR or LF. Used by format() to render the 1.0-style
+--   N | <line text>
+--     |       ^
+-- carrot highlight block under errors that carry pos / line+col.
+function M.pos_to_line_text(text, pos)
+  if not text or not pos or pos < 1 then return "" end
+  if pos > #text + 1 then pos = #text + 1 end
+  local start = 1
+  for i = pos - 1, 1, -1 do
+    if text:byte(i) == 10 then start = i + 1; break end
+  end
+  local stop = #text
+  for i = start, #text do
+    if text:byte(i) == 10 then stop = i - 1; break end
+  end
+  if stop >= start and text:byte(stop) == 13 then stop = stop - 1 end
+  return text:sub(start, stop)
+end
+
 -- ─── record() — the only way a check site emits a finding ───────────────────
 
 -- ctx: { findings = {}, policy = {?}, fail_on_first = bool, text = ?str }
@@ -176,8 +196,10 @@ function M.record(ctx, id, loc)
   local sev = (ctx.policy and ctx.policy[id]) or def.default_severity
   if sev == "off" then return true end
   local line, col = 0, 0
+  local line_text
   if loc and loc.pos and ctx.text then
     line, col = M.pos_to_line_col(ctx.text, loc.pos)
+    line_text = M.pos_to_line_text(ctx.text, loc.pos)
   elseif loc then
     line, col = loc.line or 0, loc.col or 0
   end
@@ -189,6 +211,7 @@ function M.record(ctx, id, loc)
     code       = def.code,
     line       = line,
     col        = col,
+    line_text  = line_text,
     context    = loc and loc.context or "",
     field_path = loc and loc.field_path,
   }
@@ -251,14 +274,21 @@ function M.format(err)
       "%s line %d, col %d",
       has_field and "      at" or " -->",
       err.line, err.col or 1)
-    -- `context` is overloaded: 1.0 callers set it to the source-line text
-    -- for the `N | <line>` highlight block; in-grammar Cmts use it for a
-    -- metadata table downstream JSON consumers read. Render the highlight
-    -- only when it's a string.
-    if type(err.context) == "string" and err.context ~= "" then
+    -- Prefer the grammar-tier-populated `line_text` (the actual source
+    -- line, set by record() when ctx.text + loc.pos are available); fall
+    -- back to the 1.0 legacy where callers stashed the source line in
+    -- `context`. `context` is otherwise overloaded for metadata tables
+    -- (downstream JSON consumers); the string check guards that.
+    local highlight
+    if err.line_text and err.line_text ~= "" then
+      highlight = err.line_text
+    elseif type(err.context) == "string" and err.context ~= "" then
+      highlight = err.context
+    end
+    if highlight then
       local col = err.col or 1
       out[#out + 1] = "  |"
-      out[#out + 1] = string.format("%2d | %s", err.line, err.context)
+      out[#out + 1] = string.format("%2d | %s", err.line, highlight)
       out[#out + 1] = "   | " .. string.rep(" ", col - 1) .. "^"
     end
   end

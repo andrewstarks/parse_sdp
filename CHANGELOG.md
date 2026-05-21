@@ -16,6 +16,32 @@ silently-dropped during the refactor; Phase 10.A deleted the 1.0
 implementation. The on-disk artifact is no longer the 1.0 monolith
 on `main`.
 
+### Added (post-Phase 10)
+
+- **Carrot highlight in error format.** Restored the 1.0-style
+  source-line + caret block under errors emitted from in-grammar Cmts.
+  Earlier the highlight only rendered when callers stashed the source
+  line in `err.context` (a string) — the grammar tier overloaded
+  `context` for metadata tables, so the block never lit up. New
+  `errors.pos_to_line_text(text, pos)` extracts the source line;
+  `errors.record()` populates a dedicated `line_text` field on every
+  finding with a `pos` + `ctx.text`; `errors.format()` prefers
+  `line_text` for the highlight block and falls back to a string
+  `context` for legacy callers. Doc-level semantic checks (which have
+  no byte position) still render just the field-path. 5 new tests
+  in `spec/errors_spec.lua`.
+
+  Example after restoration:
+
+  ```text
+  error: [INVALID_VALUE] IPv4 multicast c= address requires a '/<ttl>' suffix
+   --> line 6, col 19
+    |
+   6 | c=IN IP4 239.0.0.1
+     |                   ^
+    = note: required by RFC 8866 §9 (IP4-multicast ABNF)
+  ```
+
 ### Comparison with 1.0
 
 **Coverage.** The grammar tier ships **169 registered checks** versus

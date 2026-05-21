@@ -126,6 +126,68 @@ describe("errors.format", function()
     assert.falsy (out:find("  |",            1, true))   -- no highlight block
   end)
 
+  -- line_text restoration: in-grammar Cmts can't set `context` to a string
+  -- (it's already used for metadata tables), so record() populates a
+  -- dedicated `line_text` field that the formatter prefers over the
+  -- legacy `string context` path. Both yield the 1.0 highlight shape.
+  it("renders the highlight block from line_text when present", function()
+    local out = errors.format({
+      message   = "bad value",
+      line      = 4,
+      col       = 6,
+      line_text = "c=IN IP4 239.0.0.1",
+      context   = { meta = "table" },  -- metadata, not source line
+      spec_ref  = "RFC 8866 §9",
+    })
+    assert.truthy(out:find("c=IN IP4 239.0.0.1", 1, true))
+    assert.truthy(out:find(" 4 |",               1, true))
+    assert.truthy(out:find("     ^",             1, true))  -- col 6 → 5 spaces
+  end)
+
+  -- line_text wins when both line_text and a string context are set
+  -- (line_text is the in-grammar-extracted source; context-as-string
+  -- only ever appears via legacy 1.0 callers).
+  it("prefers line_text over a string context for the highlight", function()
+    local out = errors.format({
+      message   = "x",
+      line      = 1,
+      col       = 1,
+      line_text = "from_pos",
+      context   = "from_context",
+      spec_ref  = "",
+    })
+    assert.truthy(out:find("from_pos",     1, true))
+    assert.falsy (out:find("from_context", 1, true))
+  end)
+
+end)
+
+describe("errors.pos_to_line_text", function()
+
+  -- NOT-SPEC: library
+  it("returns the line containing the byte position", function()
+    local text = "v=0\r\no=- 1 1\r\ns=Test\r\n"
+    -- pos 1 → line 1 ("v=0")
+    assert.equal("v=0", errors.pos_to_line_text(text, 1))
+    -- pos 7 → line 2 ("o=- 1 1") — the 'o' is at byte 6 (after "v=0\r\n")
+    assert.equal("o=- 1 1", errors.pos_to_line_text(text, 7))
+    -- pos at the end of line 2 also resolves to line 2
+    assert.equal("o=- 1 1", errors.pos_to_line_text(text, 12))
+  end)
+
+  -- NOT-SPEC: library
+  it("strips trailing CRLF / LF from the returned line", function()
+    assert.equal("v=0", errors.pos_to_line_text("v=0\r\n", 1))
+    assert.equal("v=0", errors.pos_to_line_text("v=0\n",   1))
+    assert.equal("v=0", errors.pos_to_line_text("v=0",     1))
+  end)
+
+  -- NOT-SPEC: library
+  it("returns empty string for nil text / out-of-range pos", function()
+    assert.equal("", errors.pos_to_line_text(nil, 1))
+    assert.equal("", errors.pos_to_line_text("abc", 0))
+  end)
+
 end)
 
 describe("errors.new", function()
