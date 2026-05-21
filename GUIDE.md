@@ -672,7 +672,7 @@ When `a=group:DUP <mid1> <mid2> …` is present at session level, the library va
 
 ### Connection address (`c=`)
 
-A connection address is required at either session level or media-block level (ST 2110-10 §6.3). A media block with no per-media `c=` and no session-level `c=` is rejected.
+A connection address is required at either session level or media-block level (RFC 8866 §5.7: *"A session description MUST contain either at least one 'c=' line in each media description or a single 'c=' line at the session level."*). A media block with no per-media `c=` and no session-level `c=` is rejected. A zero-media SDP without any `c=` is accepted — the SHALL is vacuously satisfied.
 
 When a `c=` line is present (at either session or media level), the address is validated (ST 2110-10 §6.5 / RFC 4566 §5.7):
 

@@ -11,13 +11,21 @@ local function lines_to_sdp(lines)
   return table.concat(lines, "\r\n") .. "\r\n"
 end
 
--- Minimal valid RFC 8866 SDP: v=, o=, s=, t=.
+-- Minimal valid RFC 8866 SDP: v=, o=, s=, t=. When `media_blocks` is
+-- non-empty, a session-level c= is auto-inserted so RFC 8866 §5.7's
+-- "c= at session level or in every media description" SHALL is satisfied
+-- (without forcing every caller to spell out the line). Tests that
+-- specifically exercise §5.7 either pass a c= explicitly via extra_lines,
+-- include one in each media block, or hand-build the SDP with lines_to_sdp.
 local function minimal(extra_lines, media_blocks)
   local out = {
     "v=0",
     "o=- 1234567890 1 IN IP4 192.0.2.1",
     "s=Test Session",
   }
+  if media_blocks and #media_blocks > 0 then
+    out[#out + 1] = "c=IN IP4 224.0.0.1/127"
+  end
   for _, l in ipairs(extra_lines or {}) do out[#out + 1] = l end
   out[#out + 1] = "t=0 0"
   for _, block in ipairs(media_blocks or {}) do
@@ -1114,11 +1122,93 @@ describe("base SDP grammar — connection-address value-form (Phase 3.C, RFC 886
 
 end)
 
+-- ── RFC 8866 §5.7 — c= required at session or per-media level ─────────────
+--
+-- "A session description MUST contain either at least one 'c=' line in each
+-- media description or a single 'c=' line at the session level." A
+-- session-level c= covers every media block; otherwise every media block
+-- must carry its own c=. With zero media blocks the SHALL is vacuously
+-- satisfied. Phase 10.A.0.1 ports this from the 1.0 ST 2110-tier check
+-- (which had cite ST 2110-10:2022 §6.3) to the correct base tier.
+
+describe("base SDP grammar — connection required (RFC 8866 §5.7)", function()
+
+  local finding_for = support.finding_for
+
+  it("accepts session-level c= covering all media blocks", function()
+    assert.is_truthy(base.match(lines_to_sdp({
+      "v=0", "o=- 1 1 IN IP4 127.0.0.1", "s=X",
+      "c=IN IP4 224.0.0.1/127",
+      "t=0 0",
+      "m=video 49170 RTP/AVP 96", "a=rtpmap:96 H264/90000",
+      "m=audio 49172 RTP/AVP 0",
+    })))
+  end)
+
+  it("accepts per-media c= on every media block (no session c=)", function()
+    assert.is_truthy(base.match(lines_to_sdp({
+      "v=0", "o=- 1 1 IN IP4 127.0.0.1", "s=X", "t=0 0",
+      "m=video 49170 RTP/AVP 96",
+      "c=IN IP4 224.0.0.1/127",
+      "a=rtpmap:96 H264/90000",
+      "m=audio 49172 RTP/AVP 0",
+      "c=IN IP4 224.0.0.2/127",
+    })))
+  end)
+
+  it("accepts zero-media SDP without any c= (SHALL vacuously satisfied)", function()
+    assert.is_truthy(base.match(lines_to_sdp({
+      "v=0", "o=- 1 1 IN IP4 127.0.0.1", "s=X", "t=0 0",
+    })))
+  end)
+
+  it("rejects when no c= appears at session level or in any media block", function()
+    local doc, ctx = base.match(lines_to_sdp({
+      "v=0", "o=- 1 1 IN IP4 127.0.0.1", "s=X", "t=0 0",
+      "m=video 49170 RTP/AVP 96", "a=rtpmap:96 H264/90000",
+    }))
+    assert.is_nil(doc)
+    local f = finding_for(ctx, "sdp.session.connection-required")
+    assert.is_not_nil(f)
+    assert.equal("RFC 8866 §5.7", f.spec_ref)
+    assert.equal("MISSING_FIELD", f.code)
+    assert.equal("media[0]", f.field_path)
+  end)
+
+  it("rejects when session c= absent and at least one media block lacks c=", function()
+    -- First block has its own c=; second block does not. Without a
+    -- session-level fallback the SHALL fails for the second block.
+    local doc, ctx = base.match(lines_to_sdp({
+      "v=0", "o=- 1 1 IN IP4 127.0.0.1", "s=X", "t=0 0",
+      "m=video 49170 RTP/AVP 96",
+      "c=IN IP4 224.0.0.1/127",
+      "a=rtpmap:96 H264/90000",
+      "m=audio 49172 RTP/AVP 0",
+    }))
+    assert.is_nil(doc)
+    local f = finding_for(ctx, "sdp.session.connection-required")
+    assert.is_not_nil(f)
+    assert.equal("media[1]", f.field_path)
+  end)
+
+  it("policy = 'off' bypasses the check", function()
+    local doc, ctx = base.match(lines_to_sdp({
+      "v=0", "o=- 1 1 IN IP4 127.0.0.1", "s=X", "t=0 0",
+      "m=video 49170 RTP/AVP 96", "a=rtpmap:96 H264/90000",
+    }), { policy = { ["sdp.session.connection-required"] = "off" } })
+    assert.is_table(doc)
+    assert.is_nil(finding_for(ctx, "sdp.session.connection-required"))
+  end)
+
+end)
+
 describe("base SDP grammar — dynamic-PT requires rtpmap (Phase 3.B, RFC 8866 §8.2.3)", function()
 
   local function build(media_block)
     return lines_to_sdp({
-      "v=0", "o=- 1 1 IN IP4 127.0.0.1", "s=X", "t=0 0",
+      "v=0", "o=- 1 1 IN IP4 127.0.0.1", "s=X",
+      "c=IN IP4 224.0.0.1/127",
+      "t=0 0",
       table.unpack(media_block),
     })
   end
@@ -2461,7 +2551,9 @@ describe("base SDP grammar — group attribute invariants (Phase 6.E.A)",
 
     it("accepts when all media blocks carry a=mid", function()
       assert.is_truthy(base.match(lines_to_sdp({
-        "v=0", "o=- 1 1 IN IP4 127.0.0.1", "s=X", "t=0 0",
+        "v=0", "o=- 1 1 IN IP4 127.0.0.1", "s=X",
+        "c=IN IP4 224.0.0.1/127",
+        "t=0 0",
         "a=group:DUP a b",
         "m=video 30000 RTP/AVP 96",
         "a=rtpmap:96 H264/90000",
@@ -2476,7 +2568,9 @@ describe("base SDP grammar — group attribute invariants (Phase 6.E.A)",
       -- Without a=group, the §6 conditional doesn't trigger; missing
       -- a=mid is fine.
       assert.is_truthy(base.match(lines_to_sdp({
-        "v=0", "o=- 1 1 IN IP4 127.0.0.1", "s=X", "t=0 0",
+        "v=0", "o=- 1 1 IN IP4 127.0.0.1", "s=X",
+        "c=IN IP4 224.0.0.1/127",
+        "t=0 0",
         "m=video 30000 RTP/AVP 96",
         "a=rtpmap:96 H264/90000",
       })))
@@ -2484,7 +2578,9 @@ describe("base SDP grammar — group attribute invariants (Phase 6.E.A)",
 
     it("rejects when a=group present but a media block lacks a=mid", function()
       local doc, ctx = base.match(lines_to_sdp({
-        "v=0", "o=- 1 1 IN IP4 127.0.0.1", "s=X", "t=0 0",
+        "v=0", "o=- 1 1 IN IP4 127.0.0.1", "s=X",
+        "c=IN IP4 224.0.0.1/127",
+        "t=0 0",
         "a=group:DUP a b",
         "m=video 30000 RTP/AVP 96",
         "a=rtpmap:96 H264/90000",
@@ -2505,7 +2601,9 @@ describe("base SDP grammar — group attribute invariants (Phase 6.E.A)",
       -- or not." So a third m= block not referenced by the group must
       -- still carry a=mid.
       local doc, ctx = base.match(lines_to_sdp({
-        "v=0", "o=- 1 1 IN IP4 127.0.0.1", "s=X", "t=0 0",
+        "v=0", "o=- 1 1 IN IP4 127.0.0.1", "s=X",
+        "c=IN IP4 224.0.0.1/127",
+        "t=0 0",
         "a=group:DUP a b",
         "m=video 30000 RTP/AVP 96",
         "a=rtpmap:96 H264/90000",
@@ -2528,7 +2626,9 @@ describe("base SDP grammar — group attribute invariants (Phase 6.E.A)",
 
     it("accepts when all referenced mids have non-zero ports", function()
       assert.is_truthy(base.match(lines_to_sdp({
-        "v=0", "o=- 1 1 IN IP4 127.0.0.1", "s=X", "t=0 0",
+        "v=0", "o=- 1 1 IN IP4 127.0.0.1", "s=X",
+        "c=IN IP4 224.0.0.1/127",
+        "t=0 0",
         "a=group:DUP a b",
         "m=video 30000 RTP/AVP 96",
         "a=rtpmap:96 H264/90000",
@@ -2541,7 +2641,9 @@ describe("base SDP grammar — group attribute invariants (Phase 6.E.A)",
 
     it("rejects a group tag whose mid resolves to a port=0 m=", function()
       local doc, ctx = base.match(lines_to_sdp({
-        "v=0", "o=- 1 1 IN IP4 127.0.0.1", "s=X", "t=0 0",
+        "v=0", "o=- 1 1 IN IP4 127.0.0.1", "s=X",
+        "c=IN IP4 224.0.0.1/127",
+        "t=0 0",
         "a=group:DUP a b",
         "m=video 30000 RTP/AVP 96",
         "a=rtpmap:96 H264/90000",
@@ -2561,7 +2663,9 @@ describe("base SDP grammar — group attribute invariants (Phase 6.E.A)",
       -- an a=group line. A port=0 block whose mid no group references
       -- is fine.
       assert.is_truthy(base.match(lines_to_sdp({
-        "v=0", "o=- 1 1 IN IP4 127.0.0.1", "s=X", "t=0 0",
+        "v=0", "o=- 1 1 IN IP4 127.0.0.1", "s=X",
+        "c=IN IP4 224.0.0.1/127",
+        "t=0 0",
         "a=group:DUP a c",                 -- references a + c only
         "m=video 30000 RTP/AVP 96",
         "a=rtpmap:96 H264/90000",

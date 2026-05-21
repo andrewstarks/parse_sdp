@@ -26,10 +26,14 @@ local MINIMAL = lines_to_sdp({
 -- ST 2110-10:2022 §8.2 + §8.3 require every media block to carry
 -- a=ts-refclk and a media-level a=mediaclk (Phase 6.D.A); include both
 -- so the st2110 tier accepts this fixture once those checks fire.
+-- RFC 8866 §5.7 (Phase 10.A.0.1) requires c= at session or per-media
+-- level when media blocks are present; the session-level c= satisfies
+-- it without forcing every block to spell its own.
 local MINIMAL_WITH_RTPMAP = lines_to_sdp({
   "v=0",
   "o=- 1234567890 1 IN IP4 192.0.2.1",
   "s=Test Session",
+  "c=IN IP4 224.0.0.1/127",
   "t=0 0",
   "m=video 49170 RTP/AVP 96",
   "a=rtpmap:96 H264/90000",

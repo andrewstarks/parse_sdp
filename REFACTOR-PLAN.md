@@ -1316,36 +1316,86 @@ Four sub-slices, ordered so each one lands on a green tree.
 
 **Phase 10 — Migration cutover + final audit.**
 
+- **10.B (complete) — Coverage + size comparison.** Audit pass,
+  three questions:
+  1. **Coverage parity.** Walked `audits/SPEC_INVENTORY.md` +
+     `audits/SPEC_COVERAGE.md` against the grammar-tier registry.
+     The audit surfaced six grounded SHALLs the grammar tier
+     silently dropped during the refactor — each verified against
+     primary text on disk and re-confirmed empirically by a probe
+     that 1.0 rejects and the grammar tier accepts. Conformance
+     suite `busted spec_conformance/` already fails on one
+     fixture (`nmos-testing:data.sdp` expects ST 2110-40:2023 §7
+     rejection, parses cleanly under grammar tier). Per CLAUDE.md
+     strictness principle these are blockers, not intentional
+     drops; ported in 10.A.0 below. The four 1.0-over-strict
+     items (audio MAXUDP-forbidden on AM824, channels-required on
+     L16/L24, packet-payload-fit on AM824, empty-media-block
+     rejection at st2110/ipmx) stay flagged as intentional drops
+     without primary-source SHALL.
+  2. **What's new since 1.0.** Refactor adds 155 registered IDs
+     vs. ~80 inline checks in 1.0. Notable additions: ST 2110-20
+     §6.2.5 Table 3 4:2:0/depth restriction; §7.6 TCS/depth=16f
+     coupling; RFC 9134 §7.1 jxsv per-parameter enums distinct
+     from -20's set; RFC 8866 base-tier IPv4/IPv6 multicast
+     ABNF strictness promoted from st2110-only; RFC 5888 group
+     invariants + ST 2110-10 §8.5 DUP-coherence; TR-10-X
+     comprehensive port (TR-10-1/-5/-6/-10/-13/-14 — ~50 IDs)
+     during Phase 7.
+  3. **Code size delta.** v1.0.0 monolith: 3801 raw / 2771
+     stripped. Refactor modules + post-10.A `parse_sdp.lua`:
+     ~6275 raw / ~3982 stripped (+65% raw, +44% stripped). Growth
+     is primarily check coverage (155 typed IDs vs. ~80 inline),
+     per-attribute serializer renderers, and the registry that
+     gives every check a verified spec_ref + severity policy.
+
+- **10.A.0 — Port grounded parity gaps (blockers).** Six
+  grounded SHALLs the grammar tier silently dropped during the
+  refactor; primary text verified for each. Land as separate
+  commits per the standard gates (spec quote in code, pass+fail
+  tests, doc sync). Order chosen low-cognitive-cost first; the
+  smpte291 bundle is the largest and clears the failing
+  conformance fixture.
+    1. **10.A.0.1** — RFC 8866 §5.7 base-tier c=-required (every
+       SDP must have either session-level c= or per-media c=).
+       1 registry ID; doc-level semantic check.
+    2. **10.A.0.2** — ST 2110-10:2022 §6.2 m= proto must be
+       "RTP/AVP" (per RFC 3551 RTP Profile SHALL). 1 registry
+       ID; ST 2110-tier media_section check. 1.0 cited §8.1; the
+       correct §6.2 cite ports.
+    3. **10.A.0.3** — ST 2110-10:2022 §8.7 TSMODE value enum
+       {SAMP, NEW, PRES} + TSDELAY positive-integer value form.
+       2 registry IDs; cross-encoding fmtp post-dispatch. The
+       1.0 TSMODE=SAMP→TSDELAY coupling does NOT port — §8.7
+       restricts that coupling to §7.9 time-preserving senders,
+       which SDP alone cannot identify.
+    4. **10.A.0.4** — RFC 8331 §4 + ST 2110-40:2023 §7 smpte291
+       fmtp bundle. ~7 registry IDs: VPID_Code-once + value form,
+       DID_SDID value form, TM ∈ {LLTM, CTM}, SSN required +
+       value (with 2021-receiver-equivalence per §7), exactframerate
+       required + value form (delegates to ST 2110-20 §7.2 form),
+       TROFF value form. New `check_smpte291_fmtp` +
+       `FMTP_CHECKS_BY_ENCODING[smpte291]`. Clears the failing
+       `nmos-testing:data.sdp` conformance fixture.
+    5. **10.A.0.5** — RFC 4570 §3.1 source-filter dest-address
+       cross-check (every `<dest-address>` must match an existing
+       SDP c= address; `*`-wildcard exempt). 1 registry ID;
+       base-tier doc semantic check. Reuses RFC 8866 §5.7
+       multicast `<base>/<ttl>/<numaddr>` expansion logic.
+
 - **10.A — Delete the 1.0 implementation.** Remove the
   grammar / validator / serializer blocks from `parse_sdp.lua`;
   the file shrinks to errors-shim re-export, public-API surface,
   CLI dispatch. `busted spec/` and `busted spec_conformance/`
   green.
 
-- **10.B — Coverage + size comparison.** Brief audit pass, three
-  questions:
-  1. **Coverage parity.** Walk `audits/SPEC_INVENTORY.md` +
-     `audits/SPEC_COVERAGE.md` against the grammar-tier registry.
-     Confirm every grounded check is enforced by the new tier.
-     The three 1.0-over-strict items (audio MAXUDP-forbidden on
-     AM824, channels-required on L16/L24, packet-payload-fit on
-     AM824) stay flagged as intentional drops without primary-
-     source SHALL.
-  2. **What's new since 1.0.** Enumerate checks added in the
-     refactor (e.g. ST 2110-20 §6.2.5 Table 3 4:2:0/depth, §7.6
-     TCS/depth=16f coupling, RFC 9134 enum corrections for jxsv,
-     RFC 4570 SP-after-`:` strictness from Phase 8.F, TR-10-X
-     SHALLs ported during Phase 7).
-  3. **Code size delta.** `wc -l` of the new module set vs.
-     `parse_sdp.lua` at the 1.0 tag, both raw and stripped of
-     comments + blank lines. Report both numbers.
-
 - **10.C — Append findings to CHANGELOG.md.** A brief
   "Comparison with 1.0" section under `[Unreleased]`: one
-  paragraph for coverage, one for new checks, one for size delta.
-  Tight — the audit memos in `audits/` carry the full detail.
-  README.md + GUIDE.md regenerated sections cite the audit for
-  users tracking the migration.
+  paragraph for coverage (now no-regressions after 10.A.0), one
+  for new checks, one for size delta. Tight — the audit memos in
+  `audits/` carry the full detail. README.md + GUIDE.md
+  regenerated sections cite the audit for users tracking the
+  migration.
 
 Estimated weight: phases 0–3 are small and gated by getting the architecture
 right; phases 4–7 are the bulk of the work; phases 8–10 are mechanical given

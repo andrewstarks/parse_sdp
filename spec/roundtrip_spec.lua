@@ -274,7 +274,9 @@ describe("parse_sdp.serialize — Phase 8.B z= time zones", function()
 
   it("round-trips z= with one (adj, offset) pair", function()
     local text = lines_to_sdp({
-      "v=0", "o=- 1 1 IN IP4 127.0.0.1", "s=X", "t=0 0",
+      "v=0", "o=- 1 1 IN IP4 127.0.0.1", "s=X",
+      "c=IN IP4 224.0.0.1/127",
+      "t=0 0",
       "z=2882844526 -1h",
     })
     local doc1, doc2 = round_trip(text)
@@ -283,7 +285,9 @@ describe("parse_sdp.serialize — Phase 8.B z= time zones", function()
 
   it("round-trips z= with multiple pairs", function()
     local text = lines_to_sdp({
-      "v=0", "o=- 1 1 IN IP4 127.0.0.1", "s=X", "t=0 0",
+      "v=0", "o=- 1 1 IN IP4 127.0.0.1", "s=X",
+      "c=IN IP4 224.0.0.1/127",
+      "t=0 0",
       "z=2882844526 -1h 2898848070 0",
     })
     local doc1, doc2 = round_trip(text)
@@ -295,7 +299,9 @@ describe("parse_sdp.serialize — Phase 8.B session-level a= attributes", functi
 
   it("round-trips flag attributes (a=recvonly / sendonly / inactive)", function()
     local text = lines_to_sdp({
-      "v=0", "o=- 1 1 IN IP4 127.0.0.1", "s=X", "t=0 0",
+      "v=0", "o=- 1 1 IN IP4 127.0.0.1", "s=X",
+      "c=IN IP4 224.0.0.1/127",
+      "t=0 0",
       "a=recvonly",
       "a=inactive",
       "a=sendrecv",
@@ -306,7 +312,9 @@ describe("parse_sdp.serialize — Phase 8.B session-level a= attributes", functi
 
   it("round-trips generic name:value attributes", function()
     local text = lines_to_sdp({
-      "v=0", "o=- 1 1 IN IP4 127.0.0.1", "s=X", "t=0 0",
+      "v=0", "o=- 1 1 IN IP4 127.0.0.1", "s=X",
+      "c=IN IP4 224.0.0.1/127",
+      "t=0 0",
       "a=tool:OpenMCU 3.0",
       "a=type:broadcast",
       "a=charset:UTF-8",
@@ -319,7 +327,9 @@ describe("parse_sdp.serialize — Phase 8.B session-level a= attributes", functi
 
   it("preserves attribute order across round trip", function()
     local text = lines_to_sdp({
-      "v=0", "o=- 1 1 IN IP4 127.0.0.1", "s=X", "t=0 0",
+      "v=0", "o=- 1 1 IN IP4 127.0.0.1", "s=X",
+      "c=IN IP4 224.0.0.1/127",
+      "t=0 0",
       "a=recvonly",
       "a=tool:Test 1.0",
       "a=type:broadcast",
@@ -327,10 +337,10 @@ describe("parse_sdp.serialize — Phase 8.B session-level a= attributes", functi
     local _, _, text2 = round_trip(text)
     local lines = {}
     for l in text2:gmatch("[^\r\n]+") do lines[#lines + 1] = l end
-    -- a= lines are the last three after v/o/s/t.
-    assert.equal("a=recvonly",       lines[5])
-    assert.equal("a=tool:Test 1.0",  lines[6])
-    assert.equal("a=type:broadcast", lines[7])
+    -- a= lines are the last three after v/o/s/c/t.
+    assert.equal("a=recvonly",       lines[6])
+    assert.equal("a=tool:Test 1.0",  lines[7])
+    assert.equal("a=type:broadcast", lines[8])
   end)
 end)
 
@@ -339,7 +349,9 @@ describe("parse_sdp.serialize — Phase 8.B media blocks", function()
   it("round-trips one media block with all optional fields", function()
     -- IPv4 multicast c= requires /TTL per RFC 8866 §5.7.
     local text = lines_to_sdp({
-      "v=0", "o=- 1 1 IN IP4 127.0.0.1", "s=X", "t=0 0",
+      "v=0", "o=- 1 1 IN IP4 127.0.0.1", "s=X",
+      "c=IN IP4 224.0.0.1/127",
+      "t=0 0",
       "m=audio 49170 RTP/AVP 0", -- PT 0 = PCMU, static (no rtpmap needed)
       "i=Primary audio",
       "c=IN IP4 224.2.1.1/127",
@@ -352,7 +364,9 @@ describe("parse_sdp.serialize — Phase 8.B media blocks", function()
 
   it("round-trips m= with port_count (49170/2)", function()
     local text = lines_to_sdp({
-      "v=0", "o=- 1 1 IN IP4 127.0.0.1", "s=X", "t=0 0",
+      "v=0", "o=- 1 1 IN IP4 127.0.0.1", "s=X",
+      "c=IN IP4 224.0.0.1/127",
+      "t=0 0",
       "m=video 49170/2 RTP/AVP 33", -- PT 33 = MPV, static
     })
     local _, doc2, text2 = round_trip(text)
@@ -362,7 +376,9 @@ describe("parse_sdp.serialize — Phase 8.B media blocks", function()
 
   it("round-trips multiple media blocks in order", function()
     local text = lines_to_sdp({
-      "v=0", "o=- 1 1 IN IP4 127.0.0.1", "s=X", "t=0 0",
+      "v=0", "o=- 1 1 IN IP4 127.0.0.1", "s=X",
+      "c=IN IP4 224.0.0.1/127",
+      "t=0 0",
       "m=audio 49170 RTP/AVP 0",
       "a=sendonly",
       "m=video 51372 RTP/AVP 33",
@@ -378,7 +394,9 @@ describe("parse_sdp.serialize — Phase 8.B media blocks", function()
 
   it("round-trips m= with multiple fmts", function()
     local text = lines_to_sdp({
-      "v=0", "o=- 1 1 IN IP4 127.0.0.1", "s=X", "t=0 0",
+      "v=0", "o=- 1 1 IN IP4 127.0.0.1", "s=X",
+      "c=IN IP4 224.0.0.1/127",
+      "t=0 0",
       "m=audio 49170 RTP/AVP 0 8 9", -- PCMU + PCMA + G722, all static
     })
     local _, _, text2 = round_trip(text)
@@ -448,7 +466,9 @@ describe("parse_sdp.serialize — Phase 8.D rtpmap renderer", function()
 
   it("round-trips a=rtpmap with required fields only (audio, no channels)", function()
     local text = lines_to_sdp({
-      "v=0", "o=- 1 1 IN IP4 127.0.0.1", "s=X", "t=0 0",
+      "v=0", "o=- 1 1 IN IP4 127.0.0.1", "s=X",
+      "c=IN IP4 224.0.0.1/127",
+      "t=0 0",
       "m=audio 49170 RTP/AVP 96",
       "a=rtpmap:96 opus/48000",
     })
@@ -459,7 +479,9 @@ describe("parse_sdp.serialize — Phase 8.D rtpmap renderer", function()
 
   it("round-trips a=rtpmap with channels (stereo)", function()
     local text = lines_to_sdp({
-      "v=0", "o=- 1 1 IN IP4 127.0.0.1", "s=X", "t=0 0",
+      "v=0", "o=- 1 1 IN IP4 127.0.0.1", "s=X",
+      "c=IN IP4 224.0.0.1/127",
+      "t=0 0",
       "m=audio 49170 RTP/AVP 96",
       "a=rtpmap:96 opus/48000/2",
     })
@@ -470,7 +492,9 @@ describe("parse_sdp.serialize — Phase 8.D rtpmap renderer", function()
 
   it("round-trips a=rtpmap video form (no channels)", function()
     local text = lines_to_sdp({
-      "v=0", "o=- 1 1 IN IP4 127.0.0.1", "s=X", "t=0 0",
+      "v=0", "o=- 1 1 IN IP4 127.0.0.1", "s=X",
+      "c=IN IP4 224.0.0.1/127",
+      "t=0 0",
       "m=video 49170 RTP/AVP 96",
       "a=rtpmap:96 H264/90000",
     })
@@ -481,7 +505,9 @@ describe("parse_sdp.serialize — Phase 8.D rtpmap renderer", function()
 
   it("round-trips multiple a=rtpmap lines in one media block preserving order", function()
     local text = lines_to_sdp({
-      "v=0", "o=- 1 1 IN IP4 127.0.0.1", "s=X", "t=0 0",
+      "v=0", "o=- 1 1 IN IP4 127.0.0.1", "s=X",
+      "c=IN IP4 224.0.0.1/127",
+      "t=0 0",
       "m=audio 49170 RTP/AVP 96 97",
       "a=rtpmap:96 opus/48000/2",
       "a=rtpmap:97 PCMA/8000",
@@ -534,7 +560,9 @@ describe("parse_sdp.serialize — Phase 8.D.1 mid renderer", function()
 
   it("round-trips a=mid:audio", function()
     local text = lines_to_sdp({
-      "v=0", "o=- 1 1 IN IP4 127.0.0.1", "s=X", "t=0 0",
+      "v=0", "o=- 1 1 IN IP4 127.0.0.1", "s=X",
+      "c=IN IP4 224.0.0.1/127",
+      "t=0 0",
       "m=audio 49170 RTP/AVP 0",
       "a=mid:audio",
     })
@@ -545,7 +573,9 @@ describe("parse_sdp.serialize — Phase 8.D.1 mid renderer", function()
 
   it("round-trips a=mid with a numeric-token tag", function()
     local text = lines_to_sdp({
-      "v=0", "o=- 1 1 IN IP4 127.0.0.1", "s=X", "t=0 0",
+      "v=0", "o=- 1 1 IN IP4 127.0.0.1", "s=X",
+      "c=IN IP4 224.0.0.1/127",
+      "t=0 0",
       "m=audio 49170 RTP/AVP 0",
       "a=mid:1",
     })
@@ -574,7 +604,9 @@ describe("parse_sdp.serialize — Phase 8.D.1 ptime renderer", function()
 
   it("round-trips a=ptime:20", function()
     local text = lines_to_sdp({
-      "v=0", "o=- 1 1 IN IP4 127.0.0.1", "s=X", "t=0 0",
+      "v=0", "o=- 1 1 IN IP4 127.0.0.1", "s=X",
+      "c=IN IP4 224.0.0.1/127",
+      "t=0 0",
       "m=audio 49170 RTP/AVP 0",
       "a=ptime:20",
     })
@@ -603,7 +635,9 @@ describe("parse_sdp.serialize — Phase 8.D.1 maxptime renderer", function()
 
   it("round-trips a=maxptime:120", function()
     local text = lines_to_sdp({
-      "v=0", "o=- 1 1 IN IP4 127.0.0.1", "s=X", "t=0 0",
+      "v=0", "o=- 1 1 IN IP4 127.0.0.1", "s=X",
+      "c=IN IP4 224.0.0.1/127",
+      "t=0 0",
       "m=audio 49170 RTP/AVP 0",
       "a=maxptime:120",
     })
@@ -632,7 +666,9 @@ describe("parse_sdp.serialize — Phase 8.D.1 framerate renderer", function()
 
   it("round-trips a=framerate:30", function()
     local text = lines_to_sdp({
-      "v=0", "o=- 1 1 IN IP4 127.0.0.1", "s=X", "t=0 0",
+      "v=0", "o=- 1 1 IN IP4 127.0.0.1", "s=X",
+      "c=IN IP4 224.0.0.1/127",
+      "t=0 0",
       "m=video 49170 RTP/AVP 33",
       "a=framerate:30",
     })
@@ -661,7 +697,9 @@ describe("parse_sdp.serialize — Phase 8.D.1 quality renderer", function()
 
   it("round-trips a=quality:5", function()
     local text = lines_to_sdp({
-      "v=0", "o=- 1 1 IN IP4 127.0.0.1", "s=X", "t=0 0",
+      "v=0", "o=- 1 1 IN IP4 127.0.0.1", "s=X",
+      "c=IN IP4 224.0.0.1/127",
+      "t=0 0",
       "m=video 49170 RTP/AVP 33",
       "a=quality:5",
     })
@@ -690,7 +728,9 @@ describe("parse_sdp.serialize — Phase 8.D.1 msid renderer", function()
 
   it("round-trips a=msid with msid_id only (no appdata)", function()
     local text = lines_to_sdp({
-      "v=0", "o=- 1 1 IN IP4 127.0.0.1", "s=X", "t=0 0",
+      "v=0", "o=- 1 1 IN IP4 127.0.0.1", "s=X",
+      "c=IN IP4 224.0.0.1/127",
+      "t=0 0",
       "m=audio 49170 RTP/AVP 0",
       "a=msid:stream-1",
     })
@@ -701,7 +741,9 @@ describe("parse_sdp.serialize — Phase 8.D.1 msid renderer", function()
 
   it("round-trips a=msid with msid_id and appdata", function()
     local text = lines_to_sdp({
-      "v=0", "o=- 1 1 IN IP4 127.0.0.1", "s=X", "t=0 0",
+      "v=0", "o=- 1 1 IN IP4 127.0.0.1", "s=X",
+      "c=IN IP4 224.0.0.1/127",
+      "t=0 0",
       "m=audio 49170 RTP/AVP 0",
       "a=msid:stream-1 track-a",
     })
@@ -730,7 +772,9 @@ describe("parse_sdp.serialize — Phase 8.D.1 ssrc renderer", function()
 
   it("round-trips a=ssrc with attribute only (no value)", function()
     local text = lines_to_sdp({
-      "v=0", "o=- 1 1 IN IP4 127.0.0.1", "s=X", "t=0 0",
+      "v=0", "o=- 1 1 IN IP4 127.0.0.1", "s=X",
+      "c=IN IP4 224.0.0.1/127",
+      "t=0 0",
       "m=audio 49170 RTP/AVP 0",
       "a=ssrc:12345 sendonly",
     })
@@ -741,7 +785,9 @@ describe("parse_sdp.serialize — Phase 8.D.1 ssrc renderer", function()
 
   it("round-trips a=ssrc with attribute:value", function()
     local text = lines_to_sdp({
-      "v=0", "o=- 1 1 IN IP4 127.0.0.1", "s=X", "t=0 0",
+      "v=0", "o=- 1 1 IN IP4 127.0.0.1", "s=X",
+      "c=IN IP4 224.0.0.1/127",
+      "t=0 0",
       "m=audio 49170 RTP/AVP 0",
       "a=ssrc:12345 cname:user@example.com",
     })
@@ -785,7 +831,9 @@ describe("parse_sdp.serialize — Phase 8.D.1 rtcp-mux renderer", function()
 
   it("round-trips a=rtcp-mux (flag attribute, no body)", function()
     local text = lines_to_sdp({
-      "v=0", "o=- 1 1 IN IP4 127.0.0.1", "s=X", "t=0 0",
+      "v=0", "o=- 1 1 IN IP4 127.0.0.1", "s=X",
+      "c=IN IP4 224.0.0.1/127",
+      "t=0 0",
       "m=audio 49170 RTP/AVP 0",
       "a=rtcp-mux",
     })
@@ -801,7 +849,9 @@ describe("parse_sdp.serialize — Phase 8.D.2 fmtp renderer", function()
 
   it("round-trips decomposed kv-list preserving input key order", function()
     local text = lines_to_sdp({
-      "v=0", "o=- 1 1 IN IP4 127.0.0.1", "s=X", "t=0 0",
+      "v=0", "o=- 1 1 IN IP4 127.0.0.1", "s=X",
+      "c=IN IP4 224.0.0.1/127",
+      "t=0 0",
       "m=video 49170 RTP/AVP 96",
       "a=rtpmap:96 H264/90000",
       "a=fmtp:96 profile-level-id=42801f;max-mbps=108000;max-fs=3600",
@@ -815,7 +865,9 @@ describe("parse_sdp.serialize — Phase 8.D.2 fmtp renderer", function()
 
   it("round-trips bare flags mixed with kv pairs", function()
     local text = lines_to_sdp({
-      "v=0", "o=- 1 1 IN IP4 127.0.0.1", "s=X", "t=0 0",
+      "v=0", "o=- 1 1 IN IP4 127.0.0.1", "s=X",
+      "c=IN IP4 224.0.0.1/127",
+      "t=0 0",
       "m=video 49170 RTP/AVP 96",
       "a=rtpmap:96 raw/90000",
       "a=fmtp:96 sampling=YCbCr-4:2:2;width=1920;interlace;segmented",
@@ -829,7 +881,9 @@ describe("parse_sdp.serialize — Phase 8.D.2 fmtp renderer", function()
 
   it("round-trips a raw byte-string fmtp body (DTMF telephone-event form)", function()
     local text = lines_to_sdp({
-      "v=0", "o=- 1 1 IN IP4 127.0.0.1", "s=X", "t=0 0",
+      "v=0", "o=- 1 1 IN IP4 127.0.0.1", "s=X",
+      "c=IN IP4 224.0.0.1/127",
+      "t=0 0",
       "m=audio 49170 RTP/AVP 101",
       "a=rtpmap:101 telephone-event/8000",
       "a=fmtp:101 0-15,256-511",
@@ -882,7 +936,9 @@ describe("parse_sdp.serialize — Phase 8.D.2 rtcp renderer", function()
 
   it("round-trips a=rtcp with port only (no optional triple)", function()
     local text = lines_to_sdp({
-      "v=0", "o=- 1 1 IN IP4 127.0.0.1", "s=X", "t=0 0",
+      "v=0", "o=- 1 1 IN IP4 127.0.0.1", "s=X",
+      "c=IN IP4 224.0.0.1/127",
+      "t=0 0",
       "m=audio 49170 RTP/AVP 0",
       "a=rtcp:49171",
     })
@@ -893,7 +949,9 @@ describe("parse_sdp.serialize — Phase 8.D.2 rtcp renderer", function()
 
   it("round-trips a=rtcp with full net/addr/address triple", function()
     local text = lines_to_sdp({
-      "v=0", "o=- 1 1 IN IP4 127.0.0.1", "s=X", "t=0 0",
+      "v=0", "o=- 1 1 IN IP4 127.0.0.1", "s=X",
+      "c=IN IP4 224.0.0.1/127",
+      "t=0 0",
       "m=audio 49170 RTP/AVP 0",
       "a=rtcp:49171 IN IP4 192.0.2.1",
     })
@@ -938,7 +996,9 @@ describe("parse_sdp.serialize — Phase 8.D.2 rtcp-fb renderer", function()
 
   it("round-trips a=rtcp-fb with numeric payload_type and no parameters", function()
     local text = lines_to_sdp({
-      "v=0", "o=- 1 1 IN IP4 127.0.0.1", "s=X", "t=0 0",
+      "v=0", "o=- 1 1 IN IP4 127.0.0.1", "s=X",
+      "c=IN IP4 224.0.0.1/127",
+      "t=0 0",
       "m=video 49170 RTP/AVP 96",
       "a=rtpmap:96 H264/90000",
       "a=rtcp-fb:96 nack",
@@ -950,7 +1010,9 @@ describe("parse_sdp.serialize — Phase 8.D.2 rtcp-fb renderer", function()
 
   it("round-trips a=rtcp-fb with parameters appended", function()
     local text = lines_to_sdp({
-      "v=0", "o=- 1 1 IN IP4 127.0.0.1", "s=X", "t=0 0",
+      "v=0", "o=- 1 1 IN IP4 127.0.0.1", "s=X",
+      "c=IN IP4 224.0.0.1/127",
+      "t=0 0",
       "m=video 49170 RTP/AVP 96",
       "a=rtpmap:96 H264/90000",
       "a=rtcp-fb:96 nack pli",
@@ -962,7 +1024,9 @@ describe("parse_sdp.serialize — Phase 8.D.2 rtcp-fb renderer", function()
 
   it("round-trips a=rtcp-fb with wildcard '*' payload_type", function()
     local text = lines_to_sdp({
-      "v=0", "o=- 1 1 IN IP4 127.0.0.1", "s=X", "t=0 0",
+      "v=0", "o=- 1 1 IN IP4 127.0.0.1", "s=X",
+      "c=IN IP4 224.0.0.1/127",
+      "t=0 0",
       "m=video 49170 RTP/AVP 96",
       "a=rtpmap:96 H264/90000",
       "a=rtcp-fb:* ccm fir",
@@ -996,7 +1060,9 @@ describe("parse_sdp.serialize — Phase 8.D.2 extmap renderer", function()
 
   it("round-trips a=extmap with id and uri only", function()
     local text = lines_to_sdp({
-      "v=0", "o=- 1 1 IN IP4 127.0.0.1", "s=X", "t=0 0",
+      "v=0", "o=- 1 1 IN IP4 127.0.0.1", "s=X",
+      "c=IN IP4 224.0.0.1/127",
+      "t=0 0",
       "m=audio 49170 RTP/AVP 0",
       "a=extmap:1 urn:ietf:params:rtp-hdrext:ssrc-audio-level",
     })
@@ -1009,7 +1075,9 @@ describe("parse_sdp.serialize — Phase 8.D.2 extmap renderer", function()
 
   it("round-trips a=extmap with direction suffix", function()
     local text = lines_to_sdp({
-      "v=0", "o=- 1 1 IN IP4 127.0.0.1", "s=X", "t=0 0",
+      "v=0", "o=- 1 1 IN IP4 127.0.0.1", "s=X",
+      "c=IN IP4 224.0.0.1/127",
+      "t=0 0",
       "m=audio 49170 RTP/AVP 0",
       "a=extmap:2/sendrecv urn:ietf:params:rtp-hdrext:toffset",
     })
@@ -1022,7 +1090,9 @@ describe("parse_sdp.serialize — Phase 8.D.2 extmap renderer", function()
 
   it("round-trips a=extmap with trailing extension attributes", function()
     local text = lines_to_sdp({
-      "v=0", "o=- 1 1 IN IP4 127.0.0.1", "s=X", "t=0 0",
+      "v=0", "o=- 1 1 IN IP4 127.0.0.1", "s=X",
+      "c=IN IP4 224.0.0.1/127",
+      "t=0 0",
       "m=audio 49170 RTP/AVP 0",
       "a=extmap:3 urn:ietf:params:rtp-hdrext:csrc-audio-level vad=on",
     })
@@ -1053,7 +1123,9 @@ describe("parse_sdp.serialize — Phase 8.D.2 ssrc-group renderer", function()
 
   it("round-trips a=ssrc-group with multiple ssrc ids", function()
     local text = lines_to_sdp({
-      "v=0", "o=- 1 1 IN IP4 127.0.0.1", "s=X", "t=0 0",
+      "v=0", "o=- 1 1 IN IP4 127.0.0.1", "s=X",
+      "c=IN IP4 224.0.0.1/127",
+      "t=0 0",
       "m=audio 49170 RTP/AVP 0",
       "a=ssrc-group:FID 1234 5678",
     })
@@ -1064,7 +1136,9 @@ describe("parse_sdp.serialize — Phase 8.D.2 ssrc-group renderer", function()
 
   it("round-trips a=ssrc-group with a single ssrc id", function()
     local text = lines_to_sdp({
-      "v=0", "o=- 1 1 IN IP4 127.0.0.1", "s=X", "t=0 0",
+      "v=0", "o=- 1 1 IN IP4 127.0.0.1", "s=X",
+      "c=IN IP4 224.0.0.1/127",
+      "t=0 0",
       "m=audio 49170 RTP/AVP 0",
       "a=ssrc-group:FEC 9999",
     })
@@ -1075,7 +1149,9 @@ describe("parse_sdp.serialize — Phase 8.D.2 ssrc-group renderer", function()
 
   it("round-trips a=ssrc-group with zero ssrc ids (ABNF allows)", function()
     local text = lines_to_sdp({
-      "v=0", "o=- 1 1 IN IP4 127.0.0.1", "s=X", "t=0 0",
+      "v=0", "o=- 1 1 IN IP4 127.0.0.1", "s=X",
+      "c=IN IP4 224.0.0.1/127",
+      "t=0 0",
       "m=audio 49170 RTP/AVP 0",
       "a=ssrc-group:LS",
     })
@@ -1107,7 +1183,9 @@ describe("parse_sdp.serialize — Phase 8.D.3 ts-refclk renderer", function()
 
   it("round-trips a=ts-refclk:ntp=<address>", function()
     local text = lines_to_sdp({
-      "v=0", "o=- 1 1 IN IP4 127.0.0.1", "s=X", "t=0 0",
+      "v=0", "o=- 1 1 IN IP4 127.0.0.1", "s=X",
+      "c=IN IP4 224.0.0.1/127",
+      "t=0 0",
       "a=ts-refclk:ntp=time.example.com",
     })
     local doc1, doc2, text2 = round_trip(text)
@@ -1117,7 +1195,9 @@ describe("parse_sdp.serialize — Phase 8.D.3 ts-refclk renderer", function()
 
   it("round-trips a=ts-refclk:ntp=/traceable/", function()
     local text = lines_to_sdp({
-      "v=0", "o=- 1 1 IN IP4 127.0.0.1", "s=X", "t=0 0",
+      "v=0", "o=- 1 1 IN IP4 127.0.0.1", "s=X",
+      "c=IN IP4 224.0.0.1/127",
+      "t=0 0",
       "a=ts-refclk:ntp=/traceable/",
     })
     local doc1, doc2, text2 = round_trip(text)
@@ -1127,7 +1207,9 @@ describe("parse_sdp.serialize — Phase 8.D.3 ts-refclk renderer", function()
 
   it("round-trips a=ts-refclk:ptp=<version>:<grandmaster>", function()
     local text = lines_to_sdp({
-      "v=0", "o=- 1 1 IN IP4 127.0.0.1", "s=X", "t=0 0",
+      "v=0", "o=- 1 1 IN IP4 127.0.0.1", "s=X",
+      "c=IN IP4 224.0.0.1/127",
+      "t=0 0",
       "a=ts-refclk:ptp=IEEE1588-2008:00-11-22-33-44-55-66-77",
     })
     local doc1, doc2, text2 = round_trip(text)
@@ -1139,7 +1221,9 @@ describe("parse_sdp.serialize — Phase 8.D.3 ts-refclk renderer", function()
 
   it("round-trips a=ts-refclk:ptp=<version>:<grandmaster>:<domain>", function()
     local text = lines_to_sdp({
-      "v=0", "o=- 1 1 IN IP4 127.0.0.1", "s=X", "t=0 0",
+      "v=0", "o=- 1 1 IN IP4 127.0.0.1", "s=X",
+      "c=IN IP4 224.0.0.1/127",
+      "t=0 0",
       "a=ts-refclk:ptp=IEEE1588-2008:00-11-22-33-44-55-66-77:127",
     })
     local doc1, doc2, text2 = round_trip(text)
@@ -1151,7 +1235,9 @@ describe("parse_sdp.serialize — Phase 8.D.3 ts-refclk renderer", function()
 
   it("round-trips a=ts-refclk:ptp=<version>:traceable", function()
     local text = lines_to_sdp({
-      "v=0", "o=- 1 1 IN IP4 127.0.0.1", "s=X", "t=0 0",
+      "v=0", "o=- 1 1 IN IP4 127.0.0.1", "s=X",
+      "c=IN IP4 224.0.0.1/127",
+      "t=0 0",
       "a=ts-refclk:ptp=IEEE1588-2008:traceable",
     })
     local doc1, doc2, text2 = round_trip(text)
@@ -1162,7 +1248,9 @@ describe("parse_sdp.serialize — Phase 8.D.3 ts-refclk renderer", function()
 
   it("round-trips a=ts-refclk:private (bare)", function()
     local text = lines_to_sdp({
-      "v=0", "o=- 1 1 IN IP4 127.0.0.1", "s=X", "t=0 0",
+      "v=0", "o=- 1 1 IN IP4 127.0.0.1", "s=X",
+      "c=IN IP4 224.0.0.1/127",
+      "t=0 0",
       "a=ts-refclk:private",
     })
     local doc1, doc2, text2 = round_trip(text)
@@ -1172,7 +1260,9 @@ describe("parse_sdp.serialize — Phase 8.D.3 ts-refclk renderer", function()
 
   it("round-trips a=ts-refclk:private:traceable", function()
     local text = lines_to_sdp({
-      "v=0", "o=- 1 1 IN IP4 127.0.0.1", "s=X", "t=0 0",
+      "v=0", "o=- 1 1 IN IP4 127.0.0.1", "s=X",
+      "c=IN IP4 224.0.0.1/127",
+      "t=0 0",
       "a=ts-refclk:private:traceable",
     })
     local doc1, doc2, text2 = round_trip(text)
@@ -1182,7 +1272,9 @@ describe("parse_sdp.serialize — Phase 8.D.3 ts-refclk renderer", function()
 
   it("round-trips a=ts-refclk:gps (bare clock-source)", function()
     local text = lines_to_sdp({
-      "v=0", "o=- 1 1 IN IP4 127.0.0.1", "s=X", "t=0 0",
+      "v=0", "o=- 1 1 IN IP4 127.0.0.1", "s=X",
+      "c=IN IP4 224.0.0.1/127",
+      "t=0 0",
       "a=ts-refclk:gps",
     })
     local doc1, doc2, text2 = round_trip(text)
@@ -1192,7 +1284,9 @@ describe("parse_sdp.serialize — Phase 8.D.3 ts-refclk renderer", function()
 
   it("round-trips a=ts-refclk:<ext>=<value> (clksrc-ext)", function()
     local text = lines_to_sdp({
-      "v=0", "o=- 1 1 IN IP4 127.0.0.1", "s=X", "t=0 0",
+      "v=0", "o=- 1 1 IN IP4 127.0.0.1", "s=X",
+      "c=IN IP4 224.0.0.1/127",
+      "t=0 0",
       "a=ts-refclk:custom=opaque-clock-id",
     })
     local doc1, doc2, text2 = round_trip(text)
@@ -1235,7 +1329,9 @@ describe("parse_sdp.serialize — Phase 8.D.3 mediaclk renderer", function()
 
   it("round-trips a=mediaclk:sender", function()
     local text = lines_to_sdp({
-      "v=0", "o=- 1 1 IN IP4 127.0.0.1", "s=X", "t=0 0",
+      "v=0", "o=- 1 1 IN IP4 127.0.0.1", "s=X",
+      "c=IN IP4 224.0.0.1/127",
+      "t=0 0",
       "a=mediaclk:sender",
     })
     local doc1, doc2, text2 = round_trip(text)
@@ -1245,7 +1341,9 @@ describe("parse_sdp.serialize — Phase 8.D.3 mediaclk renderer", function()
 
   it("round-trips a=mediaclk:direct (bare)", function()
     local text = lines_to_sdp({
-      "v=0", "o=- 1 1 IN IP4 127.0.0.1", "s=X", "t=0 0",
+      "v=0", "o=- 1 1 IN IP4 127.0.0.1", "s=X",
+      "c=IN IP4 224.0.0.1/127",
+      "t=0 0",
       "a=mediaclk:direct",
     })
     local doc1, doc2, text2 = round_trip(text)
@@ -1255,7 +1353,9 @@ describe("parse_sdp.serialize — Phase 8.D.3 mediaclk renderer", function()
 
   it("round-trips a=mediaclk:direct=<offset>", function()
     local text = lines_to_sdp({
-      "v=0", "o=- 1 1 IN IP4 127.0.0.1", "s=X", "t=0 0",
+      "v=0", "o=- 1 1 IN IP4 127.0.0.1", "s=X",
+      "c=IN IP4 224.0.0.1/127",
+      "t=0 0",
       "a=mediaclk:direct=963214424",
     })
     local doc1, doc2, text2 = round_trip(text)
@@ -1265,7 +1365,9 @@ describe("parse_sdp.serialize — Phase 8.D.3 mediaclk renderer", function()
 
   it("round-trips a=mediaclk:direct=<offset> rate=<num>/<den>", function()
     local text = lines_to_sdp({
-      "v=0", "o=- 1 1 IN IP4 127.0.0.1", "s=X", "t=0 0",
+      "v=0", "o=- 1 1 IN IP4 127.0.0.1", "s=X",
+      "c=IN IP4 224.0.0.1/127",
+      "t=0 0",
       "a=mediaclk:direct=0 rate=90000/1",
     })
     local doc1, doc2, text2 = round_trip(text)
@@ -1276,7 +1378,9 @@ describe("parse_sdp.serialize — Phase 8.D.3 mediaclk renderer", function()
 
   it("round-trips a=mediaclk:IEEE1722=<eui64>", function()
     local text = lines_to_sdp({
-      "v=0", "o=- 1 1 IN IP4 127.0.0.1", "s=X", "t=0 0",
+      "v=0", "o=- 1 1 IN IP4 127.0.0.1", "s=X",
+      "c=IN IP4 224.0.0.1/127",
+      "t=0 0",
       "a=mediaclk:IEEE1722=00-11-22-33-44-55-66-77",
     })
     local doc1, doc2, text2 = round_trip(text)
@@ -1287,7 +1391,9 @@ describe("parse_sdp.serialize — Phase 8.D.3 mediaclk renderer", function()
 
   it("round-trips a=mediaclk:<ext>=<value> (mediaclock-ext)", function()
     local text = lines_to_sdp({
-      "v=0", "o=- 1 1 IN IP4 127.0.0.1", "s=X", "t=0 0",
+      "v=0", "o=- 1 1 IN IP4 127.0.0.1", "s=X",
+      "c=IN IP4 224.0.0.1/127",
+      "t=0 0",
       "a=mediaclk:custom=foo",
     })
     local doc1, doc2, text2 = round_trip(text)
@@ -1297,7 +1403,9 @@ describe("parse_sdp.serialize — Phase 8.D.3 mediaclk renderer", function()
 
   it("round-trips a=mediaclk with id= prefix", function()
     local text = lines_to_sdp({
-      "v=0", "o=- 1 1 IN IP4 127.0.0.1", "s=X", "t=0 0",
+      "v=0", "o=- 1 1 IN IP4 127.0.0.1", "s=X",
+      "c=IN IP4 224.0.0.1/127",
+      "t=0 0",
       "a=mediaclk:id=src:42 direct=0",
     })
     local doc1, doc2, text2 = round_trip(text)
@@ -1325,7 +1433,9 @@ describe("parse_sdp.serialize — Phase 8.D.3 group renderer", function()
 
   it("round-trips a=group with multiple tags", function()
     local text = lines_to_sdp({
-      "v=0", "o=- 1 1 IN IP4 127.0.0.1", "s=X", "t=0 0",
+      "v=0", "o=- 1 1 IN IP4 127.0.0.1", "s=X",
+      "c=IN IP4 224.0.0.1/127",
+      "t=0 0",
       "a=group:LS audio video",
     })
     local doc1, doc2, text2 = round_trip(text)
@@ -1335,7 +1445,9 @@ describe("parse_sdp.serialize — Phase 8.D.3 group renderer", function()
 
   it("round-trips a=group with a single tag", function()
     local text = lines_to_sdp({
-      "v=0", "o=- 1 1 IN IP4 127.0.0.1", "s=X", "t=0 0",
+      "v=0", "o=- 1 1 IN IP4 127.0.0.1", "s=X",
+      "c=IN IP4 224.0.0.1/127",
+      "t=0 0",
       "a=group:DUP primary",
     })
     local doc1, doc2, text2 = round_trip(text)
@@ -1345,7 +1457,9 @@ describe("parse_sdp.serialize — Phase 8.D.3 group renderer", function()
 
   it("round-trips a=group with zero tags (ABNF allows)", function()
     local text = lines_to_sdp({
-      "v=0", "o=- 1 1 IN IP4 127.0.0.1", "s=X", "t=0 0",
+      "v=0", "o=- 1 1 IN IP4 127.0.0.1", "s=X",
+      "c=IN IP4 224.0.0.1/127",
+      "t=0 0",
       "a=group:FID",
     })
     local doc1, doc2, text2 = round_trip(text)
@@ -1372,7 +1486,9 @@ describe("parse_sdp.serialize — Phase 8.D.3 source-filter renderer", function(
 
   it("round-trips a=source-filter incl with single src address", function()
     local text = lines_to_sdp({
-      "v=0", "o=- 1 1 IN IP4 127.0.0.1", "s=X", "t=0 0",
+      "v=0", "o=- 1 1 IN IP4 127.0.0.1", "s=X",
+      "c=IN IP4 224.0.0.1/127",
+      "t=0 0",
       "a=source-filter: incl IN IP4 224.2.1.1 192.0.2.10",
     })
     local doc1, doc2, text2 = round_trip(text)
@@ -1383,7 +1499,9 @@ describe("parse_sdp.serialize — Phase 8.D.3 source-filter renderer", function(
 
   it("round-trips a=source-filter incl with multiple src addresses", function()
     local text = lines_to_sdp({
-      "v=0", "o=- 1 1 IN IP4 127.0.0.1", "s=X", "t=0 0",
+      "v=0", "o=- 1 1 IN IP4 127.0.0.1", "s=X",
+      "c=IN IP4 224.0.0.1/127",
+      "t=0 0",
       "a=source-filter: incl IN IP4 224.2.1.1 192.0.2.10 192.0.2.11 192.0.2.12",
     })
     local doc1, doc2, text2 = round_trip(text)
@@ -1395,7 +1513,9 @@ describe("parse_sdp.serialize — Phase 8.D.3 source-filter renderer", function(
 
   it("round-trips a=source-filter excl with single src address", function()
     local text = lines_to_sdp({
-      "v=0", "o=- 1 1 IN IP4 127.0.0.1", "s=X", "t=0 0",
+      "v=0", "o=- 1 1 IN IP4 127.0.0.1", "s=X",
+      "c=IN IP4 224.0.0.1/127",
+      "t=0 0",
       "a=source-filter: excl IN IP4 224.2.1.1 192.0.2.99",
     })
     local doc1, doc2, text2 = round_trip(text)
@@ -1406,7 +1526,9 @@ describe("parse_sdp.serialize — Phase 8.D.3 source-filter renderer", function(
 
   it("round-trips a=source-filter with IP6 addr_type", function()
     local text = lines_to_sdp({
-      "v=0", "o=- 1 1 IN IP4 127.0.0.1", "s=X", "t=0 0",
+      "v=0", "o=- 1 1 IN IP4 127.0.0.1", "s=X",
+      "c=IN IP4 224.0.0.1/127",
+      "t=0 0",
       "a=source-filter: incl IN IP6 ff15::101 2001:db8::1",
     })
     local doc1, doc2, text2 = round_trip(text)
@@ -1479,7 +1601,9 @@ describe("parse_sdp.serialize — Phase 8.E infoframe renderer", function()
 
   it("round-trips a=infoframe at session level", function()
     local text = lines_to_sdp({
-      "v=0", "o=- 1 1 IN IP4 127.0.0.1", "s=X", "t=0 0",
+      "v=0", "o=- 1 1 IN IP4 127.0.0.1", "s=X",
+      "c=IN IP4 224.0.0.1/127",
+      "t=0 0",
       "a=infoframe:30003 SSN=ST2110-41:2024;DIT=100100",
     })
     local doc1, doc2, text2 = ipmx_round_trip(text)
@@ -1490,7 +1614,9 @@ describe("parse_sdp.serialize — Phase 8.E infoframe renderer", function()
 
   it("preserves decomposed fields (port / ssn / dit)", function()
     local text = lines_to_sdp({
-      "v=0", "o=- 1 1 IN IP4 127.0.0.1", "s=X", "t=0 0",
+      "v=0", "o=- 1 1 IN IP4 127.0.0.1", "s=X",
+      "c=IN IP4 224.0.0.1/127",
+      "t=0 0",
       "a=infoframe:30003 SSN=ST2110-41:2024;DIT=100100",
     })
     local doc1 = ipmx_round_trip(text)
@@ -1552,7 +1678,9 @@ describe("parse_sdp.serialize — Phase 8.E hkep renderer", function()
 
   it("round-trips a=hkep at session level (IP4)", function()
     local text = lines_to_sdp({
-      "v=0", "o=- 1 1 IN IP4 127.0.0.1", "s=X", "t=0 0",
+      "v=0", "o=- 1 1 IN IP4 127.0.0.1", "s=X",
+      "c=IN IP4 224.0.0.1/127",
+      "t=0 0",
       "a=hkep:6001 IN IP4 192.0.2.10"
         .. " 6b2a8d4f-1234-5678-9abc-def0123456ab 01-02-03-04-05",
     })
@@ -1566,7 +1694,9 @@ describe("parse_sdp.serialize — Phase 8.E hkep renderer", function()
 
   it("round-trips a=hkep with IP6 addrtype", function()
     local text = lines_to_sdp({
-      "v=0", "o=- 1 1 IN IP4 127.0.0.1", "s=X", "t=0 0",
+      "v=0", "o=- 1 1 IN IP4 127.0.0.1", "s=X",
+      "c=IN IP4 224.0.0.1/127",
+      "t=0 0",
       "a=hkep:6002 IN IP6 2001:db8::1"
         .. " 11111111-2222-3333-4444-555555555555 aa-bb-cc-dd-ee",
     })
@@ -1580,7 +1710,9 @@ describe("parse_sdp.serialize — Phase 8.E hkep renderer", function()
 
   it("preserves decomposed fields", function()
     local text = lines_to_sdp({
-      "v=0", "o=- 1 1 IN IP4 127.0.0.1", "s=X", "t=0 0",
+      "v=0", "o=- 1 1 IN IP4 127.0.0.1", "s=X",
+      "c=IN IP4 224.0.0.1/127",
+      "t=0 0",
       "a=hkep:6001 IN IP4 192.0.2.10"
         .. " 6b2a8d4f-1234-5678-9abc-def0123456ab 01-02-03-04-05",
     })
@@ -1638,7 +1770,9 @@ describe("parse_sdp.serialize — Phase 8.E privacy renderer", function()
 
   it("round-trips a=privacy with all six required params", function()
     local text = lines_to_sdp({
-      "v=0", "o=- 1 1 IN IP4 127.0.0.1", "s=X", "t=0 0",
+      "v=0", "o=- 1 1 IN IP4 127.0.0.1", "s=X",
+      "c=IN IP4 224.0.0.1/127",
+      "t=0 0",
       "a=privacy:protocol=RTP;mode=AES-128-CTR;iv=0123456789abcdef;"
         .. "key_generator=0123456789abcdef0123456789abcdef;"
         .. "key_version=00112233;key_id=fedcba9876543210",
@@ -1656,7 +1790,9 @@ describe("parse_sdp.serialize — Phase 8.E privacy renderer", function()
     -- Order intentionally non-canonical to verify the ordered Ct shape
     -- (the Phase 8.C invariant) survives serialize → re-parse.
     local text = lines_to_sdp({
-      "v=0", "o=- 1 1 IN IP4 127.0.0.1", "s=X", "t=0 0",
+      "v=0", "o=- 1 1 IN IP4 127.0.0.1", "s=X",
+      "c=IN IP4 224.0.0.1/127",
+      "t=0 0",
       "a=privacy:key_id=fedcba9876543210;iv=0123456789abcdef;"
         .. "key_version=00112233;mode=AES-128-CTR;protocol=RTP;"
         .. "key_generator=0123456789abcdef0123456789abcdef",
@@ -1672,7 +1808,9 @@ describe("parse_sdp.serialize — Phase 8.E privacy renderer", function()
     -- emits ";". Both forms decompose to the same params + trailing_semi
     -- doc shape, so doc1 == doc2 even though text2 ≠ input text.
     local text = lines_to_sdp({
-      "v=0", "o=- 1 1 IN IP4 127.0.0.1", "s=X", "t=0 0",
+      "v=0", "o=- 1 1 IN IP4 127.0.0.1", "s=X",
+      "c=IN IP4 224.0.0.1/127",
+      "t=0 0",
       "a=privacy: protocol=RTP; mode=AES-128-CTR; iv=0123456789abcdef;"
         .. " key_generator=0123456789abcdef0123456789abcdef;"
         .. " key_version=00112233; key_id=fedcba9876543210",
@@ -1690,7 +1828,9 @@ describe("parse_sdp.serialize — Phase 8.E privacy renderer", function()
     -- consumer who parses a malformed line and re-serializes sees the
     -- same malformed line (and the same finding) on the second parse.
     local text = lines_to_sdp({
-      "v=0", "o=- 1 1 IN IP4 127.0.0.1", "s=X", "t=0 0",
+      "v=0", "o=- 1 1 IN IP4 127.0.0.1", "s=X",
+      "c=IN IP4 224.0.0.1/127",
+      "t=0 0",
       "a=privacy:protocol=RTP;mode=AES-128-CTR;iv=0123456789abcdef;"
         .. "key_generator=0123456789abcdef0123456789abcdef;"
         .. "key_version=00112233;key_id=fedcba9876543210;",

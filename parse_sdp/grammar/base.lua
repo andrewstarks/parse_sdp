@@ -306,6 +306,25 @@ local function check_group_attribute_invariants(doc, ctx)
   return true
 end
 
+-- RFC 8866 §5.7: "A session description MUST contain either at least one
+-- 'c=' line in each media description or a single 'c=' line at the session
+-- level." Session-level c= covers every media block; otherwise every media
+-- block must carry its own c=. Zero media blocks satisfy the SHALL
+-- vacuously. The finding fires once per media block lacking c= when the
+-- session-level fallback is absent.
+local function check_connection_required(doc, ctx)
+  if doc.session.connection then return true end
+  for i, m in ipairs(doc.media) do
+    if not m.connection then
+      local cont = errors.record(ctx,
+        "sdp.session.connection-required",
+        { field_path = string.format("media[%d]", i - 1) })
+      if not cont then return false end
+    end
+  end
+  return true
+end
+
 -- Soft-syntactic finding recorders (Phase 5). Each runs in a Cmt callback
 -- inside the grammar, records the finding via errors.record, and either
 -- continues the match (return pos) or fails it (return false) per ctx.policy
@@ -334,6 +353,7 @@ local record_trailing_ws      = record_soft("sdp.line.trailing-whitespace")
 -- runs after capture. M.extend appends per-tier checks below this list;
 -- execution order matches the list.
 local base_semantic_checks = {
+  check_connection_required,
   check_mid_uniqueness,
   check_group_attribute_invariants,
   check_session_tsrefclk_traceability,

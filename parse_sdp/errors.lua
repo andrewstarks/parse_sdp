@@ -447,6 +447,24 @@ M.register("sdp.c.ipv6-unicast.suffix-not-allowed", {
   verified         = true,
 })
 
+-- RFC 8866 §5.7: "A session description MUST contain either at least one
+-- 'c=' line in each media description or a single 'c=' line at the session
+-- level." A session-level c= covers every media block; otherwise every
+-- media block must carry its own c=. With zero media blocks the SHALL is
+-- vacuously satisfied (the "each media description" branch reduces to
+-- true). field_path points at the first media block missing c= when the
+-- session-level fallback is absent.
+M.register("sdp.session.connection-required", {
+  kind             = "semantic",
+  default_severity = "error",
+  code             = "MISSING_FIELD",
+  message_template =
+    "session must contain a connection address (c=) at session level"
+    .. " or in every media description",
+  spec_ref         = "RFC 8866 §5.7",
+  verified         = true,
+})
+
 -- ── ST 2110 rtpmap narrowings per media type (Phase 6.B) ───────────────────
 -- Each ST 2110 essence has a defined encoding-name × media-type × clock-rate
 -- triple. Cited against primary spec text via the Phase-3 audit

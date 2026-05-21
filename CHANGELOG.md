@@ -15,6 +15,23 @@ parser remains the shipping artifact on `main`.
 
 ### Added
 
+- **Phase 10.A.0.1:** ported the base-tier RFC 8866 §5.7 c=-required SHALL
+  that the grammar tier had silently dropped during the refactor (surfaced
+  by the Phase 10.B parity audit). New base semantic check
+  `check_connection_required` walks the doc once: session-level c= covers
+  every media block; otherwise every media block must carry its own c=.
+  Zero-media SDP satisfies the SHALL vacuously. 1 new error id
+  `sdp.session.connection-required` (RFC 8866 §5.7, error severity);
+  6 new tests in `spec/grammar_base_spec.lua` cover session-level
+  coverage, per-media coverage, the zero-media vacuous case, both
+  failure paths, and policy=`off` bypass. Spec fixtures that build
+  media blocks without c= updated: `minimal()` helper auto-inserts a
+  session-level c= when `media_blocks` is non-empty; `roundtrip_spec`'s
+  hand-built SDPs and `grammar_compose_spec`'s `MINIMAL_WITH_RTPMAP`
+  carry an explicit session-level c=. Suite 1085 green (was 1079).
+
+  Audit ref: REFACTOR-PLAN.md §5 Phase 10.A.0.
+
 - `parse_sdp/errors.lua` — new error-handling module: registry of
   checkable spec clauses with stable IDs, severity-policy infrastructure
   (default everything-is-error / fail-on-first; toggle hooks ready for

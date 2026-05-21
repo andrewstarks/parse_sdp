@@ -39,21 +39,26 @@ and runs them through the parser. See
 
 ## Current State
 
-1852 hermetic tests passing. Every validation check is grounded in explicit
-spec text; no opinion-based checks remain.
+1079 hermetic tests passing in `spec/`. Every validation check is grounded
+in explicit spec text; no opinion-based checks remain.
 
 The grammar-first refactor on branch `refactor/grammar-first` is **in
-progress**. Phases 4 + 5 complete; **Phase 6 (all of 6.A–6.L except
-the deferred 6.I) is closed; Phase 7 (7.A–7.L IPMX tier composition
-via `extend(st2110_rules, ...)`) is closed; Phase 8 (8.A–8.F, the
-full serializer rewrite plus fixture-wide round-trip) is closed.**
-The grammar tier matches or exceeds the 1.0 parser on every check
-grounded in primary spec text — base SDP, ST 2110 family
-(-10/-20/-21/-22/-30/-31/-40/-41), and VSF TR-10 (IPMX). Three
-1.0-over-strict flags from 6.D (audio MAXUDP-forbidden on AM824,
-channels-required on L16/L24, packet-payload-fit on AM824) are
-intentionally not ported and remain flagged in `audits/` for
-separate follow-up.
+Phase 10**. Phases 4 + 5 complete; **Phase 6 (all of 6.A–6.L except
+the deferred 6.I) closed; Phase 7 (7.A–7.L IPMX tier composition
+via `extend(st2110_rules, ...)`) closed; Phase 8 (8.A–8.F, the
+full serializer rewrite plus fixture-wide round-trip) closed;
+Phase 9 (9.A–9.D, pre-cutover refactor + public-API surface +
+cutover) closed.** `sdp.parse(text, mode, opts)` and `mt:to_sdp()`
+route through the grammar tier and `parse_sdp/serialize.lua`; the
+1.0 grammar / validator / serializer in `parse_sdp.lua` is on disk
+but no longer reachable from the public API. Phase 10.B audit
+surfaced six grounded SHALLs the grammar tier silently dropped
+during the refactor (primary text verified for each); they port
+in Phase 10.A.0 before the 1.0 code is deleted in 10.A. Four
+1.0-over-strict items (audio MAXUDP-forbidden on AM824,
+channels-required on L16/L24, packet-payload-fit on AM824,
+empty-media-block rejection at st2110/ipmx) stay intentional drops
+without primary-source SHALL.
 
 The new `parse_sdp/serialize.lua` renders every base-tier
 compound attribute from `parse_sdp/grammar/base.lua` (Phase 8.D —
@@ -67,19 +72,22 @@ cutover; the public `doc:to_sdp()` still routes to the 1.0 serializer.
 
 Remaining phases:
 
-- **Phase 9** — pre-cutover refactor + public-API surface. Four
-  sub-slices: 9.A DRY sweep across the new modules; 9.B
-  comment-tightening sweep; 9.C policy + findings feature go live
-  (`opts.policy` validated against the registry; warnings stop
-  getting dropped; `doc:warnings()` / `doc:errors()` /
-  `doc:findings()` surfaces); 9.D cutover wiring (flip
-  `mt:to_sdp()` to `parse_sdp/serialize.lua` and contract
-  `sdp.parse(text, tier, opts)`).
-- **Phase 10** — migration cutover + final audit. Delete the 1.0
-  implementation. Produce a brief "Comparison with 1.0" audit
-  (coverage parity, what's new, code-size delta with and without
-  comments) and append it to CHANGELOG.md. Update GUIDE.md /
-  README.md for the breaking doc-shape change.
+- **Phase 10.A.0** — port the six grounded SHALLs the grammar
+  tier silently dropped during the refactor (see REFACTOR-PLAN.md
+  §5 Phase 10.A.0 for the per-blocker list and primary-text
+  cites). One commit per blocker (or small grouping) with
+  pass+fail tests + spec quote per gates. The smpte291 fmtp
+  bundle (RFC 8331 §4 + ST 2110-40:2023 §7) clears the failing
+  `nmos-testing:data.sdp` conformance fixture.
+- **Phase 10.A** — delete the 1.0 implementation from
+  `parse_sdp.lua` (grammar / validator / serializer blocks; the
+  file shrinks to errors-shim re-export, public-API surface, CLI
+  dispatch). Delete `spec_legacy_1.0/`. `busted spec/` and
+  `busted spec_conformance/` green.
+- **Phase 10.C** — append a brief "Comparison with 1.0" section
+  to CHANGELOG.md under `[Unreleased]` (coverage, new checks,
+  code-size delta). GUIDE.md + README.md call out the breaking
+  doc-shape change.
 
 The grammar tier covers (concrete list of per-spec coverage):
 
