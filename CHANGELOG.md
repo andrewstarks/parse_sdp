@@ -13,6 +13,48 @@ Ground-up rewrite of the parser per [REFACTOR-PLAN.md](REFACTOR-PLAN.md).
 **Internal-only so far; no public-API change has landed yet.** The 1.0
 parser remains the shipping artifact on `main`.
 
+### Removed
+
+- **Phase 10.A:** deleted the 1.0 implementation from `parse_sdp.lua`.
+  After Phase 9.D's cutover the 1.0 grammar / validator / serializer
+  blocks were on disk but unreachable from the public API; Phase
+  10.A.0's six ports closed the parity gaps; now the file shrinks to
+  what the post-cutover plan called for — module requires + the
+  public-API surface + the CLI dispatch.
+
+  `parse_sdp.lua` went from 3875 lines (mid-cutover) to **257 lines**
+  (-93%). The on-disk tree:
+
+  ```text
+  parse_sdp.lua                257  public entry point + CLI
+  parse_sdp/errors.lua        1947  registry + policy + tracker
+  parse_sdp/serialize.lua      762  doc → SDP rendering
+  parse_sdp/grammar/
+    patterns.lua                48  shared numeric forms
+    addresses.lua              268  IPv4 / IPv6 + expansion + canon
+    base.lua                  1310  RFC 8866 grammar + checks
+    st2110.lua                1499  ST 2110 overrides
+    ipmx.lua                   677  TR-10 / IPMX overrides
+                              ----
+                              6768  total
+  ```
+
+  Also deleted: `spec_legacy_1.0/` (the four 1.0-tied spec files
+  moved out of `spec/` during Phase 9.D — their replacements
+  `spec/grammar_{base,st2110,ipmx}_spec.lua` carry the going-forward
+  per-tier coverage). `M._grammar` removed (grammar internals now
+  reach the spec via direct `require("parse_sdp.grammar.base"|...)`
+  rather than the legacy module-level breadcrumb).
+
+  CLAUDE.md Repository Layout section regenerated to match the new
+  tree; the lpeg-patterns convention re-aimed at the per-tier
+  modules; the `spec_ref` ↔ tier-prefix invariant's monolith
+  footnote replaced with concrete tier-file guidance.
+
+  Suite 1146 green in `spec/`; conformance 10/10 green.
+
+  Audit ref: REFACTOR-PLAN.md §5 Phase 10.A.
+
 ### Added
 
 - **Phase 10.A.0.5:** ported the RFC 4570 §3.1 source-filter

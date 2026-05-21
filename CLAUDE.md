@@ -30,26 +30,47 @@ Prefer fewer, well-named things over many small helpers.
 ## Repository Layout
 
 ```
-parse_sdp.lua        single-file library AND CLI executable (dual-purpose)
+parse_sdp.lua        public entry point: wires the tier match functions,
+                     exposes the doc metatable methods, dispatches the CLI.
                      `require("parse_sdp")` loads the library; running it
                      directly (`lua parse_sdp.lua` or `./parse_sdp.lua`)
-                     activates the argparse CLI (parse / serialize subcommands)
-                     Internal sections (in order): errors · util · grammar ·
-                     validate · serialize · st2110 · ipmx · parser · public API · CLI
+                     activates the argparse CLI (to_json / to_sdp subcommands).
+parse_sdp/
+  errors.lua         error registry (stable check ids, severity policy,
+                     record() emission helper, deepest-failure tracker),
+                     plus legacy errors.new / errors.format.
+  serialize.lua      doc table → SDP text (CRLF, strict RFC 8866 ordering).
+  grammar/
+    patterns.lua     shared LPeg numeric value-form patterns.
+    addresses.lua    IPv4 / IPv6 grammars + multicast expansion +
+                     canonicalization helpers.
+    base.lua         RFC 8866 base SDP grammar + base_semantic_checks.
+                     `base.extend(rules)` composes per-tier overrides.
+    st2110.lua       SMPTE ST 2110 overrides (composed onto base).
+    ipmx.lua         IPMX / VSF TR-10 overrides (composed onto st2110).
 spec/
-  -- Standards-tied (every test cites a published clause):
-  sdp_spec.lua       RFC 4566 / RFC 8866 (base SDP) behavior tests
-  st2110_spec.lua    SMPTE ST 2110 validation tests
-  ipmx_spec.lua      VSF TR-10 / IPMX validation tests
-  -- Library / public API (no spec ties):
-  library_spec.lua   public API: sdp.parse, sdp.new, doc:validate,
-                     doc:is_*, doc:to_json, mode-dispatch sanity,
-                     predicate behavior, error-table shape
-  cli_spec.lua       CLI subcommand integration tests
-  -- Internal helpers (white-box, exposed only for spec access):
-  grammar_spec.lua   LPEG primitive parsers (parse_sdp._grammar)
-  errors_spec.lua    error formatter (parse_sdp._errors)
-  fixtures/          sample .sdp files used by tests
+  -- Per-tier grammar specs (standards-tied; every test cites a published clause):
+  grammar_base_spec.lua    RFC 8866 base SDP — document shape, value forms,
+                           per-line checks, doc-level semantic checks.
+  grammar_st2110_spec.lua  SMPTE ST 2110 narrowings + cross-section invariants.
+  grammar_ipmx_spec.lua    VSF TR-10 / IPMX overrides + cross-section invariants.
+  -- Internal helpers (white-box; exposed only for spec access):
+  grammar_patterns_spec.lua   numeric value-form patterns.
+  grammar_addresses_spec.lua  IPv4 / IPv6 grammars + expansion / canonicalize.
+  grammar_compose_spec.lua    base.extend() composition mechanism.
+  error_registry_spec.lua     registry schema + severity policy mechanics.
+  errors_spec.lua             error formatter / legacy errors.new shape.
+  -- Library / public API + round-trip / CLI:
+  roundtrip_spec.lua  serializer-side: every base + IPMX renderer plus
+                      fixture-wide parse → serialize → re-parse round-trip.
+  library_spec.lua    public API: sdp.parse, sdp.new, doc:validate,
+                      doc:is_*, doc:to_json / to_sdp, policy + findings,
+                      mode dispatch.
+  cli_spec.lua        CLI subcommand integration tests.
+  support.lua         shared test helpers (finding_for, timing fixtures).
+  fixtures/           sample .sdp files used by tests.
+spec_conformance/    opt-in suite running pinned AMWA-TV / SDPoker
+                     upstream fixtures through the parser.
 examples/
   examples.lua       runnable API walkthrough (lua examples/examples.lua)
   generic/           RFC 8866 SDP samples — valid/ and invalid/
@@ -223,8 +244,10 @@ below tell you how to be sure of the citation and the placement.
    you find yourself writing a parenthetical that points to a different
    authoring spec (`"TR-10-X §Y (per ST 2110-22 §Z)"`), the placement is
    wrong — move the check to the authoring tier; downstream tiers inherit
-   via composition. The 1.0 parser's monolithic file structure colocates
-   work by spec-family, not by authorship, and is not a placement guide.
+   via composition. The grammar tier's three files (`parse_sdp/grammar/{base,
+   st2110,ipmx}.lua`) make this concrete: a check belongs in the file whose
+   tier the SHALL was authored at, regardless of which spec family the check
+   is grouped with diagnostically.
 
 8. **No "audit-folder follow-up" / "1.0 over-strict" / "intentional
    non-parity" labels on the slice you're actively writing.** Those phrasings
@@ -247,14 +270,16 @@ confirmed-against-primary-source findings get fixed.
   All public functions return `result, err`. `error()` is reserved for programming
   mistakes (wrong argument type).
 - **No global state.** Module state lives in the returned table only.
-- **LPEG patterns are named constants** defined near the section that uses them
-  (grammar patterns in `── Grammar ──`, validation patterns near the validator that
-  owns them), never constructed inline at call sites.
+- **LPEG patterns are named constants** defined near the rule that uses them
+  (per-tier patterns inside the relevant `parse_sdp/grammar/*.lua` module;
+  shared numeric forms in `parse_sdp/grammar/patterns.lua`; address forms in
+  `parse_sdp/grammar/addresses.lua`), never constructed inline at call sites.
 - **Use LPEG for pattern matching whenever possible.** Prefer LPEG patterns over
   Lua string patterns (`string.match`/`gmatch`) for structural validation — LPEG
   compiles once, is composable, and is the established tool in this codebase.
-- **`M._grammar` and `M._errors`** are exposed on the returned module for spec
-  access only; they are not part of the public contract.
+- **`M._errors`** is exposed on the returned module for spec access only; it
+  is not part of the public contract. Grammar internals are reached directly
+  via `require("parse_sdp.grammar.base" | "...st2110" | "...ipmx")` in tests.
 - **Strict by default.** If RFC 8866 says a field is required, the parser rejects
   input that omits it — no silent defaults, no forgiveness.
 - **dkjson** is the only external runtime dependency beyond LPEG.

@@ -4,13 +4,13 @@
 -- Everything here tests the parse_sdp library's user-facing API contract:
 -- method existence, return shape, mode-dispatch sanity, predicate behavior,
 -- JSON serialization. None of these tests assert compliance with a published
--- standard — those live in:
---   spec/sdp_spec.lua     — RFC 8866 / 8866 base SDP
---   spec/st2110_spec.lua  — SMPTE ST 2110
---   spec/ipmx_spec.lua    — VSF TR-10 / IPMX
--- Tests for internal helpers (LPEG primitives, error formatter) live in:
---   spec/grammar_spec.lua — parse_sdp._grammar (white-box, refactor-fragile)
---   spec/errors_spec.lua  — parse_sdp._errors  (internal helper)
+-- standard — those live in the per-tier grammar specs:
+--   spec/grammar_base_spec.lua   — RFC 8866 base SDP
+--   spec/grammar_st2110_spec.lua — SMPTE ST 2110
+--   spec/grammar_ipmx_spec.lua   — VSF TR-10 / IPMX
+-- Tests for internal helpers live in:
+--   spec/grammar_patterns_spec.lua / spec/grammar_addresses_spec.lua
+--   spec/error_registry_spec.lua / spec/errors_spec.lua
 -- Every it block below carries `-- NOT-SPEC: library`.
 
 local sdp = require("parse_sdp")
