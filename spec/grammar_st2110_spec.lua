@@ -2440,6 +2440,145 @@ describe("ST 2110-10 — RTP profile must be RTP/AVP (Phase 10.A.0.2)", function
 
 end)
 
+-- ── Phase 10.A.0.3 — ST 2110-10:2022 §8.7 TSMODE/TSDELAY value forms ────
+--
+-- §8.7: "Allowed values are: TSMODE=SAMP / TSMODE=NEW / TSMODE=PRES."
+--       Three-value enum on TSMODE.
+-- §8.7: TSDELAY "is represented as a decimal positive integer number of
+--       microseconds." POS-DIGIT *DIGIT (>= 1); TSDELAY=0 forbidden.
+-- These checks run cross-encoding (via the FMTP_COMMON_CHECKS slot the
+-- in-grammar fmtp_dispatch consults before per-encoding dispatch), so
+-- a TSMODE value on raw / jxsv / smpte291 / audio / -41 / no-rtpmap
+-- fmtp all exercise the same validators.
+--
+-- Out of scope: the 1.0 unconditional "TSMODE=SAMP requires TSDELAY"
+-- coupling. §8.7 restricts the SAMP→TSDELAY pairing to §7.9
+-- time-preserving senders, which SDP alone cannot identify; the
+-- grammar tier intentionally does not enforce it.
+
+describe("ST 2110-10 — TSMODE/TSDELAY fmtp value forms (Phase 10.A.0.3)", function()
+
+  local function build_raw_with_extra(extra)
+    return build_with_fmtp(
+      "m=video 30000 RTP/AVP 96",
+      "a=rtpmap:96 raw/90000",
+      RAW_FMTP_COMPLETE_PT96 .. ";" .. extra)
+  end
+
+  describe("TSMODE enum (§8.7)", function()
+
+    it("accepts TSMODE=SAMP", function()
+      assert.is_truthy(st2110.match(build_raw_with_extra("TSMODE=SAMP")))
+    end)
+
+    it("accepts TSMODE=NEW", function()
+      assert.is_truthy(st2110.match(build_raw_with_extra("TSMODE=NEW")))
+    end)
+
+    it("accepts TSMODE=PRES", function()
+      assert.is_truthy(st2110.match(build_raw_with_extra("TSMODE=PRES")))
+    end)
+
+    it("rejects TSMODE=BOGUS (not in the defined set)", function()
+      local doc, ctx = st2110.match(build_raw_with_extra("TSMODE=BOGUS"))
+      assert.is_nil(doc)
+      local f = finding_for(ctx, "st2110-10.a.fmtp.tsmode-invalid-value")
+      assert.is_not_nil(f)
+      assert.equal("ST 2110-10:2022 §8.7", f.spec_ref)
+      assert.equal("INVALID_VALUE", f.code)
+      assert.equal("BOGUS", f.context.value)
+    end)
+
+    it("rejects TSMODE=samp (case-sensitive)", function()
+      local doc, ctx = st2110.match(build_raw_with_extra("TSMODE=samp"))
+      assert.is_nil(doc)
+      assert.is_not_nil(finding_for(ctx, "st2110-10.a.fmtp.tsmode-invalid-value"))
+    end)
+
+    it("accepts absent TSMODE (defined as optional with default NEW)", function()
+      assert.is_truthy(st2110.match(build_with_fmtp(
+        "m=video 30000 RTP/AVP 96",
+        "a=rtpmap:96 raw/90000",
+        RAW_FMTP_COMPLETE_PT96)))
+    end)
+
+  end)
+
+  describe("TSDELAY value form (§8.7)", function()
+
+    it("accepts TSDELAY=42 (positive integer)", function()
+      assert.is_truthy(st2110.match(build_raw_with_extra("TSDELAY=42")))
+    end)
+
+    it("accepts TSDELAY=1 (boundary: smallest positive)", function()
+      assert.is_truthy(st2110.match(build_raw_with_extra("TSDELAY=1")))
+    end)
+
+    it("rejects TSDELAY=0 (not positive per §8.7 'positive integer')", function()
+      local doc, ctx = st2110.match(build_raw_with_extra("TSDELAY=0"))
+      assert.is_nil(doc)
+      local f = finding_for(ctx, "st2110-10.a.fmtp.tsdelay-invalid-value")
+      assert.is_not_nil(f)
+      assert.equal("ST 2110-10:2022 §8.7", f.spec_ref)
+      assert.equal("0", f.context.value)
+    end)
+
+    it("rejects TSDELAY=-5 (sign not in POS-DIGIT *DIGIT ABNF)", function()
+      local doc, ctx = st2110.match(build_raw_with_extra("TSDELAY=-5"))
+      assert.is_nil(doc)
+      assert.is_not_nil(finding_for(ctx, "st2110-10.a.fmtp.tsdelay-invalid-value"))
+    end)
+
+    it("rejects TSDELAY=oops (non-integer)", function()
+      local doc, ctx = st2110.match(build_raw_with_extra("TSDELAY=oops"))
+      assert.is_nil(doc)
+      assert.is_not_nil(finding_for(ctx, "st2110-10.a.fmtp.tsdelay-invalid-value"))
+    end)
+
+  end)
+
+  describe("scope: cross-encoding", function()
+
+    -- The §8.7 SHALLs are defined under §8 'SDP Parameters', the umbrella
+    -- that applies to every ST 2110 RTP stream. So bad TSMODE on, say,
+    -- an audio fmtp still fires.
+    it("rejects TSMODE=BOGUS on an audio (L24) fmtp", function()
+      local doc, ctx = st2110.match(build_with_fmtp(
+        "m=audio 30000 RTP/AVP 96",
+        "a=rtpmap:96 L24/48000/2",
+        "a=fmtp:96 channel-order=SMPTE2110.(ST);TSMODE=BOGUS"))
+      assert.is_nil(doc)
+      assert.is_not_nil(finding_for(ctx, "st2110-10.a.fmtp.tsmode-invalid-value"))
+    end)
+
+  end)
+
+  describe("policy interaction", function()
+
+    it("policy = 'off' bypasses the TSMODE check", function()
+      local doc, ctx = st2110.match(
+        build_raw_with_extra("TSMODE=BOGUS"),
+        { policy = { ["st2110-10.a.fmtp.tsmode-invalid-value"] = "off" } })
+      assert.is_table(doc)
+      assert.is_nil(finding_for(ctx, "st2110-10.a.fmtp.tsmode-invalid-value"))
+    end)
+
+  end)
+
+  -- Documented non-port: §7.9-conditional TSMODE=SAMP→TSDELAY coupling.
+  describe("not enforced: TSMODE=SAMP unconditional pairing with TSDELAY", function()
+
+    it("accepts TSMODE=SAMP without TSDELAY (no unconditional SHALL)", function()
+      -- 1.0 rejected this; grammar tier accepts because §8.7's coupling
+      -- SHALL applies only to §7.9 time-preserving senders, a classification
+      -- SDP alone cannot establish.
+      assert.is_truthy(st2110.match(build_raw_with_extra("TSMODE=SAMP")))
+    end)
+
+  end)
+
+end)
+
 -- ── Phase 6.D.B — ST 2110-30:2025 §6.2.1 audio MAXUDP-forbidden ─────────
 --
 -- §6.2.1: "The Standard UDP Datagram Size Limit as defined in SMPTE ST

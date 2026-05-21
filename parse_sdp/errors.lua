@@ -1337,6 +1337,42 @@ M.register("st2110-10.m.proto-must-be-rtp-avp", {
   verified         = true,
 })
 
+-- ST 2110-10:2022 §8.7 — TSMODE / TSDELAY fmtp value forms. Cross-encoding:
+-- the two parameters are defined under §8 "SDP Parameters" (not within
+-- any media-type-specific section), so they may appear on any ST 2110
+-- RTP stream's fmtp regardless of essence type.
+--
+-- TSMODE — §8.7: "Allowed values are: TSMODE=SAMP ... TSMODE=NEW ...
+-- TSMODE=PRES." Three-value enum.
+--
+-- TSDELAY — §8.7: "The time value is represented as a decimal positive
+-- integer number of microseconds." POS-DIGIT *DIGIT (>= 1; TSDELAY=0
+-- is forbidden — see PLAN.md Known Deferred Items).
+--
+-- Out of scope: the §7.9-conditional "TSMODE=SAMP requires TSDELAY"
+-- coupling — §8.7 restricts that pairing to §7.9 time-preserving
+-- senders, which SDP alone cannot identify. The 1.0 parser enforced
+-- the unconditional pairing; the grammar tier intentionally does not.
+M.register("st2110-10.a.fmtp.tsmode-invalid-value", {
+  kind             = "semantic",
+  default_severity = "error",
+  code             = "INVALID_VALUE",
+  message_template =
+    "fmtp 'TSMODE' must be one of {SAMP, NEW, PRES} per §8.7",
+  spec_ref         = "ST 2110-10:2022 §8.7",
+  verified         = true,
+})
+
+M.register("st2110-10.a.fmtp.tsdelay-invalid-value", {
+  kind             = "semantic",
+  default_severity = "error",
+  code             = "INVALID_VALUE",
+  message_template =
+    "fmtp 'TSDELAY' must be a decimal positive integer (microseconds)",
+  spec_ref         = "ST 2110-10:2022 §8.7",
+  verified         = true,
+})
+
 M.register("st2110.attr.mediaclk-required", {
   kind             = "semantic",
   default_severity = "error",

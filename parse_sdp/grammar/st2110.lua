@@ -997,6 +997,46 @@ local function make_rtpmap_branch(encoding_name, rate_id, expected_media, media_
           record_rate_and_media(rate_id, expected_media, media_id))
 end
 
+-- ── Phase 10.A.0.3 — cross-encoding fmtp value-form checks ────────────────
+-- ST 2110-10:2022 §8.7 defines TSMODE and TSDELAY under §8 "SDP
+-- Parameters" (the umbrella section), so they may appear on any ST 2110
+-- RTP stream's fmtp regardless of essence type. These checks run BEFORE
+-- the per-encoding dispatch so the value-form SHALL fires whether or
+-- not the surrounding encoding has its own check list.
+
+local VALID_TSMODE = { SAMP = true, NEW = true, PRES = true }
+
+-- Signature matches the per-encoding contract (params, ctx, pos,
+-- field_path, encoding) so the dispatch loop calls every check the
+-- same way. `encoding` is unused here — the §8.7 SHALL is cross-encoding.
+local function check_tsmode_tsdelay(params, ctx, pos, field_path, _encoding)
+  local tsmode = base.params_get(params, "TSMODE")
+  if tsmode ~= nil and tsmode ~= true and not VALID_TSMODE[tostring(tsmode)] then
+    local cont = errors.record(ctx,
+      "st2110-10.a.fmtp.tsmode-invalid-value",
+      { pos = pos, field_path = field_path,
+        context = { value = tostring(tsmode) } })
+    if not cont then return false end
+  end
+  local tsdelay = base.params_get(params, "TSDELAY")
+  if tsdelay ~= nil and tsdelay ~= true
+      and not patterns.pos_int:match(tostring(tsdelay)) then
+    local cont = errors.record(ctx,
+      "st2110-10.a.fmtp.tsdelay-invalid-value",
+      { pos = pos, field_path = field_path,
+        context = { value = tostring(tsdelay) } })
+    if not cont then return false end
+  end
+  return true
+end
+
+-- Cross-encoding checks fire on every structured fmtp regardless of the
+-- rtpmap encoding (or its absence). Order matters: a hard-fail in any
+-- entry aborts dispatch before per-encoding checks run.
+local FMTP_COMMON_CHECKS = {
+  check_tsmode_tsdelay,
+}
+
 -- ── Phase 6.F — per-fmtp-line check dispatch ───────────────────────────────
 -- Each entry maps a rtpmap encoding string to the ordered list of (params,
 -- ctx, encoding) → bool checks that fire when an a=fmtp on that encoding's
@@ -1004,8 +1044,10 @@ end
 -- looks the encoding up via ctx.rtpmap_encodings[pt] (populated by
 -- a_rtpmap's own trailing Cmt) and runs the matching list.
 --
--- Encodings absent from this table get no per-line checks — unknown
--- encodings or essences with no spec-grounded fmtp narrowings.
+-- Encodings absent from this table get no per-encoding checks — unknown
+-- encodings or essences with no spec-grounded fmtp narrowings. Cross-
+-- encoding §8.7 TSMODE/TSDELAY value-form checks still fire via
+-- FMTP_COMMON_CHECKS above.
 local FMTP_CHECKS_BY_ENCODING = {
   raw = {
     check_raw_video_fmtp,
@@ -1038,10 +1080,16 @@ local function fmtp_dispatch(_, pos, pt, params, ctx)
   if params == nil then return pos end       -- raw-fallback path; skip
   local enc = ctx and ctx.rtpmap_encodings
                     and ctx.rtpmap_encodings[pt]
-  local checks = enc and FMTP_CHECKS_BY_ENCODING[enc]
-  if not checks then return pos end
   local field_path = string.format(
     "media[%d].attributes[fmtp:pt=%d]", ctx.media_index or 0, pt)
+  -- Cross-encoding checks fire regardless of whether the PT has a
+  -- recognized rtpmap (ST 2110-10 §8.7 applies to every ST 2110 RTP
+  -- stream's fmtp).
+  for _, check in ipairs(FMTP_COMMON_CHECKS) do
+    if not check(params, ctx, pos, field_path, enc) then return false end
+  end
+  local checks = enc and FMTP_CHECKS_BY_ENCODING[enc]
+  if not checks then return pos end
   for _, check in ipairs(checks) do
     if not check(params, ctx, pos, field_path, enc) then return false end
   end

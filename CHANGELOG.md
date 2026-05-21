@@ -15,6 +15,28 @@ parser remains the shipping artifact on `main`.
 
 ### Added
 
+- **Phase 10.A.0.3:** ported the ST 2110-10:2022 §8.7 TSMODE / TSDELAY
+  value-form SHALLs the grammar tier had silently dropped. §8.7:
+  "Allowed values are: TSMODE=SAMP / TSMODE=NEW / TSMODE=PRES" — a
+  defined three-value enum — and TSDELAY "is represented as a decimal
+  positive integer number of microseconds." Both apply to every ST 2110
+  RTP stream regardless of essence type, so the in-grammar fmtp
+  dispatch grew a new `FMTP_COMMON_CHECKS` slot that runs cross-encoding
+  before per-encoding dispatch. 2 new error ids
+  `st2110-10.a.fmtp.tsmode-invalid-value` /
+  `st2110-10.a.fmtp.tsdelay-invalid-value`; 14 new tests in
+  `spec/grammar_st2110_spec.lua` (3 enum-accept, 2 enum-reject incl.
+  case-sensitivity, 1 absent-OK, 5 TSDELAY accept/reject, 1
+  cross-encoding scope, 1 policy off, 1 non-port docs check).
+
+  **Intentional non-port:** the 1.0 parser's unconditional "TSMODE=SAMP
+  requires TSDELAY" check does not port — §8.7 restricts that pairing
+  to §7.9 time-preserving senders, a sender classification SDP alone
+  cannot identify. CLAUDE.md strictness principle disallows the
+  unconditional reading. Suite 1105 green (was 1091).
+
+  Audit ref: REFACTOR-PLAN.md §5 Phase 10.A.0.
+
 - **Phase 10.A.0.2:** ported the ST 2110-10:2022 §6.2 RTP-Profile SHALL
   that the grammar tier had silently dropped. The 1.0 parser enforced
   m= proto = "RTP/AVP" at the ST 2110 tier with cite "ST 2110-10:2022
