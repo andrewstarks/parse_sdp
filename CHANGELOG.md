@@ -9,9 +9,11 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 
-Restores a strict-validation guarantee that regressed in 1.1.0 and brings
-the runnable example walkthrough into alignment with the 1.1 decomposed
-doc shape.
+## [1.1.1] — 2026-05-21
+
+Patch release. Restores a strict-validation guarantee that regressed in
+1.1.0 and brings the runnable example walkthrough into alignment with the
+1.1 decomposed doc shape.
 
 ### Fixed
 
