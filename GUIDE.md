@@ -472,7 +472,7 @@ local json = doc:to_json()
 parse_sdp <subcommand> [options] [file]
 ```
 
-Four subcommands. `file` is a path to an SDP (or JSON, for `to_sdp`); pass
+Five subcommands. `file` is a path to an SDP (or JSON, for `to_sdp`); pass
 `-` or omit it to read from stdin. Exit code is `0` on success, `1` on
 parse / validation failure (detail on stderr) — with one exception:
 `diagnose` exits `0` whether the file passes a tier or not, because the
@@ -485,6 +485,7 @@ flags.
 | [`diagnose`](#parse_sdp-diagnose) | "Which tiers does this SDP pass?" Ladder report; always exit 0. |
 | [`to_json`](#parse_sdp-to_json) | Convert SDP to JSON for tooling / inspection. |
 | [`to_sdp`](#parse_sdp-to_sdp) | Render a JSON doc back to SDP text. |
+| [`checks`](#parse_sdp-checks) | List the registered checks (id / severity / spec_ref) — the validator's clause inventory. |
 
 ### `parse_sdp validate`
 
@@ -492,12 +493,13 @@ Validates and reports a single yes/no verdict. Use when you want the
 answer without the JSON.
 
 ```text
-parse_sdp validate [--mode sdp|st2110|ipmx] [file]
+parse_sdp validate [--mode sdp|st2110|ipmx] [--all-findings] [file]
 ```
 
 | Flag | Description |
 | --- | --- |
 | `--mode MODE` | Validation tier (default: `sdp`) |
+| `--all-findings` | Collect every finding instead of stopping at the first error. See [All findings](#all-findings) below. |
 
 ```sh
 $ parse_sdp validate --mode st2110 session.sdp
@@ -523,8 +525,12 @@ the output. The natural CLI for "what does this SDP claim compliance
 with, and where does it fall short?"
 
 ```text
-parse_sdp diagnose [file]
+parse_sdp diagnose [--all-findings] [file]
 ```
+
+| Flag | Description |
+| --- | --- |
+| `--all-findings` | List every finding per tier (not just the first). Findings already emitted by a lower tier are suppressed; a tier with no *new* findings collapses to the inherits note. Exit code unchanged. See [All findings](#all-findings) below. |
 
 ```sh
 $ parse_sdp diagnose customer.sdp
@@ -551,13 +557,14 @@ Parse SDP, validate, and emit JSON. JSON shape matches the parsed
 sub-fields (see [Parsed Table Structure](#parsed-table-structure)).
 
 ```text
-parse_sdp to_json [--mode sdp|st2110|ipmx] [--pretty] [file]
+parse_sdp to_json [--mode sdp|st2110|ipmx] [--pretty] [--all-findings] [file]
 ```
 
 | Flag | Description |
 | --- | --- |
 | `--mode MODE` | Validation tier (default: `sdp`) |
 | `--pretty` | Pretty-print JSON output |
+| `--all-findings` | Emit JSON on stdout and list every finding on stderr. See [All findings](#all-findings) below. |
 
 ```json
 {
@@ -583,6 +590,80 @@ parse_sdp to_sdp doc.json > session.sdp
 cat doc.json | parse_sdp to_sdp
 ```
 
+### `parse_sdp checks`
+
+Dumps the validator's registry — every check the parser may emit, the
+spec clause it cites, and its default severity. Useful for compliance
+testers (the *clause inventory* of the validator), for downstream
+tooling (machine-readable severity + spec_ref via `--format json`), and
+for auditing "which checks does this version actually enforce?"
+
+```text
+parse_sdp checks [--filter SUBSTR] [--format table|json] [--unverified]
+```
+
+| Flag | Description |
+| --- | --- |
+| `--filter SUBSTR` | Plain-substring match against the check id. Not a Lua pattern — `-` in id slugs (`ts-refclk`, `tr-10-1`) stays literal. |
+| `--format MODE` | `table` (default; column-aligned id / severity / spec_ref) or `json` (array of full registry entries — every field). |
+| `--unverified` | Only emit checks with `verified=false` (pending primary-source re-verification). |
+
+```sh
+$ parse_sdp checks --filter ts-refclk
+sdp.a.ts-refclk.ptp-malformed   error  RFC 7273 §4.8 (ptp / ptp-server / EUI64 ABNF)
+sdp.a.ts-refclk.traceable-mix   error  RFC 7273 §4.8
+st2110.attr.ts-refclk-required  error  ST 2110-10:2022 §8.2
+
+$ parse_sdp checks --format json --filter tr-10-1.a.fmtp | jq '.[] | .id'
+"tr-10-1.a.fmtp.htotal-invalid-value"
+"tr-10-1.a.fmtp.htotal-required"
+"tr-10-1.a.fmtp.marker-required"
+...
+```
+
+This is the CLI surface over `sdp.checks()` — see
+[`sdp.checks()` / `sdp.default_policy()`](#sdpchecks--sdpdefault_policy)
+for the Lua-side accessor. Same data, two consumption modes.
+
+### All findings
+
+By default `validate`, `diagnose`, and `to_json` stop reporting at the
+first error-severity finding — convenient for "is this valid?" but
+inconvenient when a customer SDP has half a dozen things wrong and you
+want them all in one pass. Adding `--all-findings` collects every
+finding (errors *and* warnings) and lists them in the order they were
+recorded.
+
+Under the hood the CLI demotes every error-severity check to `"warn"`
+via `opts.policy` so the parse runs to completion; the original
+severity is recovered for the exit-code rule and is shown in
+parentheses next to each finding's id ([doc methods](#doc-methods)
+covers the underlying mechanism). What changes per subcommand:
+
+| Subcommand | Output | Exit code |
+| --- | --- | --- |
+| `validate` | Numbered list on stderr; `OK` on stdout only when zero findings | 1 if any finding's *default* severity is `error`; 0 otherwise |
+| `to_json` | JSON on stdout, numbered list on stderr | 1 if any default-error; 0 otherwise |
+| `diagnose` | Each tier shows only the findings *introduced* at that tier (inherited ones are suppressed); a tier with no new findings still shows the inherits note | Always 0 (diagnose's normal contract is preserved) |
+
+```sh
+$ parse_sdp validate --all-findings --mode st2110 examples/st2110/invalid/03_missing_fmtp.sdp
+9 finding(s):
+[1] st2110-20.a.fmtp.sampling-required  (error)
+    fmtp for raw video must include required 'sampling' parameter
+    ST 2110-20:2022 §7.2
+[2] st2110-20.a.fmtp.width-required  (error)
+    fmtp for raw video must include required 'width' parameter
+    ST 2110-20:2022 §7.2
+...
+$ echo $?
+1
+```
+
+The `(error)` / `(warn)` label is the check's *default* severity — what
+would have aborted the parse without `--all-findings`. A check
+demoted via `opts.policy` shows `(warn)` because that *is* its default.
+
 ### Examples
 
 ```sh
@@ -600,6 +681,12 @@ cat session.sdp | parse_sdp to_json --mode ipmx
 
 # Round-trip: SDP → JSON → SDP
 parse_sdp to_json session.sdp | parse_sdp to_sdp > out.sdp
+
+# Every finding in one pass — useful when a customer SDP has several issues
+parse_sdp validate --all-findings --mode st2110 customer.sdp
+
+# Inspect the registered checks, pipe to jq
+parse_sdp checks --format json --filter ts-refclk | jq '.[] | {id, spec_ref}'
 ```
 
 ---

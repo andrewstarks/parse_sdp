@@ -9,6 +9,10 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 
+- (no entries yet)
+
+## [1.2.0] — 2026-05-21
+
 ### CLI
 
 - **`parse_sdp validate` subcommand.** Plain yes/no validation —
@@ -24,6 +28,29 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
   (same `id` or same `message`+`line`), the higher row collapses to
   `(inherits <lower-tier> failure — fix it first)`. Always exits 0 —
   the verdict *is* the output.
+- **`parse_sdp checks` subcommand.** Dumps the validator's check
+  registry — every clause the parser enforces, with its default
+  severity and `spec_ref`. Default output is a column-aligned table;
+  `--format json` emits the complete registry (one object per check,
+  every field) for piping into `jq`. `--filter SUBSTR` narrows by
+  plain-substring match against the check id (Lua patterns are unfit
+  here — `-` in slugs like `ts-refclk` or `tr-10-1` is a lazy
+  quantifier and would silently match nothing). `--unverified` keeps
+  only checks with `verified=false`. This is the CLI surface over the
+  existing `sdp.checks()` Lua-API entry — same data, two consumption
+  modes — useful to compliance testers ("what does this version
+  enforce?") and downstream tooling.
+- **`--all-findings` flag on `validate`, `diagnose`, and `to_json`.**
+  Default validation stops at the first error-severity finding; this
+  flag collects every finding (errors + warnings) in one pass and lists
+  them in the order they were recorded. Under the hood the CLI demotes
+  every error-default-severity check to `"warn"` via `opts.policy` so
+  parsing runs to completion; the original severity is recovered for
+  the exit-code rule. Per subcommand: `validate` and `to_json` exit 1
+  if any finding's default severity was `error` (0 otherwise);
+  `diagnose` keeps its always-exit-0 contract and renders only findings
+  *introduced* at each tier (inherited ones suppressed, collapsing to
+  the existing inherits note when a higher tier adds nothing new).
 - **`-` reads from stdin** for every input-taking subcommand (file
   position previously only honored omission for stdin).
 - **Polished help text** across every subcommand. The parent help lists

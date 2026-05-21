@@ -32,9 +32,10 @@ Prefer fewer, well-named things over many small helpers.
 ```
 bin/
   parse_sdp          CLI shell. Requires `parse_sdp` (the library) and
-                     dispatches `to_json` / `to_sdp` subcommands via
-                     argparse. Library consumers never load argparse —
-                     it's pulled in here only.
+                     dispatches subcommands via argparse: validate,
+                     diagnose, to_json, to_sdp, checks. Library
+                     consumers never load argparse — it's pulled in
+                     here only.
 parse_sdp/
   init.lua           library entry point. `require("parse_sdp")` resolves
                      here. Wires the tier match functions, defines the

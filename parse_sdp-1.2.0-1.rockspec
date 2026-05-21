@@ -1,9 +1,9 @@
 package = "parse_sdp"
-version = "1.1.1-1"
+version = "1.2.0-1"
 
 source = {
   url  = "git+https://github.com/andrewstarks/parse_sdp.git",
-  tag  = "v1.1.1",
+  tag  = "v1.2.0",
 }
 
 description = {
@@ -21,8 +21,9 @@ referenced specification.  Validation errors carry a machine-readable error code
 and a human-readable spec citation so callers can report exactly what failed and
 why.
 
-The library also ships a CLI (parse_sdp to_json / parse_sdp to_sdp) that reads
-and writes SDP files from the command line.
+The library also ships a CLI (validate / diagnose / to_json / to_sdp / checks)
+for command-line use — yes/no validation, per-tier ladder reports, JSON
+round-trip, and registry inspection.
   ]],
   homepage = "https://github.com/andrewstarks/parse_sdp",
   license  = "MIT",

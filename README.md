@@ -41,7 +41,7 @@ output and library output are the same data.
 - Validates SMPTE ST 2110 and IPMX media session descriptions
 - Reports exact line and column on parse failure, with the offending source line highlighted
 - Round-trip support: parse → mutate → serialize back to valid SDP text
-- CLI with four subcommands: `validate` (yes/no), `diagnose` (tier ladder), `to_json` / `to_sdp` (round-trip)
+- CLI with five subcommands: `validate` (yes/no), `diagnose` (tier ladder), `to_json` / `to_sdp` (round-trip), `checks` (registry dump)
 
 ## Install
 
@@ -112,6 +112,12 @@ cat session.sdp | parse_sdp to_json --mode st2110
 
 # JSON → SDP
 parse_sdp to_sdp doc.json > out.sdp
+
+# Every finding in one pass (errors + warnings)
+parse_sdp validate --all-findings --mode st2110 customer.sdp
+
+# Inspect the validator's check registry (id / severity / spec_ref)
+parse_sdp checks --filter ts-refclk
 ```
 
 Exit code `0` on success, `1` on parse / validation failure (human-readable detail on stderr). `parse_sdp diagnose` always exits `0` — the verdict is the output.
@@ -132,7 +138,7 @@ parse_sdp/
 │       ├── base.lua             # RFC 8866 base grammar + checks
 │       ├── st2110.lua           # SMPTE ST 2110 overrides
 │       └── ipmx.lua             # VSF TR-10 / IPMX overrides
-├── spec/                        # busted test suite (hermetic, 1146 tests)
+├── spec/                        # busted test suite (hermetic, 1192 tests)
 │   ├── grammar_base_spec.lua    # RFC 8866 base SDP — standards-tied
 │   ├── grammar_st2110_spec.lua  # SMPTE ST 2110 — standards-tied
 │   ├── grammar_ipmx_spec.lua    # VSF TR-10 / IPMX — standards-tied

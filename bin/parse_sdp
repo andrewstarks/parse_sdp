@@ -77,6 +77,8 @@ cmd_validate:argument("file",
   "Path to an .sdp file. Reads stdin if omitted or '-'."):args("?")
 cmd_validate:option("--mode",
   "Validation tier: 'sdp' (default, RFC 8866 base), 'st2110' (SMPTE ST 2110), or 'ipmx' (VSF TR-10).")
+cmd_validate:flag("--all-findings",
+  "Collect every finding (errors + warnings) instead of stopping at the first error. Exits 1 if any finding's default severity is 'error'; 0 otherwise.")
 
 -- ─── diagnose ──────────────────────────────────────────────────────────────
 --
@@ -96,6 +98,8 @@ output.]])
 cmd_diagnose:summary("Report which validation tiers an SDP passes (✓/✗ ladder).")
 cmd_diagnose:argument("file",
   "Path to an .sdp file. Reads stdin if omitted or '-'."):args("?")
+cmd_diagnose:flag("--all-findings",
+  "List every finding per tier instead of just the first. Findings already emitted by a lower tier collapse to an 'inherits' note. Exit code unchanged (always 0).")
 
 -- ─── to_json ───────────────────────────────────────────────────────────────
 
@@ -113,6 +117,8 @@ cmd_parse:option("--mode",
   "Validation tier: 'sdp' (default, RFC 8866 base), 'st2110' (SMPTE ST 2110), or 'ipmx' (VSF TR-10).")
 cmd_parse:flag("--pretty",
   "Pretty-print the JSON output.")
+cmd_parse:flag("--all-findings",
+  "Collect every finding (errors + warnings) on stderr in addition to emitting JSON. Exits 1 if any finding's default severity is 'error'; 0 otherwise.")
 
 -- ─── to_sdp ────────────────────────────────────────────────────────────────
 
@@ -125,6 +131,28 @@ always round-trips.]])
 cmd_ser:summary("Render a JSON SDP document back to SDP text.")
 cmd_ser:argument("file",
   "Path to a .json file. Reads stdin if omitted or '-'."):args("?")
+
+-- ─── checks ────────────────────────────────────────────────────────────────
+--
+-- Dumps the validator's registry. Compliance testers and downstream
+-- tooling consume this to know which clauses the parser enforces and
+-- which spec_ref each one cites.
+
+local cmd_checks = ap:command("checks", [[
+List every check the validator enforces.
+
+Default output is a column-aligned table of id / severity / spec_ref.
+With --format json, dumps the complete registry (one object per check,
+every field; suitable for jq). --filter is a plain-substring match
+against the check id; --unverified narrows to checks still pending
+primary-source re-verification.]])
+cmd_checks:summary("List the validator's registered checks (id / severity / spec_ref).")
+cmd_checks:option("--format",
+  "Output format: 'table' (default, column-aligned) or 'json' (full registry).")
+cmd_checks:option("--filter",
+  "Plain-substring match against the check id; only matching rows are emitted (e.g. 'ts-refclk', 'st2110-20.a.fmtp', 'tr-10-1').")
+cmd_checks:flag("--unverified",
+  "Only emit checks with verified=false (pending primary-source re-verification).")
 
 local parsed = ap:parse()
 
@@ -161,8 +189,92 @@ local function same_finding(a, b)
   return a.message == b.message and a.line == b.line
 end
 
+-- ─── --all-findings helpers ────────────────────────────────────────────────
+--
+-- The library returns nil + err at the first error-severity finding even when
+-- fail_on_first is false. To collect every finding into doc:findings(), the
+-- CLI demotes every error-default-severity check to "warn" via opts.policy.
+-- The original default severity is recovered from the demotion map when we
+-- need to compute exit code (any default-error → exit 1).
+
+-- Build the opts table for an --all-findings parse. Returns (opts, demotion)
+-- where `demotion[id] = true` iff the check's default severity was "error".
+local function all_findings_opts()
+  local policy, demotion = {}, {}
+  for _, c in ipairs(sdp.checks()) do
+    if c.default_severity == "error" then
+      policy[c.id]   = "warn"
+      demotion[c.id] = true
+    end
+  end
+  return { policy = policy, fail_on_first = false }, demotion
+end
+
+-- 1-based numbered block for one finding in the --all-findings list. Labels
+-- the entry "(error)" / "(warn)" by *default* severity, not effective —
+-- a demoted error still reads as "error" so the user sees what would have
+-- aborted the parse under default settings.
+local function format_finding_numbered(n, f, demotion)
+  local default_sev = (f.id and demotion[f.id]) and "error" or "warn"
+  local lines = { string.format("[%d] %s  (%s)", n,
+                                f.id or "(no id)", default_sev) }
+  if f.message and f.message ~= "" then
+    lines[#lines + 1] = "    " .. f.message
+  end
+  if f.spec_ref and f.spec_ref ~= "" then
+    lines[#lines + 1] = "    " .. f.spec_ref
+  end
+  if f.field_path and f.field_path ~= "" then
+    lines[#lines + 1] = "    at " .. f.field_path
+  elseif f.line and f.line > 0 then
+    lines[#lines + 1] = string.format("    at line %d, col %d",
+                                       f.line, f.col or 1)
+  end
+  return table.concat(lines, "\n")
+end
+
+-- Exit code rule for --all-findings: 1 if any finding's default severity was
+-- "error" (i.e. it would have aborted the parse without the demotion);
+-- 0 otherwise.
+local function exit_code_for_findings(findings, demotion)
+  for _, f in ipairs(findings) do
+    if f.id and demotion[f.id] then return 1 end
+  end
+  return 0
+end
+
+-- Write a numbered findings list to stderr. Header "N findings:" plus one
+-- block per finding. Empty list produces no output.
+local function write_findings_list(findings, demotion)
+  if #findings == 0 then return end
+  io.stderr:write(string.format("%d finding%s:\n",
+                                 #findings, #findings == 1 and "" or "s"))
+  for i, f in ipairs(findings) do
+    io.stderr:write(format_finding_numbered(i, f, demotion) .. "\n")
+  end
+end
+
+-- Parse with --all-findings opts; return (doc, err, findings). On structural
+-- failure (hard-syntactic from pattern algebra survives demotion), doc is
+-- nil and `err` carries the deepest finding; otherwise doc:findings() is
+-- the full list.
+local function parse_all_findings(text, mode)
+  local opts, demotion = all_findings_opts()
+  local doc, perr = sdp.parse(text, mode, opts)
+  local findings = doc and doc:findings() or {}
+  return doc, perr, findings, demotion
+end
+
 if parsed.command == "to_json" then
   local text = read_input(parsed.file)
+  if parsed["all_findings"] then
+    local doc, perr, findings, demotion = parse_all_findings(text, parsed.mode)
+    if not doc then die(perr) end
+    local encode_opts = parsed.pretty and { indent = true } or nil
+    io.write(dkjson.encode(doc, encode_opts) .. "\n")
+    write_findings_list(findings, demotion)
+    os.exit(exit_code_for_findings(findings, demotion))
+  end
   local doc, perr = sdp.parse(text, parsed.mode)
   if not doc then die(perr) end
   local encode_opts = parsed.pretty and { indent = true } or nil
@@ -185,9 +297,55 @@ elseif parsed.command == "to_sdp" then
 
 elseif parsed.command == "validate" then
   local text = read_input(parsed.file)
+  if parsed["all_findings"] then
+    local doc, perr, findings, demotion = parse_all_findings(text, parsed.mode)
+    if not doc then die(perr) end
+    if #findings == 0 then
+      io.write("OK\n")
+      os.exit(0)
+    end
+    write_findings_list(findings, demotion)
+    os.exit(exit_code_for_findings(findings, demotion))
+  end
   local doc, perr = sdp.parse(text, parsed.mode)
   if not doc then die(perr) end
   io.write("OK\n")
+  os.exit(0)
+
+elseif parsed.command == "checks" then
+  local fmt = parsed.format or "table"
+  if fmt ~= "table" and fmt ~= "json" then
+    die(errors.new("unknown --format: " .. fmt
+                    .. " (expected 'table' or 'json')",
+                   { code = "INVALID_VALUE" }))
+  end
+  -- Filter uses plain substring match (4th arg `true` to string.find).
+  -- Lua patterns interpret '-' as a lazy quantifier, which makes most
+  -- check ids (e.g. 'ts-refclk', 'st2110-20.a.fmtp.*') fail unexpectedly
+  -- as pattern input; plain text is what users actually type.
+  local rows = {}
+  for _, c in ipairs(sdp.checks()) do
+    local keep = true
+    if parsed.filter then
+      keep = string.find(c.id, parsed.filter, 1, true) ~= nil
+    end
+    if parsed["unverified"] and c.verified ~= false then keep = false end
+    if keep then rows[#rows + 1] = c end
+  end
+  if fmt == "json" then
+    io.write(dkjson.encode(rows, { indent = true }) .. "\n")
+    os.exit(0)
+  end
+  -- Tabular: column-align id and severity. spec_ref runs to end of line.
+  local id_w, sev_w = 0, 0
+  for _, c in ipairs(rows) do
+    if #c.id > id_w then id_w = #c.id end
+    if #c.default_severity > sev_w then sev_w = #c.default_severity end
+  end
+  for _, c in ipairs(rows) do
+    io.write(string.format("%-" .. id_w .. "s  %-" .. sev_w .. "s  %s\n",
+                            c.id, c.default_severity, c.spec_ref or ""))
+  end
   os.exit(0)
 
 elseif parsed.command == "diagnose" then
@@ -197,6 +355,46 @@ elseif parsed.command == "diagnose" then
     { mode = "st2110", label = "SMPTE ST 2110" },
     { mode = "ipmx",   label = "IPMX (VSF TR-10)" },
   }
+  if parsed["all_findings"] then
+    -- With --all-findings each tier returns a doc with its complete findings
+    -- list. ST 2110 inherits all base findings; IPMX inherits both. To make
+    -- inheritance legible, render only the findings introduced at this tier
+    -- (id-set difference against the lower tier). A tier with no new findings
+    -- collapses to "(inherits …)"; a tier with no findings at all is ✓.
+    local results = {}
+    for _, tier in ipairs(tiers) do
+      local _, _, findings, demotion = parse_all_findings(text, tier.mode)
+      results[#results + 1] = {
+        tier = tier, findings = findings, demotion = demotion,
+      }
+    end
+    local seen_ids = {}
+    for i, r in ipairs(results) do
+      local new_findings = {}
+      for _, f in ipairs(r.findings) do
+        if not (f.id and seen_ids[f.id]) then
+          new_findings[#new_findings + 1] = f
+        end
+      end
+      -- ✓ iff zero error-default-severity findings at this tier (own or
+      -- inherited). Default-warn-only findings don't flip the verdict.
+      local has_error = exit_code_for_findings(r.findings, r.demotion) == 1
+      io.write(string.format("  %s %s\n",
+                              has_error and "✗" or "✓", r.tier.label))
+      if has_error and #new_findings == 0 then
+        io.write("      (inherits "
+                  .. results[i - 1].tier.label .. " failure — fix it first)\n")
+      else
+        for _, f in ipairs(new_findings) do
+          io.write(format_finding_indented(f) .. "\n")
+        end
+      end
+      for _, f in ipairs(r.findings) do
+        if f.id then seen_ids[f.id] = true end
+      end
+    end
+    os.exit(0)
+  end
   local results = {}
   for _, tier in ipairs(tiers) do
     local _, err = sdp.parse(text, tier.mode)
