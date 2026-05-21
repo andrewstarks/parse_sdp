@@ -9,6 +9,82 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 
+Restores a strict-validation guarantee that regressed in 1.1.0 and brings
+the runnable example walkthrough into alignment with the 1.1 decomposed
+doc shape.
+
+### Fixed
+
+- **`a=ts-refclk:ptp=` now rejects malformed bodies (RFC 7273 §4.8
+  regression introduced in 1.1.0 Phase 4.C).** When `ts-refclk` was
+  decomposed into typed fields during the grammar-first refactor, the
+  alternation in `a_ts_refclk` ended with a permissive `clksrc-ext`
+  fallback (`tsr_ext`) that silently swallowed any reserved-literal
+  prefix whose body failed the strict form — e.g.
+  `ts-refclk:ptp=IEEE1588-2008:AA-BB-CC-DD-EE:0` (5-octet GMID, not the
+  RFC 7273 EUI-64 `7(2HEXDIG "-") 2HEXDIG` form) was accepted as an
+  opaque `source="ptp", value="…"` extension instead of being rejected.
+  1.0 caught the same case via a hand-rolled octet-count walk.
+
+  Restored two ways:
+
+  - `tsr_ptp` is now `strict-body / malformed-body`. The malformed branch
+    captures the raw remainder as `.value` and records a new
+    `sdp.a.ts-refclk.ptp-malformed` finding (severity `error`,
+    `spec_ref = "RFC 7273 §4.8 (ptp / ptp-server / EUI64 ABNF)"`,
+    pos-anchored to the start of the bad body). The structured finding
+    surfaces through the normal public-API `nil, err` contract, and
+    policy can demote it to `"warn"` to inspect the captured body via
+    `doc:findings()`.
+  - `tsr_ext` now starts with a negative-lookahead guard
+    (`-tsr_reserved`) that refuses the RFC 7273 Figure 1 reserved
+    literals (`ntp=`, `ptp=`, `private`, `gps`, `gal`, `glonass`,
+    `local`) — the same `known_attr_lookahead` discipline already used
+    at the `a=` level for malformed-known-attribute rejection. Effect:
+    `gps=foo`, `private:bogus`, `ntp=`, etc. now fail the grammar
+    instead of being captured as opaque extension tokens. Tokens that
+    merely share a prefix with a reserved literal (`localmac=…`,
+    `gpsfoo=bar`) are still accepted, since they are legitimate
+    `clksrc-ext` tokens.
+
+  10 new tests under `spec/grammar_base_spec.lua` cover both behaviors:
+  the malformed-ptp recovery path under `fail_on_first=false`, finding
+  shape, all four reserved-prefix guard paths, and continued acceptance
+  of the strict forms and prefix-overlapping ext tokens.
+
+### Changed
+
+- **`examples/examples.lua` rewritten to match the 1.1 doc shape.**
+  The walkthrough was still printing 1.0-style attribute values
+  (`a.value` on `rtpmap` / `fmtp`, which are decomposed in 1.1) and
+  building a hand-built doc with `session.timing` instead of
+  `session.time_descriptions`. Specifically:
+
+  - Section 1 now formats each known attribute from its decomposed
+    fields (`rtpmap` → `pt=N enc/rate[/channels]`, `fmtp` → `pt=N
+    k=v; k=v…`), falling back to `.value` only for opaque attributes
+    and to empty string for flag attributes (`recvonly` etc.).
+  - Section 4's `sdp.new(raw)` example uses the documented
+    decomposed shape — `session.time_descriptions = {{ start, stop }}`
+    — so `is_sdp()` returns `true` and `to_sdp()` succeeds.
+  - Section 5 picks invalid files that actually produce structured
+    errors (`05_multiple_errors.sdp`, `03_missing_fmtp.sdp`,
+    `01_missing_ipmx_marker.sdp`) so the printed `err.id` / `err.line`
+    / `err.col` / `err.spec_ref` / `err.field_path` fields are real,
+    not blank fallbacks.
+  - Section 5.5's "Multiple errors with `fail_on_first=false`"
+    subsection was rewritten. The previous version claimed
+    `fail_on_first=false` returns a `doc` with collected errors
+    accessible via `doc:errors()`, but `parse_sdp/init.lua` always
+    surfaces errors via `nil, err` regardless of `fail_on_first`,
+    so the demonstrated behavior never happened. The new section
+    shows the actual collection pattern — demote known errors to
+    `"warn"` via the policy table to keep them on the returned doc's
+    `doc:findings()` / `doc:warnings()` — and follows with a short
+    honest comparison of `fail_on_first=true` vs the default
+    (both still return `nil, err`; the difference is which error
+    surfaces).
+
 ## [1.1.0] — 2026-05-20
 
 Ground-up rewrite of the parser per [REFACTOR-PLAN.md](REFACTOR-PLAN.md).

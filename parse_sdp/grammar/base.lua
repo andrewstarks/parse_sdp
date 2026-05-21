@@ -982,10 +982,34 @@ local rules = {
       * ( P("/traceable/") * Cg(Cc(true), "traceable") * #V"line_end_chars"
         + Cg(C((1 - V"value_boundary_chars") ^ 1), "address") ),
 
+  -- ptp branch — strict body matches RFC 7273 §4.8
+  --   ptp = "ptp=" ptp-version ":" ptp-server
+  -- A `ptp=` line whose body fails the strict form falls into the
+  -- malformed branch, which captures the raw remainder as `value` and
+  -- records `sdp.a.ts-refclk.ptp-malformed`. Without that branch, the
+  -- alternation in `a_ts_refclk` would back-track and the generic
+  -- `tsr_ext` fallback would silently swallow a malformed ptp value as
+  -- an opaque clksrc-ext token — the regression that motivated the
+  -- explicit tsr_reserved guard below.
   tsr_ptp = P("ptp=") * Cg(Cc("ptp"), "source")
-      * Cg(C(V"rfc8866_token_char" ^ 1), "version")
+      * ( V"tsr_ptp_body_strict" + V"tsr_ptp_body_malformed" ),
+
+  tsr_ptp_body_strict =
+        Cg(C(V"rfc8866_token_char" ^ 1), "version")
       * P(":")
       * V"tsr_ptp_server",
+
+  tsr_ptp_body_malformed =
+        Cmt(Carg(1),
+            function(_, pos, ctx)
+              if not ctx then return pos end
+              local cont = errors.record(ctx,
+                "sdp.a.ts-refclk.ptp-malformed", { pos = pos })
+              if not cont then return false end
+              return pos
+            end)
+      * Cg(C((1 - V"line_end_chars") ^ 0), "value")
+      * #V"line_end_chars",
 
   tsr_ptp_server =
         P("traceable") * Cg(Cc(true), "traceable") * #V"line_end_chars"
@@ -1004,8 +1028,24 @@ local rules = {
                 "source")
       * #V"line_end_chars",
 
-  -- Generic clksrc-ext fallback: <token>[=<byte-string>].
-  tsr_ext = Cg(C(V"rfc8866_token_char" ^ 1), "source")
+  -- Reserved clksrc literals from RFC 7273 §4.8 Figure 1. Used as a
+  -- negative lookahead in `tsr_ext` so a malformed instance of a known
+  -- form (e.g. `ptp=…` with a bad GMID, `gps=foo`, `private:bogus`)
+  -- cannot fall through to the generic clksrc-ext branch and be
+  -- accepted as an opaque extension. The same per-tier-of-prefix
+  -- discipline used by `known_attr_lookahead` at the a= level.
+  tsr_reserved =
+        (P("ntp") + P("ptp")) * #P("=")
+      + P("private") * #(P(":") + V"line_end_chars")
+      + (P("glonass") + P("gps") + P("gal") + P("local"))
+        * #(P("=") + V"line_end_chars"),
+
+  -- Generic clksrc-ext fallback: <token>[=<byte-string>]. Refuses the
+  -- reserved literals (see `tsr_reserved`); malformed instances of those
+  -- forms must be either captured by an explicit malformed branch
+  -- (tsr_ptp_body_malformed) or fail the grammar match entirely.
+  tsr_ext = -V"tsr_reserved"
+      * Cg(C(V"rfc8866_token_char" ^ 1), "source")
       * (P("=") * Cg(C((1 - V"value_boundary_chars") ^ 1), "value")) ^ -1
       * #V"line_end_chars",
 

@@ -47,20 +47,45 @@ print("  doc.origin.unicast_address     = " .. doc.origin.unicast_address)
 print("  doc.session.name               = " .. doc.session.name)
 print("  doc.session.info               = " .. tostring(doc.session.info))
 print("  doc.session.uri                = " .. tostring(doc.session.uri))
-print("  doc.session.timing.start       = " .. doc.session.timing.start)
-print("  doc.session.timing.stop        = " .. doc.session.timing.stop)
-print("  #doc.session.emails            = " .. #doc.session.emails)
-print("  #doc.session.attributes        = " .. #doc.session.attributes)
-print("  doc.session.attributes[1].name = " .. doc.session.attributes[1].name)
+local t = doc.session.time_descriptions and doc.session.time_descriptions[1] or {}
+print("  doc.session.time_descriptions[1].start = " .. tostring(t.start))
+print("  doc.session.time_descriptions[1].stop  = " .. tostring(t.stop))
+print("  #doc.session.emails            = " .. #(doc.session.emails or {}))
+print("  #doc.session.attributes        = " .. #(doc.session.attributes or {}))
+if doc.session.attributes and #doc.session.attributes > 0 then
+  print("  doc.session.attributes[1].name = " .. doc.session.attributes[1].name)
+end
 print("  #doc.media                     = " .. #doc.media)
 
 subsection("doc.media — per-media fields")
+-- Known attributes are returned in *decomposed* form in 1.1:
+--   rtpmap → { name, payload_type, encoding, clock_rate [, channels] }
+--   fmtp   → { name, payload_type, params={{key,val}, …} }   (or .raw)
+--   mid, ptime, framerate, ts-refclk, mediaclk, group, ssrc, … similar.
+-- Unknown / opaque attributes keep { name, value=string }.
+local function format_attr(a)
+  if a.name == "rtpmap" then
+    local s = string.format("pt=%s %s/%s", a.payload_type, a.encoding, a.clock_rate)
+    if a.channels then s = s .. "/" .. a.channels end
+    return s
+  elseif a.name == "fmtp" then
+    if a.raw then return "pt=" .. tostring(a.payload_type) .. " " .. a.raw:sub(1, 48) end
+    local kv = {}
+    for _, p in ipairs(a.params or {}) do kv[#kv+1] = p[1] .. "=" .. tostring(p[2]) end
+    return "pt=" .. tostring(a.payload_type) .. " " .. table.concat(kv, "; "):sub(1, 60)
+  elseif a.value then
+    return a.value:sub(1, 60)
+  end
+  return ""   -- flag-only attribute (e.g. recvonly)
+end
+
 for i, m in ipairs(doc.media) do
   print(string.format("  media[%d]  type=%-12s  port=%-6d  proto=%-8s  fmts=%s",
     i, m.media, m.port, m.proto, table.concat(m.fmts, " ")))
   for _, a in ipairs(m.attributes or {}) do
-    local val = a.value and (": " .. a.value:sub(1, 48)) or ""
-    print(string.format("    a=%-14s%s", a.name, val))
+    local rendered = format_attr(a)
+    local sep = rendered ~= "" and ": " or ""
+    print(string.format("    a=%-10s%s%s", a.name, sep, rendered))
   end
 end
 
@@ -142,20 +167,22 @@ local raw = {
     unicast_address = "127.0.0.1",
   },
   session = {
-    name       = "Built Programmatically",
-    timing     = { start = 0, stop = 0 },
-    attributes = {},
-    bandwidths = {},
-    emails     = {},
-    phones     = {},
+    name              = "Built Programmatically",
+    time_descriptions = { { start = 0, stop = 0 } },
+    attributes        = {},
   },
   media = {},
 }
 
 local built = sdp.new(raw)
 print("  sdp.new(raw):is_sdp()   →  " .. tostring(built:is_sdp()))
-print("  built:to_sdp():")
-print("  " .. built:to_sdp():gsub("\r\n", "\\r\\n\n  "))
+local sdp_text = built:to_sdp()
+if sdp_text then
+  print("  built:to_sdp():")
+  print("  " .. sdp_text:gsub("\r\n", "\\r\\n\n  "))
+else
+  print("  built:to_sdp()  →  nil (structural gaps in hand-built doc)")
+end
 
 -- ─────────────────────────────────────────────────────────────────────────────
 section("5. Error anatomy — what a failure looks like")
@@ -166,26 +193,115 @@ section("5. Error anatomy — what a failure looks like")
 
 local function show_error(label, text, mode)
   print("\n" .. label)
-  local _, e = sdp.parse(text, mode)
-  print("  err.message    = " .. tostring(e.message))
-  print("  err.code       = " .. tostring(e.code))
-  print("  err.line       = " .. tostring(e.line))
-  print("  err.col        = " .. tostring(e.col))
-  print("  err.field_path = " .. tostring(e.field_path))
-  print("  err.spec_ref   = " .. tostring(e.spec_ref))
+  local doc, err = sdp.parse(text, mode)
+  if err then
+    print("  err.id         = " .. tostring(err.id))
+    print("  err.message    = " .. tostring(err.message))
+    print("  err.code       = " .. tostring(err.code))
+    print("  err.line       = " .. tostring(err.line))
+    print("  err.col        = " .. tostring(err.col))
+    print("  err.field_path = " .. tostring(err.field_path))
+    print("  err.spec_ref   = " .. tostring(err.spec_ref))
+  else
+    print("  (parse succeeded — no error returned)")
+  end
 end
 
 show_error(
-  "generic/invalid/02_wrong_order.sdp  (RFC 8866 field ordering)",
-  read("examples/generic/invalid/02_wrong_order.sdp"))
+  "generic/invalid/05_multiple_errors.sdp  (bad IPv4 in c= line)",
+  read("examples/generic/invalid/05_multiple_errors.sdp"))
 
 show_error(
-  "st2110/invalid/04_bad_tsrefclk_gmid.sdp  (malformed PTP GMID)",
-  read("examples/st2110/invalid/04_bad_tsrefclk_gmid.sdp"), "st2110")
+  "st2110/invalid/03_missing_fmtp.sdp  (raw video fmtp missing 'sampling')",
+  read("examples/st2110/invalid/03_missing_fmtp.sdp"), "st2110")
 
 show_error(
   "ipmx/invalid/01_missing_ipmx_marker.sdp  (IPMX layer: IPMX fmtp marker absent)",
   read("examples/ipmx/invalid/01_missing_ipmx_marker.sdp"), "ipmx")
+
+-- ─────────────────────────────────────────────────────────────────────────────
+section("5.5 — Findings, warnings, and errors (NEW in 1.1)")
+-- ─────────────────────────────────────────────────────────────────────────────
+
+-- Parse returns a doc even when warnings are present (unless fail_on_first=true).
+-- Access findings via doc:findings(), doc:warnings(), doc:errors().
+
+subsection("Soft-syntactic warnings (RFC 8866 valid, style issues)")
+local warnings_text = read("examples/generic/valid/06_soft_syntactic_warnings.sdp")
+local doc_warn = sdp.parse(warnings_text)
+print("  sdp.parse(lf-only SDP with no trailing newline):")
+print("    → doc (parse succeeded)")
+if doc_warn then
+  print("    doc:findings() count = " .. #doc_warn:findings())
+  print("    doc:warnings() count = " .. #doc_warn:warnings())
+  print("    doc:errors() count   = " .. #doc_warn:errors())
+
+  if #doc_warn:warnings() > 0 then
+    print("\n  Warnings emitted:")
+    for i, w in ipairs(doc_warn:warnings()) do
+      print(string.format("    [%d] %s  (id: %s)", i, w.message, w.id))
+    end
+  end
+end
+
+subsection("Collecting findings via policy demotion")
+-- Public-API contract: sdp.parse always returns nil, err when any
+-- *error*-severity finding is present, so on a returned doc:
+--   doc:errors()   → empty (errors short-circuit the return)
+--   doc:warnings() → every warn-severity finding the parser emitted
+--   doc:findings() → every finding (= warnings, on a returned doc)
+-- To inspect *all* problems in a file with errors, demote the offending
+-- check ids to "warn" via the policy table and parse again.
+
+local errors_text = read("examples/generic/invalid/05_multiple_errors.sdp")
+local demote = { ["sdp.c.address.invalid-ipv4"] = "warn" }
+local doc_coll = sdp.parse(errors_text, nil, { policy = demote })
+print("  sdp.parse(05_multiple_errors.sdp, demote invalid-ipv4 → warn):")
+if doc_coll then
+  print("    → doc (every former error now collected as a warning)")
+  print("    doc:findings() count = " .. #doc_coll:findings())
+  print("    doc:warnings() count = " .. #doc_coll:warnings())
+  print("    doc:errors() count   = " .. #doc_coll:errors())
+  for i, f in ipairs(doc_coll:findings()) do
+    print(string.format("    [%d] (%s) %s", i, f.severity, f.message))
+  end
+end
+
+subsection("fail_on_first — abort early vs full pass")
+-- fail_on_first=false (default): the parser completes the whole grammar
+--   match, recording every finding, then returns the *first* error-severity
+--   finding as err (and the rest are discarded — see the policy-demotion
+--   pattern above to keep them).
+-- fail_on_first=true (1.0-compatible): the parser aborts on the first
+--   error finding mid-match. Either way the user sees nil, err on an
+--   error-laden file; the difference is which error becomes "first".
+
+local _, err_a = sdp.parse(errors_text)                                 -- default
+local _, err_b = sdp.parse(errors_text, nil, { fail_on_first = true })
+print("  fail_on_first=false (default) → err.message = " .. tostring(err_a and err_a.message))
+print("  fail_on_first=true            → err.message = " .. tostring(err_b and err_b.message))
+
+subsection("Policy overrides — demote or promote severity")
+-- The policy table lets you override the default severity of any check.
+-- Keys are check IDs; values are "error", "warn", or "off".
+
+local policy = {
+  ["sdp.line.lf-only-line-ending"]     = "off",    -- ignore LF-only warnings
+  ["sdp.file.trailing-newline-missing"] = "error", -- promote to error
+}
+local doc_policy, err_policy = sdp.parse(warnings_text, nil, { policy = policy })
+print("  sdp.parse(same LF-only SDP, with policy overrides):")
+print("    policy = { lf-only=off, trailing-newline-missing=error }")
+if doc_policy then
+  print("    → doc")
+  print("    doc:warnings() count = " .. #doc_policy:warnings())
+  print("    doc:errors() count   = " .. #doc_policy:errors())
+else
+  print("    → nil, err (due to promoted trailing-newline-missing)")
+  if err_policy then
+    print("    err.id = " .. tostring(err_policy.id))
+  end
+end
 
 -- ─────────────────────────────────────────────────────────────────────────────
 section("6. Full sweep — all example files")
@@ -196,7 +312,7 @@ section("6. Full sweep — all example files")
 local function sweep(files, mode, expect_ok)
   for _, path in ipairs(files) do
     local text2 = read(path)
-    local d, e = sdp.parse(text2, mode)
+    local d, e = sdp.parse(text2, mode, { fail_on_first = true })
     local got_ok = d ~= nil
     local status = (got_ok == expect_ok) and "PASS" or "FAIL"
     local label = path:match("examples/(.+)$")
@@ -223,6 +339,7 @@ sweep({
   "examples/generic/valid/03_typical_conference.sdp",
   "examples/generic/valid/04_typical_streaming.sdp",
   "examples/generic/valid/05_pathological.sdp",
+  "examples/generic/valid/06_soft_syntactic_warnings.sdp",
 }, nil, true)
 print("  invalid:")
 sweep({
@@ -230,6 +347,7 @@ sweep({
   "examples/generic/invalid/02_wrong_order.sdp",
   "examples/generic/invalid/03_malformed_origin.sdp",
   "examples/generic/invalid/04_bad_version.sdp",
+  "examples/generic/invalid/05_multiple_errors.sdp",
 }, nil, false)
 
 subsection("st2110  (ST 2110-10/20/30/40/41 + RFC 8866)")

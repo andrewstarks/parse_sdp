@@ -39,9 +39,17 @@ and runs them through the parser. See
 
 ## Current State
 
-1146 hermetic tests passing in `spec/`; 10/10 in `spec_conformance/`.
+1162 hermetic tests passing in `spec/`; 10/10 in `spec_conformance/`.
 Every validation check is grounded in explicit spec text; no
 opinion-based checks remain.
+
+Post-1.1.0 patch (1.1.1): restored EUI-64 enforcement on
+`a=ts-refclk:ptp=` GMID — a Phase-4.C regression where the new
+`clksrc-ext` fallback silently swallowed malformed reserved-literal
+bodies. New `sdp.a.ts-refclk.ptp-malformed` check + a `tsr_reserved`
+negative-lookahead guard on `tsr_ext` (the same discipline
+`known_attr_lookahead` uses at the `a=` level). `examples/examples.lua`
+also synced to the 1.1 decomposed doc shape — see CHANGELOG.
 
 The grammar-first refactor on branch `refactor/grammar-first` is
 **complete**. Phases 4 + 5 closed; **Phase 6 (all of 6.A–6.L except

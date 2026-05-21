@@ -1937,6 +1937,123 @@ describe("base SDP grammar — Phase 4.C ts-refclk decomposition (RFC 7273 §4.8
 
 end)
 
+describe("base SDP grammar — ts-refclk strict body enforcement (RFC 7273 §4.8)", function()
+
+  local finding_for = support.finding_for
+
+  -- SPEC: RFC 7273 §4.8 Figure 1
+  --   ptp        = "ptp=" ptp-version ":" ptp-server
+  --   ptp-server = ptp-gmid [":" ptp-domain] / "traceable"
+  --   ptp-gmid   = EUI64
+  --   EUI64      = 7(2HEXDIG "-") 2HEXDIG     -- exactly 8 hex octets
+  --
+  -- A `ptp=` body whose GMID has fewer than 8 octets (or any other shape
+  -- violation) must be rejected — the generic clksrc-ext branch is for
+  -- *unknown* tokens, not for malformed instances of known forms.
+  describe("malformed ptp= body (sdp.a.ts-refclk.ptp-malformed)", function()
+
+    it("rejects a 5-octet GMID under default fail_on_first", function()
+      local doc, ctx = base.match(minimal(nil, {
+        { "m=audio 49172 RTP/AVP 0",
+          "a=ts-refclk:ptp=IEEE1588-2008:AA-BB-CC-DD-EE:0" },
+      }))
+      assert.is_nil(doc)
+      local f = finding_for(ctx, "sdp.a.ts-refclk.ptp-malformed")
+      assert.is_not_nil(f)
+      assert.equal("error", f.severity)
+      assert.equal("RFC 7273 §4.8 (ptp / ptp-server / EUI64 ABNF)", f.spec_ref)
+    end)
+
+    it("captures the malformed body verbatim under fail_on_first=false", function()
+      local doc, ctx = base.match(minimal(nil, {
+        { "m=audio 49172 RTP/AVP 0",
+          "a=ts-refclk:ptp=IEEE1588-2008:AA-BB-CC-DD-EE:0" },
+      }), { fail_on_first = false })
+      assert.is_table(doc)
+      local a = doc.media[1].attributes[1]
+      assert.equal("ts-refclk", a.name)
+      assert.equal("ptp",       a.source)
+      assert.equal("IEEE1588-2008:AA-BB-CC-DD-EE:0", a.value)
+      assert.is_not_nil(finding_for(ctx, "sdp.a.ts-refclk.ptp-malformed"))
+    end)
+
+    it("rejects ptp= with empty body", function()
+      local _, ctx = base.match(minimal(nil, {
+        { "m=audio 49172 RTP/AVP 0", "a=ts-refclk:ptp=" },
+      }), { fail_on_first = false })
+      assert.is_not_nil(finding_for(ctx, "sdp.a.ts-refclk.ptp-malformed"))
+    end)
+
+    it("rejects ptp= missing the ':' between version and server", function()
+      local _, ctx = base.match(minimal(nil, {
+        { "m=audio 49172 RTP/AVP 0",
+          "a=ts-refclk:ptp=IEEE1588-2008" },
+      }), { fail_on_first = false })
+      assert.is_not_nil(finding_for(ctx, "sdp.a.ts-refclk.ptp-malformed"))
+    end)
+
+    it("still accepts the strict 8-octet GMID form", function()
+      local doc = base.match(minimal(nil, {
+        { "m=audio 49172 RTP/AVP 0",
+          "a=ts-refclk:ptp=IEEE1588-2008:00-1D-9A-FF-FE-2C-32-0F:0" },
+      }))
+      assert.is_truthy(doc)
+      local a = doc.media[1].attributes[1]
+      assert.equal("00-1D-9A-FF-FE-2C-32-0F", a.grandmaster)
+      assert.equal("0", a.domain)
+    end)
+
+    it("still accepts the version:traceable form", function()
+      local doc = base.match(minimal(nil, {
+        { "m=audio 49172 RTP/AVP 0",
+          "a=ts-refclk:ptp=IEEE1588-2008:traceable" },
+      }))
+      assert.is_truthy(doc)
+      assert.is_true(doc.media[1].attributes[1].traceable)
+    end)
+  end)
+
+  -- SPEC: RFC 7273 §4.8 Figure 1 defines the reserved clksrc literals
+  -- (ntp=, ptp=, private, gps, gal, glonass, local) and a separate
+  -- clksrc-ext branch for *unknown* tokens. A malformed instance of a
+  -- reserved literal must not silently fall through to clksrc-ext.
+  describe("reserved-prefix guard on clksrc-ext fallback", function()
+
+    it("rejects gps=foo (gps is bare per spec)", function()
+      local doc = base.match(minimal(nil, {
+        { "m=audio 49172 RTP/AVP 0", "a=ts-refclk:gps=foo" },
+      }))
+      assert.is_nil(doc)
+    end)
+
+    it("rejects private:bogus (private allows only :traceable suffix)", function()
+      local doc = base.match(minimal(nil, {
+        { "m=audio 49172 RTP/AVP 0", "a=ts-refclk:private:bogus" },
+      }))
+      assert.is_nil(doc)
+    end)
+
+    it("rejects ntp= with no address (clksrc-ext can't rescue it)", function()
+      local doc = base.match(minimal(nil, {
+        { "m=audio 49172 RTP/AVP 0", "a=ts-refclk:ntp=" },
+      }))
+      assert.is_nil(doc)
+    end)
+
+    it("still accepts ext tokens that merely share a prefix (localmac, gpsfoo)", function()
+      for _, line in ipairs({
+        "a=ts-refclk:localmac=AA-BB-CC-DD-EE-FF",
+        "a=ts-refclk:gpsfoo=bar",
+      }) do
+        assert.is_truthy(
+          base.match(minimal(nil, {
+            { "m=audio 49172 RTP/AVP 0", line } })),
+          "expected to accept: " .. line)
+      end
+    end)
+  end)
+end)
+
 describe("base SDP grammar — Phase 4.C mediaclk decomposition (RFC 7273 §5.4)", function()
 
   -- SPEC: RFC 7273 §5.4 mediaclock = sender / ...

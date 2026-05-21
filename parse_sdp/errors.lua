@@ -394,6 +394,23 @@ M.register("sdp.a.ts-refclk.traceable-mix", {
   verified         = true,
 })
 
+-- RFC 7273 §4.8 Figure 1:
+--   ptp         = "ptp=" ptp-version ":" ptp-server
+--   ptp-server  = ptp-gmid [":" ptp-domain] / "traceable"
+--   ptp-gmid    = EUI64
+--   EUI64       = 7(2HEXDIG "-") 2HEXDIG          -- exactly 8 hex octets
+-- ST 2110-10:2022 §8.2 echoes this: PTP clockIdentity is signaled in
+-- EUI-64 format. A `ptp=` value that doesn't decompose into
+-- version:(EUI64[:domain] | "traceable") violates the defined form.
+M.register("sdp.a.ts-refclk.ptp-malformed", {
+  kind             = "hard-syntactic",
+  default_severity = "error",
+  code             = "INVALID_VALUE",
+  message_template = "ts-refclk:ptp= value must be '<version>:<EUI-64>[:<domain>]' or '<version>:traceable' (EUI-64 = 8 hex octets, RFC 7273 §4.8)",
+  spec_ref         = "RFC 7273 §4.8 (ptp / ptp-server / EUI64 ABNF)",
+  verified         = true,
+})
+
 -- ── c= connection-address checks (RFC 8866 §5.7 / §9) ──────────────────────
 
 M.register("sdp.c.address.invalid-ipv4", {
