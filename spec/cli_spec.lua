@@ -1,7 +1,11 @@
 ---@diagnostic disable
 local dkjson = require("dkjson")
 
--- Run `lua parse_sdp.lua <args_str>` as a subprocess.
+-- Run `lua bin/parse_sdp <args_str>` as a subprocess.
+-- The library lives at parse_sdp/init.lua; bin/parse_sdp is the CLI
+-- shell that requires it. Running the CLI explicitly via `lua` (rather
+-- than relying on the shebang + executable bit) keeps the test
+-- portable across container / host environments.
 -- stdin_text: optional string piped to the process's stdin.
 -- Returns stdout (string), stderr (string), exit_code (number).
 local function run(args_str, stdin_text)
@@ -14,9 +18,9 @@ local function run(args_str, stdin_text)
     local f = assert(io.open(tmp_in, "w"))
     f:write(stdin_text)
     f:close()
-    cmd = string.format("lua parse_sdp.lua %s < %s 2>%s", args_str, tmp_in, tmp_err)
+    cmd = string.format("lua bin/parse_sdp %s < %s 2>%s", args_str, tmp_in, tmp_err)
   else
-    cmd = string.format("lua parse_sdp.lua %s 2>%s", args_str, tmp_err)
+    cmd = string.format("lua bin/parse_sdp %s 2>%s", args_str, tmp_err)
   end
 
   local handle  = io.popen(cmd, "r")
@@ -72,8 +76,13 @@ describe("CLI: to_json subcommand", function()
     assert.is_table(decoded)
   end)
 
-  it("--mode st2110 with plain SDP → human-readable error on stderr, exit 1", function()
-    local stdout, stderr, code = run("to_json --mode st2110 spec/fixtures/minimal.sdp")
+  it("--mode st2110 with a non-conformant SDP → human-readable error on stderr, exit 1", function()
+    -- 01_missing_tsrefclk has a media block lacking the per-block
+    -- ts-refclk SHALL (ST 2110-10:2022 §8.2). Replaces the previous
+    -- minimal.sdp fixture: the grammar tier no longer rejects empty
+    -- SDPs at the st2110 mode (no spec text mandates ≥1 media block).
+    local stdout, stderr, code = run(
+      "to_json --mode st2110 examples/st2110/invalid/01_missing_tsrefclk.sdp")
     assert.equal(1, code)
     assert.equal("", stdout)
     assert.truthy(stderr:match("^error:"))
@@ -122,7 +131,7 @@ describe("CLI: to_sdp subcommand", function()
 
   -- Parse a fixture to JSON, return the JSON string.
   local function fixture_json(sdp_file)
-    local h = io.popen("lua parse_sdp.lua to_json " .. sdp_file, "r")
+    local h = io.popen("lua bin/parse_sdp to_json " .. sdp_file, "r")
     local json = h:read("*a")
     h:close()
     return json

@@ -39,9 +39,106 @@ and runs them through the parser. See
 
 ## Current State
 
-849 hermetic tests passing. Every validation check is grounded in explicit
-spec text; no opinion-based checks remain. The test suite is split into
-seven files along a single axis — *what kind of code each test exercises*:
+1146 hermetic tests passing in `spec/`; 10/10 in `spec_conformance/`.
+Every validation check is grounded in explicit spec text; no
+opinion-based checks remain.
+
+The grammar-first refactor on branch `refactor/grammar-first` is
+**complete**. Phases 4 + 5 closed; **Phase 6 (all of 6.A–6.L except
+the deferred 6.I) closed; Phase 7 (7.A–7.L IPMX tier composition
+via `extend(st2110_rules, ...)`) closed; Phase 8 (8.A–8.F, full
+serializer rewrite plus fixture-wide round-trip) closed; Phase 9
+(9.A–9.D, pre-cutover refactor + public-API surface + cutover)
+closed; Phase 10 (10.B audit + 10.A.0 six grounded-SHALL ports +
+10.A delete + 10.C comparison) closed.** `sdp.parse(text, mode,
+opts)` and `mt:to_sdp()` route through the grammar tier and
+`parse_sdp/serialize.lua`; the 1.0 grammar / validator / serializer
+have been removed from `parse_sdp.lua` (3875 → 257 lines). Five
+1.0-over-strict items stay intentional drops without primary-source
+SHALL (audio MAXUDP-forbidden on AM824, channels-required on
+L16/L24, packet-payload-fit on AM824, empty-media-block rejection
+at st2110/ipmx tier, and ST 2110-10 §8.7's §7.9-conditional
+TSMODE=SAMP→TSDELAY coupling).
+
+The new `parse_sdp/serialize.lua` renders every base-tier
+compound attribute from `parse_sdp/grammar/base.lua` (Phase 8.D —
+18 `ATTR_RENDERERS` entries) plus every IPMX-tier extension
+attribute from `parse_sdp/grammar/ipmx.lua` (Phase 8.E — infoframe,
+hkep, privacy). Phase 8.F closes the slice with a fixture-wide
+round-trip suite — every `examples/{generic,st2110,ipmx}/valid/*.sdp`
+goes through `parse → serialize → re-parse → deep-equal` under the
+appropriate tier matcher. Module remains internal-only until Phase 9
+cutover; the public `doc:to_sdp()` still routes to the 1.0 serializer.
+
+Remaining phases:
+
+- **Phase 10.A.0** — port the six grounded SHALLs the grammar
+  tier silently dropped during the refactor (see REFACTOR-PLAN.md
+  §5 Phase 10.A.0 for the per-blocker list and primary-text
+  cites). One commit per blocker (or small grouping) with
+  pass+fail tests + spec quote per gates. The smpte291 fmtp
+  bundle (RFC 8331 §4 + ST 2110-40:2023 §7) clears the failing
+  `nmos-testing:data.sdp` conformance fixture.
+- **Phase 10.A** — delete the 1.0 implementation from
+  `parse_sdp.lua` (grammar / validator / serializer blocks; the
+  file shrinks to errors-shim re-export, public-API surface, CLI
+  dispatch). Delete `spec_legacy_1.0/`. `busted spec/` and
+  `busted spec_conformance/` green.
+- **Phase 10.C** — append a brief "Comparison with 1.0" section
+  to CHANGELOG.md under `[Unreleased]` (coverage, new checks,
+  code-size delta). GUIDE.md + README.md call out the breaking
+  doc-shape change.
+
+The grammar tier covers (concrete list of per-spec coverage):
+
+- ST 2110-20 raw video: §7.1 no-whitespace-around-=, §7.2/§7.4.2
+  required-param presence + -21 §8.1 TP, 7 enum value-sets, 6
+  non-enum value forms, 2 flag-only, 7 cross-parameter SHALLs +
+  5 1.0-gap-close SHALLs from §6.2.5 Table 3 + §7.6.
+- ST 2110-22 jxsv: 4 required-param presence, 16 value-form /
+  flag-only narrowings (RFC 9134-aligned enums for colorimetry /
+  TCS / sampling, correcting 1.0 mismatches), 2 cross-param SHALLs,
+  §7.3 b=AS presence + value form.
+- ST 2110-30 / -31 audio: channel-order RFC 3190 syntax + SMPTE2110
+  group set + AES3-requires-AM824 + L16/L24 packet-payload-fit.
+- ST 2110-31 AM824: rtpmap channel parity (§6.1).
+- ST 2110-41 Fast Metadata: required SSN with value form, optional
+  DIT with hex-token value form, MAXUDP forbidden.
+- ST 2110-10 §8.2 + §8.3: per-media-block `a=ts-refclk` and
+  media-level `a=mediaclk` presence (1.0 cited the wrong sections;
+  grammar tier corrects to §8.2 / §8.3). §8.5 + ST 2022-7 §6
+  `a=group:DUP` leg coherence.
+- TR-10-1 §10: FID-forbidden, IPMX fmtp marker, §10.2 video required
+  params (measuredpixclk / vtotal / htotal), §10.3 audio
+  measuredsamplerate. TR-10-2/-3/-4/-11/-12 §7: RTP port even + > 1024.
+- TR-10-5 §10: a=hkep (5 value-form SHALLs). TR-10-6 §7.6: FECPROFILE
+  value form and `FEC_ADD_LATENCY_*` non-negative-integer / requires-
+  FECPROFILE. TR-10-10 §8: a=infoframe (5 SHALLs incl. cross-section
+  port = media+3). TR-10-13 §13 + §20.1: a=privacy (13 SHALLs) plus
+  PEP IV-Counter extmap direction. TR-10-14 §14: USB transport block
+  (setup-required / setup-passive / privacy USB_KV).
+- Base SDP: RFC 5888 §6 group-mid invariants, §9.2 port-zero-mid.
+
+Tracking and design live in [REFACTOR-PLAN.md](REFACTOR-PLAN.md). The
+1.0 parser at `parse_sdp.lua` remains the shipping artifact on `main`;
+the new grammar under `parse_sdp/grammar/` and serializer at
+`parse_sdp/serialize.lua` are internal-only until Phase 9 cutover.
+
+**Former flake (resolved in 6.C.A):** the `sdp.a.fmtp.trailing-semicolon`
+tests in `spec/grammar_base_spec.lua` previously flaked at ~45% with
+*"no previous value for accumulator capture"*. The 6.C.A rewrite
+replaced `fmtp_params_branch`'s `Ct(P("")) * (entry % set_pair) * …`
+chain with `Ct(entry * (sep * entry)^0) / fmtp_entries_to_params`,
+sidestepping LPeg's accumulator-capture runtime path. 30 fresh full-suite
+runs and 30 fresh `--filter "trailing semicolon"` runs went 30/30 green
+afterward. The root cause was not definitively isolated; see
+[audits/FMTP_ACCUMULATOR_FLAKE.md](audits/FMTP_ACCUMULATOR_FLAKE.md) for
+the investigation record.
+
+The test suite is split along a single axis — *what kind of code each
+test exercises*. Refactor-era files (`grammar_base_spec`,
+`grammar_addresses_spec`, `error_registry_spec`) are not yet enumerated
+in the table below.
 
 | File | Tests | What it covers |
 | --- | ---: | --- |

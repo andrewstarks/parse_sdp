@@ -4,13 +4,13 @@
 -- Everything here tests the parse_sdp library's user-facing API contract:
 -- method existence, return shape, mode-dispatch sanity, predicate behavior,
 -- JSON serialization. None of these tests assert compliance with a published
--- standard — those live in:
---   spec/sdp_spec.lua     — RFC 4566 / 8866 base SDP
---   spec/st2110_spec.lua  — SMPTE ST 2110
---   spec/ipmx_spec.lua    — VSF TR-10 / IPMX
--- Tests for internal helpers (LPEG primitives, error formatter) live in:
---   spec/grammar_spec.lua — parse_sdp._grammar (white-box, refactor-fragile)
---   spec/errors_spec.lua  — parse_sdp._errors  (internal helper)
+-- standard — those live in the per-tier grammar specs:
+--   spec/grammar_base_spec.lua   — RFC 8866 base SDP
+--   spec/grammar_st2110_spec.lua — SMPTE ST 2110
+--   spec/grammar_ipmx_spec.lua   — VSF TR-10 / IPMX
+-- Tests for internal helpers live in:
+--   spec/grammar_patterns_spec.lua / spec/grammar_addresses_spec.lua
+--   spec/error_registry_spec.lua / spec/errors_spec.lua
 -- Every it block below carries `-- NOT-SPEC: library`.
 
 local sdp = require("parse_sdp")
@@ -123,7 +123,9 @@ local FULL_TEXT_FOR_JSON = table.concat({
   "t=0 0",
   "a=tool:test",
   "m=video 5000 RTP/AVP 96",
-  "c=IN IP4 239.100.0.1",
+  -- RFC 8866 §9 IP4-multicast ABNF requires the /<ttl> suffix; grammar
+  -- tier enforces (1.0 base parser was permissive).
+  "c=IN IP4 239.100.0.1/64",
   "a=rtpmap:96 H264/90000",
 }, "\r\n") .. "\r\n"
 
@@ -167,14 +169,11 @@ describe("library: sdp.parse() with 'st2110' mode", function()
   end)
 
   -- NOT-SPEC: library
-  it("returns nil+err for SDP with no media blocks", function()
-    local doc, err = sdp.parse(GENERIC_SDP, "st2110")
-    assert.is_nil(doc)
-    assert.is_table(err)
-    assert.is_string(err.message)
-  end)
-
-  -- NOT-SPEC: library
+  -- Behavior change from 1.0: the grammar tier does not require ≥1 media
+  -- block at any tier (no spec text explicitly forbids an empty SDP).
+  -- Tests asserting media-presence rejection moved out with the legacy
+  -- 1.0 suite; ts-refclk-missing remains as the canonical st2110-rejection
+  -- assertion (test below) since §8.2's per-block SHALL is unambiguous.
   it("returns nil+err for SDP missing ts-refclk everywhere", function()
     local doc, err = sdp.parse(ST2110_MISSING_TSREFCLK, "st2110")
     assert.is_nil(doc)
@@ -201,13 +200,8 @@ describe("library: sdp.parse() with 'ipmx' mode", function()
     assert.matches("IPMX", err.message)
   end)
 
-  -- NOT-SPEC: library
-  it("returns nil+err for generic SDP (no media block)", function()
-    local doc, err = sdp.parse(GENERIC_SDP, "ipmx")
-    assert.is_nil(doc)
-    assert.is_table(err)
-    assert.matches("media block", err.message)
-  end)
+  -- (no separate "no media block" assertion at ipmx; grammar tier permits
+  -- empty SDPs at every tier — see comment above on the st2110 block.)
 end)
 
 -- ── 5. doc:validate() default and 'sdp' mode ─────────────────────────────────
@@ -262,16 +256,6 @@ describe("library: doc:validate('st2110')", function()
   end)
 
   -- NOT-SPEC: library
-  it("returns nil+err for generic SDP with no media blocks", function()
-    local doc = sdp.parse(GENERIC_SDP)
-    assert.is_table(doc)
-    local ok, err = doc:validate("st2110")
-    assert.is_nil(ok)
-    assert.is_table(err)
-    assert.is_string(err.message)
-  end)
-
-  -- NOT-SPEC: library
   it("error includes field_path and spec_ref when ts-refclk is missing", function()
     local doc = sdp.parse(ST2110_MISSING_TSREFCLK)
     assert.is_table(doc)
@@ -317,15 +301,6 @@ describe("library: doc:validate('ipmx')", function()
     assert.is_string(err.spec_ref)
   end)
 
-  -- NOT-SPEC: library
-  it("returns nil+err for generic SDP (no media block)", function()
-    local doc = sdp.parse(GENERIC_SDP)
-    assert.is_table(doc)
-    local ok, err = doc:validate("ipmx")
-    assert.is_nil(ok)
-    assert.is_table(err)
-    assert.matches("media block", err.message)
-  end)
 end)
 
 -- ── 8. doc:validate(unknown_mode) ────────────────────────────────────────────
@@ -368,12 +343,6 @@ end)
 
 describe("library: doc:is_st2110() predicate", function()
   -- NOT-SPEC: library
-  it("returns false for plain RFC 4566 SDP", function()
-    local doc = sdp.parse(MINIMAL_SDP)
-    assert.is_false(doc:is_st2110())
-  end)
-
-  -- NOT-SPEC: library
   it("returns true for valid ST 2110-20 video", function()
     local doc = sdp.parse(VIDEO_SDP)
     assert.is_table(doc)
@@ -388,8 +357,8 @@ describe("library: doc:is_st2110() predicate", function()
   end)
 
   -- NOT-SPEC: library
-  it("returns false for generic SDP", function()
-    local doc = sdp.parse(GENERIC_SDP)
+  it("returns false when a media block is missing ts-refclk (ST 2110-10 §8.2)", function()
+    local doc = sdp.parse(ST2110_MISSING_TSREFCLK)
     assert.is_table(doc)
     assert.equal(false, doc:is_st2110())
   end)
@@ -406,12 +375,6 @@ end)
 
 describe("library: doc:is_ipmx() predicate", function()
   -- NOT-SPEC: library
-  it("returns false for plain RFC 4566 SDP", function()
-    local doc = sdp.parse(MINIMAL_SDP)
-    assert.is_false(doc:is_ipmx())
-  end)
-
-  -- NOT-SPEC: library
   it("returns true for valid IPMX SDP", function()
     local doc = sdp.parse(IPMX_VIDEO_SDP)
     assert.is_table(doc)
@@ -421,13 +384,6 @@ describe("library: doc:is_ipmx() predicate", function()
   -- NOT-SPEC: library
   it("returns false for ST 2110 SDP without IPMX fmtp marker", function()
     local doc = sdp.parse(ST2110_ONLY_SDP)
-    assert.is_table(doc)
-    assert.equal(false, doc:is_ipmx())
-  end)
-
-  -- NOT-SPEC: library
-  it("returns false for generic SDP (no media block)", function()
-    local doc = sdp.parse(GENERIC_SDP)
     assert.is_table(doc)
     assert.equal(false, doc:is_ipmx())
   end)
@@ -516,5 +472,129 @@ describe("library: sdp.new() wrapper", function()
     local doc = sdp.new({})
     assert.is_function(doc.validate)
     assert.is_function(doc.is_sdp)
+  end)
+end)
+
+describe("library: sdp.checks() registry introspection", function()
+  -- NOT-SPEC: library
+  it("returns a non-empty array of check definitions", function()
+    local cs = sdp.checks()
+    assert.is_table(cs)
+    assert.is_truthy(#cs > 0)
+    for _, c in ipairs(cs) do
+      assert.is_string(c.id)
+      assert.is_string(c.spec_ref)
+      assert.is_string(c.default_severity)
+    end
+  end)
+
+  -- NOT-SPEC: library
+  it("entries are sorted by id", function()
+    local prev
+    for _, c in ipairs(sdp.checks()) do
+      if prev then assert.is_truthy(prev < c.id) end
+      prev = c.id
+    end
+  end)
+end)
+
+describe("library: sdp.default_policy()", function()
+  -- NOT-SPEC: library
+  it("returns a table mapping every registered id to its default severity", function()
+    local p = sdp.default_policy()
+    assert.is_table(p)
+    for _, c in ipairs(sdp.checks()) do
+      assert.equal(c.default_severity, p[c.id])
+    end
+  end)
+
+  -- NOT-SPEC: library
+  it("returned table is a fresh copy (caller can mutate without polluting)", function()
+    local p1 = sdp.default_policy()
+    p1["sdp.v.must-be-zero"] = "warn"
+    local p2 = sdp.default_policy()
+    assert.equal("error", p2["sdp.v.must-be-zero"])
+  end)
+end)
+
+describe("library: sdp.parse(text, mode, opts) policy validation", function()
+  -- NOT-SPEC: library
+  it("accepts opts.policy with all-known ids", function()
+    local doc, err = sdp.parse(MINIMAL_SDP, nil,
+      { policy = { ["sdp.v.must-be-zero"] = "warn" } })
+    assert.is_not_nil(doc)
+    assert.is_nil(err)
+  end)
+
+  -- NOT-SPEC: library
+  it("rejects opts.policy with an unknown id and names the offending key", function()
+    local doc, err = sdp.parse(MINIMAL_SDP, nil,
+      { policy = { ["bogus.check.id"] = "warn" } })
+    assert.is_nil(doc)
+    assert.is_table(err)
+    assert.equal("bogus.check.id", err.policy_key)
+  end)
+
+  -- NOT-SPEC: library
+  it("rejects opts.policy with an invalid severity value", function()
+    local doc, err = sdp.parse(MINIMAL_SDP, nil,
+      { policy = { ["sdp.v.must-be-zero"] = "fatal" } })
+    assert.is_nil(doc)
+    assert.is_table(err)
+    assert.equal("sdp.v.must-be-zero", err.policy_key)
+  end)
+
+  -- NOT-SPEC: library
+  it("accepts an empty opts table", function()
+    local doc = sdp.parse(MINIMAL_SDP, nil, {})
+    assert.is_not_nil(doc)
+  end)
+
+  -- NOT-SPEC: library
+  it("nil opts behaves as before (backward-compat)", function()
+    local doc = sdp.parse(MINIMAL_SDP)
+    assert.is_not_nil(doc)
+  end)
+end)
+
+describe("library: doc findings accessors", function()
+  -- NOT-SPEC: library
+  it("doc:findings() returns an empty list for sdp.new()", function()
+    local doc = sdp.new({})
+    assert.is_table(doc:findings())
+    assert.equal(0, #doc:findings())
+  end)
+
+  -- NOT-SPEC: library
+  it("doc:warnings() returns an empty list for sdp.new()", function()
+    local doc = sdp.new({})
+    assert.is_table(doc:warnings())
+    assert.equal(0, #doc:warnings())
+  end)
+
+  -- NOT-SPEC: library
+  it("doc:errors() returns an empty list for sdp.new()", function()
+    local doc = sdp.new({})
+    assert.is_table(doc:errors())
+    assert.equal(0, #doc:errors())
+  end)
+
+  -- NOT-SPEC: library
+  it("all three are methods on every parsed doc", function()
+    local doc = sdp.parse(MINIMAL_SDP)
+    assert.is_function(doc.findings)
+    assert.is_function(doc.warnings)
+    assert.is_function(doc.errors)
+  end)
+
+  -- NOT-SPEC: library
+  it("warnings() + errors() partition findings() by severity", function()
+    local doc = sdp.parse(MINIMAL_SDP)
+    local all  = doc:findings()
+    local warn = doc:warnings()
+    local errs = doc:errors()
+    assert.equal(#all, #warn + #errs)
+    for _, f in ipairs(warn) do assert.equal("warn", f.severity) end
+    for _, f in ipairs(errs) do assert.equal("error", f.severity) end
   end)
 end)

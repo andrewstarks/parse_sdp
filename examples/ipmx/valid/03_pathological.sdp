@@ -56,7 +56,7 @@ a=rtpmap:100 L16/48000/1
 a=fmtp:100 channel-order=SMPTE2110.(M); measuredsamplerate=48000; IPMX
 a=ptime:1
 a=mediaclk:direct=0
-m=application 32000 RTP/AVP 101
+m=video 32000 RTP/AVP 101
 i=ANC — CEA-708 captions
 c=IN IP4 239.201.12.1/64
 a=source-filter: incl IN IP4 239.201.12.1 10.50.0.1
