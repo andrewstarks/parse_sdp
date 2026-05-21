@@ -10,8 +10,53 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 ## [Unreleased] — `refactor/grammar-first` branch
 
 Ground-up rewrite of the parser per [REFACTOR-PLAN.md](REFACTOR-PLAN.md).
-**Internal-only so far; no public-API change has landed yet.** The 1.0
-parser remains the shipping artifact on `main`.
+Phase 9.D cut sdp.parse / mt:to_sdp over to the grammar tier; Phase
+10.A.0 ported the six grounded SHALLs the 10.B audit surfaced as
+silently-dropped during the refactor; Phase 10.A deleted the 1.0
+implementation. The on-disk artifact is no longer the 1.0 monolith
+on `main`.
+
+### Comparison with 1.0
+
+**Coverage.** The grammar tier ships **169 registered checks** versus
+roughly 80 inline `errors.new` sites in v1.0.0. Every grounded SHALL
+that v1.0.0 enforced is enforced in the grammar tier, after the six
+Phase 10.A.0 ports closed the gaps the 10.B parity audit surfaced
+(see [audits/PHASE3_FINDINGS.md](audits/PHASE3_FINDINGS.md) and
+[audits/SPEC_COVERAGE.md](audits/SPEC_COVERAGE.md)). Five intentional
+drops carry over without primary-source SHALLs: ST 2110-31 AM824
+MAXUDP-forbidden, ST 2110-30 L16/L24 channels-required, ST 2110-30
+AM824 packet-payload-fit limb, ST 2110-10 §7 empty-media-block
+rejection at st2110/ipmx tier, and ST 2110-10 §8.7's §7.9-conditional
+TSMODE=SAMP→TSDELAY coupling.
+
+**New checks since 1.0.** Roughly 90 IDs in the registry are new
+since v1.0.0. The notable groupings: the complete VSF TR-10 series
+ported during Phase 7 (~50 IDs across TR-10-1 / -2 / -5 / -6 / -10
+/ -13 / -14, including IPMX HKEP / FEC / InfoFrame / PEP / USB);
+RFC 9134 §7.1 jxsv per-parameter enums distinct from ST 2110-20's
+set (~15 IDs); RFC 8866 base-tier IPv4 / IPv6 multicast ABNF
+strictness promoted from the st2110-only check (9 IDs); RFC 5888
+group cross-stream invariants + ST 2110-10 §8.5 DUP coherence
+(9 IDs); ST 2110-20 §6.2.5 Table 3 + §7.6 cross-parameter SHALLs
+(5 IDs); ST 2110-10 §8.7 TSMODE / TSDELAY value forms ported during
+Phase 10.A.0.3 (2 IDs); RFC 8331 §4 + ST 2110-40:2023 §7 smpte291
+fmtp bundle ported during Phase 10.A.0.4 (9 IDs); RFC 4570 §3.1
+source-filter cross-check ported during 10.A.0.5.
+
+**Code size delta.** Comparing v1.0.0's monolithic `parse_sdp.lua`
+against the post-10.A module set (`parse_sdp.lua` + `parse_sdp/`):
+
+|                 | Raw lines | Stripped (no comments / blank) |
+| --------------- | --------: | -----------------------------: |
+| v1.0.0 monolith |      3801 |                           2771 |
+| HEAD post-10.A  |      6899 |                           4403 |
+| Delta           |      +81% |                           +59% |
+
+The growth is primarily check coverage (169 typed IDs vs. ~80
+inline) and the per-attribute renderer + check-registry surfaces
+that give every check a stable id, verified spec_ref, and severity
+policy.
 
 ### Removed
 

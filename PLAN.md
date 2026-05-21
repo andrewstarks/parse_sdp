@@ -39,26 +39,26 @@ and runs them through the parser. See
 
 ## Current State
 
-1079 hermetic tests passing in `spec/`. Every validation check is grounded
-in explicit spec text; no opinion-based checks remain.
+1146 hermetic tests passing in `spec/`; 10/10 in `spec_conformance/`.
+Every validation check is grounded in explicit spec text; no
+opinion-based checks remain.
 
-The grammar-first refactor on branch `refactor/grammar-first` is **in
-Phase 10**. Phases 4 + 5 complete; **Phase 6 (all of 6.A–6.L except
+The grammar-first refactor on branch `refactor/grammar-first` is
+**complete**. Phases 4 + 5 closed; **Phase 6 (all of 6.A–6.L except
 the deferred 6.I) closed; Phase 7 (7.A–7.L IPMX tier composition
-via `extend(st2110_rules, ...)`) closed; Phase 8 (8.A–8.F, the
-full serializer rewrite plus fixture-wide round-trip) closed;
-Phase 9 (9.A–9.D, pre-cutover refactor + public-API surface +
-cutover) closed.** `sdp.parse(text, mode, opts)` and `mt:to_sdp()`
-route through the grammar tier and `parse_sdp/serialize.lua`; the
-1.0 grammar / validator / serializer in `parse_sdp.lua` is on disk
-but no longer reachable from the public API. Phase 10.B audit
-surfaced six grounded SHALLs the grammar tier silently dropped
-during the refactor (primary text verified for each); they port
-in Phase 10.A.0 before the 1.0 code is deleted in 10.A. Four
-1.0-over-strict items (audio MAXUDP-forbidden on AM824,
-channels-required on L16/L24, packet-payload-fit on AM824,
-empty-media-block rejection at st2110/ipmx) stay intentional drops
-without primary-source SHALL.
+via `extend(st2110_rules, ...)`) closed; Phase 8 (8.A–8.F, full
+serializer rewrite plus fixture-wide round-trip) closed; Phase 9
+(9.A–9.D, pre-cutover refactor + public-API surface + cutover)
+closed; Phase 10 (10.B audit + 10.A.0 six grounded-SHALL ports +
+10.A delete + 10.C comparison) closed.** `sdp.parse(text, mode,
+opts)` and `mt:to_sdp()` route through the grammar tier and
+`parse_sdp/serialize.lua`; the 1.0 grammar / validator / serializer
+have been removed from `parse_sdp.lua` (3875 → 257 lines). Five
+1.0-over-strict items stay intentional drops without primary-source
+SHALL (audio MAXUDP-forbidden on AM824, channels-required on
+L16/L24, packet-payload-fit on AM824, empty-media-block rejection
+at st2110/ipmx tier, and ST 2110-10 §8.7's §7.9-conditional
+TSMODE=SAMP→TSDELAY coupling).
 
 The new `parse_sdp/serialize.lua` renders every base-tier
 compound attribute from `parse_sdp/grammar/base.lua` (Phase 8.D —

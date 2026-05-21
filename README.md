@@ -85,27 +85,43 @@ Exit code `0` on success, `1` on error (human-readable detail on stderr).
 
 ```text
 parse_sdp/
-├── parse_sdp.lua        # single-file library AND CLI executable
-├── spec/                # busted test suite (hermetic, ~850 tests)
-│   ├── sdp_spec.lua     # RFC 4566 / 8866 base SDP — standards-tied
-│   ├── st2110_spec.lua  # SMPTE ST 2110 — standards-tied
-│   ├── ipmx_spec.lua    # VSF TR-10 / IPMX — standards-tied
-│   ├── library_spec.lua # public API tests (parse, validate, doc methods)
-│   ├── cli_spec.lua     # CLI subcommand tests
-│   ├── grammar_spec.lua # LPEG primitive parsers (internal, white-box)
-│   ├── errors_spec.lua  # error formatter (internal, white-box)
-│   └── fixtures/        # sample .sdp files used by tests
-├── spec_conformance/    # opt-in: downloads pinned AMWA fixtures and parses them
+├── parse_sdp.lua                # public entry point + CLI dispatch
+├── parse_sdp/
+│   ├── errors.lua               # error registry + severity policy
+│   ├── serialize.lua            # doc → SDP text (CRLF, strict ordering)
+│   └── grammar/
+│       ├── patterns.lua         # shared numeric value-form patterns
+│       ├── addresses.lua        # IPv4 / IPv6 grammars + multicast expansion
+│       ├── base.lua             # RFC 8866 base grammar + checks
+│       ├── st2110.lua           # SMPTE ST 2110 overrides
+│       └── ipmx.lua             # VSF TR-10 / IPMX overrides
+├── spec/                        # busted test suite (hermetic, 1146 tests)
+│   ├── grammar_base_spec.lua    # RFC 8866 base SDP — standards-tied
+│   ├── grammar_st2110_spec.lua  # SMPTE ST 2110 — standards-tied
+│   ├── grammar_ipmx_spec.lua    # VSF TR-10 / IPMX — standards-tied
+│   ├── grammar_patterns_spec.lua, grammar_addresses_spec.lua,
+│   │     grammar_compose_spec.lua  # internal helper tests
+│   ├── error_registry_spec.lua, errors_spec.lua
+│   ├── roundtrip_spec.lua       # serializer + fixture-wide round-trip
+│   ├── library_spec.lua         # public API tests
+│   ├── cli_spec.lua             # CLI subcommand tests
+│   └── fixtures/                # sample .sdp files used by tests
+├── spec_conformance/            # opt-in: pinned AMWA fixtures
 ├── examples/
-│   ├── examples.lua     # runnable API walkthrough
-│   ├── generic/         # RFC 4566 SDP samples (valid/ and invalid/)
-│   ├── st2110/          # ST 2110 SDP samples (valid/ and invalid/)
-│   └── ipmx/            # IPMX SDP samples (valid/ and invalid/)
+│   ├── examples.lua             # runnable API walkthrough
+│   ├── generic/                 # RFC 8866 SDP samples (valid/ and invalid/)
+│   ├── st2110/                  # ST 2110 SDP samples (valid/ and invalid/)
+│   └── ipmx/                    # IPMX SDP samples (valid/ and invalid/)
+├── audits/                      # SPEC_INVENTORY, SPEC_COVERAGE,
+│                                # PHASE3_FINDINGS — the pre-1.0 audit
+│                                # memos the 2.0 release built on.
 ├── Dockerfile
 ├── docker-compose.yml
-├── GUIDE.md             # full documentation
-├── PLAN.md              # guiding principles and known deferred items
+├── GUIDE.md                     # full documentation
+├── PLAN.md                      # guiding principles and known deferred items
 └── CHANGELOG.md
 ```
 
-See [GUIDE.md](GUIDE.md) for the full API reference and usage guide.
+See [GUIDE.md](GUIDE.md) for the full API reference and usage guide;
+the [audits/](audits/) memos carry the per-clause coverage maps the
+refactor was grounded in.
