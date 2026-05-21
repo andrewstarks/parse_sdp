@@ -867,6 +867,22 @@ local function check_mediaclk_presence(block, ctx)
   return true
 end
 
+-- ST 2110-10:2022 §6.2 — RTP streams shall conform to the RTP Profile
+-- specified in IETF RFC 3551, which SDP names "RTP/AVP". Scope: RTP
+-- blocks only (proto starts with "RTP/"); non-RTP transports are out
+-- of scope. The check fires when a block declares an RTP-shaped proto
+-- other than RTP/AVP (e.g. RTP/SAVP, RTP/AVPF) — those name different
+-- IETF profiles not permitted by ST 2110-10 §6.2's RFC 3551 SHALL.
+local function check_rtp_profile(block, ctx)
+  if not base.is_rtp_block(block) then return true end
+  if block.proto == "RTP/AVP" then return true end
+  local cont = errors.record(ctx, "st2110-10.m.proto-must-be-rtp-avp",
+    { field_path = string.format("media[%d].proto", ctx.media_index or 0),
+      context    = { proto = block.proto } })
+  if not cont then return false end
+  return true
+end
+
 local function check_jxsv_fmtp_cross_param(params, ctx, pos, field_path)
   for _, fn in ipairs(JXSV_CROSS_PARAM_CHECKS) do
     if not fn(params, ctx, pos, field_path) then return false end
@@ -1305,6 +1321,7 @@ local overrides = {
   },
 
   media_section_checks = {
+    check_rtp_profile,
     check_rtpmap_requires_fmtp,
     check_mediaclk_presence,
     check_audio_packet_payload_fit,

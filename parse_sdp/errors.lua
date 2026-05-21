@@ -1319,6 +1319,24 @@ M.register("st2110.attr.ts-refclk-required", {
   verified         = true,
 })
 
+-- ST 2110-10:2022 §6.2: "All of the streams specified in this standard
+-- shall use the Real-time Transport Protocol (RTP) as specified in IETF
+-- RFC 3551 ... and shall conform to the RTP Profile specified in IETF
+-- RFC 3551." The RTP Profile RFC 3551 defines is named "RTP/AVP" in
+-- SDP. Scope: media blocks whose proto is RTP-shaped (proto starts with
+-- "RTP/"); non-RTP transports (e.g. TR-10-14 USB at
+-- `m=application <port> TCP usb`) are out of scope.
+M.register("st2110-10.m.proto-must-be-rtp-avp", {
+  kind             = "semantic",
+  default_severity = "error",
+  code             = "INVALID_VALUE",
+  message_template =
+    "ST 2110 RTP streams must use the RTP/AVP profile"
+    .. " (RFC 3551; only profile permitted by §6.2)",
+  spec_ref         = "ST 2110-10:2022 §6.2",
+  verified         = true,
+})
+
 M.register("st2110.attr.mediaclk-required", {
   kind             = "semantic",
   default_severity = "error",

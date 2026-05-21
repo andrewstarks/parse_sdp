@@ -15,6 +15,23 @@ parser remains the shipping artifact on `main`.
 
 ### Added
 
+- **Phase 10.A.0.2:** ported the ST 2110-10:2022 §6.2 RTP-Profile SHALL
+  that the grammar tier had silently dropped. The 1.0 parser enforced
+  m= proto = "RTP/AVP" at the ST 2110 tier with cite "ST 2110-10:2022
+  §8.1" — primary text actually carries the SHALL at §6.2: "All of the
+  streams specified in this standard ... shall conform to the RTP
+  Profile specified in IETF RFC 3551." RFC 3551 names the profile
+  "RTP/AVP" in SDP. Port to the correct cite. New ST 2110-tier
+  media_section check `check_rtp_profile` fires on RTP-shaped blocks
+  (`is_rtp_block` predicate); rejects every proto other than RTP/AVP
+  (so RTP/SAVP, RTP/AVPF, etc. are rejected). Non-RTP transports
+  (TR-10-14 USB blocks at `TCP usb`) stay out of scope. 1 new error id
+  `st2110-10.m.proto-must-be-rtp-avp` (ST 2110-10:2022 §6.2, error
+  severity); 6 new tests in `spec/grammar_st2110_spec.lua`. Suite
+  1091 green (was 1085).
+
+  Audit ref: REFACTOR-PLAN.md §5 Phase 10.A.0.
+
 - **Phase 10.A.0.1:** ported the base-tier RFC 8866 §5.7 c=-required SHALL
   that the grammar tier had silently dropped during the refactor (surfaced
   by the Phase 10.B parity audit). New base semantic check

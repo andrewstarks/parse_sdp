@@ -2324,6 +2324,122 @@ describe("ST 2110-10 — required attribute presence (Phase 6.D.A)", function()
   end)
 end)
 
+-- ── Phase 10.A.0.2 — ST 2110-10:2022 §6.2 m= proto must be RTP/AVP ───────
+--
+-- §6.2: "All of the streams specified in this standard shall use the
+--        Real-time Transport Protocol (RTP) as specified in IETF
+--        RFC 3550, and shall conform to the RTP Profile specified in
+--        IETF RFC 3551..."
+-- RFC 3551 names the Audio/Video Profile "RTP/AVP" in SDP. Scope: media
+-- blocks with an RTP-shaped proto (`RTP/*`); non-RTP transports such as
+-- TR-10-14 USB blocks (`m=application <port> TCP usb`) are out of scope.
+-- Phase 10.A.0.2 ports this from the 1.0 ST 2110 tier (which cited
+-- "ST 2110-10:2022 §8.1" — wrong) to the correct §6.2 cite.
+
+describe("ST 2110-10 — RTP profile must be RTP/AVP (Phase 10.A.0.2)", function()
+
+  local function sdp_lines(lines)
+    return table.concat(lines, "\r\n") .. "\r\n"
+  end
+
+  local TIMING_TS_REFCLK = "a=ts-refclk:localmac=00-11-22-33-44-55"
+  local TIMING_MEDIACLK  = "a=mediaclk:sender"
+
+  it("accepts a media block with proto = RTP/AVP", function()
+    local doc = st2110.match(sdp_lines({
+      "v=0", "o=- 1 1 IN IP4 192.0.2.1", "s=Test", "t=0 0",
+      "m=video 30000 RTP/AVP 96",
+      "c=IN IP4 239.0.0.1/64",
+      "a=rtpmap:96 raw/90000",
+      RAW_FMTP_COMPLETE_PT96,
+      TIMING_TS_REFCLK, TIMING_MEDIACLK,
+    }))
+    assert.is_truthy(doc)
+  end)
+
+  it("rejects a media block with proto = RTP/SAVP (different RFC 3711 profile)", function()
+    local doc, ctx = st2110.match(sdp_lines({
+      "v=0", "o=- 1 1 IN IP4 192.0.2.1", "s=Test", "t=0 0",
+      "m=video 30000 RTP/SAVP 96",
+      "c=IN IP4 239.0.0.1/64",
+      "a=rtpmap:96 raw/90000",
+      RAW_FMTP_COMPLETE_PT96,
+      TIMING_TS_REFCLK, TIMING_MEDIACLK,
+    }))
+    assert.is_nil(doc)
+    local f = finding_for(ctx, "st2110-10.m.proto-must-be-rtp-avp")
+    assert.is_not_nil(f)
+    assert.equal("ST 2110-10:2022 §6.2", f.spec_ref)
+    assert.equal("INVALID_VALUE", f.code)
+    assert.equal("media[0].proto", f.field_path)
+    assert.equal("RTP/SAVP", f.context.proto)
+  end)
+
+  it("rejects a media block with proto = RTP/AVPF", function()
+    local doc, ctx = st2110.match(sdp_lines({
+      "v=0", "o=- 1 1 IN IP4 192.0.2.1", "s=Test", "t=0 0",
+      "m=video 30000 RTP/AVPF 96",
+      "c=IN IP4 239.0.0.1/64",
+      "a=rtpmap:96 raw/90000",
+      RAW_FMTP_COMPLETE_PT96,
+      TIMING_TS_REFCLK, TIMING_MEDIACLK,
+    }))
+    assert.is_nil(doc)
+    assert.is_not_nil(finding_for(ctx, "st2110-10.m.proto-must-be-rtp-avp"))
+  end)
+
+  it("reports the offending media index when one block of two has wrong proto", function()
+    local doc, ctx = st2110.match(sdp_lines({
+      "v=0", "o=- 1 1 IN IP4 192.0.2.1", "s=Test", "t=0 0",
+      "m=video 30000 RTP/AVP 96",
+      "c=IN IP4 239.0.0.1/64",
+      "a=rtpmap:96 raw/90000",
+      RAW_FMTP_COMPLETE_PT96,
+      TIMING_TS_REFCLK, TIMING_MEDIACLK,
+      "m=video 30002 RTP/SAVP 97",
+      "c=IN IP4 239.0.0.2/64",
+      "a=rtpmap:97 raw/90000",
+      "a=fmtp:97 sampling=YCbCr-4:2:2;width=1920;height=1080;"
+        .. "exactframerate=60000/1001;depth=10;colorimetry=BT709;"
+        .. "PM=2110GPM;SSN=ST2110-20:2022;TP=2110TPN",
+      TIMING_TS_REFCLK, TIMING_MEDIACLK,
+    }))
+    assert.is_nil(doc)
+    local f = finding_for(ctx, "st2110-10.m.proto-must-be-rtp-avp")
+    assert.is_not_nil(f)
+    assert.equal("media[1].proto", f.field_path)
+  end)
+
+  it("does NOT fire on non-RTP transports (e.g. TR-10-14 TCP usb)", function()
+    -- The check is gated on is_rtp_block (proto starts with "RTP/").
+    -- The IPMX TR-10-14 USB block uses proto = TCP. That block is
+    -- out of scope of ST 2110-10:2022 §6.2's RTP-Profile SHALL.
+    -- (At the st2110 tier alone, the TCP block parses without other
+    -- TR-10-14-specific checks firing.)
+    local doc = st2110.match(sdp_lines({
+      "v=0", "o=- 1 1 IN IP4 192.0.2.1", "s=Test", "t=0 0",
+      "m=application 30000 TCP usb",
+      "c=IN IP4 239.0.0.1/64",
+      "a=setup:passive",
+    }))
+    assert.is_truthy(doc)
+  end)
+
+  it("policy = 'off' bypasses the check", function()
+    local doc, ctx = st2110.match(sdp_lines({
+      "v=0", "o=- 1 1 IN IP4 192.0.2.1", "s=Test", "t=0 0",
+      "m=video 30000 RTP/SAVP 96",
+      "c=IN IP4 239.0.0.1/64",
+      "a=rtpmap:96 raw/90000",
+      RAW_FMTP_COMPLETE_PT96,
+      TIMING_TS_REFCLK, TIMING_MEDIACLK,
+    }), { policy = { ["st2110-10.m.proto-must-be-rtp-avp"] = "off" } })
+    assert.is_table(doc)
+    assert.is_nil(finding_for(ctx, "st2110-10.m.proto-must-be-rtp-avp"))
+  end)
+
+end)
+
 -- ── Phase 6.D.B — ST 2110-30:2025 §6.2.1 audio MAXUDP-forbidden ─────────
 --
 -- §6.2.1: "The Standard UDP Datagram Size Limit as defined in SMPTE ST
