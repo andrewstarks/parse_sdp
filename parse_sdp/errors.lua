@@ -1373,6 +1373,141 @@ M.register("st2110-10.a.fmtp.tsdelay-invalid-value", {
   verified         = true,
 })
 
+-- ── smpte291 (ST 2110-40:2023 + RFC 8331) fmtp checks (Phase 10.A.0.4) ────
+-- Two SHALL sources interleave here. RFC 8331 §4 (the IANA `video/smpte291`
+-- registration) governs DID_SDID, VPID_Code, and the carrier media-type;
+-- ST 2110-40:2023 §7 governs SSN, TM, exactframerate, and TROFF — the SDP
+-- form for ANC RTP streams.
+--
+-- The grammar tier hosts these IDs at the `st2110-40.*` prefix (the natural
+-- composition layer where smpte291 fmtp validation lives in this library);
+-- spec_ref points at the authoring spec per check.
+
+-- RFC 8331 §4: "If the optional parameter VPID_Code is present, it SHALL
+-- be present only once in the semicolon-separated list, taking a single
+-- integer value." Cardinality SHALL (the once-only constraint) and value
+-- form (single integer; non-negative since VPID_Code is a 16-bit SMPTE
+-- ST 352M code).
+M.register("st2110-40.a.fmtp.vpid-code-too-many", {
+  kind             = "semantic",
+  default_severity = "error",
+  code             = "INVALID_VALUE",
+  message_template = "fmtp 'VPID_Code' SHALL appear only once",
+  spec_ref         = "RFC 8331 §4",
+  verified         = true,
+})
+
+M.register("st2110-40.a.fmtp.vpid-code-invalid-value", {
+  kind             = "semantic",
+  default_severity = "error",
+  code             = "INVALID_VALUE",
+  message_template = "fmtp 'VPID_Code' must be a non-negative integer",
+  spec_ref         = "RFC 8331 §4",
+  verified         = true,
+})
+
+-- RFC 8331 §4 syntax: DID_SDID = `{0xH[H],0xH[H]}` where each token is
+-- TwoHex = "0x" 1*2(HEXDIG). May appear multiple times (§4 explicitly
+-- permits multiple DID_SDID parameters to signal multiple ANC types).
+M.register("st2110-40.a.fmtp.did-sdid-invalid-value", {
+  kind             = "semantic",
+  default_severity = "error",
+  code             = "INVALID_VALUE",
+  message_template =
+    "fmtp 'DID_SDID' must match {0xH[H],0xH[H]} (RFC 8331 §4)",
+  spec_ref         = "RFC 8331 §4",
+  verified         = true,
+})
+
+-- ST 2110-40:2023 §7: "Senders implementing the Low-Latency Transmission
+-- Model shall signal a Format Specific Parameter TM with the value LLTM
+-- in the SDP. Senders implementing the Compatible Transmission Model may
+-- signal a Format Specific Parameter TM with the value CTM in the SDP."
+-- Together these define the TM value set as {LLTM, CTM} (CLAUDE.md
+-- strictness polarity #3 — defined value set).
+M.register("st2110-40.a.fmtp.tm-invalid-value", {
+  kind             = "semantic",
+  default_severity = "error",
+  code             = "INVALID_VALUE",
+  message_template = "fmtp 'TM' must be 'LLTM' or 'CTM' (ST 2110-40:2023 §7)",
+  spec_ref         = "ST 2110-40:2023 §7",
+  verified         = true,
+})
+
+-- ST 2110-40:2023 §7: "Senders implementing this standard shall signal a
+-- Format Specific Parameter SSN with the value ST2110-40:2018 unless they
+-- are signaling Format Specific Parameter TM, in which case they shall
+-- signal the value ST2110-40:2023."
+M.register("st2110-40.a.fmtp.ssn-required", {
+  kind             = "semantic",
+  default_severity = "error",
+  code             = "MISSING_FIELD",
+  message_template = "fmtp 'SSN' is required for smpte291 streams",
+  spec_ref         = "ST 2110-40:2023 §7",
+  verified         = true,
+})
+
+-- ST 2110-40:2023 §7 value form + receiver-equivalence: TM signaled →
+-- SSN must be `ST2110-40:2023`, with `ST2110-40:2021` accepted as
+-- equivalent per the §7 receiver-equivalence clause ("Receivers shall
+-- consider a Format Specific Parameter SSN value of ST2110-40:2021 as
+-- equivalent to a value of ST2110-40:2023"). TM absent → SSN must be
+-- `ST2110-40:2018`.
+M.register("st2110-40.a.fmtp.ssn-invalid-value", {
+  kind             = "semantic",
+  default_severity = "error",
+  code             = "INVALID_VALUE",
+  message_template =
+    "fmtp 'SSN' value form does not match the §7 SHALL"
+    .. " (ST2110-40:2018 without TM; ST2110-40:2023 with TM;"
+    .. " ST2110-40:2021 accepted as equivalent to :2023)",
+  spec_ref         = "ST 2110-40:2023 §7",
+  verified         = true,
+})
+
+-- ST 2110-40:2023 §7: "All Senders shall signal the Format Specific
+-- Parameter exactframerate as defined in SMPTE ST 2110-20:2022 Clause
+-- 7.2 to indicate the frame rate related to the ANC data in the stream."
+-- Required-presence SHALL; value form delegates to ST 2110-20 §7.2.
+M.register("st2110-40.a.fmtp.exactframerate-required", {
+  kind             = "semantic",
+  default_severity = "error",
+  code             = "MISSING_FIELD",
+  message_template =
+    "fmtp 'exactframerate' is required for smpte291 streams",
+  spec_ref         = "ST 2110-40:2023 §7",
+  verified         = true,
+})
+
+M.register("st2110-40.a.fmtp.exactframerate-invalid-value", {
+  kind             = "semantic",
+  default_severity = "error",
+  code             = "INVALID_VALUE",
+  message_template =
+    "fmtp 'exactframerate' must be a positive integer or a positive"
+    .. " n/d ratio in lowest terms",
+  spec_ref         = "ST 2110-20:2022 §7.2",
+  verified         = true,
+})
+
+-- ST 2110-40:2023 §7: "If a Sender is operating with a value of TR_OFFSETANC
+-- that is different than the default value TRODEFAULT for the prevailing
+-- video format, then the Format Specific Parameter TROFF shall be signaled
+-- using the same definition as SMPTE ST 2110-21." ST 2110-21:2022 §8.2
+-- defines TROFFSET / TROFF value form as a positive integer (signaling
+-- absence of which uses the default; TROFF=0 is reserved per the §8.2
+-- "positive integer" SHALL — same form-precedence rationale as §8.7
+-- TSDELAY, see PLAN.md Known Deferred Items).
+M.register("st2110-40.a.fmtp.troff-invalid-value", {
+  kind             = "semantic",
+  default_severity = "error",
+  code             = "INVALID_VALUE",
+  message_template =
+    "fmtp 'TROFF' must be a positive integer (ST 2110-21:2022 §8.2)",
+  spec_ref         = "ST 2110-21:2022 §8.2",
+  verified         = true,
+})
+
 M.register("st2110.attr.mediaclk-required", {
   kind             = "semantic",
   default_severity = "error",

@@ -237,9 +237,17 @@ end)
 
 describe("ST 2110-40 smpte291 — rtpmap narrowings (ST 2110-40:2023 §5.3 / RFC 8331 §4)", function()
 
+  -- Phase 10.A.0.4 added smpte291 fmtp-required SHALLs (SSN +
+  -- exactframerate per ST 2110-40:2023 §7). These narrowing tests use
+  -- a minimal-valid fmtp so they isolate the rtpmap-side check from
+  -- the fmtp-side SHALLs.
+  local MIN_SMPTE291_FMTP = "a=fmtp:96 SSN=ST2110-40:2018; exactframerate=30000/1001"
+
   it("accepts m=video with smpte291/90000", function()
-    local doc = st2110.match(build("m=video 30000 RTP/AVP 96",
-                                   "a=rtpmap:96 smpte291/90000"))
+    local doc = st2110.match(build_with_fmtp(
+      "m=video 30000 RTP/AVP 96",
+      "a=rtpmap:96 smpte291/90000",
+      MIN_SMPTE291_FMTP))
     assert.is_truthy(doc)
   end)
 
@@ -381,10 +389,14 @@ describe("ST 2110-20 raw fmtp — no whitespace around '=' (ST 2110-20:2022 §7.
 
   -- NOT-SPEC: library
   it("does NOT reject whitespace-around-= for smpte291 (no narrowing applies)", function()
+    -- Phase 10.A.0.4: smpte291 has its own §7 SHALLs (SSN +
+    -- exactframerate). Include them so this test isolates the -20
+    -- whitespace narrowing from the -40 fmtp content checks.
     assert.is_truthy(st2110.match(build_with_fmtp(
       "m=video 30000 RTP/AVP 96",
       "a=rtpmap:96 smpte291/90000",
-      "a=fmtp:96 DID_SDID = {0x41,0x05}")))
+      "a=fmtp:96 DID_SDID = {0x41,0x05};"
+        .. "SSN=ST2110-40:2018;exactframerate=30000/1001")))
   end)
 
   -- NOT-SPEC: library — base tier MUST still accept what ST 2110 rejects.
@@ -479,10 +491,13 @@ describe("ST 2110-20 raw video fmtp — required parameters", function()
   -- recorded in ctx. smpte291 / jxsv / AM824 fmtps have their own required
   -- sets, not enforced here.
   it("does NOT require -20 params for smpte291 (different essence)", function()
+    -- Phase 10.A.0.4: include the smpte291 §7 required pair so this test
+    -- isolates the absence of -20 raw narrowings from the -40 SHALLs.
     assert.is_truthy(st2110.match(build_with_fmtp(
       "m=video 30000 RTP/AVP 96",
       "a=rtpmap:96 smpte291/90000",
-      "a=fmtp:96 DID_SDID={0x41,0x05}")))
+      "a=fmtp:96 DID_SDID={0x41,0x05};"
+        .. "SSN=ST2110-40:2018;exactframerate=30000/1001")))
   end)
 
   -- NOT-SPEC: library — a static-PT fmtp has no rtpmap binding, so the
@@ -652,10 +667,14 @@ describe("ST 2110-20 raw video fmtp — enum value sets", function()
   -- with an out-of-set value passes the ST 2110 tier (no -20 SHALL
   -- applies to smpte291 fmtp).
   it("does NOT validate sampling values on non-raw essences", function()
+    -- Phase 10.A.0.4: smpte291 has its own §7 SHALLs. Include the
+    -- required pair so this test isolates the absence of -20 narrowings
+    -- from the -40 SHALLs the new check enforces.
     assert.is_truthy(st2110.match(build_with_fmtp(
       "m=video 30000 RTP/AVP 96",
       "a=rtpmap:96 smpte291/90000",
-      "a=fmtp:96 sampling=BOGUS;DID_SDID={0x41,0x05}")))
+      "a=fmtp:96 sampling=BOGUS;DID_SDID={0x41,0x05};"
+        .. "SSN=ST2110-40:2018;exactframerate=30000/1001")))
   end)
 end)
 
@@ -2573,6 +2592,288 @@ describe("ST 2110-10 — TSMODE/TSDELAY fmtp value forms (Phase 10.A.0.3)", func
       -- SHALL applies only to §7.9 time-preserving senders, a classification
       -- SDP alone cannot establish.
       assert.is_truthy(st2110.match(build_raw_with_extra("TSMODE=SAMP")))
+    end)
+
+  end)
+
+end)
+
+-- ── Phase 10.A.0.4 — smpte291 fmtp SHALLs (ST 2110-40:2023 §7 + RFC 8331 §4)
+--
+-- ST 2110-40:2023 §7 — required SHALLs on smpte291 fmtp:
+--   • TM ∈ {LLTM, CTM} when present (defined value set).
+--   • SSN required + TM-conditional value: TM absent → ST2110-40:2018;
+--     TM present → ST2110-40:2023 (with :2021 accepted as equivalent per
+--     the §7 receiver-equivalence clause).
+--   • exactframerate required + value form (delegates to ST 2110-20 §7.2).
+--   • TROFF optional; value form delegates to ST 2110-21 §8.2 (positive int).
+--
+-- RFC 8331 §4 — smpte291 IANA registration:
+--   • VPID_Code present-only-once cardinality + non-negative integer value.
+--   • DID_SDID `{0xH[H],0xH[H]}` syntax; multiple occurrences permitted.
+--
+-- When the smpte291 rtpmap is present but a=fmtp is absent, the same
+-- check fires with empty params (via FMTP_REQUIRED_BY_ENCODING),
+-- emitting the SSN-required + exactframerate-required findings.
+
+describe("ST 2110-40 smpte291 — fmtp SHALLs (Phase 10.A.0.4)", function()
+
+  -- Minimal valid smpte291 fmtp (no TM signaled). SSN value selects the
+  -- TM-absent branch of §7's value form; exactframerate satisfies the
+  -- §7 required-presence SHALL.
+  local MIN_SMPTE291_FMTP = "a=fmtp:96 SSN=ST2110-40:2018; exactframerate=30000/1001"
+
+  local function smpte291_with(fmtp_line)
+    return build_with_fmtp(
+      "m=video 30000 RTP/AVP 96",
+      "a=rtpmap:96 smpte291/90000",
+      fmtp_line)
+  end
+
+  local function smpte291_without_fmtp()
+    return build(
+      "m=video 30000 RTP/AVP 96",
+      "a=rtpmap:96 smpte291/90000")
+  end
+
+  describe("required-presence (§7)", function()
+
+    it("accepts the minimal fmtp with SSN + exactframerate", function()
+      assert.is_truthy(st2110.match(smpte291_with(MIN_SMPTE291_FMTP)))
+    end)
+
+    it("rejects when no fmtp is present (rtpmap-requires-fmtp)", function()
+      local doc, ctx = st2110.match(smpte291_without_fmtp())
+      assert.is_nil(doc)
+      assert.is_not_nil(finding_for(ctx, "st2110-40.a.fmtp.ssn-required"))
+    end)
+
+    it("rejects fmtp without SSN", function()
+      local doc, ctx = st2110.match(smpte291_with(
+        "a=fmtp:96 exactframerate=30000/1001"))
+      assert.is_nil(doc)
+      local f = finding_for(ctx, "st2110-40.a.fmtp.ssn-required")
+      assert.is_not_nil(f)
+      assert.equal("ST 2110-40:2023 §7", f.spec_ref)
+    end)
+
+    it("rejects fmtp without exactframerate", function()
+      local doc, ctx = st2110.match(smpte291_with(
+        "a=fmtp:96 SSN=ST2110-40:2018"))
+      assert.is_nil(doc)
+      assert.is_not_nil(finding_for(ctx,
+        "st2110-40.a.fmtp.exactframerate-required"))
+    end)
+
+  end)
+
+  describe("TM value enum (§7)", function()
+
+    it("accepts TM=LLTM (paired with SSN=ST2110-40:2023)", function()
+      assert.is_truthy(st2110.match(smpte291_with(
+        "a=fmtp:96 TM=LLTM; SSN=ST2110-40:2023; exactframerate=30000/1001")))
+    end)
+
+    it("accepts TM=CTM (paired with SSN=ST2110-40:2023)", function()
+      assert.is_truthy(st2110.match(smpte291_with(
+        "a=fmtp:96 TM=CTM; SSN=ST2110-40:2023; exactframerate=30000/1001")))
+    end)
+
+    it("rejects TM=BOGUS", function()
+      local doc, ctx = st2110.match(smpte291_with(
+        "a=fmtp:96 TM=BOGUS; SSN=ST2110-40:2023; exactframerate=30000/1001"))
+      assert.is_nil(doc)
+      local f = finding_for(ctx, "st2110-40.a.fmtp.tm-invalid-value")
+      assert.is_not_nil(f)
+      assert.equal("ST 2110-40:2023 §7", f.spec_ref)
+      assert.equal("BOGUS", f.context.value)
+    end)
+
+  end)
+
+  describe("SSN value (§7) with TM-conditional + 2021 receiver-equivalence", function()
+
+    it("accepts SSN=ST2110-40:2018 when TM is absent", function()
+      assert.is_truthy(st2110.match(smpte291_with(MIN_SMPTE291_FMTP)))
+    end)
+
+    it("accepts SSN=ST2110-40:2023 when TM is signaled", function()
+      assert.is_truthy(st2110.match(smpte291_with(
+        "a=fmtp:96 TM=LLTM; SSN=ST2110-40:2023; exactframerate=30000/1001")))
+    end)
+
+    it("accepts SSN=ST2110-40:2021 when TM is signaled (receiver-equivalence)", function()
+      -- §7: "Receivers shall consider a Format Specific Parameter SSN
+      -- value of ST2110-40:2021 as equivalent to a value of
+      -- ST2110-40:2023."
+      assert.is_truthy(st2110.match(smpte291_with(
+        "a=fmtp:96 TM=LLTM; SSN=ST2110-40:2021; exactframerate=30000/1001")))
+    end)
+
+    it("rejects SSN=ST2110-40:2018 when TM is signaled", function()
+      local doc, ctx = st2110.match(smpte291_with(
+        "a=fmtp:96 TM=LLTM; SSN=ST2110-40:2018; exactframerate=30000/1001"))
+      assert.is_nil(doc)
+      assert.is_not_nil(finding_for(ctx, "st2110-40.a.fmtp.ssn-invalid-value"))
+    end)
+
+    it("rejects SSN=ST2110-40:2023 when TM is absent", function()
+      local doc, ctx = st2110.match(smpte291_with(
+        "a=fmtp:96 SSN=ST2110-40:2023; exactframerate=30000/1001"))
+      assert.is_nil(doc)
+      assert.is_not_nil(finding_for(ctx, "st2110-40.a.fmtp.ssn-invalid-value"))
+    end)
+
+    it("rejects SSN=ST2110-40:2021 when TM is absent (no equivalence here)", function()
+      -- The §7 receiver-equivalence is tied to ":2023's value", which
+      -- only applies when TM is signaled. Bare :2021 without TM has no
+      -- equivalence and is invalid.
+      local doc, ctx = st2110.match(smpte291_with(
+        "a=fmtp:96 SSN=ST2110-40:2021; exactframerate=30000/1001"))
+      assert.is_nil(doc)
+      assert.is_not_nil(finding_for(ctx, "st2110-40.a.fmtp.ssn-invalid-value"))
+    end)
+
+    it("rejects malformed SSN year", function()
+      local doc, ctx = st2110.match(smpte291_with(
+        "a=fmtp:96 SSN=ST2110-40:9999; exactframerate=30000/1001"))
+      assert.is_nil(doc)
+      assert.is_not_nil(finding_for(ctx, "st2110-40.a.fmtp.ssn-invalid-value"))
+    end)
+
+  end)
+
+  describe("exactframerate value form (§7 delegates to ST 2110-20 §7.2)", function()
+
+    it("accepts an integer fps", function()
+      assert.is_truthy(st2110.match(smpte291_with(
+        "a=fmtp:96 SSN=ST2110-40:2018; exactframerate=60")))
+    end)
+
+    it("accepts a positive fraction in lowest terms", function()
+      assert.is_truthy(st2110.match(smpte291_with(
+        "a=fmtp:96 SSN=ST2110-40:2018; exactframerate=30000/1001")))
+    end)
+
+    it("rejects a non-lowest-terms fraction", function()
+      local doc, ctx = st2110.match(smpte291_with(
+        "a=fmtp:96 SSN=ST2110-40:2018; exactframerate=60000/2002"))
+      assert.is_nil(doc)
+      assert.is_not_nil(finding_for(ctx,
+        "st2110-40.a.fmtp.exactframerate-invalid-value"))
+    end)
+
+  end)
+
+  describe("TROFF value form (§7 delegates to ST 2110-21 §8.2)", function()
+
+    it("accepts TROFF=12345", function()
+      assert.is_truthy(st2110.match(smpte291_with(
+        "a=fmtp:96 SSN=ST2110-40:2018; exactframerate=30000/1001; TROFF=12345")))
+    end)
+
+    it("rejects TROFF=0 (must be positive)", function()
+      local doc, ctx = st2110.match(smpte291_with(
+        "a=fmtp:96 SSN=ST2110-40:2018; exactframerate=30000/1001; TROFF=0"))
+      assert.is_nil(doc)
+      assert.is_not_nil(finding_for(ctx, "st2110-40.a.fmtp.troff-invalid-value"))
+    end)
+
+    it("rejects TROFF=-1", function()
+      local doc, ctx = st2110.match(smpte291_with(
+        "a=fmtp:96 SSN=ST2110-40:2018; exactframerate=30000/1001; TROFF=-1"))
+      assert.is_nil(doc)
+      assert.is_not_nil(finding_for(ctx, "st2110-40.a.fmtp.troff-invalid-value"))
+    end)
+
+  end)
+
+  describe("VPID_Code cardinality + value form (RFC 8331 §4)", function()
+
+    it("accepts a single VPID_Code", function()
+      assert.is_truthy(st2110.match(smpte291_with(
+        "a=fmtp:96 SSN=ST2110-40:2018; exactframerate=30000/1001; VPID_Code=132")))
+    end)
+
+    it("rejects two VPID_Code occurrences (§4 'shall appear only once')", function()
+      local doc, ctx = st2110.match(smpte291_with(
+        "a=fmtp:96 SSN=ST2110-40:2018; exactframerate=30000/1001;"
+          .. " VPID_Code=132; VPID_Code=133"))
+      assert.is_nil(doc)
+      local f = finding_for(ctx, "st2110-40.a.fmtp.vpid-code-too-many")
+      assert.is_not_nil(f)
+      assert.equal("RFC 8331 §4", f.spec_ref)
+      assert.equal(2, f.context.count)
+    end)
+
+    it("rejects a non-numeric VPID_Code", function()
+      local doc, ctx = st2110.match(smpte291_with(
+        "a=fmtp:96 SSN=ST2110-40:2018; exactframerate=30000/1001;"
+          .. " VPID_Code=oops"))
+      assert.is_nil(doc)
+      assert.is_not_nil(finding_for(ctx,
+        "st2110-40.a.fmtp.vpid-code-invalid-value"))
+    end)
+
+    it("rejects a negative VPID_Code", function()
+      local doc, ctx = st2110.match(smpte291_with(
+        "a=fmtp:96 SSN=ST2110-40:2018; exactframerate=30000/1001;"
+          .. " VPID_Code=-1"))
+      assert.is_nil(doc)
+      assert.is_not_nil(finding_for(ctx,
+        "st2110-40.a.fmtp.vpid-code-invalid-value"))
+    end)
+
+  end)
+
+  describe("DID_SDID value form (RFC 8331 §4)", function()
+
+    it("accepts a single DID_SDID in TwoHex form", function()
+      assert.is_truthy(st2110.match(smpte291_with(
+        "a=fmtp:96 SSN=ST2110-40:2018; exactframerate=30000/1001;"
+          .. " DID_SDID={0x41,0x05}")))
+    end)
+
+    it("accepts a one-hex-digit value (TwoHex = '0x' 1*2(HEXDIG))", function()
+      assert.is_truthy(st2110.match(smpte291_with(
+        "a=fmtp:96 SSN=ST2110-40:2018; exactframerate=30000/1001;"
+          .. " DID_SDID={0x4,0x5}")))
+    end)
+
+    it("accepts multiple DID_SDID occurrences (§4 explicitly permits)", function()
+      assert.is_truthy(st2110.match(smpte291_with(
+        "a=fmtp:96 SSN=ST2110-40:2018; exactframerate=30000/1001;"
+          .. " DID_SDID={0x61,0x02}; DID_SDID={0x41,0x05}")))
+    end)
+
+    it("rejects DID_SDID missing the 0x prefix", function()
+      local doc, ctx = st2110.match(smpte291_with(
+        "a=fmtp:96 SSN=ST2110-40:2018; exactframerate=30000/1001;"
+          .. " DID_SDID={41,05}"))
+      assert.is_nil(doc)
+      assert.is_not_nil(finding_for(ctx,
+        "st2110-40.a.fmtp.did-sdid-invalid-value"))
+    end)
+
+    it("rejects DID_SDID with too many hex digits", function()
+      local doc, ctx = st2110.match(smpte291_with(
+        "a=fmtp:96 SSN=ST2110-40:2018; exactframerate=30000/1001;"
+          .. " DID_SDID={0x123,0x05}"))
+      assert.is_nil(doc)
+      assert.is_not_nil(finding_for(ctx,
+        "st2110-40.a.fmtp.did-sdid-invalid-value"))
+    end)
+
+  end)
+
+  describe("policy interaction", function()
+
+    it("policy = 'off' bypasses SSN-required", function()
+      local doc, ctx = st2110.match(
+        smpte291_with("a=fmtp:96 exactframerate=30000/1001"),
+        { policy = { ["st2110-40.a.fmtp.ssn-required"] = "off" } })
+      assert.is_table(doc)
+      assert.is_nil(finding_for(ctx, "st2110-40.a.fmtp.ssn-required"))
     end)
 
   end)

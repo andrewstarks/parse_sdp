@@ -15,6 +15,53 @@ parser remains the shipping artifact on `main`.
 
 ### Added
 
+- **Phase 10.A.0.4:** ported the RFC 8331 §4 + ST 2110-40:2023 §7
+  smpte291 fmtp SHALLs the grammar tier had silently dropped. The
+  failing `nmos-testing:data.sdp` conformance fixture (no `a=fmtp` on
+  its smpte291 block — expected to be rejected per §7) now rejects
+  correctly; `busted spec_conformance/` returns to green.
+  
+  9 new error ids, all under the `st2110-40.a.fmtp.*` composition
+  layer:
+  
+  - `vpid-code-too-many` — RFC 8331 §4: *"If the optional parameter
+    VPID_Code is present, it SHALL be present only once."*
+  - `vpid-code-invalid-value` — RFC 8331 §4: single non-negative integer.
+  - `did-sdid-invalid-value` — RFC 8331 §4 syntax `{0xH[H],0xH[H]}`
+    (TwoHex per §4 ABNF). Multiple occurrences permitted.
+  - `tm-invalid-value` — ST 2110-40:2023 §7: TM ∈ {LLTM, CTM} (defined
+    value set).
+  - `ssn-required` / `ssn-invalid-value` — ST 2110-40:2023 §7: SSN
+    required; TM-conditional value with the §7 receiver-equivalence
+    clause (ST2110-40:2021 accepted as equivalent to :2023 when TM is
+    signaled).
+  - `exactframerate-required` — ST 2110-40:2023 §7: required.
+  - `exactframerate-invalid-value` — value form delegated to ST
+    2110-20:2022 §7.2 (positive integer or positive n/d in lowest terms).
+  - `troff-invalid-value` — value form delegated to ST 2110-21:2022 §8.2
+    (positive integer; TROFF=0 rejected per PLAN.md Known Deferred Items).
+  
+  New `check_smpte291_fmtp` + `smpte291 =` entries in both
+  `FMTP_CHECKS_BY_ENCODING` (per-line dispatch) and
+  `FMTP_REQUIRED_BY_ENCODING` (rtpmap-requires-fmtp fallback for the
+  no-fmtp case). LPeg-grammared `DID_SDID_PAT` for the TwoHex shape; new
+  Lua-helpered `validate_ssn40` / `validate_troff` / `validate_vpid_code`
+  matching the surrounding pattern. 30 new tests in
+  `spec/grammar_st2110_spec.lua` (required-presence × 4; TM × 3;
+  SSN × 7; exactframerate × 3; TROFF × 3; VPID_Code × 4; DID_SDID × 5;
+  policy × 1).
+  
+  Test-fixture updates: four pre-existing tests (smpte291 rtpmap
+  narrowings; whitespace-around-= scope; -20 raw-required-params scope;
+  -20 sampling-enum scope) carried a no-fmtp or minimal-fmtp smpte291
+  block to demonstrate that -20 narrowings don't apply. Each now
+  includes the §7 minimum (`SSN=ST2110-40:2018; exactframerate=30000/1001`)
+  so the test isolates the absence of the -20 narrowing from the new
+  -40 SHALLs. Suite 1135 green (was 1105); `busted spec_conformance/`
+  10/10 green (was 9 + 1 error).
+
+  Audit ref: REFACTOR-PLAN.md §5 Phase 10.A.0.
+
 - **Phase 10.A.0.3:** ported the ST 2110-10:2022 §8.7 TSMODE / TSDELAY
   value-form SHALLs the grammar tier had silently dropped. §8.7:
   "Allowed values are: TSMODE=SAMP / TSMODE=NEW / TSMODE=PRES" — a

@@ -579,6 +579,135 @@ local function validate_dit(v)
   return _dit_pat:match(v) ~= nil
 end
 
+-- ── smpte291 fmtp checks (Phase 10.A.0.4) ─────────────────────────────────
+-- ST 2110-40:2023 §7 + RFC 8331 §4 SHALLs for ANC data fmtp.
+
+-- DID_SDID = `{0xH[H],0xH[H]}` per RFC 8331 §4 (TwoHex = "0x" 1*2(HEXDIG)).
+local _hex     = lpeg.R("09", "af", "AF")
+local _twohex  = lpeg.P("0x") * _hex * _hex ^ -1
+local DID_SDID_PAT = lpeg.P("{") * _twohex * lpeg.P(",") * _twohex * lpeg.P("}")
+                  * lpeg.P(-1)
+
+local function validate_did_sdid(v)
+  return DID_SDID_PAT:match(v) ~= nil
+end
+
+local function validate_vpid_code(v)
+  -- Single integer; non-negative per the SMPTE ST 352M code field.
+  return patterns.zero_based_int:match(v) ~= nil
+end
+
+local VALID_TM = { LLTM = true, CTM = true }
+
+-- §7: SSN required + value depends on TM presence; ST2110-40:2021 is
+-- accepted as equivalent to :2023 when TM is signaled (receiver-equivalence
+-- clause). When TM is absent the value MUST be ST2110-40:2018.
+local function validate_ssn40(v, tm_signaled)
+  if tm_signaled then
+    return v == "ST2110-40:2023" or v == "ST2110-40:2021"
+  end
+  return v == "ST2110-40:2018"
+end
+
+-- §7 delegates TROFF value form to ST 2110-21:2022 §8.2: positive integer.
+local function validate_troff(v)
+  return patterns.pos_int:match(v) ~= nil
+end
+
+local function check_smpte291_fmtp(params, ctx, pos, field_path, _encoding)
+  -- RFC 8331 §4 — VPID_Code cardinality + value form.
+  local vpid_first
+  local vpid_count = 0
+  for _, e in ipairs(params or {}) do
+    if e[1] == "VPID_Code" then
+      vpid_count = vpid_count + 1
+      vpid_first = vpid_first or e[2]
+    end
+  end
+  if vpid_count > 1 then
+    local cont = errors.record(ctx,
+      "st2110-40.a.fmtp.vpid-code-too-many",
+      { pos = pos, field_path = field_path,
+        context = { count = vpid_count } })
+    if not cont then return false end
+  end
+  if vpid_first ~= nil and vpid_first ~= true
+      and not validate_vpid_code(tostring(vpid_first)) then
+    local cont = errors.record(ctx,
+      "st2110-40.a.fmtp.vpid-code-invalid-value",
+      { pos = pos, field_path = field_path,
+        context = { value = tostring(vpid_first) } })
+    if not cont then return false end
+  end
+
+  -- RFC 8331 §4 — every DID_SDID occurrence must match the TwoHex form.
+  for _, e in ipairs(params or {}) do
+    if e[1] == "DID_SDID" and e[2] ~= true and not validate_did_sdid(tostring(e[2])) then
+      local cont = errors.record(ctx,
+        "st2110-40.a.fmtp.did-sdid-invalid-value",
+        { pos = pos, field_path = field_path,
+          context = { value = tostring(e[2]) } })
+      if not cont then return false end
+    end
+  end
+
+  -- ST 2110-40:2023 §7 — TM value enum (when present).
+  local tm = base.params_get(params, "TM")
+  if tm ~= nil and tm ~= true and not VALID_TM[tostring(tm)] then
+    local cont = errors.record(ctx,
+      "st2110-40.a.fmtp.tm-invalid-value",
+      { pos = pos, field_path = field_path,
+        context = { value = tostring(tm) } })
+    if not cont then return false end
+  end
+
+  -- ST 2110-40:2023 §7 — SSN required + value form (TM-conditional;
+  -- receiver-equivalence accepts :2021 wherever :2023 is required).
+  local ssn = base.params_get(params, "SSN")
+  local tm_signaled = (tm ~= nil and tm ~= true)
+  if ssn == nil then
+    local cont = errors.record(ctx,
+      "st2110-40.a.fmtp.ssn-required",
+      { pos = pos, field_path = field_path })
+    if not cont then return false end
+  elseif ssn ~= true and not validate_ssn40(tostring(ssn), tm_signaled) then
+    local cont = errors.record(ctx,
+      "st2110-40.a.fmtp.ssn-invalid-value",
+      { pos = pos, field_path = field_path,
+        context = { value = tostring(ssn), tm_signaled = tm_signaled } })
+    if not cont then return false end
+  end
+
+  -- ST 2110-40:2023 §7 — exactframerate required + value form
+  -- (delegates to ST 2110-20:2022 §7.2 form via validate_exactframerate).
+  local efr = base.params_get(params, "exactframerate")
+  if efr == nil then
+    local cont = errors.record(ctx,
+      "st2110-40.a.fmtp.exactframerate-required",
+      { pos = pos, field_path = field_path })
+    if not cont then return false end
+  elseif efr ~= true and not validate_exactframerate(tostring(efr)) then
+    local cont = errors.record(ctx,
+      "st2110-40.a.fmtp.exactframerate-invalid-value",
+      { pos = pos, field_path = field_path,
+        context = { value = tostring(efr) } })
+    if not cont then return false end
+  end
+
+  -- ST 2110-40:2023 §7 — TROFF optional; when present, value form
+  -- delegates to ST 2110-21:2022 §8.2 (positive integer).
+  local troff = base.params_get(params, "TROFF")
+  if troff ~= nil and troff ~= true and not validate_troff(tostring(troff)) then
+    local cont = errors.record(ctx,
+      "st2110-40.a.fmtp.troff-invalid-value",
+      { pos = pos, field_path = field_path,
+        context = { value = tostring(troff) } })
+    if not cont then return false end
+  end
+
+  return true
+end
+
 local function check_st2110_41_fmtp(params, ctx, pos, field_path)
   -- §6: SSN required.
   local ssn = base.params_get(params, "SSN")
@@ -1064,6 +1193,7 @@ local FMTP_CHECKS_BY_ENCODING = {
   L24   = { check_audio_fmtp_channel_order, check_audio_maxudp_forbidden },
   AM824 = { check_audio_fmtp_channel_order },
   ["ST2110-41"] = { check_st2110_41_fmtp },
+  smpte291 = { check_smpte291_fmtp },
 }
 
 -- Dispatch contract: each check is invoked as
@@ -1105,6 +1235,7 @@ local FMTP_REQUIRED_BY_ENCODING = {
   raw           = check_raw_video_fmtp,
   jxsv          = check_jxsv_fmtp,
   ["ST2110-41"] = check_st2110_41_fmtp,
+  smpte291      = check_smpte291_fmtp,
 }
 
 local function check_rtpmap_requires_fmtp(block, ctx)
