@@ -260,6 +260,32 @@ The validator drives the loop, but if you want a static reference for which attr
 
 The doc shape for hand-built attributes (which keys are decomposed vs which keep `value`) is in [Parsed Table Structure](#parsed-table-structure) and [`sdp.new`](#sdpnewtable).
 
+### Kitchen-sink references
+
+A producer asking "what every Lua-table field looks like for every line type and attribute" should read these four runnable examples — read them in order, each layer adds onto the previous:
+
+| File | Covers | Asserts |
+| --- | --- | --- |
+| [`examples/kitchen_sink.lua`](examples/kitchen_sink.lua) | RFC 8866 line types + cross-RFC base attributes (rtpmap, fmtp, ssrc, ssrc-group, msid, extmap, rtcp, rtcp-fb, rtcp-mux, source-filter, mid, group, ts-refclk, mediaclk) + a forward-compat `x-vendor-*` attribute | `parse → serialize → re-parse` deep-equal |
+| [`examples/kitchen_sink_st2110.lua`](examples/kitchen_sink_st2110.lua) | ST 2110-{10,20,21,22,30,40,41}: raw video + JPEG-XS + L24 audio + smpte291 ancillary + ST 2110-41 fast metadata in one doc; ST 2110-20 / -21 mandatory + optional fmtp params; TSMODE / TSDELAY; a=group:DUP redundancy pair | `is_st2110()` + round-trip |
+| [`examples/kitchen_sink_ipmx.lua`](examples/kitchen_sink_ipmx.lua) | IPMX deltas on top of ST 2110: TR-10-1 IPMX flag + measurement params, TR-10-TP-1 per-block a=source-filter, TR-10-10 a=infoframe, TR-10-5 a=hkep, TR-10-13 a=privacy, TR-10-6 FECPROFILE | `is_ipmx()` + round-trip |
+| [`examples/kitchen_sink_conflicts.lua`](examples/kitchen_sink_conflicts.lua) | Eight tiny per-conflict SDP fixtures for combinations the three valid sinks above can't show together (e.g. RFC 7273 traceable / non-traceable mix, ST 2110-10 §8.3 session-level mediaclk, TR-10-1 §10.1 missing IPMX flag) | Each fixture asserts a structured rejection with the expected `err.id` and `err.spec_ref` |
+
+Every field in each file carries an inline citation to its source RFC / SMPTE / TR-10 clause + a one-line description of the field's role, so the files double as a producer-side reference for "which Lua keys does this attribute expect, and where does the spec say so."
+
+#### Hex values in the Lua table
+
+SDP itself is a text format, so every "hex value" the specs reference is encoded as a *string* on the wire and passed through the Lua table as a string too. The library never converts hex-formatted SDP values to or from Lua numbers — the spec gives them structure (separators, length, prefixes) that a bare number would lose. Four hex shapes appear across the kitchen sinks:
+
+| Shape | Where it appears | Example | Demo'd in |
+| --- | --- | --- | --- |
+| Dash-separated octets (EUI-64 / EUI-48) | `ts-refclk:ptp=` grandmaster, `mediaclk:IEEE1722=` stream id, `ts-refclk:localmac=`, IPMX `a=hkep` port_id | `"00-11-22-FF-FE-33-44-55"` | base, ST 2110, IPMX |
+| UUID dashed form (32 hex) | IPMX `a=hkep` node_id | `"00112233-4455-6677-8899-aabbccddeeff"` | IPMX |
+| Bare fixed-length hex string | IPMX `a=privacy` iv (16) / key_generator (32) / key_version (8) / key_id (16) | `"0123456789ABCDEF"` | IPMX |
+| `0x`-prefixed octet pairs in braces | `a=fmtp DID_SDID` per RFC 8331 §4 | `"{0x41,0x07}"` | ST 2110 |
+
+The only places a Lua-numeric type is in play are *decimal* fields (ports, payload types, ssrc_id, sample counts, sequence numbers).
+
 ---
 
 ## API Reference

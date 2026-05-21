@@ -55,7 +55,13 @@ Post-1.1.1 doc add: GUIDE.md gains a "Producer Workflow" section for
 device manufacturers and SDK developers emitting SDP — the
 build-then-validate loop with a worked ST 2110-20 sender that uses the
 validator's own error messages to drive each step. Runnable companion
-at `examples/producer_walkthrough.lua`.
+at `examples/producer_walkthrough.lua`. Plus four runnable "kitchen
+sink" references: `examples/kitchen_sink.lua` (RFC 8866 + base RFC
+extensions), `examples/kitchen_sink_st2110.lua` (every ST 2110
+attribute, asserts is_st2110), `examples/kitchen_sink_ipmx.lua`
+(every IPMX TR-10 extension, asserts is_ipmx),
+`examples/kitchen_sink_conflicts.lua` (eight per-conflict micro
+fixtures for forbidden combinations).
 
 The grammar-first refactor on branch `refactor/grammar-first` is
 **complete**. Phases 4 + 5 closed; **Phase 6 (all of 6.A–6.L except

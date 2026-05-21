@@ -22,6 +22,37 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
   tables already in the guide rather than duplicating them.
 - `examples/producer_walkthrough.lua` — runnable companion that mirrors
   the GUIDE section step for step and prints the emitted SDP.
+- **Four kitchen-sink reference examples** for producers who need to
+  see every field/attribute shape the library knows about:
+  - [`examples/kitchen_sink.lua`](examples/kitchen_sink.lua) — every
+    RFC 8866 line type + every base-tier decomposed attribute (rtpmap,
+    fmtp, ssrc, ssrc-group, msid, extmap, rtcp, rtcp-fb, rtcp-mux,
+    source-filter, mid, group, ts-refclk, mediaclk) + a forward-compat
+    `x-vendor-*` attribute. Self-validating: `parse → serialize →
+    re-parse → deep-equal`.
+  - [`examples/kitchen_sink_st2110.lua`](examples/kitchen_sink_st2110.lua)
+    — every ST 2110 attribute and parameter on one doc with six media
+    blocks (raw video DUP pair, JPEG-XS, L24 audio, smpte291 ANC, ST
+    2110-41 fast metadata). Asserts `is_st2110()` and round-trip.
+  - [`examples/kitchen_sink_ipmx.lua`](examples/kitchen_sink_ipmx.lua)
+    — IPMX deltas on top of ST 2110: TR-10-1 IPMX flag + measurement
+    params, TR-10-TP-1 per-block a=source-filter, TR-10-10 a=infoframe,
+    TR-10-5 a=hkep, TR-10-13 a=privacy, TR-10-6 FECPROFILE. Asserts
+    `is_ipmx()` and round-trip.
+  - [`examples/kitchen_sink_conflicts.lua`](examples/kitchen_sink_conflicts.lua)
+    — eight tiny per-conflict SDP fixtures for combinations the valid
+    sinks above can't show together (RFC 7273 traceable / non-traceable
+    mix, ST 2110-10 §8.3 session-level mediaclk, ST 2110-20 §7 BPM+MAXUDP,
+    TR-10-1 §10.1 missing IPMX flag, TR-10-2 §7 odd UDP port,
+    RFC 8866 §5.7 IPv4 multicast without TTL, RFC 8866 §9 malformed
+    IPv4, RFC 7273 §4.8 5-octet PTP GMID — the conflict the 1.1.1
+    fix restored). Each fixture asserts a structured rejection with
+    the expected `err.id` and `err.spec_ref`.
+- **GUIDE.md "Kitchen-sink references"** subsection under Producer
+  Workflow pointing at all four files, including a table of the four
+  hex-formatting conventions SDP uses across them (dash-separated
+  octets, UUID-dashed, bare fixed-length, `0x`-prefixed RFC 8331
+  octet pairs).
 
 ## [1.1.1] — 2026-05-21
 
