@@ -209,11 +209,19 @@ local doc = sdp.new({
   session = {
     name = "My Session",
     time_descriptions = { { start=0, stop=0, repeats={} } },
-    emails={}, phones={}, bandwidths={}, attributes={},
+    -- emails / phones / bandwidths / attributes can be {} or omitted —
+    -- absence and an empty array are equivalent for serialization.
   },
   media   = {},
 })
 ```
+
+Array-typed session fields (`emails`, `phones`, `bandwidths`, `attributes`)
+and the corresponding per-media-block fields are all optional in
+RFC 8866. The library accepts both nil and `{}` interchangeably:
+`sdp.parse(text)` returns empty tables when the corresponding lines are
+absent, and `doc:to_sdp()` renders nothing for either nil or `{}`. So a
+hand-built doc that omits these fields entirely round-trips cleanly.
 
 #### `sdp.checks()` / `sdp.default_policy()`
 
