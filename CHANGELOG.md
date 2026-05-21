@@ -9,6 +9,20 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 
+### Documentation
+
+- **GUIDE.md gains a "Producer Workflow" section** covering the
+  build-then-validate loop for device manufacturers and SDK developers
+  emitting SDP — empty table → `to_sdp()` for structural gaps →
+  `doc:validate(tier)` for spec gaps, iterating until `is_<tier>()`
+  returns `true`. Walks an ST 2110-20 1080p25 sender end-to-end with
+  the real error message produced at each step; notes the IPMX delta;
+  documents the policy-demotion pattern for prototyping against
+  not-yet-provisioned values. Cross-references the per-tier reference
+  tables already in the guide rather than duplicating them.
+- `examples/producer_walkthrough.lua` — runnable companion that mirrors
+  the GUIDE section step for step and prints the emitted SDP.
+
 ## [1.1.1] — 2026-05-21
 
 Patch release. Restores a strict-validation guarantee that regressed in

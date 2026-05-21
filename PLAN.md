@@ -51,6 +51,12 @@ negative-lookahead guard on `tsr_ext` (the same discipline
 `known_attr_lookahead` uses at the `a=` level). `examples/examples.lua`
 also synced to the 1.1 decomposed doc shape — see CHANGELOG.
 
+Post-1.1.1 doc add: GUIDE.md gains a "Producer Workflow" section for
+device manufacturers and SDK developers emitting SDP — the
+build-then-validate loop with a worked ST 2110-20 sender that uses the
+validator's own error messages to drive each step. Runnable companion
+at `examples/producer_walkthrough.lua`.
+
 The grammar-first refactor on branch `refactor/grammar-first` is
 **complete**. Phases 4 + 5 closed; **Phase 6 (all of 6.A–6.L except
 the deferred 6.I) closed; Phase 7 (7.A–7.L IPMX tier composition

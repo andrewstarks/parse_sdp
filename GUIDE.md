@@ -6,14 +6,15 @@
 2. [Background: SDP, ST 2110, and IPMX](#background)
 3. [Installation](#installation)
 4. [Quick Start](#quick-start)
-5. [API Reference](#api-reference)
-6. [CLI Reference](#cli-reference)
-7. [Parsed Table Structure](#parsed-table-structure)
-8. [Error Handling](#error-handling)
-9. [ST 2110 Validation](#st-2110-validation)
-10. [IPMX Validation](#ipmx-validation)
-11. [Serialization](#serialization)
-12. [Test Suite Organization](#test-suite-organization)
+5. [Producer Workflow — Building SDP for a Stream Sender](#producer-workflow)
+6. [API Reference](#api-reference)
+7. [CLI Reference](#cli-reference)
+8. [Parsed Table Structure](#parsed-table-structure)
+9. [Error Handling](#error-handling)
+10. [ST 2110 Validation](#st-2110-validation)
+11. [IPMX Validation](#ipmx-validation)
+12. [Serialization](#serialization)
+13. [Test Suite Organization](#test-suite-organization)
 
 ---
 
@@ -141,6 +142,123 @@ io.open("out.sdp", "w"):write(out)
 -- Or get JSON
 print(doc:to_json())
 ```
+
+---
+
+## Producer Workflow
+
+If you are a device manufacturer or SDK developer **producing** SDP — not just parsing it — the library is designed to be your build-time validator. The intended loop:
+
+```text
+1. Build a Lua table (sdp.new) or mutate an existing doc.
+2. doc:to_sdp()        → structural gaps (missing required fields).
+3. doc:validate(mode)  → spec-violation gaps (wrong values, missing
+                         per-tier attributes, value-form errors).
+4. Fix the gap the error points at.
+5. Repeat until is_<tier>() == true. Emit.
+```
+
+**Two checkers, two questions.** `to_sdp()` answers *"can I render this at all?"* — it fails only on missing required fields. `validate()` answers *"does this conform to the tier I'm targeting?"* — it runs the full grammar + per-tier semantic checks. Use them together: `to_sdp()` keeps you honest about doc shape as you build, `validate()` tells you which spec clause to read next.
+
+### Worked example: ST 2110-20 video sender
+
+Build a 1080p25 raw video sender from an empty table. Run after each step — the error message is the next thing to add. (See [`examples/producer_walkthrough.lua`](examples/producer_walkthrough.lua) for the runnable version.)
+
+```lua
+local sdp = require("parse_sdp")
+
+-- Step 1: empty doc — to_sdp tells you the top-level shape it needs.
+sdp.new({}):to_sdp()
+-- → nil, "cannot serialize: missing required field session"
+
+-- Step 2: minimal session — passes RFC 8866 and ST 2110 because there
+-- are no media blocks yet. Adding a stream is where the per-tier
+-- SHALLs kick in.
+local doc = sdp.new({
+  version = "0",
+  origin  = { username="-", sess_id="1", sess_version="1",
+              net_type="IN", addr_type="IP4", unicast_address="192.0.2.1" },
+  session = {
+    name = "Camera 1",
+    time_descriptions = { { start=0, stop=0, repeats={} } },
+  },
+  media = {},
+})
+-- doc:validate("st2110") → OK
+
+-- Step 3: bare m= block — RFC 8866 §6.5 dynamic PT 96 needs rtpmap.
+doc.media[1] = {
+  media = "video", port = 50000, proto = "RTP/AVP", fmts = { "96" },
+  connection = { net_type="IN", addr_type="IP4", address="239.0.0.1/64" },
+  attributes = {},
+}
+-- doc:validate() → dynamic RTP payload type (96-127) requires a matching a=rtpmap
+
+-- Step 4: + rtpmap. Now ST 2110-20 §7.2 fmtp is on deck.
+table.insert(doc.media[1].attributes,
+  { name="rtpmap", payload_type=96, encoding="raw", clock_rate=90000 })
+-- doc:validate("st2110") → fmtp for raw video must include required 'sampling' parameter
+
+-- Step 5: + fmtp. Required params per ST 2110-20 §7.2 + ST 2110-21 §8.1.
+table.insert(doc.media[1].attributes, {
+  name="fmtp", payload_type=96,
+  params = {
+    {"sampling","YCbCr-4:2:2"}, {"width","1920"}, {"height","1080"},
+    {"exactframerate","25"},    {"depth","10"},   {"colorimetry","BT709"},
+    {"PM","2110GPM"},           {"SSN","ST2110-20:2022"}, {"TP","2110TPN"},
+  },
+})
+-- doc:validate("st2110") → media block must include a media-level 'a=mediaclk' attribute
+
+-- Step 6: + ts-refclk + mediaclk (ST 2110-10 §8.2 / §8.3, RFC 7273).
+table.insert(doc.media[1].attributes,
+  { name="ts-refclk", source="ptp", version="IEEE1588-2008",
+    grandmaster="00-1D-9A-FF-FE-2C-32-0F", domain="0" })
+table.insert(doc.media[1].attributes,
+  { name="mediaclk", mode="direct", offset=0 })
+-- doc:is_st2110() → true.   doc:to_sdp() emits a conforming ST 2110 SDP.
+```
+
+The pattern is the same every step: read the error, add the field, re-run. You never have to look up "what do I need next" — the validator tells you, with a citable `spec_ref` for the clause.
+
+### IPMX delta
+
+IPMX adds further required attributes beyond ST 2110 — measurement parameters on the video fmtp, per-block `a=source-filter`, etc. Same loop applies:
+
+```lua
+local ok, err = doc:validate("ipmx")
+-- err.id       → tr-10-1.a.fmtp.measuredpixclk-required
+-- err.message  → a=fmtp on a video IPMX media block must include 'measuredpixclk'
+-- err.spec_ref → TR-10-1 §10.2
+```
+
+Add `measuredpixclk`, `vtotal`, `htotal` to the fmtp `params`, add `a=source-filter` per TR-10-TP-1 §13.2, re-validate. The [IPMX Validation](#ipmx-validation) section is the per-clause reference; the producer loop turns it into a checklist driven by your own SDP.
+
+### Iterating with malformed-but-known values
+
+While wiring up provisioning code that doesn't yet have, say, a real PTP grandmaster ID, you may want to render and inspect the SDP without the GMID check failing the parse. Demote the check via policy:
+
+```lua
+local doc, err = sdp.parse(sdp_text, "st2110", {
+  policy = {
+    ["sdp.a.ts-refclk.ptp-malformed"] = "warn",  -- collect, don't reject
+  },
+})
+-- doc is returned; doc:warnings() contains the demoted finding.
+-- Re-promote to "error" once the provisioning code is wired up.
+```
+
+This is the same accessor pattern documented under the [`doc:findings()` / `doc:warnings()` / `doc:errors()`](#doc-methods) API entry — useful both for debugging the doc you produced and for prototyping against an incomplete environment.
+
+### Required-attribute checklists
+
+The validator drives the loop, but if you want a static reference for which attributes a tier requires, see:
+
+- ST 2110 per-media-block requirements: [§ ST 2110 Validation > Per media block](#per-media-block).
+- ST 2110-20 video fmtp parameters: [§ ST 2110-20 (video) `fmtp` parameters](#st-2110-20-video-fmtp-parameters).
+- IPMX baseband measurement params: [§ Required IPMX fmtp parameters](#required-ipmx-fmtp-parameters).
+
+The doc shape for hand-built attributes (which keys are decomposed vs which keep `value`) is in [Parsed Table Structure](#parsed-table-structure) and [`sdp.new`](#sdpnewtable).
 
 ---
 
