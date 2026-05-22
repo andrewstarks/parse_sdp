@@ -151,6 +151,67 @@ describe("library: sdp.parse() returns doc with API methods", function()
   end)
 end)
 
+-- ── 2a. sdp.parse() grammar-failure error shape ──────────────────────────────
+--
+-- When pattern algebra rejects the input (no error-severity finding recorded
+-- — e.g. `v=1` instead of `v=0`, an unknown addrtype `IP7`, fields out of
+-- order, or required tail fields missing), the returned err carries the
+-- deepest line_end progress as line/col/line_text. The pre-fix behavior was
+-- a bare `errors.new("SDP parse failed")` with no position info.
+
+describe("library: sdp.parse() positioned error on grammar failure", function()
+  -- NOT-SPEC: library
+  it("rejects v=1 with line 1 / col 1 and the offending source line", function()
+    local _, err = sdp.parse("v=1\r\no=- 1 1 IN IP4 127.0.0.1\r\ns=x\r\nt=0 0\r\n")
+    assert.is_table(err)
+    assert.equals("PARSE_ERROR", err.code)
+    assert.equals(1, err.line)
+    assert.equals(1, err.col)
+    assert.equals("v=1", err.line_text)
+  end)
+
+  -- NOT-SPEC: library
+  it("points at the out-of-order line when fields are mis-ordered", function()
+    local text = "v=0\r\no=- 1 1 IN IP4 127.0.0.1\r\nt=0 0\r\ns=Late\r\n"
+    local _, err = sdp.parse(text)
+    assert.is_table(err)
+    assert.equals("PARSE_ERROR", err.code)
+    assert.equals(3, err.line)
+    assert.equals("t=0 0", err.line_text)
+  end)
+
+  -- NOT-SPEC: library
+  it("points at the o= line when addrtype is unknown (IP7)", function()
+    local text = "v=0\r\no=- 1 1 IN IP7 192.168.1.1\r\ns=x\r\nt=0 0\r\n"
+    local _, err = sdp.parse(text)
+    assert.is_table(err)
+    assert.equals("PARSE_ERROR", err.code)
+    assert.equals(2, err.line)
+    assert.equals("o=- 1 1 IN IP7 192.168.1.1", err.line_text)
+  end)
+
+  -- NOT-SPEC: library
+  it("reports a distinct message when input ends with required fields missing", function()
+    local _, err = sdp.parse("v=0\r\no=- 1 1 IN IP4 127.0.0.1\r\n")
+    assert.is_table(err)
+    assert.equals("PARSE_ERROR", err.code)
+    -- line_text is empty (we're past EOF); message must NOT be the
+    -- "could not parse from this line" variant since there's no line to show.
+    assert.equals("", err.line_text)
+    assert.matches("end of input", err.message)
+  end)
+
+  -- NOT-SPEC: library
+  it("formats with rust-style block including code, line, col, source line", function()
+    local errors = sdp._errors
+    local _, err = sdp.parse("v=0\r\no=- 1 1 IN IP7 192.168.1.1\r\ns=x\r\nt=0 0\r\n")
+    local formatted = errors.format(err)
+    assert.matches("%[PARSE_ERROR%]", formatted)
+    assert.matches("line 2, col 1", formatted)
+    assert.matches("o=%- 1 1 IN IP7", formatted)
+  end)
+end)
+
 -- ── 3. sdp.parse(text, 'st2110') mode dispatch ───────────────────────────────
 
 describe("library: sdp.parse() with 'st2110' mode", function()

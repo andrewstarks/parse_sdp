@@ -11,6 +11,31 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 - (no entries yet)
 
+## [1.2.1] — 2026-05-22
+
+### Fixed
+
+- **Grammar-failure errors now carry line, col, and source line.** When
+  pattern algebra rejects the input — `v=1` instead of `v=0`, an unknown
+  addrtype like `IP7`, fields out of order, or required tail fields
+  missing — `sdp.parse` previously returned a bare
+  `errors.new("SDP parse failed")` with no position info. It now uses
+  the line_end-progress tracker (already defined in `errors.lua`,
+  previously unwired) to surface the deepest line successfully parsed
+  and report the failing line with the same rust-style block other
+  errors render. Code is `PARSE_ERROR`. README's "What an error looks
+  like" claim now holds for the four invalid generic fixtures that
+  previously fell through.
+- **`c=` IPv4/IPv6 address findings point at the address, not past the
+  end of the line.** `validate_c_address` was receiving the post-`c=`-
+  value cursor as `pos`; for `c=IN IP4 256.0.0.1` that put the carrot
+  at col 19 (one past EOL). It now receives the byte position right
+  before the address via a `Cg(Cp(), "_addr_pos")` capture stripped
+  after validation, so the carrot lands at col 10 (the offending
+  token). Affects `sdp.c.address.invalid-ipv4`, `invalid-ipv6`,
+  the IPv4/IPv6 multicast suffix-form findings, and the unicast-with-
+  suffix rejection.
+
 ## [1.2.0] — 2026-05-21
 
 ### CLI

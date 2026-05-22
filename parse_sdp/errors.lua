@@ -255,6 +255,7 @@ function M.new(msg, opts)
     field_path = o.field_path,
     spec_ref   = o.spec_ref,
     id         = o.id,
+    line_text  = o.line_text,
   }
 end
 

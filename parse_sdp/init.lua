@@ -141,13 +141,28 @@ function M.parse(text, mode, opts)
     fail_on_first = opts.fail_on_first == true,
   })
   if not doc then
-    -- Grammar match failed structurally. Use the deepest recorded finding
-    -- (if any) as the err; fall back to a generic message otherwise.
-    local first_err
+    -- Grammar match failed structurally. Use the deepest recorded
+    -- error-severity finding (if any) — that's the most informative
+    -- diagnostic. Otherwise fall back to the line_end progress tracker:
+    -- ctx.tracker.position points at the start of the line the grammar
+    -- couldn't match. That gives the user line/col + the offending source
+    -- line instead of a bare "SDP parse failed".
     for _, f in ipairs(ctx and ctx.findings or {}) do
-      if f.severity == "error" then first_err = f; break end
+      if f.severity == "error" then return nil, f end
     end
-    return nil, first_err or errors.new("SDP parse failed")
+    local tracker_pos = (ctx and ctx.tracker and ctx.tracker.position) or 0
+    local pos         = tracker_pos > 0 and tracker_pos or 1
+    local line, col   = errors.pos_to_line_col(text, pos)
+    local line_text   = errors.pos_to_line_text(text, pos)
+    local msg = (line_text and line_text ~= "")
+                and "could not parse from this line"
+                or  "could not parse — reached end of input with required fields missing"
+    return nil, errors.new(msg, {
+      code      = "PARSE_ERROR",
+      line      = line,
+      col       = col,
+      line_text = line_text,
+    })
   end
   -- Match succeeded. Surface the first error-severity finding (if any) via
   -- the conventional `nil, err` contract; otherwise attach all findings

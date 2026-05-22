@@ -33,7 +33,7 @@ busted spec_conformance/      # opt-in pinned AMWA fixtures
 
 ## Current State
 
-1.2.0 shipped on 2026-05-21. 1192 hermetic tests passing. Every
+1.2.1 shipped on 2026-05-22. 1197 hermetic tests passing. Every
 validation check is grounded in explicit spec text; no opinion-based
 checks remain. Public API surface is `parse_sdp/init.lua` (library) +
 `bin/parse_sdp` (CLI). Grammar tier under
@@ -44,6 +44,17 @@ The 1.2 release added five diagnostic-facing CLI capabilities:
 `parse_sdp validate`, `parse_sdp diagnose`, the `--all-findings` flag
 on `validate` / `diagnose` / `to_json`, `parse_sdp checks` (registry
 dump), plus README "Who is this for?" + error-output stanza.
+
+The 1.2.1 point release fixed two error-output accuracy bugs:
+
+- Grammar-failure errors now carry line / col / source-line — the
+  deepest-failure tracker (already defined in `errors.lua`, never
+  wired) feeds `init.lua`'s fallback path. Replaces the bare
+  `"SDP parse failed"` for `v=1`, mis-ordered fields, unknown
+  addrtype, missing tail-field cases.
+- `c=` invalid-address findings point at the address, not past EOL —
+  a `Cg(Cp(), "_addr_pos")` capture (stripped after the Cmt) ferries
+  the address-start position to `validate_c_address`.
 
 ## Next pass — GUIDE.md Troubleshooting recipes
 

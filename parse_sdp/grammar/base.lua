@@ -130,13 +130,24 @@ local function validate_c_address(addr_type, address, ctx, pos)
   return true
 end
 
--- Cmt callback for the trailing-validate hook on c_value. Reads the captured
--- addr_type + address via Cb (resolves within the surrounding c_value Ct,
--- since the Cmt is INSIDE that Ct just after the three Cgs close).
-local function c_value_validate(_, pos, addr_type, address, ctx)
+-- Cmt callback for the trailing-validate hook on c_value. Reads
+-- addr_type, address, and the address-start byte position via Cb (each
+-- resolves to a Cg in the surrounding Ct). Passing the address-start
+-- position — not the post-value cursor — keeps findings pointing at the
+-- offending token: col 10 for `c=IN IP4 256.0.0.1`, not col 19.
+local function c_value_validate(_, pos, addr_type, address, addr_pos, ctx)
   if not ctx then return pos end
-  if not validate_c_address(addr_type, address, ctx, pos) then return false end
+  if not validate_c_address(addr_type, address, ctx, addr_pos) then return false end
   return pos
+end
+
+-- Strip the internal _addr_pos field from a c_value capture table. Cg-with-Cp
+-- is the cheapest way to ferry the address-start position to the trailing
+-- validator Cmt, but the field must not survive into the doc shape (would
+-- leak into JSON / round-trip).
+local function strip_c_value_internals(t)
+  t._addr_pos = nil
+  return t
 end
 
 -- "RTP-bearing" predicate: matches the SDP `m=` proto field when it is
@@ -393,6 +404,19 @@ end
 local record_bare_lf          = record_soft("sdp.line.lf-only-line-ending")
 local record_missing_newline  = record_soft("sdp.file.trailing-newline-missing")
 local record_trailing_ws      = record_soft("sdp.line.trailing-whitespace")
+
+-- Deepest-progress tracker hook. Fires after every successful line_end, so
+-- ctx.tracker.position holds the byte offset of the start of the line that
+-- *would* come next. On a structural grammar failure (no error-severity
+-- finding was recorded — e.g. pattern-algebra rejected `v=1`, an unknown
+-- addrtype like `IP7`, or section out-of-order), init.lua reads the tracker
+-- to build a positioned `[PARSE_ERROR]` instead of a bare "SDP parse failed".
+local function record_tracker_progress(_, pos, ctx)
+  if ctx and ctx.tracker then
+    errors.tracker_record(ctx.tracker, pos)
+  end
+  return pos
+end
 -- a=fmtp trailing-';' uses an inline Cmt body inside fmtp_trailing_sep_record
 -- because that Cmt has to *consume* the ';' (+ optional whitespace) — a
 -- zero-width Cmt(Carg(1), ...) trips LPeg's "no previous value for
@@ -591,15 +615,18 @@ local rules = {
   c_value = Ct(
         Cg(V"nettype",  "net_type")  * SP
       * Cg(V"addrtype", "addr_type") * SP
+      * Cg(lpeg.Cp(),   "_addr_pos")  -- stripped post-validation
       * Cg(V"token",    "address")
       -- Phase 6.H: validate the captured address inline (multicast TTL/
       -- numaddr suffix forms, IPv4/IPv6 syntax, unicast-with-suffix
       -- rejection). Was a post-parse doc walk via check_connection_
-      -- addresses; lifted in-grammar so findings carry line/col and the
-      -- check fires the moment a c= line completes. Cb resolves within
-      -- this Ct because the trailing Cmt sits just after the three Cgs.
-      * Cmt(Cb"addr_type" * Cb"address" * Carg(1), c_value_validate)
-    ),
+      -- addresses; lifted in-grammar so findings carry line/col, and the
+      -- _addr_pos capture above lets the validator point at the offending
+      -- token (col 10 for `c=IN IP4 256.0.0.1`) instead of the post-value
+      -- cursor.
+      * Cmt(Cb"addr_type" * Cb"address" * Cb"_addr_pos" * Carg(1),
+            c_value_validate)
+    ) / strip_c_value_internals,
 
   -- Text fields. RFC 8866 §5.4, §5.5, §5.6 — each takes a "text" value
   -- (one or more bytes up to the next CRLF). At the base tier we accept
@@ -1218,8 +1245,9 @@ local rules = {
   line_end_chars       = P("\r\n") + P("\n") + P(-1),
 
   line_end =
-        Cmt(S(" \t") ^ 1 * Carg(1), record_trailing_ws) * V"line_end_core"
-      + V"line_end_core",
+        ( Cmt(S(" \t") ^ 1 * Carg(1), record_trailing_ws) * V"line_end_core"
+        + V"line_end_core"
+        ) * Cmt(Carg(1), record_tracker_progress),
 
   line_end_core = P("\r\n")
                 + Cmt(P("\n") * Carg(1), record_bare_lf)
@@ -1239,6 +1267,7 @@ local function make_match(grammar, media_section_checks)
       text                  = text,   -- enables pos → line/col in errors.record
       media_section_checks  = media_section_checks,
       media_index           = -1,     -- pre-incremented to 0 by media_section Cmt
+      tracker               = errors.new_tracker(),  -- deepest line_end progress
     }
     local doc = grammar:match(text, 1, ctx)
     return doc, ctx
