@@ -1,9 +1,9 @@
 package = "parse_sdp"
-version = "1.2.1-1"
+version = "1.3.0-1"
 
 source = {
   url  = "git+https://github.com/andrewstarks/parse_sdp.git",
-  tag  = "v1.2.1",
+  tag  = "v1.3.0",
 }
 
 description = {
@@ -31,8 +31,10 @@ round-trip, and registry inspection.
 
 -- argparse is only used by the CLI binary at bin/parse_sdp;
 -- require("parse_sdp") loads only the library and never pulls argparse in.
+-- Lua 5.1/5.2 get a pure-Lua arithmetic bitops backend; no extra rock
+-- is needed on any supported version (see parse_sdp/grammar/bitops.lua).
 dependencies = {
-  "lua >= 5.3, < 5.6",
+  "lua >= 5.1, < 5.6",
   "lpeg",
   "dkjson",
   "argparse",
@@ -41,14 +43,17 @@ dependencies = {
 build = {
   type    = "builtin",
   modules = {
-    parse_sdp                        = "parse_sdp/init.lua",
-    ["parse_sdp.errors"]             = "parse_sdp/errors.lua",
-    ["parse_sdp.serialize"]          = "parse_sdp/serialize.lua",
-    ["parse_sdp.grammar.patterns"]   = "parse_sdp/grammar/patterns.lua",
-    ["parse_sdp.grammar.addresses"]  = "parse_sdp/grammar/addresses.lua",
-    ["parse_sdp.grammar.base"]       = "parse_sdp/grammar/base.lua",
-    ["parse_sdp.grammar.st2110"]     = "parse_sdp/grammar/st2110.lua",
-    ["parse_sdp.grammar.ipmx"]       = "parse_sdp/grammar/ipmx.lua",
+    parse_sdp                            = "parse_sdp/init.lua",
+    ["parse_sdp.errors"]                 = "parse_sdp/errors.lua",
+    ["parse_sdp.serialize"]              = "parse_sdp/serialize.lua",
+    ["parse_sdp.grammar.patterns"]       = "parse_sdp/grammar/patterns.lua",
+    ["parse_sdp.grammar.addresses"]      = "parse_sdp/grammar/addresses.lua",
+    ["parse_sdp.grammar.bitops"]         = "parse_sdp/grammar/bitops.lua",
+    ["parse_sdp.grammar.bitops_53"]      = "parse_sdp/grammar/bitops_53.lua",
+    ["parse_sdp.grammar.bitops_compat"]  = "parse_sdp/grammar/bitops_compat.lua",
+    ["parse_sdp.grammar.base"]           = "parse_sdp/grammar/base.lua",
+    ["parse_sdp.grammar.st2110"]         = "parse_sdp/grammar/st2110.lua",
+    ["parse_sdp.grammar.ipmx"]           = "parse_sdp/grammar/ipmx.lua",
   },
   install = {
     bin = {

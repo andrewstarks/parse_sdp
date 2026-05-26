@@ -2,7 +2,7 @@
 
 [![Tests](https://github.com/andrewstarks/parse_sdp/actions/workflows/test.yml/badge.svg)](https://github.com/andrewstarks/parse_sdp/actions/workflows/test.yml)
 
-A Lua 5.3 - 5.5 library for parsing, validating, and serializing SDP (Session Description Protocol) files, with support for SMPTE ST 2110 and IPMX extensions.
+A Lua 5.1 - 5.5 library for parsing, validating, and serializing SDP (Session Description Protocol) files, with support for SMPTE ST 2110 and IPMX extensions.
 
 Built with [LPEG](https://www.inf.puc-rio.br/~roberto/lpeg/) for precise, composable parsing and structured error reporting.
 
@@ -53,6 +53,9 @@ luarocks install parse_sdp
 
 `lpeg`, `dkjson`, and `argparse` are installed automatically as dependencies.
 `argparse` is only used by the CLI binary — `require("parse_sdp")` never loads it.
+No bit-manipulation rock is required on any Lua version: Lua 5.3+ uses
+native bitwise operators, and Lua 5.1/5.2 use a pure-Lua arithmetic
+implementation bundled with the library.
 
 **Docker:**
 
