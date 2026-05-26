@@ -320,14 +320,30 @@ reference symmetry, dynamic-PT-requires-rtpmap, RFC 4570 §3.1
 
 ## Development Workflow
 
-1. Write failing tests first.
-2. `busted spec/` — confirm they fail for the right reason.
-3. Implement until tests pass.
-4. Update GUIDE.md, README.md, CHANGELOG.md, PLAN.md as needed.
-5. Commit (see gates).
+1. Branch off `main` with an intent-shaped name (`feat/...`, `fix/...`,
+   `docs/...`, `chore/...`).
+2. Write failing tests first.
+3. `busted spec/` — confirm they fail for the right reason.
+4. Implement until tests pass.
+5. Update GUIDE.md, README.md, CHANGELOG.md, PLAN.md as needed.
+6. Commit (see gates), push the branch, open a PR (see Branching & PRs).
+
+## Branching & Pull Requests
+
+All non-trivial changes go through a topic branch + PR — including
+documentation and planning updates. Lightweight: solo developer, no
+required reviewers, no required approvals, merge when CI is green.
+Multiple commits per PR are fine when they're logically related
+(e.g. a rule change plus the work that first applies it).
+
+The exception is trivial single-line typo / whitespace / formatting
+fixes where the branch-and-PR overhead exceeds the value — those may
+still go directly on `main`. Anything that touches behavior, public
+API, or planning docs goes via PR.
 
 ## Commit Gates
 
+- [ ] Work is on a topic branch, not `main`
 - [ ] Relevant tests added or updated in `spec/`
 - [ ] `busted spec/` passes with no failures
 - [ ] `GUIDE.md` updated for any API or behavior change
