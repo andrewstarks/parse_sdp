@@ -9,32 +9,43 @@ local dkjson = require("dkjson")
 -- stdin_text: optional string piped to the process's stdin.
 -- Returns stdout (string), stderr (string), exit_code (number).
 local function run(args_str, stdin_text)
-  local tmp_err = os.tmpname()
+  -- Subshell the CLI and capture its exit code via a temp file. The
+  -- 3-value return from `handle:close()` was added in Lua 5.2; on 5.1
+  -- the popen close returns only a status flag, so reading $? back
+  -- through the filesystem is the portable path.
+  local tmp_err  = os.tmpname()
+  local tmp_exit = os.tmpname()
   local tmp_in
 
-  local cmd
+  local inner
   if stdin_text then
     tmp_in = os.tmpname()
     local f = assert(io.open(tmp_in, "w"))
     f:write(stdin_text)
     f:close()
-    cmd = string.format("lua bin/parse_sdp %s < %s 2>%s", args_str, tmp_in, tmp_err)
+    inner = string.format("lua bin/parse_sdp %s < %s", args_str, tmp_in)
   else
-    cmd = string.format("lua bin/parse_sdp %s 2>%s", args_str, tmp_err)
+    inner = string.format("lua bin/parse_sdp %s", args_str)
   end
+  local cmd = string.format("(%s; echo $? > %s) 2>%s", inner, tmp_exit, tmp_err)
 
   local handle  = io.popen(cmd, "r")
   local stdout  = handle:read("*a")
-  local _, _, code = handle:close()
+  handle:close()
 
   local ef     = io.open(tmp_err, "r")
   local stderr = ef and ef:read("*a") or ""
   if ef then ef:close() end
 
+  local xf   = io.open(tmp_exit, "r")
+  local code = xf and tonumber(xf:read("*a")) or 0
+  if xf then xf:close() end
+
   os.remove(tmp_err)
+  os.remove(tmp_exit)
   if tmp_in then os.remove(tmp_in) end
 
-  return stdout, stderr, code or 0
+  return stdout, stderr, code
 end
 
 -- ── validate subcommand ─────────────────────────────────────────────────────
