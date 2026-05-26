@@ -154,18 +154,40 @@ cannot even be loaded. Everything else in the library is portable
 `_ENV`).
 
 The fix is to isolate the bitwise code into a tiny dispatcher module
-so the 5.3+ syntax never reaches a 5.1/5.2 parser, and to install the
-`bit32` rock only on 5.1 (Lua 5.2 ships `bit32` in stdlib).
+so the 5.3+ syntax never reaches a 5.1/5.2 parser, and provide a
+pure-Lua arithmetic backend for the 5.1/5.2 path so there is no
+extra rock to install.
 
 ### Goal & non-goals
 
 - **Goal.** Ship `parse_sdp` on Lua 5.1, 5.2, 5.3, 5.4, 5.5 with no
   behavioral difference visible to library callers and no compromise
   to the 5.3+ code path (no global compat shim, no compat53 import,
-  no arithmetic rewrites of the bitwise ops).
+  no arithmetic rewrites of the `addresses.lua` bitwise ops
+  themselves — only an isolated `bitops_compat` module).
 - **Non-goals.** LuaJIT-specific work beyond what falls out for free.
   Backporting Lua 5.4 stdlib features (none are used). Compat shims
   for unrelated 5.3+ syntax (none exists outside addresses.lua).
+
+### Verification finding (2026-05-26)
+
+The original plan called for a `_VERSION`-conditional `dependencies`
+table that would pull in the `bit32` rock only on Lua 5.1. **That
+mechanism is not available in modern LuaRocks.** Confirmed against
+LuaRocks 3.8.0 under hererocks-built Lua 5.1 and Lua 5.4 envs:
+
+- Rockspecs are loaded via `persist.load_into_table` in
+  `luarocks/core/persist.lua`, which sets a sandbox env equal to the
+  rockspec output table itself. The env has no globals — `_VERSION`,
+  `table`, `pcall`, `ipairs` are all absent.
+- The rockspec schema (`luarocks/type/rockspec.lua`) supports
+  `platforms.*` overrides for OS (`unix`, `linux`, `macosx`,
+  `windows`, `mingw32`, `cygwin`) but not for Lua version.
+
+The smoke tests live in `/tmp/parse_sdp_envs/` for the duration of
+this slice. Net effect: no rockspec-side conditional. We commit to
+**Option A — pure-Lua arithmetic in `bitops_compat.lua`** so there is
+nothing to install on 5.1/5.2 in the first place.
 
 ### Approach — three-file shim
 
@@ -173,7 +195,7 @@ so the 5.3+ syntax never reaches a 5.1/5.2 parser, and to install the
 parse_sdp/grammar/
   bitops.lua            -- dispatcher (~6 lines, parses on any Lua ≥ 5.1)
   bitops_53.lua         -- native `&` / `>>` / `<<`  (5.3+ only — never required on 5.1/5.2)
-  bitops_compat.lua     -- wraps require("bit32")    (5.1 needs the rock; 5.2 stdlib)
+  bitops_compat.lua     -- pure-Lua arithmetic       (5.1/5.2 only; no extra rock)
   addresses.lua         -- calls bitops.band / bitops.rshift / bitops.lshift; no `&` or `>>` in source
 ```
 
@@ -192,6 +214,26 @@ Each backend exports the same three functions: `band(a, b)`,
 is shipped to all installs but only `require`'d on 5.3+, so its
 `&` / `>>` syntax is invisible to a 5.1/5.2 parser.
 
+`bitops_compat.lua` implements the three operations in pure Lua
+arithmetic. The operands at our call sites are bounded (32-bit IPv4
+ints and 16-bit IPv6 groups), well within Lua 5.1's double-precision
+mantissa, so a straight arithmetic decomposition is correct and
+cheap:
+
+```lua
+local function band(a, b)
+  local r, p = 0, 1
+  while a > 0 and b > 0 do
+    local ax, bx = a % 2, b % 2
+    if ax == 1 and bx == 1 then r = r + p end
+    a, b, p = (a - ax) / 2, (b - bx) / 2, p * 2
+  end
+  return r
+end
+local function rshift(a, n) return math.floor(a / 2 ^ n) end
+local function lshift(a, n) return a * 2 ^ n end
+```
+
 ### Rockspec changes
 
 Relax: `"lua >= 5.1, < 5.6"`. Add the three new modules to
@@ -203,37 +245,9 @@ Relax: `"lua >= 5.1, < 5.6"`. Add the three new modules to
 ["parse_sdp.grammar.bitops_compat"] = "parse_sdp/grammar/bitops_compat.lua",
 ```
 
-Conditional `bit32` dep — rockspecs are Lua source and `_VERSION`
-reflects the target Lua when LuaRocks is invoked under that
-interpreter (`luarocks-5.1`, `luarocks-5.2`, …):
-
-```lua
-dependencies = {
-  "lua >= 5.1, < 5.6",
-  "lpeg",
-  "dkjson",
-  "argparse",
-}
-if _VERSION == "Lua 5.1" then
-  table.insert(dependencies, "bit32")
-end
-```
-
-Lua 5.2 has `bit32` in stdlib; Lua 5.3+ uses native operators. So
-only 5.1 pulls in the extra rock.
-
-**Verify before commit (do not skip):**
-
-1. `luarocks-5.1 install ./parse_sdp-1.3.0-1.rockspec` actually
-   installs `bit32` as a transitive dep.
-2. `luarocks-5.5 install ./parse_sdp-1.3.0-1.rockspec` does *not*
-   install `bit32`.
-3. The conditional eval semantics in LuaRocks haven't changed under
-   us — if `_VERSION` does not reflect the target interpreter in some
-   LuaRocks configuration we care about, fall back to publishing two
-   rockspecs (`parse_sdp-1.3.0-1.rockspec` and
-   `parse_sdp-1.3.0-1-lua51.rockspec`) and document the choice in
-   GUIDE.md "Installation".
+No conditional dependency. No new dep at all — `bit32` is not
+listed. Lua 5.1/5.2 use the pure-Lua backend; Lua 5.3+ use native
+operators.
 
 ### addresses.lua edits
 
@@ -293,45 +307,42 @@ the AMWA conformance fixtures across the matrix.
 - CHANGELOG.md entry under `[Unreleased]` calling out the supported
   Lua range.
 - GUIDE.md "Installation" gains a "Supported Lua versions" line:
-  "Lua 5.1 through 5.5. On 5.1 the `bit32` rock is installed
-  automatically; 5.2 uses its stdlib `bit32`; 5.3+ uses native bitwise
-  operators."
+  "Lua 5.1 through 5.5. No additional rocks needed on any version —
+  Lua 5.3+ uses native bitwise operators; Lua 5.1 and 5.2 use a
+  pure-Lua arithmetic implementation."
 - README.md tech-stack table row: `Language | Lua 5.1+ (tested on
   5.1–5.5)`.
 - CLAUDE.md tech-stack table gets the same edit.
 
 ### Risks & open questions
 
-- **LuaRocks conditional eval.** Highest-priority verification step
-  before any code change ships. The plan stands or falls on this.
-  Fall-back is two published rockspecs.
-- **`bit32` rock on 5.1.** Last known good: `luarocks install bit32`
-  works on 5.1. Check at implementation time. Source link:
-  `https://luarocks.org/modules/siffiejoe/bit32`.
-- **LuaJIT (`_VERSION == "Lua 5.1"`).** LuaJIT ships its own `bit`
-  module, not `bit32`. The `bit32` rock builds on LuaJIT and provides
-  the bit32 API; if that turns out to be broken, the shim grows a
-  `pcall(require, "bit32")`-then-`require("bit").band32`-or-equivalent
-  branch. Flag, don't pre-solve.
+- **LuaJIT (`_VERSION == "Lua 5.1"`).** LuaJIT advertises
+  `_VERSION == "Lua 5.1"` so it gets the compat backend. Pure-Lua
+  arithmetic works fine under LuaJIT — flag for an end-to-end run
+  during the matrix-CI slice.
 - **Round-trip invariant.** No change — bitops live below the
   parser/serializer interface, and `addresses.lua` IPv6 canonicalization
-  is byte-exact regardless of which backend computed the math.
+  is byte-exact regardless of which backend computed the math. The
+  bitops spec includes the carry case `ipv6_add({0,...,0xffff}, 1)`
+  that addresses.lua actually depends on.
 
 ### Task checklist (execute in order; one PR per major slice)
 
-1. [ ] **Verification slice** (no code, no docs change):
-   smoke-test `_VERSION`-conditional dependency eval on a throwaway
-   rockspec under `luarocks-5.1`, `luarocks-5.2`, `luarocks-5.5`.
-   Record findings in a comment on the implementation PR.
+1. [x] **Verification slice** (no code, no docs change):
+   smoke-tested `_VERSION`-conditional dependency eval on a throwaway
+   rockspec under `luarocks-5.1` and `luarocks-5.4`. Finding: the
+   sandbox has no globals (no `_VERSION`, no `table`), so the
+   conditional-dep mechanism is not viable. See "Verification finding"
+   above. Resolution: Option A (pure-Lua arithmetic backend).
 2. [ ] **Shim slice**: add `bitops.lua` / `bitops_53.lua` /
    `bitops_compat.lua` + `spec/grammar_bitops_spec.lua`. Switch
    `addresses.lua` to call the shim. Keep rockspec at `lua >= 5.3`
    for this PR — pure refactor, suite count grows by the bitops cases.
-3. [ ] **Compat slice**: relax rockspec to `lua >= 5.1`, add
-   conditional `bit32` dep, register the three new modules in
-   `build.modules`, fix `table.unpack` in the one spec file,
-   add the matrix CI job. Bump version to 1.3.0. Update CHANGELOG /
-   GUIDE / README / CLAUDE per Migration & version above.
+3. [ ] **Compat slice**: relax rockspec to `lua >= 5.1`, register the
+   three new modules in `build.modules`, fix `table.unpack` in the
+   one spec file, add the matrix CI job. Bump version to 1.3.0.
+   Update CHANGELOG / GUIDE / README / CLAUDE per Migration & version
+   above.
 4. [ ] **Release slice**: tag `v1.3.0`, upload rockspec, publish.
 
 ## Known Deferred Items
