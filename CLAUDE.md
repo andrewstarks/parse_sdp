@@ -4,7 +4,7 @@ Context and conventions for Claude Code working in this repo.
 
 ## Project Purpose
 
-`parse_sdp` is a Lua 5.5 + LPEG library that parses, validates, and serializes SDP
+`parse_sdp` is a Lua 5.1+ + LPEG library that parses, validates, and serializes SDP
 (Session Description Protocol) files. Three validation tiers:
 RFC 8866 (generic SDP; obsoletes RFC 4566) → SMPTE ST 2110 → IPMX.
 
@@ -21,11 +21,11 @@ Prefer fewer, well-named things over many small helpers.
 
 | Concern | Choice |
 | --- | --- |
-| Language | Lua 5.5 |
+| Language | Lua 5.1+ (tested on 5.1, 5.2, 5.3, 5.4, 5.5) |
 | Parsing | LPEG |
 | JSON | dkjson (pure Lua, LuaRocks) |
 | Tests | busted — `busted spec/` |
-| Container | Docker |
+| Container | Docker (Lua 5.5) |
 
 ## Repository Layout
 
@@ -290,7 +290,13 @@ confirmed-against-primary-source findings get fixed.
 - **Strict by default.** If RFC 8866 says a field is required, the parser rejects
   input that omits it — no silent defaults, no forgiveness.
 - **dkjson** is the only external runtime dependency beyond LPEG.
-- Lua 5.5: use `local` and `global` declarations explicitly; no implicit globals.
+- **Lua-version portability.** The library supports 5.1 through 5.5 in
+  a single source tree. Don't introduce 5.3+-only syntax (`&` / `>>` /
+  `<<`, integer division `//`, `string.pack`, `\u{}` escapes, `<const>`
+  / `<close>`, `goto`, etc.) outside the `parse_sdp.grammar.bitops_53`
+  module, which is only loaded on 5.3+. Don't reach for `table.unpack`
+  in spec code without the `(table.unpack or unpack)` fallback.
+  CI runs the full hermetic suite on each of 5.1, 5.2, 5.3, 5.4, 5.5.
 
 ## Check Taxonomy
 

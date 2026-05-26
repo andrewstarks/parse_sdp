@@ -20,7 +20,7 @@
 
 ## Introduction
 
-`parse_sdp` is a Lua 5.3-5.5 library for parsing, validating, and serializing SDP (Session Description Protocol) files used in professional media over IP workflows. It is built with [LPEG](https://www.inf.puc-rio.br/~roberto/lpeg/). Runtime dependencies: LPEG, [dkjson](https://github.com/LuaDist/dkjson), and argparse (CLI only — never loaded by `require("parse_sdp")`).
+`parse_sdp` is a Lua 5.1-5.5 library for parsing, validating, and serializing SDP (Session Description Protocol) files used in professional media over IP workflows. It is built with [LPEG](https://www.inf.puc-rio.br/~roberto/lpeg/). Runtime dependencies: LPEG, [dkjson](https://github.com/LuaDist/dkjson), and argparse (CLI only — never loaded by `require("parse_sdp")`). No bit-manipulation rock is required on any Lua version — Lua 5.3+ uses native bitwise operators, and Lua 5.1 / 5.2 use a pure-Lua arithmetic backend bundled with the library.
 
 **Strictness is a primary feature.** The library enforces RFC 8866 (which obsoletes RFC 4566) exactly: required fields must be present, optional fields must appear in the correct position, and values must conform to their specified formats. SDP files that are "mostly valid" but technically non-conformant are rejected with a precise error message. The library will never produce an invalid SDP file.
 
@@ -78,6 +78,10 @@ IPMX (IP Media Experience) is an interoperability profile layered on ST 2110. It
 ---
 
 ## Installation
+
+### Supported Lua versions
+
+Lua 5.1, 5.2, 5.3, 5.4, and 5.5. CI runs the full hermetic test suite on each version. No additional rocks are needed beyond the standard runtime deps; Lua 5.3+ uses native bitwise operators, and Lua 5.1 / 5.2 use a pure-Lua arithmetic backend (`parse_sdp.grammar.bitops_compat`) selected automatically at `require` time.
 
 ### LuaRocks
 

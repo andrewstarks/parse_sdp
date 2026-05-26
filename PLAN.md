@@ -18,7 +18,7 @@
 
 | Concern | Choice |
 | --- | --- |
-| Language | Lua 5.5 |
+| Language | Lua 5.1+ (tested on 5.1, 5.2, 5.3, 5.4, 5.5) |
 | Parsing | LPEG |
 | JSON | dkjson (pure Lua, LuaRocks) |
 | Tests | busted |
@@ -339,11 +339,15 @@ the AMWA conformance fixtures across the matrix.
    `addresses.lua` to call the shim. Rockspec still at `lua >= 5.3`.
    Suite grew 1197 → 1208 (+11 bitops cases). Verified passing under
    Docker Lua 5.5 and under hererocks-built Lua 5.1.
-3. [ ] **Compat slice**: relax rockspec to `lua >= 5.1`, register the
-   three new modules in `build.modules`, fix `table.unpack` in the
-   one spec file, add the matrix CI job. Bump version to 1.3.0.
-   Update CHANGELOG / GUIDE / README / CLAUDE per Migration & version
-   above.
+3. [x] **Compat slice**: rockspec floor relaxed to `lua >= 5.1`,
+   three new modules registered in `build.modules`, `table.unpack`
+   fixed via `(table.unpack or unpack)`, `spec/cli_spec.lua`'s
+   `run()` helper rewritten to capture exit codes via a subshell
+   (the 5.2+ `io.popen():close()` three-value return doesn't exist
+   on 5.1). Matrix CI job added using `leafo/gh-actions-lua@v10`
+   across 5.1 / 5.2 / 5.3 / 5.4. Version bumped to 1.3.0. CHANGELOG
+   / GUIDE / README / CLAUDE.md updated. All 1208 tests pass locally
+   under 5.1, 5.2, 5.3, 5.4, and 5.5.
 4. [ ] **Release slice**: tag `v1.3.0`, upload rockspec, publish.
 
 ## Known Deferred Items

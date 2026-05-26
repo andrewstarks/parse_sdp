@@ -9,17 +9,51 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 
+- _(none yet; 1.3.0 just shipped)_
+
+## [1.3.0] — 2026-05-26
+
+### Added
+
+- **Lua 5.1 and Lua 5.2 support.** Rockspec dependency relaxed from
+  `lua >= 5.3, < 5.6` to `lua >= 5.1, < 5.6`. No additional rocks
+  required on any Lua version — Lua 5.3+ uses native bitwise
+  operators (`&` / `>>` / `<<`); Lua 5.1 and 5.2 use a pure-Lua
+  arithmetic backend in `parse_sdp.grammar.bitops_compat`. The
+  backend is selected at `require` time by the dispatcher in
+  `parse_sdp.grammar.bitops`, so the 5.3+ path is unchanged.
+- **CI matrix across Lua 5.1 / 5.2 / 5.3 / 5.4.** The existing
+  Docker-based Lua 5.5 job continues to mirror local development;
+  the new matrix job uses `leafo/gh-actions-lua@v10` and runs the
+  full hermetic suite on each version. Conformance fixtures still
+  run on the 5.5 image only.
+
 ### Changed
 
-- **Bitwise operations isolated behind a dispatcher (`parse_sdp.grammar.bitops`).**
-  `int_to_ipv4` and `ipv6_add` in `parse_sdp/grammar/addresses.lua` no
-  longer contain `&` / `>>` syntax — they call `bitops.band` /
-  `bitops.rshift` via a shim that loads the native-operator backend on
-  Lua 5.3+ and a pure-Lua arithmetic backend on 5.1/5.2. Behavior is
-  unchanged on every Lua version the project supports today; this is
-  the refactor that unblocks the planned Lua 5.1/5.2 support without
-  compromising the 5.3+ code path. The rockspec floor is still
-  `lua >= 5.3, < 5.6` in this entry; the next entry will relax it.
+- **Bitwise operations isolated behind a dispatcher
+  (`parse_sdp.grammar.bitops`).** `int_to_ipv4` and `ipv6_add` in
+  `parse_sdp/grammar/addresses.lua` no longer contain `&` / `>>`
+  syntax — they call `bitops.band` / `bitops.rshift` via a shim that
+  loads the native-operator backend on Lua 5.3+ and a pure-Lua
+  arithmetic backend on 5.1/5.2. Behavior is unchanged on every
+  Lua version.
+- **`spec/cli_spec.lua` `run()` helper captures exit codes via a
+  subshell-emitted temp file** instead of relying on the 5.2+
+  three-value return from `io.popen():close()`. Same observable
+  behavior on every Lua version; the rewrite is required for the
+  Lua 5.1 entry above.
+
+### Fixed
+
+- `spec/grammar_base_spec.lua` uses `(table.unpack or unpack)` for
+  Lua 5.1 compatibility (5.1 has `unpack` as a global; 5.2+ has
+  `table.unpack`).
+
+### Verification
+
+- Full hermetic suite (1208 tests) passes under Lua 5.1, 5.2, 5.3,
+  5.4 (via hererocks-built local envs) and Lua 5.5 (via the
+  existing Docker image).
 
 ## [1.2.1] — 2026-05-22
 

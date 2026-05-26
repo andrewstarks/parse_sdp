@@ -1346,7 +1346,7 @@ describe("base SDP grammar â€” dynamic-PT requires rtpmap (Phase 3.B, RFC 8866 Â
       "v=0", "o=- 1 1 IN IP4 127.0.0.1", "s=X",
       "c=IN IP4 224.0.0.1/127",
       "t=0 0",
-      table.unpack(media_block),
+      (table.unpack or unpack)(media_block),
     })
   end
 
