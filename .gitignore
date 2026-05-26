@@ -3,3 +3,10 @@ luac.out
 .luarocks/
 luarocks.lock
 spec_conformance/.cache/
+
+# macOS Finder metadata
+.DS_Store
+
+# LuaRocks pack output
+*.src.rock
+*.rock
