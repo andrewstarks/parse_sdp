@@ -128,10 +128,14 @@ local function ipv4_to_int(addr)
        + (tonumber(c) * 0x100)     + tonumber(d)
 end
 
+local bitops  = require("parse_sdp.grammar.bitops")
+local band    = bitops.band
+local rshift  = bitops.rshift
+
 local function int_to_ipv4(n)
   return string.format("%d.%d.%d.%d",
-    (n >> 24) & 0xff, (n >> 16) & 0xff,
-    (n >> 8)  & 0xff,  n        & 0xff)
+    band(rshift(n, 24), 0xff), band(rshift(n, 16), 0xff),
+    band(rshift(n, 8),  0xff), band(n,             0xff))
 end
 
 -- Parse an IPv6 textual address into 8 16-bit groups; expand "::" if
@@ -190,8 +194,8 @@ local function ipv6_add(groups, n)
   local carry = n
   for i = 8, 1, -1 do
     local v = g[i] + carry
-    g[i] = v & 0xffff
-    carry = v >> 16
+    g[i] = band(v, 0xffff)
+    carry = rshift(v, 16)
     if carry == 0 then break end
   end
   return g

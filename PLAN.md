@@ -334,10 +334,11 @@ the AMWA conformance fixtures across the matrix.
    sandbox has no globals (no `_VERSION`, no `table`), so the
    conditional-dep mechanism is not viable. See "Verification finding"
    above. Resolution: Option A (pure-Lua arithmetic backend).
-2. [ ] **Shim slice**: add `bitops.lua` / `bitops_53.lua` /
-   `bitops_compat.lua` + `spec/grammar_bitops_spec.lua`. Switch
-   `addresses.lua` to call the shim. Keep rockspec at `lua >= 5.3`
-   for this PR — pure refactor, suite count grows by the bitops cases.
+2. [x] **Shim slice**: added `bitops.lua` / `bitops_53.lua` /
+   `bitops_compat.lua` + `spec/grammar_bitops_spec.lua`. Switched
+   `addresses.lua` to call the shim. Rockspec still at `lua >= 5.3`.
+   Suite grew 1197 → 1208 (+11 bitops cases). Verified passing under
+   Docker Lua 5.5 and under hererocks-built Lua 5.1.
 3. [ ] **Compat slice**: relax rockspec to `lua >= 5.1`, register the
    three new modules in `build.modules`, fix `table.unpack` in the
    one spec file, add the matrix CI job. Bump version to 1.3.0.

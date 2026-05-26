@@ -9,7 +9,17 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 
-- (no entries yet)
+### Changed
+
+- **Bitwise operations isolated behind a dispatcher (`parse_sdp.grammar.bitops`).**
+  `int_to_ipv4` and `ipv6_add` in `parse_sdp/grammar/addresses.lua` no
+  longer contain `&` / `>>` syntax — they call `bitops.band` /
+  `bitops.rshift` via a shim that loads the native-operator backend on
+  Lua 5.3+ and a pure-Lua arithmetic backend on 5.1/5.2. Behavior is
+  unchanged on every Lua version the project supports today; this is
+  the refactor that unblocks the planned Lua 5.1/5.2 support without
+  compromising the 5.3+ code path. The rockspec floor is still
+  `lua >= 5.3, < 5.6` in this entry; the next entry will relax it.
 
 ## [1.2.1] — 2026-05-22
 
