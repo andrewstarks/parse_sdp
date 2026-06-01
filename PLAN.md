@@ -92,7 +92,8 @@ restores one public surface for name lookups.
 - [x] Documented the argument-shape asymmetry vs `attr_get` (takes the
   inner list, e.g. `fmtp.params`, not the block) at the re-export, in the
   GUIDE API reference, and in a dedicated test.
-- [ ] **Release slice**: tag `v1.5.0`, upload rockspec, publish.
+- [x] **Release slice**: tagged `v1.5.0`, uploaded rockspec, published to
+  LuaRocks (2026-05-31).
 
 ## Next pass — GUIDE.md Troubleshooting recipes
 

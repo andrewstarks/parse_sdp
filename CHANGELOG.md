@@ -9,6 +9,8 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 
+## [1.5.0] — 2026-05-31
+
 ### Added
 
 - **`sdp.params_get(params, key)`** — re-exported at the top level as the
