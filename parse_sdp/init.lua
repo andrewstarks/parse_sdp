@@ -197,10 +197,19 @@ M.default_policy = errors.default_policy
 --- Look up decomposed attributes by name on a block (a `doc.session` or
 -- `doc.media[i]` table). `attr_get` returns the first matching attribute
 -- table (or nil); `attrs_get` returns an array of all matches in document
--- order. Both nil-safe. Mirror `parse_sdp.grammar.base.params_get` (the
--- inner-fmtp accessor) for the outer `attributes` array.
+-- order. Both nil-safe. Companion to `params_get` (the inner-fmtp accessor)
+-- for the outer `attributes` array.
 M.attr_get  = grammar_base.attr_get
 M.attrs_get = grammar_base.attrs_get
+
+--- Look up a value by key in an ordered param list — the inner companion
+-- to attr_get / attrs_get. `a=fmtp` / `a=privacy` carry their key/value
+-- pairs as an ordered `params` list; returns the value, `true` for a bare
+-- flag, or nil when absent. nil-safe. NOTE the argument shape: unlike
+-- attr_get (which takes a block), params_get takes the inner list directly
+-- — `fmtp.params`, not the `fmtp` table — since param lists have no
+-- wrapping object.
+M.params_get = grammar_base.params_get
 
 -- Exposed for spec access; not part of the public contract.
 M._errors = errors

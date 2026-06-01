@@ -145,6 +145,22 @@ local MULTI_ATTR_SDP = table.concat({
   "a=recvonly",
 }, "\r\n") .. "\r\n"
 
+-- fmtp carrying a bare flag (`interlace`) alongside k=v pairs. Exercises
+-- params_get value lookup and the bare-flag → `true` case.
+local PARAMS_SDP = table.concat({
+  "v=0",
+  "o=- 1234567890 1 IN IP4 192.168.1.1",
+  "s=Params",
+  "t=0 0",
+  "a=ts-refclk:ptp=IEEE1588-2008:00-11-22-FF-FE-33-44-55:0",
+  "m=video 5000 RTP/AVP 96",
+  "c=IN IP4 239.100.0.1/64",
+  "a=rtpmap:96 raw/90000",
+  "a=fmtp:96 sampling=YCbCr-4:2:2; width=1920; height=1080; exactframerate=25; depth=10; TCS=SDR; colorimetry=BT709; PM=2110GPM; SSN=ST2110-20:2022; TP=2110TPN; interlace",
+  "a=mediaclk:direct=0",
+  "a=ts-refclk:ptp=IEEE1588-2008:00-11-22-FF-FE-33-44-55:0",
+}, "\r\n") .. "\r\n"
+
 -- ── 1. Module loads ──────────────────────────────────────────────────────────
 
 describe("library: parse_sdp module loads", function()
@@ -669,6 +685,45 @@ describe("library: sdp.attr_get() / sdp.attrs_get()", function()
     })
     assert.equal(96, sdp.attr_get(doc.media[1], "rtpmap").payload_type)
     assert.equal(2, #sdp.attrs_get(doc.media[1], "rtpmap"))
+  end)
+end)
+
+describe("library: sdp.params_get()", function()
+  -- NOT-SPEC: library
+  it("returns the value for a present key", function()
+    local doc  = sdp.parse(PARAMS_SDP, "st2110")
+    local fmtp = sdp.attr_get(doc.media[1], "fmtp")
+    assert.is_table(fmtp)
+    assert.equal("1920", sdp.params_get(fmtp.params, "width"))
+    assert.equal("YCbCr-4:2:2", sdp.params_get(fmtp.params, "sampling"))
+  end)
+
+  -- NOT-SPEC: library
+  it("returns true for a bare flag", function()
+    local doc  = sdp.parse(PARAMS_SDP, "st2110")
+    local fmtp = sdp.attr_get(doc.media[1], "fmtp")
+    assert.equal(true, sdp.params_get(fmtp.params, "interlace"))
+  end)
+
+  -- NOT-SPEC: library
+  it("returns nil for an absent key", function()
+    local doc  = sdp.parse(PARAMS_SDP, "st2110")
+    local fmtp = sdp.attr_get(doc.media[1], "fmtp")
+    assert.is_nil(sdp.params_get(fmtp.params, "nonesuch"))
+  end)
+
+  -- NOT-SPEC: library
+  it("is nil-safe: nil list yields nil", function()
+    assert.is_nil(sdp.params_get(nil, "width"))
+  end)
+
+  -- NOT-SPEC: library
+  it("takes the inner params list, not the attribute table", function()
+    -- Documented asymmetry vs attr_get: params_get scans `fmtp.params`,
+    -- so passing the fmtp table itself finds nothing.
+    local doc  = sdp.parse(PARAMS_SDP, "st2110")
+    local fmtp = sdp.attr_get(doc.media[1], "fmtp")
+    assert.is_nil(sdp.params_get(fmtp, "width"))
   end)
 end)
 

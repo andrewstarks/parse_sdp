@@ -78,6 +78,22 @@ but nothing for the outer attribute list, so every consumer hand-rolled a
 - [x] **Release slice**: tagged `v1.4.0`, uploaded rockspec, published to
   LuaRocks (2026-05-31).
 
+## 1.5.0 — params_get top-level re-export
+
+Follow-up consumer note (the lnmos nmos/sdp.lua layer): 1.4.0 promoted the
+outer attribute accessors to the public module but left `params_get` (the
+inner `a=fmtp` / `a=privacy` lookup) reachable only via
+`parse_sdp.grammar.base`. That left the inner companion as the odd one out,
+forcing consumers to cross into a grammar internal mid-task. Re-exporting it
+restores one public surface for name lookups.
+
+- [x] `sdp.params_get(params, key)` re-exported on the public module; the
+  `grammar.base` path still works for existing callers.
+- [x] Documented the argument-shape asymmetry vs `attr_get` (takes the
+  inner list, e.g. `fmtp.params`, not the block) at the re-export, in the
+  GUIDE API reference, and in a dedicated test.
+- [ ] **Release slice**: tag `v1.5.0`, upload rockspec, publish.
+
 ## Next pass — GUIDE.md Troubleshooting recipes
 
 A field engineer with an unfamiliar `err.id` wants "what does this
