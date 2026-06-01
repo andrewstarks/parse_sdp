@@ -9,7 +9,15 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 
-- _(none yet; 1.3.0 just shipped)_
+### Added
+
+- **`sdp.attr_get(block, name)` / `sdp.attrs_get(block, name)`** —
+  module-level accessors that look up decomposed attributes by name on a
+  block (`doc.session` or any `doc.media[i]`). `attr_get` returns the
+  first match (or `nil`); `attrs_get` returns an array of all matches in
+  document order (empty table when none). Both are nil-safe and mirror
+  `parse_sdp.grammar.base.params_get` (the inner-`fmtp` accessor) for the
+  outer `attributes` array, so consumers no longer hand-roll the scan.
 
 ## [1.3.0] — 2026-05-26
 

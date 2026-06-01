@@ -56,6 +56,27 @@ The 1.2.1 point release fixed two error-output accuracy bugs:
   a `Cg(Cp(), "_addr_pos")` capture (stripped after the Cmt) ferries
   the address-start position to `validate_c_address`.
 
+1.3.0 (2026-05-26) added Lua 5.1+ support and the 5.1–5.4 CI matrix.
+
+## 1.4.0 — attribute accessors
+
+Consumer feedback (the lnmos projection layer): the only awkward part of
+reading a parsed doc was scanning the ordered `media[i].attributes` array
+by name. The library shipped `params_get` for the inner `a=fmtp` params
+but nothing for the outer attribute list, so every consumer hand-rolled a
+`find_attr` scan.
+
+- [x] `sdp.attr_get(block, name)` — first decomposed attribute of that
+  name on a block (`doc.session` or `doc.media[i]`), or nil.
+- [x] `sdp.attrs_get(block, name)` — all matches in document order (empty
+  table when none). Earns its place because same-name attributes are
+  common (`rtpmap` / `fmtp` / `ssrc` / `rtcp-fb`).
+- [x] Defined once in `grammar/base.lua` beside `params_get`, inherited
+  through `extend()`, re-exported on the public module in `init.lua`.
+  nil-safe; pure read; no round-trip / serialization impact (free
+  functions, no metatable surface on blocks).
+- [ ] **Release slice**: tag `v1.4.0`, upload rockspec, publish.
+
 ## Next pass — GUIDE.md Troubleshooting recipes
 
 A field engineer with an unfamiliar `err.id` wants "what does this

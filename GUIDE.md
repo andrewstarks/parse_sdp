@@ -390,6 +390,40 @@ policy["sdp.file.bom-present"] = "off"
 local doc, err = sdp.parse(text, "sdp", { policy = policy })
 ```
 
+#### `sdp.attr_get(block, name)` / `sdp.attrs_get(block, name)`
+
+Look up decomposed attributes by name on a block. A *block* is any table
+that carries an `attributes` array — `doc.session` or any `doc.media[i]`
+entry. These mirror `parse_sdp.grammar.base.params_get` (the inner-`fmtp`
+accessor) for the outer attribute list, so consumers never hand-roll the
+scan over the ordered `attributes` array.
+
+- `sdp.attr_get(block, name)` returns the **first** attribute table whose
+  `name` matches, or `nil` when none is present.
+- `sdp.attrs_get(block, name)` returns an **array** of every matching
+  attribute table, in document order (empty table when none). SDP routinely
+  carries several `rtpmap` / `fmtp` / `ssrc` / `rtcp-fb` lines on one block,
+  so reach for `attrs_get` whenever more than one may appear.
+
+Both are nil-safe: a `nil` block (or a block with no `attributes`) yields
+`nil` / `{}`. The returned tables are the decomposed shapes described under
+[Parsed Table Structure](#parsed-table-structure) — e.g. an `rtpmap` result
+carries `payload_type` / `encoding` / `clock_rate`.
+
+```lua
+local doc = sdp.parse(text, "st2110")
+local m   = doc.media[1]
+
+local rtpmap = sdp.attr_get(m, "rtpmap")        -- first (or nil)
+if rtpmap then print(rtpmap.encoding, rtpmap.clock_rate) end
+
+for _, fb in ipairs(sdp.attrs_get(m, "rtcp-fb")) do  -- all matches
+  print(fb.value)
+end
+
+local grp = sdp.attr_get(doc.session, "group")  -- session-level lookup
+```
+
 ---
 
 ### Doc methods
@@ -784,6 +818,11 @@ extensions `infoframe` / `hkep` / `privacy`. Flag-only attributes
 (`recvonly`, `sendonly`, `sendrecv`, `inactive`, `rtcp-mux`) have only a
 `name`. Any other attribute name keeps the forward-compat
 `{name, value}` carrier shape.
+
+The `attributes` array is ordered (for byte-faithful round-trip), so look
+attributes up by name with
+[`sdp.attr_get` / `sdp.attrs_get`](#sdpattr_getblock-name--sdpattrs_getblock-name)
+rather than scanning it yourself.
 
 `fmtp.params` and `privacy.params` are **ordered lists** of `{key, value}`
 sub-tables (input order preserved for byte-faithful round-trip). Use

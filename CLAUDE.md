@@ -96,6 +96,10 @@ local doc, err = sdp.parse(text, "st2110") -- parse + validate ST 2110
 local doc, err = sdp.parse(text, "ipmx")   -- parse + validate IPMX
 local doc       = sdp.new(table)            -- wrap table as doc (no validation)
 
+-- Attribute accessors (module-level; mirror grammar.base.params_get)
+local a  = sdp.attr_get(block, name)        -- first decomposed attr by name, or nil
+local as = sdp.attrs_get(block, name)       -- all matches in order (empty table if none)
+
 -- doc methods (via metatable)
 doc:validate()            -- validate as RFC 8866; true or nil, err
 doc:validate("st2110")    -- validate as ST 2110; true or nil, err

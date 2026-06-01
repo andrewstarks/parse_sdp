@@ -10,3 +10,6 @@ spec_conformance/.cache/
 # LuaRocks pack output
 *.src.rock
 *.rock
+
+# Claude Code harness runtime artifacts
+.claude/scheduled_tasks.lock
