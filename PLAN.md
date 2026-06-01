@@ -75,7 +75,8 @@ but nothing for the outer attribute list, so every consumer hand-rolled a
   through `extend()`, re-exported on the public module in `init.lua`.
   nil-safe; pure read; no round-trip / serialization impact (free
   functions, no metatable surface on blocks).
-- [ ] **Release slice**: tag `v1.4.0`, upload rockspec, publish.
+- [x] **Release slice**: tagged `v1.4.0`, uploaded rockspec, published to
+  LuaRocks (2026-05-31).
 
 ## Next pass — GUIDE.md Troubleshooting recipes
 
