@@ -129,6 +129,22 @@ local FULL_TEXT_FOR_JSON = table.concat({
   "a=rtpmap:96 H264/90000",
 }, "\r\n") .. "\r\n"
 
+-- Two payload types on one block → two a=rtpmap lines, plus a session-level
+-- attribute and a flag-only attribute. Exercises attr_get (first match) vs
+-- attrs_get (all matches) and session- vs media-level lookup.
+local MULTI_ATTR_SDP = table.concat({
+  "v=0",
+  "o=- 1234567890 1 IN IP4 192.168.1.1",
+  "s=Multi Attr",
+  "t=0 0",
+  "a=tool:probe",
+  "m=video 5000 RTP/AVP 96 97",
+  "c=IN IP4 239.100.0.1/64",
+  "a=rtpmap:96 raw/90000",
+  "a=rtpmap:97 H264/90000",
+  "a=recvonly",
+}, "\r\n") .. "\r\n"
+
 -- ── 1. Module loads ──────────────────────────────────────────────────────────
 
 describe("library: parse_sdp module loads", function()
@@ -575,6 +591,84 @@ describe("library: sdp.default_policy()", function()
     p1["sdp.v.must-be-zero"] = "warn"
     local p2 = sdp.default_policy()
     assert.equal("error", p2["sdp.v.must-be-zero"])
+  end)
+end)
+
+describe("library: sdp.attr_get() / sdp.attrs_get()", function()
+  -- NOT-SPEC: library
+  it("attr_get returns the first matching decomposed attribute", function()
+    local doc = sdp.parse(MULTI_ATTR_SDP)
+    local rtpmap = sdp.attr_get(doc.media[1], "rtpmap")
+    assert.is_table(rtpmap)
+    assert.equal("rtpmap", rtpmap.name)
+    assert.equal(96, rtpmap.payload_type)
+    assert.equal("raw", rtpmap.encoding)
+  end)
+
+  -- NOT-SPEC: library
+  it("attr_get returns nil when no attribute matches", function()
+    local doc = sdp.parse(MULTI_ATTR_SDP)
+    assert.is_nil(sdp.attr_get(doc.media[1], "fmtp"))
+  end)
+
+  -- NOT-SPEC: library
+  it("attrs_get returns all matches in document order", function()
+    local doc = sdp.parse(MULTI_ATTR_SDP)
+    local all = sdp.attrs_get(doc.media[1], "rtpmap")
+    assert.is_table(all)
+    assert.equal(2, #all)
+    assert.equal(96, all[1].payload_type)
+    assert.equal(97, all[2].payload_type)
+  end)
+
+  -- NOT-SPEC: library
+  it("attrs_get returns an empty table when no attribute matches", function()
+    local doc = sdp.parse(MULTI_ATTR_SDP)
+    local all = sdp.attrs_get(doc.media[1], "fmtp")
+    assert.is_table(all)
+    assert.equal(0, #all)
+  end)
+
+  -- NOT-SPEC: library
+  it("looks up session-level attributes", function()
+    local doc = sdp.parse(MULTI_ATTR_SDP)
+    local tool = sdp.attr_get(doc.session, "tool")
+    assert.is_table(tool)
+    assert.equal("probe", tool.value)
+  end)
+
+  -- NOT-SPEC: library
+  it("finds flag-only attributes", function()
+    local doc = sdp.parse(MULTI_ATTR_SDP)
+    local flag = sdp.attr_get(doc.media[1], "recvonly")
+    assert.is_table(flag)
+    assert.equal("recvonly", flag.name)
+  end)
+
+  -- NOT-SPEC: library
+  it("is nil-safe: nil block yields nil / empty table", function()
+    assert.is_nil(sdp.attr_get(nil, "rtpmap"))
+    local all = sdp.attrs_get(nil, "rtpmap")
+    assert.is_table(all)
+    assert.equal(0, #all)
+  end)
+
+  -- NOT-SPEC: library
+  it("is nil-safe: block without attributes yields nil / empty table", function()
+    assert.is_nil(sdp.attr_get({}, "rtpmap"))
+    assert.equal(0, #sdp.attrs_get({}, "rtpmap"))
+  end)
+
+  -- NOT-SPEC: library
+  it("works on hand-built docs from sdp.new()", function()
+    local doc = sdp.new({
+      media = { { attributes = {
+        { name = "rtpmap", payload_type = 96 },
+        { name = "rtpmap", payload_type = 97 },
+      } } },
+    })
+    assert.equal(96, sdp.attr_get(doc.media[1], "rtpmap").payload_type)
+    assert.equal(2, #sdp.attrs_get(doc.media[1], "rtpmap"))
   end)
 end)
 

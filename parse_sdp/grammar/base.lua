@@ -50,6 +50,30 @@ local function params_get(params, key)
   return nil
 end
 
+-- Outer-attribute accessors over a block's ordered `attributes` array
+-- (a `doc.session` or `doc.media[i]` table). Mirror params_get for the
+-- attribute list: attr_get returns the first decomposed attribute whose
+-- `name` matches (or nil); attrs_get returns all matches in document
+-- order (empty table when none). nil-safe on the block / its attributes.
+local function attr_get(block, name)
+  local attrs = block and block.attributes
+  if attrs == nil then return nil end
+  for i = 1, #attrs do
+    if attrs[i].name == name then return attrs[i] end
+  end
+  return nil
+end
+
+local function attrs_get(block, name)
+  local out = {}
+  local attrs = block and block.attributes
+  if attrs == nil then return out end
+  for i = 1, #attrs do
+    if attrs[i].name == name then out[#out + 1] = attrs[i] end
+  end
+  return out
+end
+
 -- ── Semantic checks ─────────────────────────────────────────────────────────
 -- Cross-section invariants the grammar alone can't express. Each check
 -- inspects the captured doc and emits findings via errors.record.
@@ -1282,6 +1306,8 @@ M.media_section_checks    = base_media_section_checks
 M.make_validate_doc       = make_validate_doc
 M.make_document_body      = make_document_body
 M.params_get              = params_get
+M.attr_get                = attr_get
+M.attrs_get               = attrs_get
 M.is_rtp_block            = is_rtp_block
 M.is_usb_block            = is_usb_block
 
@@ -1351,6 +1377,8 @@ function M.extend(parent, overrides)
     make_validate_doc       = parent.make_validate_doc,
     make_document_body      = parent.make_document_body,
     params_get              = parent.params_get,
+    attr_get                = parent.attr_get,
+    attrs_get               = parent.attrs_get,
     is_rtp_block            = parent.is_rtp_block,
     is_usb_block            = parent.is_usb_block,
     extend                  = M.extend,

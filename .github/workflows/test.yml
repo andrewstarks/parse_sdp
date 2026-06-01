@@ -30,7 +30,7 @@ jobs:
           luarocks install dkjson
           luarocks install argparse
           luarocks install busted
-      - run: luarocks make ./parse_sdp-1.3.0-1.rockspec
+      - run: luarocks make ./parse_sdp-1.4.0-1.rockspec
       - run: busted spec/
 
   conformance:

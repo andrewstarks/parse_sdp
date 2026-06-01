@@ -80,6 +80,10 @@ end
 print(doc.session.name)
 print(doc.media[1].port)
 
+-- Look attributes up by name (no hand-rolled scan of the ordered array)
+local rtpmap = sdp.attr_get(doc.media[1], "rtpmap")    -- first match, or nil
+local all    = sdp.attrs_get(doc.media[1], "rtpmap")   -- every match, in order
+
 -- It also has methods
 local ok, err = doc:validate("st2110")   -- re-validate after mutation
 local text     = doc:to_sdp()             -- → valid SDP string

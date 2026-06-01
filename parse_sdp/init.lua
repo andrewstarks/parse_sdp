@@ -194,6 +194,14 @@ M.checks = errors.checks
 -- parse() time so typos surface immediately.
 M.default_policy = errors.default_policy
 
+--- Look up decomposed attributes by name on a block (a `doc.session` or
+-- `doc.media[i]` table). `attr_get` returns the first matching attribute
+-- table (or nil); `attrs_get` returns an array of all matches in document
+-- order. Both nil-safe. Mirror `parse_sdp.grammar.base.params_get` (the
+-- inner-fmtp accessor) for the outer `attributes` array.
+M.attr_get  = grammar_base.attr_get
+M.attrs_get = grammar_base.attrs_get
+
 -- Exposed for spec access; not part of the public contract.
 M._errors = errors
 
