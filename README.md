@@ -83,6 +83,8 @@ print(doc.media[1].port)
 -- Look attributes up by name (no hand-rolled scan of the ordered array)
 local rtpmap = sdp.attr_get(doc.media[1], "rtpmap")    -- first match, or nil
 local all    = sdp.attrs_get(doc.media[1], "rtpmap")   -- every match, in order
+local fmtp   = sdp.attr_get(doc.media[1], "fmtp")
+local width  = fmtp and sdp.params_get(fmtp.params, "width")  -- inner fmtp param
 
 -- It also has methods
 local ok, err = doc:validate("st2110")   -- re-validate after mutation

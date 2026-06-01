@@ -9,6 +9,16 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 
+### Added
+
+- **`sdp.params_get(params, key)`** — re-exported at the top level as the
+  inner companion to `sdp.attr_get` / `sdp.attrs_get`. Looks up a value by
+  key in an ordered `a=fmtp` / `a=privacy` param list (returns the value,
+  `true` for a bare flag, or `nil`). Previously reachable only via
+  `parse_sdp.grammar.base.params_get`; that path still works. Note the
+  argument shape differs from `attr_get`: `params_get` takes the inner
+  list (`fmtp.params`), not the block.
+
 ## [1.4.0] — 2026-05-31
 
 ### Added

@@ -394,9 +394,9 @@ local doc, err = sdp.parse(text, "sdp", { policy = policy })
 
 Look up decomposed attributes by name on a block. A *block* is any table
 that carries an `attributes` array — `doc.session` or any `doc.media[i]`
-entry. These mirror `parse_sdp.grammar.base.params_get` (the inner-`fmtp`
-accessor) for the outer attribute list, so consumers never hand-roll the
-scan over the ordered `attributes` array.
+entry. These mirror [`sdp.params_get`](#sdpparams_getparams-key) (the
+inner-`fmtp` accessor) for the outer attribute list, so consumers never
+hand-roll the scan over the ordered `attributes` array.
 
 - `sdp.attr_get(block, name)` returns the **first** attribute table whose
   `name` matches, or `nil` when none is present.
@@ -422,6 +422,28 @@ for _, fb in ipairs(sdp.attrs_get(m, "rtcp-fb")) do  -- all matches
 end
 
 local grp = sdp.attr_get(doc.session, "group")  -- session-level lookup
+```
+
+#### `sdp.params_get(params, key)`
+
+Look up a value in an ordered param list by key — the inner companion to
+`attr_get` / `attrs_get`. `a=fmtp` and `a=privacy` carry their key/value
+pairs as an ordered `params` list (input order preserved for byte-faithful
+round-trip); `params_get` returns the value for `key`, or `nil` when
+absent. A bare flag (a key with no `=value`) has `true` as its value.
+
+**Note the argument shape:** unlike `attr_get`, which takes a *block*,
+`params_get` takes the **inner list directly** — `fmtp.params`, not the
+`fmtp` attribute table. Param lists have no wrapping object, so there is
+nothing block-like to pass. nil-safe: a `nil` list yields `nil`.
+
+```lua
+local doc  = sdp.parse(text, "st2110")
+local fmtp = sdp.attr_get(doc.media[1], "fmtp")   -- the fmtp attribute table
+if fmtp then
+  local width = sdp.params_get(fmtp.params, "width")   -- "1920", or nil
+  local seg   = sdp.params_get(fmtp.params, "interlace")  -- true if bare flag
+end
 ```
 
 ---
@@ -826,8 +848,8 @@ rather than scanning it yourself.
 
 `fmtp.params` and `privacy.params` are **ordered lists** of `{key, value}`
 sub-tables (input order preserved for byte-faithful round-trip). Use
-`parse_sdp.grammar.base.params_get(params, key)` to look one up; a bare
-flag has `true` as its value.
+[`sdp.params_get(params, key)`](#sdpparams_getparams-key) to look one up; a
+bare flag has `true` as its value.
 
 ---
 
