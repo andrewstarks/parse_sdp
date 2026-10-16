@@ -1,0 +1,147 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light dark">
+  <title>parse_sdp playground</title>
+  <meta name="description" content="Validate and edit SDP files against RFC 8866, SMPTE ST 2110 and IPMX, entirely in the browser.">
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Crect width='16' height='16' rx='3' fill='%231f5fbf'/%3E%3Ctext x='8' y='12' font-size='10' font-family='monospace' font-weight='bold' text-anchor='middle' fill='white'%3Ev%3D%3C/text%3E%3C/svg%3E">
+  <link rel="stylesheet" href="styles.css">
+  <script type="module" src="app.js"></script>
+</head>
+<body>
+  <a class="skip-link" href="#input">Skip to input</a>
+  <header class="site-header" id="top">
+    <div class="brand">
+      <h1>parse_sdp</h1>
+      <p class="tagline">Strict SDP validation for RFC 8866, SMPTE ST 2110 and IPMX, in your browser.</p>
+    </div>
+    <button id="nav-toggle" class="nav-toggle" type="button" aria-expanded="false" aria-controls="site-nav" aria-label="Sections menu">
+      <span class="nav-toggle-bars" aria-hidden="true"></span>
+    </button>
+    <nav id="site-nav" class="site-nav" aria-label="Sections">
+      <a href="#input">Input</a>
+      <a href="#report">Report</a>
+      <a href="#editor">Editor</a>
+      <a href="#output">Output</a>
+      <a href="#policy">Policy</a>
+    </nav>
+    <div class="bar-actions" role="group" aria-label="Output actions">
+      <label class="visually-hidden" for="out-format-top">Output format</label>
+      <select id="out-format-top" class="out-format" disabled>
+        <option value="sdp">SDP</option>
+        <option value="json">JSON</option>
+        <option value="lua">Lua table literal</option>
+      </select>
+      <button id="out-download" type="button" disabled>Download</button>
+      <button id="out-copy-top" type="button" disabled>Copy</button>
+      <span id="bar-status" class="meta bar-status" role="status"></span>
+    </div>
+    <p id="engine-status" class="engine-status" role="status">Loading engine…</p>
+  </header>
+
+  <main>
+    <section id="input" class="panel" aria-labelledby="input-title">
+      <div class="panel-head">
+        <h2 id="input-title">Input</h2>
+        <p class="hint">SDP text, a JSON document table, or a Lua table literal. The format is detected automatically; press <kbd>Ctrl</kbd>+<kbd>Enter</kbd> to analyze.</p>
+      </div>
+      <div id="drop-zone" class="drop-zone">
+        <label for="input-text" class="visually-hidden">Input text</label>
+        <textarea id="input-text" class="mono" spellcheck="false" autocomplete="off" rows="12"
+                  placeholder="Paste SDP here, or drop a file onto this area."></textarea>
+        <div class="drop-overlay" aria-hidden="true">Drop to load</div>
+      </div>
+      <div class="toolbar">
+        <button id="analyze" type="button" class="primary">Analyze</button>
+        <label class="button file-button">Open file…
+          <input id="file-input" type="file" accept=".sdp,.json,.lua,.txt,text/plain,application/json,application/sdp">
+        </label>
+        <label class="toolbar-group">Examples
+          <select id="example-select">
+            <option value="">Load an example…</option>
+          </select>
+        </label>
+        <span id="input-meta" class="meta"></span>
+      </div>
+      <p id="input-error" class="banner error" hidden></p>
+    </section>
+
+    <section id="report" class="panel" aria-labelledby="report-title">
+      <div class="panel-head">
+        <h2 id="report-title">Compliance report</h2>
+        <p id="report-status" class="hint" aria-live="polite">Nothing analyzed yet.</p>
+      </div>
+      <div id="tier-cards" class="tier-cards"></div>
+      <p class="hint">Each tier re-runs every tier below it, so a higher tier's findings include the lower tiers'. A finding raised by several tiers is listed once and tagged with each of them.</p>
+      <div class="toolbar filters" role="group" aria-label="Filter findings">
+        <label>Tier
+          <select id="filter-tier">
+            <option value="all">All tiers</option>
+            <option value="sdp">RFC 8866</option>
+            <option value="st2110">ST 2110</option>
+            <option value="ipmx">IPMX</option>
+          </select>
+        </label>
+        <label class="check"><input type="checkbox" id="filter-error" checked> Errors</label>
+        <label class="check"><input type="checkbox" id="filter-warn" checked> Warnings</label>
+        <span id="filter-count" class="meta"></span>
+      </div>
+      <div class="report-grid">
+        <ol id="findings" class="findings" aria-label="Findings"></ol>
+        <div class="source-view">
+          <h3 id="source-title">Source</h3>
+          <ol id="source-lines" class="source-lines" aria-labelledby="source-title"></ol>
+        </div>
+      </div>
+    </section>
+
+    <section id="editor" class="panel" aria-labelledby="editor-title">
+      <div class="panel-head">
+        <h2 id="editor-title">Document editor</h2>
+        <p class="hint">Edit the parsed table directly. Every change re-serializes and re-validates. Clear a field to remove it; a flag-only parameter has no value.</p>
+      </div>
+      <p id="serialize-error" class="banner error" hidden></p>
+      <div id="editor-root" class="editor"></div>
+    </section>
+
+    <section id="output" class="panel" aria-labelledby="output-title">
+      <div class="panel-head output-head">
+        <div class="toolbar">
+          <h2 id="output-title">Output</h2>
+          <label>Format
+            <select id="out-format" class="out-format" disabled>
+              <option value="sdp">SDP</option>
+              <option value="json">JSON</option>
+              <option value="lua">Lua table literal</option>
+            </select>
+          </label>
+          <button id="out-copy" type="button" disabled>Copy</button>
+          <span id="copy-status" class="meta" role="status"></span>
+        </div>
+        <p id="output-status" class="hint"></p>
+      </div>
+      <ol id="output-lines" class="source-lines diff" aria-label="Output text"></ol>
+    </section>
+
+    <section id="policy" class="panel" aria-labelledby="policy-title">
+      <div class="panel-head">
+        <h2 id="policy-title">Policy</h2>
+        <p class="hint">Set the severity of any check. Overrides are stored in this browser and applied to every analysis. Hard-syntactic checks define parseability and cannot be changed.</p>
+      </div>
+      <div class="toolbar">
+        <label>Filter <input id="policy-filter" type="search" placeholder="check id or spec" autocomplete="off"></label>
+        <span id="policy-count" class="meta"></span>
+        <button id="policy-reset" type="button">Reset overrides</button>
+      </div>
+      <div id="policy-groups" class="policy-groups"></div>
+    </section>
+  </main>
+
+  <footer class="site-footer">
+    <p id="footer-versions"></p>
+    <p><a href="https://github.com/andrewstarks/parse_sdp">parse_sdp on GitHub</a> · All processing happens in your browser; nothing is uploaded anywhere.</p>
+  </footer>
+</body>
+</html>
