@@ -5,6 +5,7 @@ import { createEngine as createMockEngine } from "./engine_mock.js";
 import { detectFormat, fileStem } from "./format.js";
 import { clone } from "./docpath.js";
 import { dedupeFindings } from "./findings.js";
+import { lineToPath } from "./line_map.js";
 import { setText } from "./dom.js";
 import { initInput } from "./input.js";
 import { initReport } from "./report.js";
@@ -88,19 +89,21 @@ async function main() {
     onSelect: (finding) => { if (!finding.line && finding.field_path) editor.highlightPath(finding.field_path); },
     policy,
   });
-  const editor = initEditor(document.querySelector("#editor"), { onChange: () => revalidate() });
+  const editor = initEditor(document.querySelector("#editor"), { onChange: () => revalidate(), policy });
   const output = initOutput({ section: document.querySelector("#output"), bar: document.querySelector(".site-header") });
   const input = initInput(document.querySelector("#input"), { onSubmit: analyze, fetchText });
 
   const [checks, manifest] = await Promise.all([engine.request({ op: "checks" }), loadExampleManifest()]);
   policy.setChecks(checks.ok ? checks.checks : []);
+  // Per-line formatting checks stay in the source view; everything else can sit on a field.
+  const lineSkipIds = new Set((checks.ok ? checks.checks : []).filter((c) => c.kind === "soft-syntactic").map((c) => c.id));
   input.setExamples(groupExamples(manifest));
 
   function applyTiers(tiers, sourceText) {
     state.tiers = tiers;
     state.sourceText = sourceText;
     report.render({ tiers, text: sourceText });
-    editor.markFindings(dedupeFindings(tiers));
+    editor.markFindings(dedupeFindings(tiers), { lineMap: lineToPath(sourceText), skipIds: lineSkipIds });
   }
 
   function renderOutput() {

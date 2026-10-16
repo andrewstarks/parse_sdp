@@ -122,6 +122,13 @@
         <h2 id="editor-title">Document editor</h2>
         <p class="hint">Edit the parsed table directly. Every change re-serializes and re-validates. Clear a field to remove it; a flag-only parameter has no value.</p>
       </div>
+      <section id="editor-summary" class="editor-summary" aria-labelledby="editor-summary-title" hidden>
+        <div class="editor-summary-head">
+          <h3 id="editor-summary-title" class="editor-summary-counts">No findings</h3>
+          <button id="editor-summary-toggle" type="button" class="ghost small" aria-expanded="true" aria-controls="editor-summary-list">Collapse</button>
+        </div>
+        <ol id="editor-summary-list" class="editor-summary-list"></ol>
+      </section>
       <p id="serialize-error" class="banner error" hidden></p>
       <div id="editor-root" class="editor"></div>
     </section>

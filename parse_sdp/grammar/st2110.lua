@@ -1251,7 +1251,11 @@ local function check_rtpmap_requires_fmtp(block, ctx)
   for pt, enc in pairs(needs) do
     if not has[pt] then
       local check = FMTP_REQUIRED_BY_ENCODING[enc]
-      if not check({}, ctx) then return false end
+      -- No line to point at; name the attribute list the fmtp belongs in
+      -- so consumers can place the findings (the UI pins them there).
+      local field_path = string.format(
+        "media[%d].attributes[fmtp:pt=%d]", ctx.media_index or 0, pt)
+      if not check({}, ctx, nil, field_path, enc) then return false end
     end
   end
   return true

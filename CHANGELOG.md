@@ -35,6 +35,12 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
   inherits the session-level one). The GUIDE's RFC 768 `a=rtcp` port-range
   row, which no tier enforces, is removed.
 
+- **No-fmtp "required parameter" findings now carry a `field_path`**
+  (`media[N].attributes[fmtp:pt=PT]`). When a raw / jxsv / smpte291 /
+  ST 2110-41 stream has no `a=fmtp` at all, the per-parameter
+  `*-required` findings had neither a line nor a path, so consumers
+  could not place them.
+
 ### Changed
 
 - **Examples use CRLF line endings.** Every `.sdp` under `examples/` was

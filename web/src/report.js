@@ -4,7 +4,7 @@
 import { h, replace, setText } from "./dom.js";
 import { TIER_ORDER, TIER_LABELS, dedupeFindings, filterRows, groupRows, tierSummary, locationLabel } from "./findings.js";
 import { splitLines } from "./format.js";
-import { canOverride, SEVERITIES } from "./checks.js";
+import { severityControl as sharedSeverityControl } from "./severity_control.js";
 
 // policy: the store from policy.js (getCheck / overrideFor / setSeverity /
 // silencedCount / open), shared with the popout panel.
@@ -61,21 +61,7 @@ export function initReport(root, { onSelect, policy }) {
     ];
   }
 
-  // Compact severity control for the check behind a row. None for
-  // PARSE_ERROR rows (no id) or hard-syntactic checks.
-  function severityControl(f) {
-    const check = f.id ? policy.getCheck(f.id) : undefined;
-    if (!canOverride(check)) return null;
-    const sel = h("select", {
-      class: "row-severity", "aria-label": `Severity for ${check.id}`, value: policy.overrideFor(check.id),
-      title: `Severity for ${check.id} (default ${check.default_severity})`,
-      on: { change: () => policy.setSeverity(check.id, sel.value) },
-    },
-      h("option", { value: "" }, `default (${check.default_severity})`),
-      SEVERITIES.map((s) => h("option", { value: s }, s)));
-    sel.value = policy.overrideFor(check.id);
-    return sel;
-  }
+  const severityControl = (f) => sharedSeverityControl(policy, f.id);
 
   function renderSingle(row) {
     const f = row.finding;

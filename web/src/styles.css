@@ -358,7 +358,33 @@ pre { overflow-x: auto; max-width: 100%; }
 .row .kind { font-size: 0.7rem; color: var(--text-muted); }
 .row.has-error input { border-color: var(--error); }
 .field-error { color: var(--error); font-size: 0.8rem; }
-.row .finding-marks { display: flex; gap: 4px; }
+.row.has-finding, .list.has-finding, .params.has-finding, .param-row.has-finding { border-left: 3px solid var(--warn); padding-left: 8px; border-radius: 3px; }
+.row.has-finding.sev-error, .list.has-finding.sev-error, .params.has-finding.sev-error, .param-row.has-finding.sev-error { border-left-color: var(--error); }
+.card.has-finding { border-color: var(--warn); }
+.card.has-finding.sev-error { border-color: var(--error); }
+.card .finding-marks { text-transform: none; font-weight: 600; margin-left: 4px; }
+.expand-findings { font-size: 0.75rem; }
+.field-findings { display: grid; gap: 4px; grid-column: 1 / -1; }
+.row .field-findings { margin-top: 4px; }
+.card-body > .field-findings { margin-top: 8px; }
+.fdisc { border: 1px solid var(--border); border-left: 3px solid var(--warn); border-radius: var(--radius); background: var(--surface); min-width: 0; }
+.fdisc.sev-error { border-left-color: var(--error); }
+.fdisc.is-missing { border-style: dashed; border-left-style: solid; }
+.fdisc-summary { width: 100%; text-align: left; display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px; padding: 5px 8px; background: transparent; border: 0; font-size: 0.82rem; line-height: 1.35; }
+.fdisc-summary:hover { background: var(--surface-2); }
+.fdisc-summary::after { content: "▸"; color: var(--text-muted); margin-left: auto; font-size: 0.75em; }
+.fdisc-summary[aria-expanded="true"]::after { content: "▾"; }
+.fdisc-glyph { font-weight: 700; }
+.fdisc-glyph.sev-error { color: var(--error); }
+.fdisc-glyph.sev-warn { color: var(--warn); }
+.fdisc-id { font-family: var(--mono); font-size: 0.78rem; color: var(--text-muted); word-break: break-all; }
+.fdisc-short { min-width: 0; overflow-wrap: anywhere; }
+.badge.missing { background: var(--error-bg); color: var(--error); text-transform: none; border: 1px dashed var(--error); }
+.fdisc-body { padding: 4px 10px 8px 24px; display: grid; gap: 4px; font-size: 0.84rem; border-top: 1px solid var(--border); }
+.fdisc-meta { display: flex; flex-wrap: wrap; gap: 10px; color: var(--text-muted); font-size: 0.8rem; }
+.fdisc-foot { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
+.fdisc-sev { font-size: 0.8rem; color: var(--text-muted); display: inline-flex; align-items: center; gap: 4px; }
+.fdisc-actions { flex: 1 1 4em; min-height: 1.6em; }
 
 .list { display: grid; grid-template-columns: minmax(0, 1fr); gap: 4px; }
 .tokens { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
@@ -377,6 +403,20 @@ pre { overflow-x: auto; max-width: 100%; }
 .add-bar { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
 .add-bar select, .add-bar input[type="text"] { font-size: 0.85rem; }
 .editor .empty { color: var(--text-muted); font-size: 0.9rem; }
+
+/* Editor findings summary block */
+.editor-summary { border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface-2); display: grid; min-width: 0; }
+.editor-summary-head { display: flex; align-items: center; gap: 10px; padding: 8px 12px; }
+.editor-summary-counts { font-size: 0.92rem; color: var(--text); }
+.editor-summary-counts .n-err { color: var(--error); }
+.editor-summary-counts .n-warn { color: var(--warn); }
+.editor-summary-head button { margin-left: auto; }
+.editor-summary-list { list-style: none; margin: 0; padding: 0 8px 8px; display: grid; gap: 2px; max-height: 40vh; overflow: auto; }
+.editor-summary-list li { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: 8px; align-items: baseline; padding: 4px 6px; border-radius: 4px; background: var(--surface); font-size: 0.84rem; }
+.editor-summary-list .es-id { font-family: var(--mono); font-size: 0.78rem; color: var(--text-muted); word-break: break-all; }
+.editor-summary-list .es-msg { overflow-wrap: anywhere; }
+.editor-summary-list .es-loc { font-family: var(--mono); font-size: 0.78rem; background: transparent; border: 0; padding: 0; color: var(--accent); text-decoration: underline; cursor: pointer; text-align: right; word-break: break-all; }
+@media (max-width: 600px) { .editor-summary-list li { grid-template-columns: auto minmax(0, 1fr); } .editor-summary-list .es-loc { grid-column: 2; text-align: left; } }
 
 /* Policy popout + per-row controls */
 .policy-toggle { display: inline-flex; align-items: center; gap: 6px; }
