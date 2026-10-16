@@ -72,6 +72,55 @@ end
 
 local finding_for = support.finding_for
 
+-- ── TR-10-1 §8.7 — RTCP port convention ─────────────────────────────────────
+
+-- Append media-level attribute lines to the minimal video SDP (attributes
+-- are the last thing in a media section, so appending stays well-formed).
+local function video_sdp_with(extra_lines)
+  return build_video_sdp() .. lines_to_sdp(extra_lines)
+end
+
+describe("IPMX TR-10-1 §8.7 — RTCP on media port + 1", function()
+
+  -- SPEC: TR-10-1 §8.7 — "RTCP Sender Report packets shall be sent to the
+  -- UDP destination port that corresponds to +1 from the port used by
+  -- their corresponding media payload." a=rtcp-mux (RFC 5761 §5.1.3)
+  -- puts RTCP on the media port itself.
+  it("rejects a=rtcp-mux on an RTP block", function()
+    local doc, ctx = ipmx.match(video_sdp_with({ "a=rtcp-mux" }))
+    assert.is_nil(doc)
+    local f = finding_for(ctx, "tr-10-1.a.rtcp-mux.forbidden")
+    assert.is_not_nil(f)
+    assert.equal("media[0].attributes[rtcp-mux]", f.field_path)
+    assert.equal("TR-10-1 §8.7", f.spec_ref)
+  end)
+
+  -- SPEC: TR-10-1 §8.7 — explicit a=rtcp port other than media port + 1.
+  it("rejects a=rtcp whose port is not the media port + 1", function()
+    local doc, ctx = ipmx.match(video_sdp_with({ "a=rtcp:30002" }))
+    assert.is_nil(doc)
+    local f = finding_for(ctx, "tr-10-1.a.rtcp.port-must-be-media-port-plus-1")
+    assert.is_not_nil(f)
+    assert.equal("media[0].attributes[rtcp]", f.field_path)
+    assert.equal(30001, f.context.expected)
+  end)
+
+  it("accepts a=rtcp at media port + 1", function()
+    local doc = ipmx.match(video_sdp_with({ "a=rtcp:30001" }))
+    assert.is_truthy(doc)
+  end)
+
+  it("accepts a block with no a=rtcp (the +1 convention is implicit)", function()
+    assert.is_truthy(ipmx.match(build_video_sdp()))
+  end)
+
+  -- The SHALL is authored by IPMX; ST 2110 inherits nothing from it.
+  it("does not fire at the ST 2110 tier", function()
+    assert.is_truthy(st2110.match(video_sdp_with({ "a=rtcp-mux" })))
+  end)
+
+end)
+
 -- ── TR-10-1 §10 — FID prohibition (a=group:FID) ─────────────────────────────
 
 describe("IPMX TR-10-1 §10 — a=group:FID forbidden", function()
@@ -1152,6 +1201,84 @@ describe("IPMX TR-10-13 §13 — a=privacy attribute", function()
 end)
 
 -- ── TR-10-13 §20.1 — a=extmap direction for PEP IV-Counter URNs ───────────
+
+-- ── TR-10-13 §13 — DUP legs share privacy parameters ────────────────────────
+
+local PRIVACY_A = "a=privacy: protocol=RTP; mode=AES-128-CTR;"
+  .. " iv=0123456789abcdef; key_generator=0123456789abcdef0123456789abcdef;"
+  .. " key_version=00112233; key_id=fedcba9876543210"
+local PRIVACY_B = PRIVACY_A:gsub("AES%-128%-CTR", "AES-256-CTR")
+-- Same parameters as PRIVACY_A in a different order.
+local PRIVACY_A_REORDERED = "a=privacy: mode=AES-128-CTR; protocol=RTP;"
+  .. " key_id=fedcba9876543210; key_version=00112233;"
+  .. " key_generator=0123456789abcdef0123456789abcdef; iv=0123456789abcdef"
+
+-- Two DUP legs (a=mid:1 / a=mid:2), each an IPMX-conformant raw-video
+-- block; `session_lines` go after t=, `leg1` / `leg2` are extra media-
+-- level attribute lines for the respective leg.
+local function build_dup_sdp(opts)
+  opts = opts or {}
+  local lines = { "v=0", "o=- 1 1 IN IP4 192.0.2.1", "s=Test", "t=0 0",
+                  "a=group:DUP 1 2" }
+  for _, l in ipairs(opts.session_lines or {}) do lines[#lines + 1] = l end
+  for leg, port, addr in (function()
+      local legs = { { 1, 30000, "239.0.0.1" }, { 2, 30010, "239.0.0.2" } }
+      local i = 0
+      return function() i = i + 1; local l = legs[i]; if l then return l[1], l[2], l[3] end end
+    end)() do
+    lines[#lines + 1] = "m=video " .. port .. " RTP/AVP 96"
+    lines[#lines + 1] = "c=IN IP4 " .. addr .. "/64"
+    lines[#lines + 1] = "a=mid:" .. leg
+    lines[#lines + 1] = "a=rtpmap:96 raw/90000"
+    lines[#lines + 1] = RAW_FMTP_IPMX_PT96
+    lines[#lines + 1] = TIMING_TS_REFCLK
+    lines[#lines + 1] = TIMING_MEDIACLK
+    for _, l in ipairs(opts["leg" .. leg] or {}) do lines[#lines + 1] = l end
+  end
+  return lines_to_sdp(lines)
+end
+
+describe("IPMX TR-10-13 §13 — DUP legs use the same privacy parameters", function()
+
+  -- SPEC: TR-10-13 §13 — "When using redundancy, as in ST 2022-7, the legs
+  -- shall use the same privacy encryption parameters."
+  it("rejects DUP legs whose a=privacy parameters differ", function()
+    local doc, ctx = ipmx.match(build_dup_sdp({ leg1 = { PRIVACY_A }, leg2 = { PRIVACY_B } }))
+    assert.is_nil(doc)
+    local f = finding_for(ctx, "tr-10-13.a.privacy.dup-legs-must-match")
+    assert.is_not_nil(f)
+    assert.equal("session.attributes[group][0]", f.field_path)
+    assert.equal("TR-10-13 §13", f.spec_ref)
+  end)
+
+  it("rejects a DUP where only one leg is privacy-encrypted", function()
+    local doc, ctx = ipmx.match(build_dup_sdp({ leg1 = { PRIVACY_A } }))
+    assert.is_nil(doc)
+    assert.is_not_nil(finding_for(ctx, "tr-10-13.a.privacy.dup-legs-must-match"))
+  end)
+
+  it("accepts DUP legs with identical a=privacy parameters", function()
+    assert.is_truthy(ipmx.match(build_dup_sdp({ leg1 = { PRIVACY_A }, leg2 = { PRIVACY_A } })))
+  end)
+
+  it("compares parameters by key, not by textual order", function()
+    assert.is_truthy(ipmx.match(build_dup_sdp({ leg1 = { PRIVACY_A }, leg2 = { PRIVACY_A_REORDERED } })))
+  end)
+
+  -- SPEC: TR-10-13 §17 — a=privacy may be session-level; a leg without its
+  -- own media-level attribute inherits it.
+  it("treats a session-level a=privacy as every leg's parameters", function()
+    assert.is_truthy(ipmx.match(build_dup_sdp({ session_lines = { PRIVACY_A }, leg2 = { PRIVACY_A } })))
+    local doc, ctx = ipmx.match(build_dup_sdp({ session_lines = { PRIVACY_A }, leg2 = { PRIVACY_B } }))
+    assert.is_nil(doc)
+    assert.is_not_nil(finding_for(ctx, "tr-10-13.a.privacy.dup-legs-must-match"))
+  end)
+
+  it("accepts a DUP with no privacy on any leg", function()
+    assert.is_truthy(ipmx.match(build_dup_sdp()))
+  end)
+
+end)
 
 describe("IPMX TR-10-13 §20.1 — a=extmap PEP direction", function()
 

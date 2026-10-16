@@ -1428,7 +1428,6 @@ checks:
 | Check | Spec ref | Result |
 | --- | --- | --- |
 | `a=rtcp-mux` present on a media block | TR-10-1 §8.7 + RFC 5761 | Rejected — TR-10-1 §8.7 mandates port+1; RFC 5761 defines `rtcp-mux` as RTP/RTCP on the same port, which contradicts the §8.7 "shall" |
-| `a=rtcp:<port>` with `port > 65535` | RFC 768 | Rejected (above UDP range) |
 | `a=rtcp:<port>` present but `port ≠ media-port + 1` | TR-10-1 §8.7 | Rejected |
 | No `a=rtcp` present | — | Accepted (implicit port+1 convention) |
 
