@@ -83,12 +83,13 @@ async function main() {
     stem: "session",
   };
 
+  const policy = initPolicy(document.querySelector("#report"), { onChange: () => rerun() });
   const report = initReport(document.querySelector("#report"), {
     onSelect: (finding) => { if (!finding.line && finding.field_path) editor.highlightPath(finding.field_path); },
+    policy,
   });
   const editor = initEditor(document.querySelector("#editor"), { onChange: () => revalidate() });
   const output = initOutput({ section: document.querySelector("#output"), bar: document.querySelector(".site-header") });
-  const policy = initPolicy(document.querySelector("#policy"), { onChange: () => rerun() });
   const input = initInput(document.querySelector("#input"), { onSubmit: analyze, fetchText });
 
   const [checks, manifest] = await Promise.all([engine.request({ op: "checks" }), loadExampleManifest()]);
@@ -192,10 +193,12 @@ async function main() {
     renderOutput();
   }
 
-  // Policy changed: redo whatever produced the current report.
+  // Policy changed: redo whatever produced the current report, or just
+  // refresh the row controls when nothing has been analyzed yet.
   function rerun() {
     if (state.mode === "sdp" && !state.edited) return analyzeText(state.inputText);
     if (state.doc) return revalidate();
+    report.refreshRows();
     return undefined;
   }
 }

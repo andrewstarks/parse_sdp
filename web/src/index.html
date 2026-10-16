@@ -25,7 +25,6 @@
       <a href="#report">Report</a>
       <a href="#editor">Editor</a>
       <a href="#output">Output</a>
-      <a href="#policy">Policy</a>
     </nav>
     <div class="bar-actions" role="group" aria-label="Output actions">
       <label class="visually-hidden" for="out-format-top">Output format</label>
@@ -94,7 +93,20 @@
         </label>
         <label class="check"><input type="checkbox" id="filter-error" checked> Errors</label>
         <label class="check"><input type="checkbox" id="filter-warn" checked> Warnings</label>
+        <button id="policy-toggle" type="button" class="policy-toggle" aria-expanded="false" aria-controls="policy-panel" aria-label="Policy">Policy<span class="count badge" hidden></span></button>
         <span id="filter-count" class="meta"></span>
+        <span id="silenced-notice" class="meta silenced" role="status" hidden></span>
+      </div>
+      <div id="policy-panel" class="policy-panel" hidden role="region" aria-labelledby="policy-title">
+        <div class="toolbar">
+          <h3 id="policy-title">Policy</h3>
+          <label>Filter <input id="policy-filter" type="search" placeholder="check id or spec" autocomplete="off"></label>
+          <span id="policy-count" class="meta"></span>
+          <button id="policy-reset" type="button">Reset overrides</button>
+          <button id="policy-close" type="button" class="ghost" aria-label="Close policy">Close</button>
+        </div>
+        <p class="hint">Set the severity of any check. Overrides are stored in this browser and applied to every analysis. Hard-syntactic checks define parseability and cannot be changed.</p>
+        <div id="policy-groups" class="policy-groups"></div>
       </div>
       <div class="report-grid">
         <ol id="findings" class="findings" aria-label="Findings"></ol>
@@ -133,18 +145,6 @@
       <ol id="output-lines" class="source-lines diff" aria-label="Output text"></ol>
     </section>
 
-    <section id="policy" class="panel" aria-labelledby="policy-title">
-      <div class="panel-head">
-        <h2 id="policy-title">Policy</h2>
-        <p class="hint">Set the severity of any check. Overrides are stored in this browser and applied to every analysis. Hard-syntactic checks define parseability and cannot be changed.</p>
-      </div>
-      <div class="toolbar">
-        <label>Filter <input id="policy-filter" type="search" placeholder="check id or spec" autocomplete="off"></label>
-        <span id="policy-count" class="meta"></span>
-        <button id="policy-reset" type="button">Reset overrides</button>
-      </div>
-      <div id="policy-groups" class="policy-groups"></div>
-    </section>
   </main>
 
   <footer class="site-footer">

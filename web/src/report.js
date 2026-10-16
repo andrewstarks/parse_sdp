@@ -4,8 +4,11 @@
 import { h, replace, setText } from "./dom.js";
 import { TIER_ORDER, TIER_LABELS, dedupeFindings, filterRows, groupRows, tierSummary, locationLabel } from "./findings.js";
 import { splitLines } from "./format.js";
+import { canOverride, SEVERITIES } from "./checks.js";
 
-export function initReport(root, { onSelect }) {
+// policy: the store from policy.js (getCheck / overrideFor / setSeverity /
+// silencedCount / open), shared with the popout panel.
+export function initReport(root, { onSelect, policy }) {
   const cards = root.querySelector("#tier-cards");
   const status = root.querySelector("#report-status");
   const list = root.querySelector("#findings");
@@ -14,6 +17,7 @@ export function initReport(root, { onSelect }) {
   const filterError = root.querySelector("#filter-error");
   const filterWarn = root.querySelector("#filter-warn");
   const filterCount = root.querySelector("#filter-count");
+  const silenced = root.querySelector("#silenced-notice");
 
   let rows = [];
   let lineMarks = new Map();
@@ -24,10 +28,12 @@ export function initReport(root, { onSelect }) {
       const tier = tiers?.[name];
       const s = tierSummary(tier);
       const state = !tier ? "none" : s.passes ? "pass" : "fail";
+      // The inner wrapper is what the card's container query lays out.
       return h("article", { class: `tier-card ${state}`, "aria-label": `${TIER_LABELS[name]} tier` },
-        h("div", { class: "tier-name" }, i > 0 ? h("span", { class: "tier-arrow" }, "→ ") : null, TIER_LABELS[name]),
-        h("div", { class: "tier-state" }, !tier ? "—" : s.passes ? "Pass" : "Fail"),
-        h("div", { class: "tier-counts" }, tier ? `${s.errors} error${s.errors === 1 ? "" : "s"} · ${s.warnings} warning${s.warnings === 1 ? "" : "s"}` : "not run"));
+        h("div", { class: "tier-body" },
+          h("div", { class: "tier-name" }, i > 0 ? h("span", { class: "tier-arrow" }, "→ ") : null, TIER_LABELS[name]),
+          h("div", { class: "tier-state" }, !tier ? "—" : s.passes ? "Pass" : "Fail"),
+          h("div", { class: "tier-counts" }, tier ? `${s.errors} error${s.errors === 1 ? "" : "s"} · ${s.warnings} warning${s.warnings === 1 ? "" : "s"}` : "not run")));
     }));
   }
 
@@ -55,6 +61,22 @@ export function initReport(root, { onSelect }) {
     ];
   }
 
+  // Compact severity control for the check behind a row. None for
+  // PARSE_ERROR rows (no id) or hard-syntactic checks.
+  function severityControl(f) {
+    const check = f.id ? policy.getCheck(f.id) : undefined;
+    if (!canOverride(check)) return null;
+    const sel = h("select", {
+      class: "row-severity", "aria-label": `Severity for ${check.id}`, value: policy.overrideFor(check.id),
+      title: `Severity for ${check.id} (default ${check.default_severity})`,
+      on: { change: () => policy.setSeverity(check.id, sel.value) },
+    },
+      h("option", { value: "" }, `default (${check.default_severity})`),
+      SEVERITIES.map((s) => h("option", { value: s }, s)));
+    sel.value = policy.overrideFor(check.id);
+    return sel;
+  }
+
   function renderSingle(row) {
     const f = row.finding;
     const btn = h("button", {
@@ -62,7 +84,7 @@ export function initReport(root, { onSelect }) {
       class: `finding${row.key === selectedKey ? " is-selected" : ""}`,
       on: { click: () => select(row, btn) },
     }, findingBody(f, row), h("span", { class: "f-loc" }, locationLabel(f)));
-    return h("li", {}, btn);
+    return h("li", { class: "finding-row" }, btn, severityControl(f));
   }
 
   // A collapsed group: the row toggles a list of its line numbers; each
@@ -86,10 +108,24 @@ export function initReport(root, { onSelect }) {
       } },
     }, findingBody(f, row, h("span", { class: "badge count" }, `${row.count} lines`)),
       h("span", { class: "f-loc" }, `${row.lines[0]}–${row.lines[row.lines.length - 1]}`));
-    return h("li", { class: "finding-group" }, toggle, list);
+    return h("li", { class: "finding-row finding-group" }, toggle, severityControl(f), list);
+  }
+
+  function renderNotice() {
+    const n = policy.silencedCount();
+    if (n === 0) {
+      replace(silenced);
+      silenced.hidden = true;
+      return;
+    }
+    silenced.hidden = false;
+    replace(silenced, `${n} check${n === 1 ? "" : "s"} silenced · `,
+      // stopPropagation: the panel's outside-click handler must not see this click.
+      h("button", { type: "button", class: "link", on: { click: (e) => { e.stopPropagation(); policy.open(); } } }, "show policy"));
   }
 
   function renderRows() {
+    renderNotice();
     const visible = filterRows(rows, currentFilter());
     const grouped = groupRows(visible);
     const groups = grouped.filter((r) => r.group).length;
@@ -154,7 +190,6 @@ export function initReport(root, { onSelect }) {
       if (f.severity === "error" || !lineMarks.has(f.line)) lineMarks.set(f.line, f.severity);
     }
     selectedKey = null;
-    expanded = new Set();
     renderCards(tiers);
     setText(status, statusLine(tiers));
     renderRows();
@@ -173,5 +208,5 @@ export function initReport(root, { onSelect }) {
   for (const ctl of [filterTier, filterError, filterWarn]) ctl.addEventListener("change", renderRows);
 
   clearReport();
-  return { render, clearReport, highlightLine, setStatus: (msg) => setText(status, msg), getRows: () => rows };
+  return { render, clearReport, highlightLine, refreshRows: renderRows, setStatus: (msg) => setText(status, msg), getRows: () => rows };
 }

@@ -77,3 +77,21 @@ export function sanitizePolicy(overrides, checks) {
 export function countOverrides(policy) {
   return Object.keys(policy ?? {}).length;
 }
+
+// Severity a check currently reports at: the override when one is set,
+// otherwise the registry default. Unknown checks (e.g. PARSE_ERROR rows,
+// which carry no id) have no severity policy and yield undefined.
+export function effectiveSeverity(check, policy) {
+  if (!check) return undefined;
+  const sev = policy?.[check.id];
+  return SEVERITIES.includes(sev) ? sev : check.default_severity;
+}
+
+// Whether a finding row can carry a severity control.
+export function canOverride(check) {
+  return Boolean(check && isToggleable(check));
+}
+
+export function countSilenced(policy) {
+  return Object.values(policy ?? {}).filter((s) => s === "off").length;
+}

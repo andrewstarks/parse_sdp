@@ -8,7 +8,7 @@ const engine = await createEngine({ load: fsLoader });
 test("version and checks come from the recorded fixtures", async () => {
   assert.deepEqual(engine.version, await fixtureJson("version.json"));
   const checks = await engine.request({ op: "checks" });
-  assert.equal(checks.checks.length, 170);
+  assert.equal(checks.checks.length, (await fixtureJson("checks.json")).checks.length);
 });
 
 test("report on a known input returns the recorded response regardless of line endings", async () => {
