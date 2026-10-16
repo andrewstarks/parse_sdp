@@ -35,6 +35,16 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
   inherits the session-level one). The GUIDE's RFC 768 `a=rtcp` port-range
   row, which no tier enforces, is removed.
 
+- **A session-only SDP no longer passes ST 2110 / IPMX.**
+  `st2110-10.m.media-description-required` (ST 2110-10:2022 §8.1: "Devices
+  which contain one or more Senders shall construct one SDP session
+  description ... for each RTP stream (or redundant pair of streams)") fires
+  when the document has no `m=` line. The earlier decision to accept zero
+  media blocks examined only the 1.0 parser's §7 citation, which carries no
+  SHALL; §8.1 does. RFC 8866 alone still accepts a session-only SDP.
+  `examples/generic/valid/06_soft_syntactic_warnings.sdp` now reads ✓ ✗ ✗ on
+  the diagnose ladder, and a new `spec/examples_spec.lua` asserts every
+  example's verdict from its directory (valid passes its tier, invalid fails).
 - **No-fmtp "required parameter" findings now carry a `field_path`**
   (`media[N].attributes[fmtp:pt=PT]`). When a raw / jxsv / smpte291 /
   ST 2110-41 stream has no `a=fmtp` at all, the per-parameter

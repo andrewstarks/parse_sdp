@@ -262,11 +262,10 @@ describe("library: sdp.parse() with 'st2110' mode", function()
   end)
 
   -- NOT-SPEC: library
-  -- Behavior change from 1.0: the grammar tier does not require ≥1 media
-  -- block at any tier (no spec text explicitly forbids an empty SDP).
-  -- Tests asserting media-presence rejection moved out with the legacy
-  -- 1.0 suite; ts-refclk-missing remains as the canonical st2110-rejection
-  -- assertion (test below) since §8.2's per-block SHALL is unambiguous.
+  -- A session-only SDP is rejected at ST 2110 by ST 2110-10:2022 §8.1
+  -- (st2110-10.m.media-description-required; covered in
+  -- grammar_st2110_spec). ts-refclk-missing stays as the canonical
+  -- st2110-rejection assertion since §8.2's per-block SHALL is unambiguous.
   it("returns nil+err for SDP missing ts-refclk everywhere", function()
     local doc, err = sdp.parse(ST2110_MISSING_TSREFCLK, "st2110")
     assert.is_nil(doc)
@@ -293,8 +292,8 @@ describe("library: sdp.parse() with 'ipmx' mode", function()
     assert.matches("IPMX", err.message)
   end)
 
-  -- (no separate "no media block" assertion at ipmx; grammar tier permits
-  -- empty SDPs at every tier — see comment above on the st2110 block.)
+  -- (no separate "no media block" assertion at ipmx; it inherits the
+  -- ST 2110-10 §8.1 rejection — see grammar_st2110_spec.)
 end)
 
 -- ── 5. doc:validate() default and 'sdp' mode ─────────────────────────────────

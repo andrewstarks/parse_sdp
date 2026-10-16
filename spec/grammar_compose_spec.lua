@@ -165,8 +165,10 @@ describe("parse_sdp.grammar.st2110 — Phase 6.A shell", function()
   end)
 
   -- NOT-SPEC: library
-  it("matches every input base.match matches (empty overrides)", function()
-    assert.is_truthy(st2110.match(MINIMAL))
+  -- MINIMAL (session-only) is deliberately absent: ST 2110-10:2022 §8.1
+  -- rejects an SDP with no media description, so the ST 2110 tier is
+  -- stricter than base there by design (grammar_st2110_spec covers it).
+  it("matches a minimal ST 2110-conformant input", function()
     assert.is_truthy(st2110.match(MINIMAL_WITH_RTPMAP))
   end)
 
@@ -210,7 +212,6 @@ describe("parse_sdp.grammar.ipmx — Phase 7.A shell", function()
 
   -- NOT-SPEC: library
   it("matches every input the ST 2110 tier matches (empty overrides)", function()
-    assert.is_truthy(ipmx.match(MINIMAL))
     assert.is_truthy(ipmx.match(MINIMAL_WITH_RTPMAP))
   end)
 

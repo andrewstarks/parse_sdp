@@ -994,10 +994,9 @@ library a liability rather than a guard.
   signaled via NMOS Sender Capabilities, not via SDP. The library accepts any
   conformant single SDP and does not infer device-wide capability claims from
   it.
-- **SDPs with zero media blocks at any tier.** RFC 8866 / ST 2110-10 / TR-10
-  do not explicitly forbid `#media == 0`; the library follows the spec. The
-  per-block SHALLs (ts-refclk, mediaclk, IPMX fmtp marker, etc.) still fire
-  on any block that *is* present.
+- **SDPs with zero media blocks at the RFC 8866 tier.** RFC 8866 does not
+  require a media description, so a session-only SDP is valid base SDP.
+  (ST 2110 and IPMX reject it — see ST 2110-10 §8.1 below.)
 - **Specific audio shapes that the 1.0 parser flagged without primary-text
   grounding.** Three checks the 1.0 parser enforced are not enforced here
   because their cites don't carry the SHALL in the primary spec text:
@@ -1025,6 +1024,15 @@ quote it in the code comment and as the `spec_ref` field on the error.
 `sdp.parse(text, "st2110")` or `doc:validate("st2110")` enforces:
 
 ### Session-level
+
+#### The SDP must describe an RTP stream (ST 2110-10 §8.1)
+
+ST 2110-10:2022 §8.1: *"Devices which contain one or more Senders shall
+construct one SDP session description as specified in IETF RFC 4566 for each
+RTP stream (or redundant pair of streams) that is originated by that
+device."* A session with no `m=` line describes no RTP stream, so it is
+rejected at the ST 2110 tier (`st2110-10.m.media-description-required`) and,
+by inheritance, at IPMX. RFC 8866 alone accepts it.
 
 #### ST 2022-7 redundancy grouping — `a=group:DUP` (ST 2110-10 §8.5)
 
@@ -1278,7 +1286,7 @@ on all non-USB media blocks, then checks IPMX-specific requirements:
 | Check | Spec ref | Detail |
 | --- | --- | --- |
 | `a=group:FID` forbidden | TR-10-1 §10 | FID (Flow Identification) semantics shall not be used; any session-level `a=group:FID` is rejected |
-| At least one media block required | ST 2110-10 §7 | IPMX is built on ST 2110-10 §7/§8.1 SDP signaling; an SDP with zero `m=` blocks isn't describing any IPMX stream |
+| At least one media block required | ST 2110-10:2022 §8.1 | Inherited from the ST 2110 tier (see below): an SDP with zero `m=` blocks describes no RTP stream |
 | Media port must be even and > 1024 | TR-10-2 §7 | "All IPMX Media streams shall have a UDP destination port value that is even and that is greater than 1024." Wording is repeated identically across every per-essence TR-10 (-2 §7, -3 §7, -4 §7, -11 §7, -12 §7); TR-10-2 cited as canonical. Applies to all non-USB RTP media blocks |
 | Media port must be ≤ 65535 | RFC 768 | Applies at the parser level to all `m=` blocks (rejected during parse, not validate) |
 | `a=extmap` format when present | RFC 5285 | `a=extmap` is **not required** at the IPMX baseline (M31 removed an unconditional requirement that had no spec basis). When present, every `a=extmap` value must be in RFC 5285 format: `entry-count[/direction] URI` where direction is `sendonly`, `recvonly`, `sendrecv`, or `inactive` and URI has a scheme (e.g. `urn:`, `http:`); ID must be 1–255; IDs must be unique within their scope. TR-10-13 §1.1.1 mandates `a=extmap` only when declaring RTP Extension Headers for PEP (privacy) |

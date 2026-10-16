@@ -125,14 +125,15 @@ end)
 describe("CLI: diagnose subcommand", function()
 
   -- NOT-SPEC: library
-  it("media-less SDP shows ✓ at every tier and exits 0", function()
-    -- An SDP with no m= blocks has nothing to violate at higher tiers;
-    -- ST 2110 / IPMX checks are per-media-block.
+  it("media-less SDP passes RFC 8866, fails ST 2110 / IPMX, exits 0", function()
+    -- RFC 8866 needs no media description; ST 2110-10:2022 §8.1 does
+    -- (st2110-10.m.media-description-required), and IPMX inherits it.
     local stdout, _, code = run("diagnose spec/fixtures/minimal.sdp")
     assert.equal(0, code)
     assert.truthy(stdout:find("✓ RFC 8866", 1, true))
-    assert.truthy(stdout:find("✓ SMPTE ST 2110", 1, true))
-    assert.truthy(stdout:find("✓ IPMX", 1, true))
+    assert.truthy(stdout:find("✗ SMPTE ST 2110", 1, true))
+    assert.truthy(stdout:find("st2110-10.m.media-description-required", 1, true))
+    assert.truthy(stdout:find("✗ IPMX", 1, true))
   end)
 
   -- NOT-SPEC: library
