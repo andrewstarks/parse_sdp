@@ -11,55 +11,59 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ### Added
 
-- **Browser playground** at <https://andrewstarks.github.io/parse_sdp/>:
-  Lua 5.5 + LPeg + `parse_sdp` compiled to WebAssembly with Emscripten
-  (`web/wasm/`), a JSON request/response bridge (`web/wasm/bridge.lua`,
-  contract in `web/CONTRACT.md`), and a static UI (`web/src/`) that
-  accepts SDP / JSON / Lua-table input, reports findings at every tier,
-  edits the document with live validation, and downloads the result. A
-  `Pages` workflow builds and deploys `web/dist/` on every push to `main`
-  that touches the library or the site. No change to the library itself.
+- Added a browser playground at <https://andrewstarks.github.io/parse_sdp/>.
+  Lua 5.5, LPeg, and `parse_sdp` are compiled to WebAssembly with Emscripten
+  (`web/wasm/`). A JSON request/response bridge (`web/wasm/bridge.lua`, with
+  the contract in `web/CONTRACT.md`) connects the page to the library. A
+  static UI (`web/src/`) accepts SDP, JSON, or Lua-table input, reports
+  findings at every tier, edits the document with live validation, and
+  downloads the result. A `Pages` workflow builds and deploys `web/dist/` on
+  every push to `main` that touches the library or the site. The library
+  itself is unchanged.
 
 ### Fixed
 
-- **Two IPMX checks documented in GUIDE.md were missing from the grammar
-  tier** (lost in the 1.0 → grammar refactor; `examples/ipmx/invalid/
-  rtcp_mux.sdp` and `dup_privacy_mismatch.sdp` passed). Restored with
-  primary-source citations: `tr-10-1.a.rtcp-mux.forbidden` and
-  `tr-10-1.a.rtcp.port-must-be-media-port-plus-1` (TR-10-1 §8.7: "RTCP
-  Sender Report packets shall be sent to the UDP destination port that
+- Restored two IPMX checks that GUIDE.md documented but the grammar tier did
+  not run. The checks were lost in the refactor from the 1.0 parser to the
+  grammar tier, so `examples/ipmx/invalid/rtcp_mux.sdp` and
+  `examples/ipmx/invalid/dup_privacy_mismatch.sdp` passed. The restored
+  checks cite primary sources. `tr-10-1.a.rtcp-mux.forbidden` and
+  `tr-10-1.a.rtcp.port-must-be-media-port-plus-1` cite TR-10-1 section 8.7:
+  "RTCP Sender Report packets shall be sent to the UDP destination port that
   corresponds to +1 from the port used by their corresponding media
-  payload"), and `tr-10-13.a.privacy.dup-legs-must-match` (TR-10-13 §13:
-  "When using redundancy, as in ST 2022-7, the legs shall use the same
-  privacy encryption parameters"; a leg without a media-level `a=privacy`
-  inherits the session-level one). The GUIDE's RFC 768 `a=rtcp` port-range
-  row, which no tier enforces, is removed.
-
-- **A session-only SDP no longer passes ST 2110 / IPMX.**
-  `st2110-10.m.media-description-required` (ST 2110-10:2022 §8.1: "Devices
+  payload". `tr-10-13.a.privacy.dup-legs-must-match` cites TR-10-13 section
+  13: "When using redundancy, as in ST 2022-7, the legs shall use the same
+  privacy encryption parameters". A leg without a media-level `a=privacy`
+  inherits the session-level `a=privacy`. The GUIDE.md row for the RFC 768
+  `a=rtcp` port range, which no tier enforces, is removed.
+- A session-only SDP no longer passes the ST 2110 tier or the IPMX tier. The
+  new check `st2110-10.m.media-description-required` fires when the document
+  has no `m=` line. The check cites ST 2110-10:2022 section 8.1: "Devices
   which contain one or more Senders shall construct one SDP session
-  description ... for each RTP stream (or redundant pair of streams)") fires
-  when the document has no `m=` line. The earlier decision to accept zero
-  media blocks examined only the 1.0 parser's §7 citation, which carries no
-  SHALL; §8.1 does. RFC 8866 alone still accepts a session-only SDP.
-  `examples/generic/valid/06_soft_syntactic_warnings.sdp` now reads ✓ ✗ ✗ on
-  the diagnose ladder, and a new `spec/examples_spec.lua` asserts every
-  example's verdict from its directory (valid passes its tier, invalid fails).
-- **No-fmtp "required parameter" findings now carry a `field_path`**
-  (`media[N].attributes[fmtp:pt=PT]`). When a raw / jxsv / smpte291 /
-  ST 2110-41 stream has no `a=fmtp` at all, the per-parameter
-  `*-required` findings had neither a line nor a path, so consumers
-  could not place them.
+  description ... for each RTP stream (or redundant pair of streams)". The
+  earlier decision to accept zero media blocks examined only the section 7
+  citation in the 1.0 parser, which has no SHALL; section 8.1 does. RFC 8866
+  alone still accepts a session-only SDP. The diagnose ladder for
+  `examples/generic/valid/06_soft_syntactic_warnings.sdp` now reads ✓ ✗ ✗
+  (pass at RFC 8866, fail at ST 2110, fail at IPMX). A new
+  `spec/examples_spec.lua` asserts every example's verdict from its
+  directory: a valid example passes its tier, and an invalid example fails.
+- Required-parameter findings for a stream with no `a=fmtp` line now include
+  a `field_path` (`media[N].attributes[fmtp:pt=PT]`). When a raw, jxsv,
+  smpte291, or ST 2110-41 stream had no `a=fmtp` at all, the per-parameter
+  `*-required` findings had neither a line nor a path, so consumers could
+  not place them.
 
 ### Changed
 
-- **Examples use CRLF line endings.** Every `.sdp` under `examples/` was
-  LF-terminated, so each line emitted `sdp.line.lf-only-line-ending`
-  (75 warnings on the pathological example). They now carry the CRLF
-  RFC 8866 §5 requires; the one example whose purpose is to show
-  soft-syntactic findings (`generic/valid/06_soft_syntactic_warnings.sdp`)
-  is unchanged. A `.gitattributes` rule (`*.sdp -text`) stops git from
-  normalizing SDP files on checkout.
+- The example files now use CRLF line endings. Every `.sdp` file under
+  `examples/` was LF-terminated, so each line emitted
+  `sdp.line.lf-only-line-ending` (75 warnings on the pathological example).
+  The files now have the CRLF line endings that RFC 8866 section 5 requires.
+  The one example whose purpose is to show soft-syntactic findings
+  (`generic/valid/06_soft_syntactic_warnings.sdp`) is unchanged. A
+  `.gitattributes` rule (`*.sdp -text`) stops git from normalizing SDP files
+  on checkout.
 
 ## [1.5.1] — 2026-10-15
 

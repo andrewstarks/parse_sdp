@@ -43,10 +43,10 @@ end
 local ap = argparse("parse_sdp", [[
 Parse, validate, and serialize SDP (Session Description Protocol).
 
-Validates at three tiers — RFC 8866 (base) → SMPTE ST 2110 → IPMX —
-extending the lower tier each step. Every validation check cites a
-primary-source spec clause; errors report exact line and column with
-a stable `id` you can grep for.]])
+Validation runs at three tiers: RFC 8866 (base SDP), SMPTE ST 2110,
+and IPMX. Each tier extends the tier below it. Every validation check
+cites a primary-source spec clause. Every error reports the line and
+column and a stable check id that can be searched for.]])
 
 ap:epilog(table.concat({
   "Examples:",
@@ -55,7 +55,7 @@ ap:epilog(table.concat({
   "  parse_sdp to_json --mode ipmx --pretty session.sdp",
   "  parse_sdp to_json < session.sdp | parse_sdp to_sdp > out.sdp",
   "",
-  "Exit code: 0 on success, 1 on parse / validation failure (detail on stderr).",
+  "Exit code: 0 on success, 1 on a parse or validation failure (detail on stderr).",
   "Full docs: https://github.com/andrewstarks/parse_sdp",
 }, "\n"))
 ap:command_target("command")
@@ -66,19 +66,19 @@ ap:command_target("command")
 -- Companion to to_json for diagnostic use — no JSON in the output path.
 
 local cmd_validate = ap:command("validate", [[
-Validate an SDP file and report a single yes/no verdict.
+Validate an SDP file and report a pass or fail verdict.
 
-Prints "OK" to stdout and exits 0 on success; prints the formatted
-error block (id, spec_ref, line:col, carrot-highlighted source) to
-stderr and exits 1 on failure. Use --mode to pick the validation
-tier.]])
+On success, prints "OK" to stdout and exits 0. On failure, prints a
+formatted error block (id, spec_ref, line and column, and the source
+line with a caret under the failure position) to stderr and exits 1.
+The --mode option selects the validation tier.]])
 cmd_validate:summary("Validate an SDP file; print OK or a formatted error.")
 cmd_validate:argument("file",
-  "Path to an .sdp file. Reads stdin if omitted or '-'."):args("?")
+  "Path to an .sdp file. Reads stdin when the path is omitted or is '-'."):args("?")
 cmd_validate:option("--mode",
   "Validation tier: 'sdp' (default, RFC 8866 base), 'st2110' (SMPTE ST 2110), or 'ipmx' (VSF TR-10).")
 cmd_validate:flag("--all-findings",
-  "Collect every finding (errors + warnings) instead of stopping at the first error. Exits 1 if any finding's default severity is 'error'; 0 otherwise.")
+  "Collect every finding (errors and warnings) instead of stopping at the first error. Exits 1 when any finding's default severity is 'error', otherwise 0.")
 
 -- ─── diagnose ──────────────────────────────────────────────────────────────
 --
@@ -87,50 +87,50 @@ cmd_validate:flag("--all-findings",
 -- compliance with, and where does it fall short?"
 
 local cmd_diagnose = ap:command("diagnose", [[
-Report which validation tiers an SDP passes.
+Report which validation tiers an SDP file passes.
 
-Runs RFC 8866 → SMPTE ST 2110 → IPMX and prints a tier ladder with
-✓/✗ per tier. On failure, shows the structured finding's id, message,
-spec_ref, and field_path indented under the row. When a higher tier
-re-emits a lower tier's finding, the row collapses to "(inherits …
-failure — fix it first)". Always exits 0 — the verdict is the
-output.]])
-cmd_diagnose:summary("Report which validation tiers an SDP passes (✓/✗ ladder).")
+Runs the RFC 8866, SMPTE ST 2110, and IPMX tiers in that order and
+prints one row per tier, marked ✓ (pass) or ✗ (fail). Under a failed
+row, prints the finding's id, message, spec_ref, and field_path or
+line and column. When a higher tier reports the same finding as a
+lower tier, the row shows an "inherits" note instead of the detail.
+Always exits 0; the verdict is in the output.]])
+cmd_diagnose:summary("Report which validation tiers an SDP file passes (✓ or ✗ per tier).")
 cmd_diagnose:argument("file",
-  "Path to an .sdp file. Reads stdin if omitted or '-'."):args("?")
+  "Path to an .sdp file. Reads stdin when the path is omitted or is '-'."):args("?")
 cmd_diagnose:flag("--all-findings",
-  "List every finding per tier instead of just the first. Findings already emitted by a lower tier collapse to an 'inherits' note. Exit code unchanged (always 0).")
+  "List every finding at each tier instead of only the first. A finding already reported by a lower tier collapses to an 'inherits' note. The exit code is always 0.")
 
 -- ─── to_json ───────────────────────────────────────────────────────────────
 
 local cmd_parse = ap:command("to_json", [[
-Parse SDP, validate, and emit JSON to stdout.
+Parse an SDP file, validate it, and write JSON to stdout.
 
-JSON shape matches the library's `doc` table — every known attribute
-is decomposed into typed sub-fields (rtpmap, fmtp, ts-refclk, group,
-source-filter, ...). See GUIDE.md "Parsed Table Structure" for the
-schema.]])
-cmd_parse:summary("Parse SDP, validate, and emit JSON.")
+The JSON shape matches the library's doc table. Every known attribute
+is decomposed into typed fields (rtpmap, fmtp, ts-refclk, group,
+source-filter, and others). See GUIDE.md "Parsed Table Structure" for
+the schema.]])
+cmd_parse:summary("Parse an SDP file, validate it, and write JSON.")
 cmd_parse:argument("file",
-  "Path to an .sdp file. Reads stdin if omitted or '-'."):args("?")
+  "Path to an .sdp file. Reads stdin when the path is omitted or is '-'."):args("?")
 cmd_parse:option("--mode",
   "Validation tier: 'sdp' (default, RFC 8866 base), 'st2110' (SMPTE ST 2110), or 'ipmx' (VSF TR-10).")
 cmd_parse:flag("--pretty",
-  "Pretty-print the JSON output.")
+  "Indent the JSON output.")
 cmd_parse:flag("--all-findings",
-  "Collect every finding (errors + warnings) on stderr in addition to emitting JSON. Exits 1 if any finding's default severity is 'error'; 0 otherwise.")
+  "Collect every finding (errors and warnings) and write the list to stderr in addition to the JSON. Exits 1 when any finding's default severity is 'error', otherwise 0.")
 
 -- ─── to_sdp ────────────────────────────────────────────────────────────────
 
 local cmd_ser = ap:command("to_sdp", [[
-Render a JSON SDP document back to SDP text on stdout.
+Render a JSON SDP document as SDP text on stdout.
 
-Output uses CRLF line endings and strict RFC 8866 field ordering. The
-JSON must match the parsed-doc schema; piping `to_json | to_sdp`
-always round-trips.]])
-cmd_ser:summary("Render a JSON SDP document back to SDP text.")
+The output uses CRLF line endings and RFC 8866 field order. The JSON
+must match the parsed-doc schema. Piping to_json into to_sdp
+round-trips; the test suite checks this invariant on every fixture.]])
+cmd_ser:summary("Render a JSON SDP document as SDP text.")
 cmd_ser:argument("file",
-  "Path to a .json file. Reads stdin if omitted or '-'."):args("?")
+  "Path to a .json file. Reads stdin when the path is omitted or is '-'."):args("?")
 
 -- ─── checks ────────────────────────────────────────────────────────────────
 --
@@ -141,18 +141,19 @@ cmd_ser:argument("file",
 local cmd_checks = ap:command("checks", [[
 List every check the validator enforces.
 
-Default output is a column-aligned table of id / severity / spec_ref.
-With --format json, dumps the complete registry (one object per check,
-every field; suitable for jq). --filter is a plain-substring match
-against the check id; --unverified narrows to checks still pending
-primary-source re-verification.]])
-cmd_checks:summary("List the validator's registered checks (id / severity / spec_ref).")
+The default output is a column-aligned table of id, severity, and
+spec_ref. With --format json, writes the complete registry: one object
+per check with every field, suitable for jq. --filter keeps only the
+checks whose id contains the given text. --unverified keeps only the
+checks that are still pending re-verification against the primary
+source.]])
+cmd_checks:summary("List the validator's registered checks (id, severity, spec_ref).")
 cmd_checks:option("--format",
-  "Output format: 'table' (default, column-aligned) or 'json' (full registry).")
+  "Output format: 'table' (default, column-aligned) or 'json' (the full registry).")
 cmd_checks:option("--filter",
-  "Plain-substring match against the check id; only matching rows are emitted (e.g. 'ts-refclk', 'st2110-20.a.fmtp', 'tr-10-1').")
+  "Keep only the checks whose id contains this text (plain substring match, for example 'ts-refclk', 'st2110-20.a.fmtp', or 'tr-10-1').")
 cmd_checks:flag("--unverified",
-  "Only emit checks with verified=false (pending primary-source re-verification).")
+  "Keep only the checks with verified=false (pending re-verification against the primary source).")
 
 local parsed = ap:parse()
 

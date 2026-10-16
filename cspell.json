@@ -72,6 +72,19 @@
     "luaopen",
     "KEEPALIVE",
     "cwrap",
-    "ccall"
+    "ccall",
+    "bitops",
+    "popout",
+    "subcommand",
+    "subcommands",
+    "stdin",
+    "stdout",
+    "stderr",
+    "pathological",
+    "argparse",
+    "pcall",
+    "tsrefclk",
+    "fmts",
+    "docpath"
   ]
 }
