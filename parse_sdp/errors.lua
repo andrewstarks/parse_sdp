@@ -141,21 +141,41 @@ end
 
 -- ─── Position helpers ───────────────────────────────────────────────────────
 
+-- Byte offsets of every LF in `text`, ascending. Built once per subject
+-- and shared by every finding on it: record() caches it on ctx, so the
+-- cost of locating N findings is one pass over the text plus N binary
+-- searches, not N full scans (which made a parse quadratic in the number
+-- of lines whenever every line emits a finding, e.g. LF-only files).
+function M.line_index(text)
+  local index, pos = {}, 1
+  while true do
+    local lf = text:find("\n", pos, true)
+    if not lf then return index end
+    index[#index + 1] = lf
+    pos = lf + 1
+  end
+end
+
+-- Index of the first LF at or after `pos` (so `at - 1` LFs precede pos).
+local function lf_after(index, pos)
+  local lo, hi = 1, #index
+  while lo <= hi do
+    local mid = math.floor((lo + hi) / 2)
+    if index[mid] < pos then lo = mid + 1 else hi = mid - 1 end
+  end
+  return lo
+end
+
 -- Translate an LPeg byte position into 1-indexed (line, col). LF
 -- terminates a line for both bare-LF and CRLF (count LF only; CR sits
--- at the previous line's last column). Pure O(n) — finding emission
--- is rare enough that a position cache isn't worth the complexity.
-function M.pos_to_line_col(text, pos)
+-- at the previous line's last column). `index` is an optional
+-- precomputed M.line_index(text); built on the fly when absent.
+function M.pos_to_line_col(text, pos, index)
   if not text or not pos or pos < 1 then return 0, 0 end
   if pos > #text + 1 then pos = #text + 1 end
-  local line, last_lf = 1, 0
-  for i = 1, pos - 1 do
-    if text:byte(i) == 10 then  -- LF
-      line = line + 1
-      last_lf = i
-    end
-  end
-  return line, pos - last_lf
+  index = index or M.line_index(text)
+  local at = lf_after(index, pos)
+  return at, pos - (index[at - 1] or 0)
 end
 
 -- Extract the source line containing a byte position, stripped of any
@@ -163,17 +183,13 @@ end
 --   N | <line text>
 --     |       ^
 -- carrot highlight block under errors that carry pos / line+col.
-function M.pos_to_line_text(text, pos)
+function M.pos_to_line_text(text, pos, index)
   if not text or not pos or pos < 1 then return "" end
   if pos > #text + 1 then pos = #text + 1 end
-  local start = 1
-  for i = pos - 1, 1, -1 do
-    if text:byte(i) == 10 then start = i + 1; break end
-  end
-  local stop = #text
-  for i = start, #text do
-    if text:byte(i) == 10 then stop = i - 1; break end
-  end
+  index = index or M.line_index(text)
+  local at    = lf_after(index, pos)
+  local start = (index[at - 1] or 0) + 1
+  local stop  = (index[at] or (#text + 1)) - 1
   if stop >= start and text:byte(stop) == 13 then stop = stop - 1 end
   return text:sub(start, stop)
 end
@@ -198,8 +214,9 @@ function M.record(ctx, id, loc)
   local line, col = 0, 0
   local line_text
   if loc and loc.pos and ctx.text then
-    line, col = M.pos_to_line_col(ctx.text, loc.pos)
-    line_text = M.pos_to_line_text(ctx.text, loc.pos)
+    ctx.line_index = ctx.line_index or M.line_index(ctx.text)
+    line, col = M.pos_to_line_col(ctx.text, loc.pos, ctx.line_index)
+    line_text = M.pos_to_line_text(ctx.text, loc.pos, ctx.line_index)
   elseif loc then
     line, col = loc.line or 0, loc.col or 0
   end

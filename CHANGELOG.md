@@ -9,6 +9,20 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 
+### Fixed
+
+- **Parse time was quadratic in the number of findings.** `errors.record`
+  located every finding by scanning the subject byte-by-byte from the
+  start (`pos_to_line_col` + `pos_to_line_text`), so a file whose every
+  line emits a finding — any LF-terminated SDP triggers
+  `sdp.line.lf-only-line-ending` per line — cost O(lines × bytes). A
+  2 KB LF-terminated file took ~2.3 ms to parse; a 300 KB one took ~4 s.
+  `record()` now builds a per-parse LF index once (`errors.line_index`)
+  and resolves each position by binary search; `pos_to_line_col` /
+  `pos_to_line_text` accept the index as an optional third argument.
+  Same inputs now parse in ~0.23 ms and ~32 ms respectively; files with
+  no findings are unchanged. No API or output change.
+
 ## [1.5.0] — 2026-05-31
 
 ### Added
