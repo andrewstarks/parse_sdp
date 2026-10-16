@@ -24,12 +24,16 @@
   --key-pass: #1f9d4a;
   --key-fail: #e0443a;
   --key-off: #9a9a95;
-  --key-cap-top: rgba(255, 255, 255, 0.62);
-  --key-cap-bottom: rgba(255, 255, 255, 0.28);
+  --key-cap-top: rgba(255, 255, 255, 0.74);
+  --key-cap-bottom: rgba(255, 255, 255, 0.46);
   --key-edge: rgba(0, 0, 0, 0.18);
-  --key-glow: 0.42;
-  --key-glow-hover: 0.6;
-  --key-outer: 0.55;
+  --key-edge-alpha: 0.8;     /* light at the cap edge; centre is 1.0 */
+  --key-edge-base: #000;     /* what the edge fades towards: darker on a light page */
+  --key-hover-brightness: 1.06;
+  --key-outer: 0.15;
+  --key-ink: #141414;
+  --key-state-pass: #0d4f22;
+  --key-state-fail: #7f160f;
   --key-text-shadow: none;
   --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
   --sans: system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
@@ -63,14 +67,19 @@
     --key-cap-top: rgba(255, 255, 255, 0.18);
     --key-cap-bottom: rgba(255, 255, 255, 0.04);
     --key-edge: rgba(255, 255, 255, 0.22);
-    --key-glow: 0.75;
-    --key-glow-hover: 1;
-    --key-outer: 0.9;
-    --key-text-shadow: 0 1px 1px rgba(0, 0, 0, 0.45);
+    --key-edge-alpha: 0.8;
+    --key-edge-base: transparent;  /* the dark page itself provides the falloff */
+    --key-hover-brightness: 1.08;
+    --key-outer: 0.15;
+    --key-ink: #141414;
+    --key-state-pass: #062b12;
+    --key-state-fail: #3a0a07;
+    --key-text-shadow: none;
   }
 }
 
 * { box-sizing: border-box; }
+[hidden] { display: none !important; }
 
 html { font-family: var(--sans); font-size: 15px; line-height: 1.45; }
 body { margin: 0; background: var(--bg); color: var(--text); }
@@ -206,42 +215,56 @@ label.check { display: inline-flex; align-items: center; gap: 6px; }
 .drop-zone.is-dragging .drop-overlay { display: flex; }
 
 /* Tier cards: clear-plastic keycaps lit from behind. State classes
-   (pass / fail / none) only set the light colour; everything else is CSS. */
-.tier-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(180px, 100%), 1fr)); gap: var(--gap); min-width: 0; padding: 4px 0; }
+   (pass / fail / none) only set the light colour; everything else is CSS.
+   The card is a size container: wide cards lay the content out in one
+   row, narrow ones stack it. */
+.tier-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(180px, 100%), 1fr)); gap: var(--gap); min-width: 0; padding: 2px 0; }
 .tier-card {
   --key-color: var(--key-off);
   position: relative; isolation: isolate; overflow: hidden;
-  border-radius: 13px; padding: 12px 14px; display: grid; gap: 4px;
+  container-type: inline-size;
+  border-radius: 11px; padding: 8px 14px; min-width: 0;
   border: 1px solid var(--key-edge);
-  background: linear-gradient(180deg, var(--key-cap-top), var(--key-cap-bottom));
+  background: transparent;   /* layers: ::after light (z -1) → ::before cap (z 0) → .tier-body text (z 1) */
   box-shadow:
     inset 0 1px 0 rgba(255, 255, 255, 0.35),
     inset 0 -3px 4px rgba(0, 0, 0, 0.16),
     inset 0 0 0 3px rgba(255, 255, 255, 0.07),
     0 2px 3px rgba(0, 0, 0, 0.18),
-    0 0 24px -4px color-mix(in srgb, var(--key-color) calc(var(--key-outer) * 100%), transparent);
+    0 0 6px -1px color-mix(in srgb, var(--key-color) calc(var(--key-outer) * 100%), transparent);
   -webkit-backdrop-filter: blur(6px);
   backdrop-filter: blur(6px);
   transform: translateY(0);
   transition: transform 0.12s ease, box-shadow 0.12s ease;
   text-shadow: var(--key-text-shadow);
 }
+/* Backlight: the cap is evenly lit in the tier colour, brightest at the
+   centre and only gently faded towards the edges (never transparent). */
 .tier-card::after {
   content: ""; position: absolute; inset: 0; z-index: -1; pointer-events: none;
-  background: radial-gradient(ellipse at 50% 110%, var(--key-color) 0%, transparent 65%);
-  opacity: var(--key-glow);
-  transition: opacity 0.12s ease;
+  background: radial-gradient(ellipse 70% 120% at 50% 50%,
+    var(--key-color) 0%,
+    color-mix(in srgb, var(--key-color) 90%, var(--key-edge-base)) 60%,
+    color-mix(in srgb, var(--key-color) calc(var(--key-edge-alpha) * 100%), var(--key-edge-base)) 100%);
+  transition: filter 0.12s ease;
 }
+/* The translucent cap, painted over the light, with a faint diagonal
+   specular streak in the same layer so the text always sits on the cap. */
 .tier-card::before {
-  content: ""; position: absolute; inset: -60% -30%; z-index: 0; pointer-events: none;
-  background: linear-gradient(115deg, transparent 42%, rgba(255, 255, 255, 0.5) 50%, transparent 58%);
-  opacity: 0.22;
+  content: ""; position: absolute; inset: 0; z-index: 0; pointer-events: none;
+  background:
+    linear-gradient(115deg, transparent 38%, rgba(255, 255, 255, 0.12) 50%, transparent 62%),
+    linear-gradient(180deg, var(--key-cap-top), var(--key-cap-bottom));
 }
-.tier-card > * { position: relative; z-index: 1; }
+.tier-body { position: relative; z-index: 1; display: grid; gap: 2px; min-height: 36px; align-content: center; }
+@container (min-width: 360px) {
+  .tier-body { display: flex; align-items: center; gap: 14px; }
+  .tier-body .tier-counts { margin-left: auto; text-align: right; }
+}
 .tier-card.pass { --key-color: var(--key-pass); }
 .tier-card.fail { --key-color: var(--key-fail); }
-.tier-card.none { --key-glow: 0; --key-outer: 0; filter: saturate(0.5); color: var(--text-muted); }
-.tier-card.none::after { opacity: 0; }
+.tier-card.none { --key-outer: 0; filter: saturate(0.5); color: var(--text-muted); }
+.tier-card.none::after { display: none; }
 .tier-card:hover, .tier-card:focus-within {
   transform: translateY(1px);
   box-shadow:
@@ -249,23 +272,24 @@ label.check { display: inline-flex; align-items: center; gap: 6px; }
     inset 0 -2px 3px rgba(0, 0, 0, 0.16),
     inset 0 0 0 3px rgba(255, 255, 255, 0.07),
     0 1px 2px rgba(0, 0, 0, 0.18),
-    0 0 28px -4px color-mix(in srgb, var(--key-color) calc(var(--key-outer) * 100%), transparent);
+    0 0 6px -1px color-mix(in srgb, var(--key-color) calc(var(--key-outer) * 100%), transparent);
 }
-.tier-card:hover::after, .tier-card:focus-within::after { opacity: var(--key-glow-hover); }
-.tier-card.none:hover::after, .tier-card.none:focus-within::after { opacity: 0; }
+.tier-card:hover::after, .tier-card:focus-within::after { filter: brightness(var(--key-hover-brightness)); }
 @media (prefers-reduced-motion: reduce) {
   .tier-card, .tier-card::after { transition: none; }
 }
-.tier-card .tier-name { font-weight: 600; }
+.tier-card .tier-name { font-weight: 700; white-space: nowrap; }
+.tier-card.pass, .tier-card.fail { color: var(--key-ink); }
 .tier-card .tier-arrow { color: var(--text-muted); font-weight: 400; }
-.tier-card .tier-state { font-weight: 700; }
+.tier-card.pass .tier-arrow, .tier-card.fail .tier-arrow { color: var(--key-ink); opacity: 0.6; }
+.tier-card .tier-state { font-weight: 700; white-space: nowrap; }
 .tier-card .tier-state::before { font-weight: 700; }
-.tier-card.pass .tier-state { color: var(--pass); }
+.tier-card.pass .tier-state { color: var(--key-state-pass); }
 .tier-card.pass .tier-state::before { content: "✓ "; }
-.tier-card.fail .tier-state { color: var(--error); }
+.tier-card.fail .tier-state { color: var(--key-state-fail); }
 .tier-card.fail .tier-state::before { content: "✗ "; }
-.tier-card .tier-counts { color: var(--text-muted); font-size: 0.85rem; }
-.tier-card.pass .tier-counts, .tier-card.fail .tier-counts { color: var(--text); opacity: 0.85; }
+.tier-card .tier-counts { color: var(--text-muted); font-size: 0.85rem; white-space: nowrap; }
+.tier-card.pass .tier-counts, .tier-card.fail .tier-counts { color: var(--key-ink); opacity: 0.9; }
 
 /* Badges */
 .badge { display: inline-block; font-size: 0.72rem; font-weight: 600; padding: 1px 6px; border-radius: 10px; text-transform: uppercase; letter-spacing: 0.02em; line-height: 1.5; }
@@ -354,6 +378,20 @@ pre { overflow-x: auto; max-width: 100%; }
 .add-bar select, .add-bar input[type="text"] { font-size: 0.85rem; }
 .editor .empty { color: var(--text-muted); font-size: 0.9rem; }
 
+/* Policy popout + per-row controls */
+.policy-toggle { display: inline-flex; align-items: center; gap: 6px; }
+.policy-toggle[aria-expanded="true"] { background: var(--accent); color: var(--accent-text); border-color: var(--accent); }
+.policy-toggle .count { background: var(--accent); color: var(--accent-text); }
+.policy-toggle[aria-expanded="true"] .count { background: var(--accent-text); color: var(--accent); }
+.policy-panel { border: 1px solid var(--accent); border-radius: var(--radius); padding: 12px; display: grid; gap: 10px; background: var(--surface); max-height: 60vh; overflow: auto; min-width: 0; }
+.policy-panel h3 { color: var(--text); margin-right: 6px; }
+.silenced { color: var(--warn); }
+button.link { background: none; border: 0; padding: 0; color: var(--accent); text-decoration: underline; font-size: inherit; cursor: pointer; }
+.finding-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 6px; align-items: start; min-width: 0; }
+.finding-row .group-lines { grid-column: 1 / -1; }
+.row-severity { font-size: 0.78rem; padding: 2px 4px; max-width: 9em; align-self: start; margin-top: 4px; }
+@media (max-width: 600px) { .finding-row { grid-template-columns: minmax(0, 1fr); } .row-severity { justify-self: end; margin-top: 0; } }
+
 /* Policy */
 .policy-groups { display: grid; grid-template-columns: minmax(0, 1fr); gap: 8px; }
 .policy-group .card-body { overflow-x: auto; }
@@ -362,12 +400,15 @@ pre { overflow-x: auto; max-width: 100%; }
 .policy-table { width: 100%; border-collapse: collapse; font-size: 0.86rem; }
 .policy-table th, .policy-table td { text-align: left; padding: 5px 8px; border-top: 1px solid var(--border); vertical-align: top; }
 .policy-table th { color: var(--text-muted); font-weight: 500; }
-.policy-table .pid { font-family: var(--mono); font-size: 0.8rem; word-break: break-all; }
+.policy-table .pid { font-family: var(--mono); font-size: 0.8rem; overflow-wrap: anywhere; }
 .policy-table .pspec { color: var(--text-muted); white-space: nowrap; }
 .policy-table tr.is-override td { background: color-mix(in srgb, var(--accent) 8%, transparent); }
 .policy-table select { padding: 2px 6px; font-size: 0.82rem; }
 .policy-table tr[hidden] { display: none; }
 @media (max-width: 700px) { .policy-table .pspec { white-space: normal; } .policy-table .pkind { display: none; } }
+/* Narrow phones: the spec column goes too, so the id and its severity
+   select stay visible without horizontal scrolling. */
+@media (max-width: 480px) { .policy-table .pspec { display: none; } .policy-table td:last-child { width: 1%; white-space: nowrap; } }
 
 @media (max-width: 600px) {
   main { padding: 12px; gap: 12px; }

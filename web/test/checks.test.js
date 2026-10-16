@@ -36,3 +36,28 @@ test("sanitizePolicy drops unknown ids, defaults, bad severities and hard-syntac
   assert.deepEqual(out, { "ipmx.m.port-must-be-even": "warn", "sdp.a.fmtp.trailing-semicolon": "off" });
   assert.equal(countOverrides(out), 2);
 });
+
+import { effectiveSeverity, canOverride, countSilenced } from "../src/checks.js";
+
+test("effectiveSeverity: override wins, otherwise the default; unknown check → undefined", () => {
+  const c = { id: "x.y", default_severity: "error", kind: "semantic" };
+  assert.equal(effectiveSeverity(c, {}), "error");
+  assert.equal(effectiveSeverity(c, { "x.y": "warn" }), "warn");
+  assert.equal(effectiveSeverity(c, { "x.y": "off" }), "off");
+  assert.equal(effectiveSeverity(c, { "x.y": "loud" }), "error", "invalid override falls back to default");
+  assert.equal(effectiveSeverity(c, undefined), "error");
+  assert.equal(effectiveSeverity(undefined, { "x.y": "warn" }), undefined);
+});
+
+test("canOverride: toggleable checks only; PARSE_ERROR rows (no check) never", () => {
+  assert.equal(canOverride({ id: "a", kind: "semantic" }), true);
+  assert.equal(canOverride({ id: "b", kind: "soft-syntactic" }), true);
+  assert.equal(canOverride({ id: "c", kind: "hard-syntactic" }), false);
+  assert.equal(canOverride(undefined), false);
+});
+
+test("countSilenced counts only 'off' overrides", () => {
+  assert.equal(countSilenced({ a: "off", b: "warn", c: "off" }), 2);
+  assert.equal(countSilenced({}), 0);
+  assert.equal(countSilenced(undefined), 0);
+});
