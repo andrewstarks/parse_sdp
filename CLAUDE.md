@@ -1,21 +1,27 @@
-# CLAUDE.md — parse_sdp
+# CLAUDE.md for parse_sdp
 
-Context and conventions for Claude Code working in this repo.
+This file gives Claude Code the context and the conventions for work in this
+repository.
 
 ## Project Purpose
 
-`parse_sdp` is a Lua 5.1+ + LPEG library that parses, validates, and serializes SDP
-(Session Description Protocol) files. Three validation tiers:
-RFC 8866 (generic SDP; obsoletes RFC 4566) → SMPTE ST 2110 → IPMX.
+`parse_sdp` is a library for Lua 5.1 and later, built on LPEG (Lua Parsing
+Expression Grammars), that parses, validates, and serializes SDP (Session
+Description Protocol) files. The library has three validation tiers. The first
+tier is RFC (Request for Comments) 8866, the generic SDP specification that
+obsoletes RFC 4566. The second tier is SMPTE (Society of Motion Picture and
+Television Engineers) ST 2110. The third tier is IPMX (Internet Protocol Media
+Experience). Each tier extends the previous tier.
 
-**Strictness is a primary feature**, but it is *spec-grounded*, not opinion.
-The library rejects any SDP that the relevant standard explicitly forbids and
-nothing else. There is no lenient mode, and no "obviously broken but the spec
-is silent" mode either. See **Validation Strictness Principle** below for the
-exact boundary.
+Strictness is a primary feature of the library. The strictness is grounded in
+specification text, not in opinion. The library rejects any SDP that the
+relevant standard explicitly forbids, and nothing else. The library has no
+lenient mode. The library also has no mode that rejects input that looks broken
+when the specification is silent about it. The section "Validation Strictness
+Principle" below defines the exact boundary.
 
-**Keep it tight.** If a module is growing, stop and refactor before adding more.
-Prefer fewer, well-named things over many small helpers.
+Keep the code small. If a module is growing, stop and refactor before adding
+more code. Prefer fewer, well-named functions over many small helpers.
 
 ## Tech Stack
 
@@ -24,7 +30,7 @@ Prefer fewer, well-named things over many small helpers.
 | Language | Lua 5.1+ (tested on 5.1, 5.2, 5.3, 5.4, 5.5) |
 | Parsing | LPEG |
 | JSON | dkjson (pure Lua, LuaRocks) |
-| Tests | busted — `busted spec/` |
+| Tests | busted (`busted spec/`) |
 | Container | Docker (Lua 5.5) |
 
 ## Repository Layout
@@ -33,9 +39,8 @@ Prefer fewer, well-named things over many small helpers.
 bin/
   parse_sdp          CLI shell. Requires `parse_sdp` (the library) and
                      dispatches subcommands via argparse: validate,
-                     diagnose, to_json, to_sdp, checks. Library
-                     consumers never load argparse — it's pulled in
-                     here only.
+                     diagnose, to_json, to_sdp, checks. Only this file
+                     loads argparse; library consumers never load it.
 parse_sdp/
   init.lua           library entry point. `require("parse_sdp")` resolves
                      here. Wires the tier match functions, defines the
@@ -57,7 +62,7 @@ parse_sdp/
     ipmx.lua         IPMX / VSF TR-10 overrides (composed onto st2110).
 spec/
   -- Per-tier grammar specs (standards-tied; every test cites a published clause):
-  grammar_base_spec.lua    RFC 8866 base SDP — document shape, value forms,
+  grammar_base_spec.lua    RFC 8866 base SDP: document shape, value forms,
                            per-line checks, doc-level semantic checks.
   grammar_st2110_spec.lua  SMPTE ST 2110 narrowings + cross-section invariants.
   grammar_ipmx_spec.lua    VSF TR-10 / IPMX overrides + cross-section invariants.
@@ -74,6 +79,10 @@ spec/
                       doc:is_*, doc:to_json / to_sdp, policy + findings,
                       mode dispatch.
   cli_spec.lua        CLI subcommand integration tests.
+  examples_spec.lua   every file under examples/<tier>/<valid|invalid> passes
+                      or fails its tier as the directory says.
+  grammar_bitops_spec.lua  bitwise helper backends (native on 5.3+, arithmetic
+                      on 5.1 and 5.2).
   support.lua         shared test helpers (finding_for, timing fixtures).
   fixtures/           sample .sdp files used by tests.
 spec_conformance/    opt-in suite running pinned AMWA-TV / SDPoker
@@ -92,9 +101,9 @@ web/
   dist/              build output deployed to GitHub Pages (gitignored).
 examples/
   examples.lua       runnable API walkthrough (lua examples/examples.lua)
-  generic/           RFC 8866 SDP samples — valid/ and invalid/
-  st2110/            ST 2110 SDP samples — valid/ and invalid/
-  ipmx/              IPMX SDP samples — valid/ and invalid/
+  generic/           RFC 8866 SDP samples in valid/ and invalid/
+  st2110/            ST 2110 SDP samples in valid/ and invalid/
+  ipmx/              IPMX SDP samples in valid/ and invalid/
 ```
 
 ## Public API
@@ -133,253 +142,281 @@ doc.media[1].port
 
 ## Validation Strictness Principle
 
-Every validation check in `parse_sdp.lua` must be grounded in **explicit
-normative spec text**. Three polarities of normative text count:
+Every validation check in the grammar modules (`parse_sdp/grammar/base.lua`,
+`st2110.lua`, `ipmx.lua`) must be grounded in explicit
+normative text from the specification. Three kinds of normative text count:
 
-1. **Positive requirements** (*"shall"*, *"MUST"*, *"is required"*) — if the
-   spec says a field must be present or take a specific form, the validator
-   rejects input that omits it or violates the form.
-2. **Prohibitions** (*"shall not"*, *"MUST NOT"*, *"is forbidden"*) — if the
-   spec forbids a value, combination, or construction, the validator rejects it.
-3. **Optional features with defined values** — if a field is optional but the
-   spec defines its syntax or legal value set (e.g. *"MAY appear; if present,
-   value shall be one of {A, B, C}"*), the validator rejects ill-formed
-   instances when the field is present. Absence is accepted; a present but
-   malformed instance is rejected.
+1. Positive requirements, written as "shall", "MUST", or "is required". If
+   the specification says a field must be present or must take a specific
+   form, the validator rejects input that omits the field or violates the
+   form.
+2. Prohibitions, written as "shall not", "MUST NOT", or "is forbidden". If
+   the specification forbids a value, a combination, or a construction, the
+   validator rejects it.
+3. Optional features with defined values. If a field is optional but the
+   specification defines its syntax or its legal value set (for example,
+   "MAY appear; if present, value shall be one of {A, B, C}"), the validator
+   rejects an ill-formed instance when the field is present. An absent field
+   is accepted. A present but malformed field is rejected.
 
-Silence is not a reason to reject. If the spec defines no value form, no
-constraint, and no legal value set for something, the validator does not invent
-one. *"Out of scope of spec X"* is not the same as *"forbidden by spec X."*
+Silence in the specification is not a reason to reject. If the specification
+defines no value form, no constraint, and no legal value set for a field, the
+validator does not invent one. "Out of scope of specification X" does not mean
+"forbidden by specification X."
 
 When adding or auditing a check:
 
-- Quote the SHALL / SHALL-NOT / defined-value clause **verbatim** in the code
-  comment (literal quoted string) and cite it via the `spec_ref` field on the
-  error. Then read your interpretation against the quoted text — if your
-  interpretation introduces words the quote doesn't contain ("every",
-  "forbidden", "required"), that's the bug. Paraphrase-only is the failure
-  mode that lets overreach hide.
-- If you can't find one, don't add the check.
-- *"Physically silly but not forbidden"* — a configuration that probably can't
-  work in practice — is **not** in scope. The validator tests for conformance,
-  not for whether a device is saying things that can't be true.
+- Quote the "shall", "shall not", or defined-value clause verbatim in the
+  code comment, as a literal quoted string, and cite the clause in the
+  `spec_ref` field on the error. Then compare the interpretation against the
+  quoted text. If the interpretation introduces words that the quote does not
+  contain, such as "every", "forbidden", or "required", the interpretation is
+  the bug. A paraphrase without the verbatim quote is the failure mode that
+  lets overreach hide.
+- If no such clause can be found, do not add the check.
+- A configuration that is physically implausible but not forbidden is not in
+  scope. The validator tests for conformance. The validator does not test
+  whether a device is describing a configuration that can work in practice.
 
-**In scope for validation:**
+The following are in scope for validation:
 
-- RFC 8866 grammar (obsoletes RFC 4566), field order, required fields, and
-  defined value forms for every field (required or optional).
-- RFC 3550 / 3551 internal coherence (dynamic PT requires `a=rtpmap`; `a=fmtp`
-  PT must match `a=rtpmap` PT; audio rtpmap requires the channels field; etc.).
-- Every explicit "shall" / "shall not" / "is forbidden" in ST 2110-10 / -20 /
-  -21 / -22 / -30 / -31 / -40 / -41, plus defined value sets for optional
+- RFC 8866 grammar (RFC 8866 obsoletes RFC 4566), field order, required
+  fields, and the defined value forms for every field, required or optional.
+- Internal coherence required by RFC 3550 and RFC 3551. For example: a
+  dynamic payload type requires `a=rtpmap`; the `a=fmtp` payload type must
+  match an `a=rtpmap` payload type; an audio `a=rtpmap` requires the channels
+  field.
+- Every explicit "shall", "shall not", or "is forbidden" in ST 2110-10, -20,
+  -21, -22, -30, -31, -40, and -41, plus the defined value sets for optional
   parameters when those parameters are present.
-- Every explicit "shall" / "shall not" / "is forbidden" in the applicable VSF
-  TR-10 / IPMX profile (with the per-clause TR-10 cite, not a blanket "IPMX"),
-  plus defined value sets for optional parameters when present.
-- Cross-stream consistency required by ST 2022-7 / RFC 7104 for `a=group:DUP`.
+- Every explicit "shall", "shall not", or "is forbidden" in the applicable
+  VSF (Video Services Forum) TR-10 / IPMX profile, cited to the specific
+  TR-10 clause rather than to "IPMX" as a whole, plus the defined value sets
+  for optional parameters when those parameters are present.
+- Cross-stream consistency required by ST 2022-7 and RFC 7104 for
+  `a=group:DUP`.
 
-**Out of scope (never validate from SDP):**
+The following are out of scope. The validator never checks them from the SDP:
 
-- NMOS resources: IS-04, IS-05, BCP-004-01 (Receiver Capabilities), BCP-004-02
-  (Sender Capabilities), BCP-005-01 (EDID), IS-11 (Stream Compatibility),
-  IS-08. These describe device-wide capabilities and require state beyond the
-  SDP.
+- NMOS (Networked Media Open Specifications) resources: IS-04, IS-05,
+  BCP-004-01 (Receiver Capabilities), BCP-004-02 (Sender Capabilities),
+  BCP-005-01 (EDID), IS-11 (Stream Compatibility), and IS-08. These
+  specifications describe device-wide capabilities and require state that is
+  not in the SDP.
 - RTCP-layer signaling: IPMX Media Info Blocks (any type), PEP Media Info
-  Blocks, HKEP HDCP exchanges, HDR metadata. These live in RTP / RTCP, not in
-  SDP.
-- Sender/Receiver capability subsetting. A single SDP describes one stream's
-  parameters; whether a device supports additional formats it isn't currently
-  sending is an NMOS-Capabilities question.
-- Combinatorial cross-tables (e.g. sampling × colorimetry × range) unless the
-  spec explicitly forbids the combination.
-- Configurations the spec describes as "out of scope" or "permitted but not
-  required" — e.g. ST 2110-30 audio at unusual sample rates or channel counts.
+  Blocks, HKEP HDCP exchanges, and HDR metadata. These are sent in RTP
+  (Real-time Transport Protocol) or RTCP (RTP Control Protocol) packets, not
+  in the SDP.
+- Sender and receiver capability subsetting. A single SDP describes the
+  parameters of one stream. Whether a device supports additional formats
+  that it is not currently sending is a question for NMOS capabilities, not
+  for the SDP.
+- Combinatorial cross-tables (for example, sampling × colorimetry × range),
+  unless the specification explicitly forbids the combination.
+- Configurations that the specification describes as "out of scope" or
+  "permitted but not required", for example ST 2110-30 audio at unusual
+  sample rates or channel counts.
 
-See [GUIDE.md "What this library validates (and what it doesn't)"](GUIDE.md#what-this-library-validates-and-what-it-doesnt)
-for the user-facing version with worked examples.
+The GUIDE.md section
+["What this library validates (and what it doesn't)"](GUIDE.md#what-this-library-validates-and-what-it-doesnt)
+is the user-facing version of this principle, with worked examples.
 
 ## Spec Verification Protocol
 
-Use this protocol both when writing new checks and when auditing existing
-ones. The strictness principle above tells you what to check; the rules
-below tell you how to be sure of the citation and the placement.
+Use this protocol when writing new checks and when auditing existing checks.
+The strictness principle above says what to check. The rules below say how to
+be sure of the citation and of the placement.
 
-1. **Get the primary spec on disk before forming a verdict.** Before claiming
-   any check is over-strict, or that "the spec says X," locate the actual
-   SMPTE / IETF / VSF document text in a canonical source you can quote.
+1. **Get the primary specification text on disk before forming a verdict.**
+   Before claiming that a check is over-strict, or that "the specification
+   says X", locate the SMPTE, IETF (Internet Engineering Task Force), or VSF
+   document text in a canonical source that can be quoted.
 
-   **Prefer markdown versions of the specs whenever they exist.** The user
-   maintains permanent markdown conversions of SMPTE / VSF documents — they
-   are searchable with `grep`, diff cleanly, and quote without OCR
-   artifacts. Check the markdown directories first; fall back to PDF only
-   when the markdown for the cited clause is not yet available. Locations:
+   **Prefer markdown versions of the specifications whenever they exist.**
+   The user maintains permanent markdown conversions of SMPTE and VSF
+   documents. The markdown files are searchable with `grep`, diff cleanly,
+   and quote without OCR (optical character recognition) artifacts. Check the
+   markdown directories first. Fall back to PDF only when the markdown for
+   the cited clause is not yet available. The locations are:
 
    - VSF TR-10 markdown: `~/Library/CloudStorage/Dropbox/Personal/Claude/Macnica/Standards Related/TR-10 Markdowned Versions/`
    - SMPTE ST 2110 + IPMX (markdown if present, PDF fallback): `~/Library/CloudStorage/Dropbox/Personal/Claude/Macnica/Standards Related/smpte_standards_internal/`
    - IETF RFCs: `WebFetch https://www.rfc-editor.org/rfc/rfcNNNN.txt`
    - Use `pdftotext` (allowlisted) only when no markdown is available.
 
-   Do **not** substitute one of the following for primary spec text:
-   - an IANA media-type registration
-   - a downstream IETF RFC the SMPTE document builds on
-   - an AMWA NMOS profile / BCP that quotes the SMPTE clause
+   Do **not** substitute any of the following for primary specification text:
+   - an IANA (Internet Assigned Numbers Authority) media-type registration
+   - a downstream IETF RFC that the SMPTE document builds on
+   - an AMWA (Advanced Media Workflow Association) NMOS profile or BCP that
+     quotes the SMPTE clause
    - a reference implementation's example files
 
-   These are useful triangulation, never authority. SMPTE can tighten or
-   loosen what its references say.
+   These sources are useful for triangulation. They are never authority.
+   SMPTE can tighten or loosen what its references say.
 
-2. **Search the filesystem before declaring a spec unavailable.** SMPTE has
-   made an increasing number of ST 2110 documents publicly available. Before
-   assuming a spec is paywalled or out of reach, run
-   `find ~/Downloads ~/Documents -iname "*<spec-id>*"` and ask the user.
+2. **Search the filesystem before declaring a specification unavailable.**
+   SMPTE has made an increasing number of ST 2110 documents publicly
+   available. Before assuming that a specification is paywalled or otherwise
+   unavailable, run `find ~/Downloads ~/Documents -iname "*<spec-id>*"` and
+   ask the user.
 
 3. **An existing citation in the code is a claim to test, not authority to
-   trust.** Read the cited clause yourself, in primary source. If a check
-   cites a section that does not say what the check enforces, that is itself
-   evidence of a parser bug — do not go hunting for support elsewhere to
+   trust.** Read the cited clause in the primary source. If a check cites a
+   section that does not say what the check enforces, that mismatch is itself
+   evidence of a parser bug. Do not search elsewhere for support that would
    rescue the citation.
 
-4. **Reference implementations are evidence, not authority.** If multiple
-   independent reference implementations omit something the parser requires,
-   the suspicion is high — but the verdict still needs primary spec text.
-   When the spec is not yet on disk, label the finding "suspected — unconfirmed
-   against the cited document" and resolve it before changing code.
+4. **Reference implementations are evidence, not authority.** If several
+   independent reference implementations omit something that the parser
+   requires, suspicion is high, but the verdict still needs primary
+   specification text. When the specification is not yet on disk, label the
+   finding "suspected, unconfirmed against the cited document" and resolve
+   the finding before changing code.
 
-5. **Distinguish "the spec is silent" from "the registration is silent."**
-   IANA registrations and IETF RFCs that ST 2110 builds on can be tightened
-   by the SMPTE document. The lower layer's optionality does not establish
-   ST 2110's optionality.
+5. **Distinguish "the specification is silent" from "the registration is
+   silent."** IANA registrations and IETF RFCs that ST 2110 builds on can be
+   tightened by the SMPTE document. Optionality in the lower layer does not
+   establish optionality in ST 2110.
 
-6. **Bind bullets to their parent clause, not the section header.** When
-   reading a bulleted normative list, identify the verb-clause that
-   *immediately* introduces it. Read the full sentence aloud: *"The X
-   shall Y, including: [bullet]."* If that substitution doesn't parse, the
-   bullet belongs to a different scope. Section headers like "X & Y" never
-   bind bullets — only the parent clause does. Real example: IPMX
-   JPEG-XS Video Profile §6.1.4 is titled "Required Sender Signaling (Media
-   Info Block & SDP)", but its bullet list of `transmode, packetmode,
-   profile, level, sublevel, fbblevel` attaches to item 1's clause "shall
-   populate the JPEG-XS Media Info Block… including:" — those are RTCP
-   Media Info Block fields, not SDP fmtp requirements. Reading the bullets
-   as SDP requirements (because SDP is in the section title) is the
-   failure mode this rule prevents.
+6. **Bind bullets to their parent clause, not to the section header.** When
+   reading a bulleted normative list, identify the verb clause that
+   immediately introduces the list. Read the full sentence aloud: "The X
+   shall Y, including: [bullet]." If that substitution does not parse, the
+   bullet is in a different scope. A section header such as "X & Y" never
+   binds bullets. Only the parent clause binds them. A real example: IPMX
+   JPEG-XS Video Profile section 6.1.4 is titled "Required Sender Signaling
+   (Media Info Block & SDP)", but its bullet list of `transmode, packetmode,
+   profile, level, sublevel, fbblevel` attaches to the clause in item 1,
+   "shall populate the JPEG-XS Media Info Block… including:". Those bullets
+   are RTCP Media Info Block fields, not SDP fmtp requirements. Reading the
+   bullets as SDP requirements because SDP is in the section title is the
+   failure mode that this rule prevents.
 
-7. **`spec_ref` ↔ tier-prefix invariant.** If `spec_ref` cites ST 2110-22:2022,
-   the error ID is `st2110-22.*` and the check lives at the ST 2110 tier. If
-   you find yourself writing a parenthetical that points to a different
-   authoring spec (`"TR-10-X §Y (per ST 2110-22 §Z)"`), the placement is
-   wrong — move the check to the authoring tier; downstream tiers inherit
-   via composition. The grammar tier's three files (`parse_sdp/grammar/{base,
-   st2110,ipmx}.lua`) make this concrete: a check belongs in the file whose
-   tier the SHALL was authored at, regardless of which spec family the check
-   is grouped with diagnostically.
+7. **The `spec_ref` citation and the error-id prefix must name the same
+   tier.** If `spec_ref` cites ST 2110-22:2022, the error id is
+   `st2110-22.*` and the check is at the ST 2110 tier. A parenthetical that
+   points to a different authoring specification
+   (`"TR-10-X §Y (per ST 2110-22 §Z)"`) means the placement is wrong. Move
+   the check to the authoring tier; downstream tiers inherit the check
+   through composition. The three grammar files
+   (`parse_sdp/grammar/{base,st2110,ipmx}.lua`) make this concrete: a check
+   is in the file for the tier at which the SHALL was authored, regardless of
+   which specification family the check is grouped with for diagnostics.
 
-8. **No "audit-folder follow-up" / "1.0 over-strict" / "intentional
-   non-parity" labels on the slice you're actively writing.** Those phrasings
-   are almost always stand-ins for an unverified spec claim. Before any of
-   them survives into a commit or PLAN.md entry, `grep` the relevant
-   §-text for "shall not" / "MUST NOT" / "forbidden" / "prohibit" (and the
-   positive forms for required SHALLs) — if the text doesn't say what the
-   label implies, fix the label by verifying now or by splitting the work
-   off the current slice. The label is never the answer to "can I leave
-   this unverified?"
+8. **Do not use the labels "audit-folder follow-up", "1.0 over-strict", or
+   "intentional non-parity" on the slice currently being written.** Those
+   phrasings are almost always stand-ins for an unverified specification
+   claim. Before any of them is committed or written into a PLAN.md entry,
+   `grep` the relevant section text for "shall not", "MUST NOT",
+   "forbidden", and "prohibit", and for the positive forms of required
+   SHALLs. If the text does not say what the label implies, fix the label:
+   verify the claim now, or split the work off the current slice. The label
+   is never the answer to "can this stay unverified?"
 
-When auditing a finding, the report should make clear which sources are
-primary and which are circumstantial. Suspected-but-unconfirmed findings stay
-allowlisted with a `spec_ref` and an "INVESTIGATE against the cited document" note;
-confirmed-against-primary-source findings get fixed.
+When auditing a finding, the report must state which sources are primary and
+which are circumstantial. A suspected but unconfirmed finding stays
+allowlisted with a `spec_ref` and a note "INVESTIGATE against the cited
+document". A finding confirmed against a primary source is fixed.
 
 ## Coding Conventions
 
-- **Errors are values.** Never call `error()` for parse or validation failures.
-  All public functions return `result, err`. `error()` is reserved for programming
-  mistakes (wrong argument type).
-- **No global state.** Module state lives in the returned table only.
-- **LPEG patterns are named constants** defined near the rule that uses them
-  (per-tier patterns inside the relevant `parse_sdp/grammar/*.lua` module;
-  shared numeric forms in `parse_sdp/grammar/patterns.lua`; address forms in
-  `parse_sdp/grammar/addresses.lua`), never constructed inline at call sites.
-- **Use LPEG for pattern matching whenever possible.** Prefer LPEG patterns over
-  Lua string patterns (`string.match`/`gmatch`) for structural validation — LPEG
-  compiles once, is composable, and is the established tool in this codebase.
-- **`M._errors`** is exposed on the returned module for spec access only; it
-  is not part of the public contract. Grammar internals are reached directly
-  via `require("parse_sdp.grammar.base" | "...st2110" | "...ipmx")` in tests.
-- **Strict by default.** If RFC 8866 says a field is required, the parser rejects
-  input that omits it — no silent defaults, no forgiveness.
-- **dkjson** is the only external runtime dependency beyond LPEG.
-- **Lua-version portability.** The library supports 5.1 through 5.5 in
-  a single source tree. Don't introduce 5.3+-only syntax (`&` / `>>` /
-  `<<`, integer division `//`, `string.pack`, `\u{}` escapes, `<const>`
-  / `<close>`, `goto`, etc.) outside the `parse_sdp.grammar.bitops_53`
-  module, which is only loaded on 5.3+. Don't reach for `table.unpack`
-  in spec code without the `(table.unpack or unpack)` fallback.
-  CI runs the full hermetic suite on each of 5.1, 5.2, 5.3, 5.4, 5.5.
+- **Errors are values.** Never call `error()` for a parse or validation
+  failure. All public functions return `result, err`. `error()` is reserved
+  for programming mistakes, such as a wrong argument type.
+- **The library has no global state.** Module state is in the returned table
+  only.
+- **LPEG patterns are named constants defined near the rule that uses them.**
+  Per-tier patterns are in the relevant `parse_sdp/grammar/*.lua` module.
+  Shared numeric forms are in `parse_sdp/grammar/patterns.lua`. Address forms
+  are in `parse_sdp/grammar/addresses.lua`. Patterns are never constructed
+  inline at call sites.
+- **Use LPEG for pattern matching whenever possible.** Prefer LPEG patterns
+  over Lua string patterns (`string.match`, `string.gmatch`) for structural
+  validation. LPEG compiles once, is composable, and is the established tool
+  in this codebase.
+- **`M._errors` is exposed on the returned module for spec access only.** It
+  is not part of the public contract. Tests reach grammar internals directly
+  through `require("parse_sdp.grammar.base" | "...st2110" | "...ipmx")`.
+- **The parser is strict by default.** If RFC 8866 says a field is required,
+  the parser rejects input that omits the field. There are no silent
+  defaults.
+- **dkjson is the only external runtime dependency other than LPEG.**
+- **The library is portable across Lua versions.** The library supports Lua
+  5.1 through 5.5 in a single source tree. Do not introduce syntax that
+  exists only in Lua 5.3 and later (`&`, `>>`, `<<`, integer division `//`,
+  `string.pack`, `\u{}` escapes, `<const>`, `<close>`, `goto`, and similar)
+  outside the `parse_sdp.grammar.bitops_53` module, which is loaded only on
+  Lua 5.3 and later. Do not use `table.unpack` in spec code without the
+  `(table.unpack or unpack)` fallback. CI (continuous integration) runs the
+  full hermetic suite on each of Lua 5.1, 5.2, 5.3, 5.4, and 5.5.
 
 ## Check Taxonomy
 
-Every registered check is one of three `kind` values (enforced by
-`parse_sdp.errors.register`'s `VALID_KINDS` table). Knowing which kind a
-check is determines where it lives in the grammar and how it behaves
-under `opts.fail_on_first` / policy demotion:
+Every registered check has one of three `kind` values. The `VALID_KINDS`
+table in `parse_sdp.errors.register` enforces the set. The kind of a check
+determines where the check is placed in the grammar and how the check behaves
+under `opts.fail_on_first` and policy demotion:
 
 | Kind | Definition | Site | Toggleable? |
 | --- | --- | --- | --- |
-| **hard-syntactic** | Input shape — parsing cannot continue past a violation | Pattern algebra and `Cmt` that returns false to fail the match | No — these define parseability |
+| **hard-syntactic** | Input shape; parsing cannot continue past a violation | Pattern algebra and `Cmt` that returns false to fail the match | No; these checks define parseability |
 | **soft-syntactic** | Spec demands a strict form but a lax form is unambiguously interpretable | Ordered choice; lax branch is a `Cmt` that records a finding and returns success | Yes; default severity `warn` |
 | **semantic** | Captured value violates a value-set / presence / cross-section rule | `Cmt` that records a finding and either continues (`warn` / `off`) or fails the match (`error` under `fail_on_first=true`) | Yes; default severity per rule |
 
-Hard-syntactic examples: field with no `=`, unrecognized line letter,
-malformed `m=` value-form, malformed `o=` value-form, malformed `ptp=`
+Hard-syntactic examples: a field with no `=`, an unrecognized line letter, a
+malformed `m=` value form, a malformed `o=` value form, and a malformed `ptp=`
 body (`sdp.a.ts-refclk.ptp-malformed`).
 
 Soft-syntactic examples: `sdp.line.lf-only-line-ending`,
 `sdp.line.trailing-whitespace`, `sdp.file.trailing-newline-missing`,
-`sdp.file.bom-present`, `sdp.a.fmtp.trailing-semicolon`.
+`sdp.file.bom-present`, and `sdp.a.fmtp.trailing-semicolon`.
 
-Semantic examples: encoding-name set membership, presence of required
-attributes per tier, cross-section invariants like `a=group:DUP`
-reference symmetry, dynamic-PT-requires-rtpmap, RFC 4570 §3.1
-`a=source-filter` dest-in-c= check.
+Semantic examples: encoding-name set membership, presence of the required
+attributes for a tier, cross-section invariants such as `a=group:DUP`
+reference symmetry, the rule that a dynamic payload type requires
+`a=rtpmap`, and the RFC 4570 section 3.1 check that an `a=source-filter`
+destination is in `c=`.
 
 ## Development Workflow
 
-1. Branch off `main` with an intent-shaped name (`feat/...`, `fix/...`,
-   `docs/...`, `chore/...`).
+1. Branch off `main` with a name that states the intent (`feat/...`,
+   `fix/...`, `docs/...`, `chore/...`).
 2. Write failing tests first.
-3. `busted spec/` — confirm they fail for the right reason.
-4. Implement until tests pass.
-5. Update GUIDE.md, README.md, CHANGELOG.md, PLAN.md as needed.
-6. Commit (see gates), push the branch, open a PR (see Branching & PRs).
+3. Run `busted spec/` and confirm that the new tests fail for the expected
+   reason.
+4. Implement until the tests pass.
+5. Update GUIDE.md, README.md, CHANGELOG.md, and PLAN.md as needed.
+6. Commit (see "Commit Gates"), push the branch, and open a pull request (see
+   "Branching & Pull Requests").
 
 ## Branching & Pull Requests
 
-All non-trivial changes go through a topic branch + PR — including
-documentation and planning updates. Lightweight: solo developer, no
-required reviewers, no required approvals, merge when CI is green.
-Multiple commits per PR are fine when they're logically related
-(e.g. a rule change plus the work that first applies it).
+All non-trivial changes go through a topic branch and a pull request (PR).
+The rule includes documentation and planning updates. The process is lightweight:
+one developer, no required reviewers, no required approvals, and merge when
+CI is green. Multiple commits per PR are fine when the commits are logically
+related, for example a rule change plus the work that first applies the rule.
 
-The exception is trivial single-line typo / whitespace / formatting
-fixes where the branch-and-PR overhead exceeds the value — those may
-still go directly on `main`. Anything that touches behavior, public
-API, or planning docs goes via PR.
+The exception is a trivial single-line typo, whitespace, or formatting fix,
+where the cost of a branch and a PR exceeds the value. Such a fix may go
+directly on `main`. Anything that touches behavior, the public API
+(application programming interface), or planning documents goes through a PR.
 
 ## Commit Gates
 
-- [ ] Work is on a topic branch, not `main`
-- [ ] Relevant tests added or updated in `spec/`
-- [ ] `busted spec/` passes with no failures
-- [ ] `GUIDE.md` updated for any API or behavior change
-- [ ] `README.md` updated if project layout or examples changed
-- [ ] `CHANGELOG.md` has an entry under `[Unreleased]`
-- [ ] `PLAN.md` milestone tasks checked off / updated
-- [ ] `CLAUDE.md` updated if conventions or layout changed
+- [ ] The work is on a topic branch, not on `main`.
+- [ ] Relevant tests are added or updated in `spec/`.
+- [ ] `busted spec/` passes with no failures.
+- [ ] `GUIDE.md` is updated for any API or behavior change.
+- [ ] `README.md` is updated if the project layout or the examples changed.
+- [ ] `CHANGELOG.md` has an entry under `[Unreleased]`.
+- [ ] `PLAN.md` milestone tasks are checked off or updated.
+- [ ] `CLAUDE.md` is updated if conventions or layout changed.
 
 ## Key References
 
-- RFC 8866 (SDP — current; obsoletes RFC 4566): https://www.rfc-editor.org/rfc/rfc8866
-- RFC 4566 (SDP — historical): https://www.rfc-editor.org/rfc/rfc4566
+- RFC 8866 (SDP, current; obsoletes RFC 4566): https://www.rfc-editor.org/rfc/rfc8866
+- RFC 4566 (SDP, historical): https://www.rfc-editor.org/rfc/rfc4566
 - SMPTE ST 2110-10/20/21/30/40
 - IPMX specification
 - LPEG docs: https://www.inf.puc-rio.br/~roberto/lpeg/
@@ -388,28 +425,31 @@ API, or planning docs goes via PR.
 
 ## Things to Watch Out For
 
-- SDP field ordering is mandatory per RFC 8866 §5. The serializer must enforce it;
-  the parser must reject violations.
-- LPEG failure position: use `lpeg.Cp()` captures and map byte offset → line/col
-  after the match attempt, not during.
-- ST 2110 `fmtp` values are semicolon-separated `key=value` pairs — parse as a
-  sub-grammar, not with string splits.
-- IPMX validation runs ST 2110 validation first; never skip the lower tier.
-- `doc:to_sdp()` must produce output that re-parses cleanly. Round-trip is a
-  hard invariant tested on every serializer change.
-- **Serializer never validates. Validate never serializes.** `to_sdp()` checks
-  only structural completeness (the fields RFC 8866 / per-attribute grammar
-  mark as required, so a renderable line can be produced) and emits faithfully
-  on success. Value-form correctness, enum membership, and cross-section
-  invariants live in `doc:validate()`. A missing-required field is the *only*
-  thing `to_sdp` errors on; a present-but-wrong field is stringified and
-  emitted (round-trip will then fail — that's the developer's signal). This
-  separation lets a developer build a doc piecemeal, render at any point to
-  see *structural* gaps, and validate when they think they're done.
-- No fallback to a stored `attr.value` string for known decomposed attribute
-  names. The grammar tier produces the decomposed shape (e.g. `rtpmap` carries
-  `payload_type` / `encoding` / `clock_rate`); the serializer renders only
-  from those fields. Hand-built docs constructed via `sdp.new(t)` must use
-  the same decomposed shape — the legacy `{name, value=string}` shape for
-  *known* attribute names is no longer a supported producer surface (generic /
-  unknown attributes keep that shape as the forward-compat carrier).
+- SDP field ordering is mandatory per RFC 8866 section 5. The serializer
+  must enforce the ordering. The parser must reject violations.
+- LPEG failure position: use `lpeg.Cp()` captures and map the byte offset to
+  a line and column after the match attempt, not during the match.
+- ST 2110 `fmtp` values are semicolon-separated `key=value` pairs. Parse
+  them as a sub-grammar, not with string splits.
+- IPMX validation runs ST 2110 validation first. Never skip the lower tier.
+- `doc:to_sdp()` must produce output that re-parses cleanly. The round-trip
+  is a hard invariant, tested on every serializer change.
+- **The serializer never validates, and validation never serializes.**
+  `to_sdp()` checks only structural completeness: the fields that RFC 8866
+  or the per-attribute grammar mark as required, so that a renderable line
+  can be produced. On success, `to_sdp()` emits the fields as given.
+  Value-form correctness, enum membership, and cross-section invariants are
+  checked in `doc:validate()`. A missing required field is the only thing
+  that `to_sdp()` reports as an error. A field that is present but wrong is
+  stringified and emitted; the round-trip then fails, and that failure is
+  the developer's signal. This separation lets a developer build a doc
+  piecemeal, render the doc at any point to see structural gaps, and
+  validate when the doc is believed complete.
+- There is no fallback to a stored `attr.value` string for known decomposed
+  attribute names. The grammar tier produces the decomposed shape (for
+  example, `rtpmap` has the fields `payload_type`, `encoding`, and
+  `clock_rate`). The serializer renders only from those fields. A hand-built
+  doc constructed with `sdp.new(t)` must use the same decomposed shape. The
+  legacy `{name, value=string}` shape for known attribute names is no longer
+  a supported producer surface. Generic or unknown attributes keep the legacy
+  shape as the forward-compatible representation.

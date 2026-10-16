@@ -1,52 +1,94 @@
-# parse_sdp — Guide
+# parse_sdp guide
+
+This guide is the full reference for `parse_sdp`, a Lua library that
+parses, validates, and serializes Session Description Protocol (SDP)
+files. [README.md](README.md) is the short introduction. This guide
+covers the library API, the command-line tool, the shape of the parsed
+document, and every validation check with the specification clause that
+the check cites.
 
 ## Contents
 
-1. [Introduction](#introduction)
-2. [Background: SDP, ST 2110, and IPMX](#background)
+1. [What the library does](#what-the-library-does)
+2. [Background: SDP, ST 2110, and IPMX](#background-sdp-st-2110-and-ipmx)
 3. [Installation](#installation)
-4. [Quick Start](#quick-start)
-5. [Producer Workflow — Building SDP for a Stream Sender](#producer-workflow)
-6. [API Reference](#api-reference)
-7. [CLI Reference](#cli-reference)
+4. [Quick start: parse, validate, serialize](#quick-start-parse-validate-serialize)
+5. [Producer workflow: building an SDP file for a sender](#producer-workflow-building-an-sdp-file-for-a-sender)
+6. [API reference](#api-reference)
+7. [Command-line reference](#command-line-reference)
 8. [Parsed Table Structure](#parsed-table-structure)
-9. [Error Handling](#error-handling)
-10. [ST 2110 Validation](#st-2110-validation)
-11. [IPMX Validation](#ipmx-validation)
-12. [Serialization](#serialization)
-13. [Test Suite Organization](#test-suite-organization)
+9. [Error and finding tables](#error-and-finding-tables)
+10. [What this library validates (and what it doesn't)](#what-this-library-validates-and-what-it-doesnt)
+11. [ST 2110 validation checks](#st-2110-validation-checks)
+12. [IPMX validation checks](#ipmx-validation-checks)
+13. [Serialization to SDP text](#serialization-to-sdp-text)
+14. [Test suite organization](#test-suite-organization)
 
 ---
 
-## Introduction
+## What the library does
 
-`parse_sdp` is a Lua 5.1-5.5 library for parsing, validating, and serializing SDP (Session Description Protocol) files used in professional media over IP workflows. It is built with [LPEG](https://www.inf.puc-rio.br/~roberto/lpeg/). Runtime dependencies: LPEG, [dkjson](https://github.com/LuaDist/dkjson), and argparse (CLI only — never loaded by `require("parse_sdp")`). No bit-manipulation rock is required on any Lua version — Lua 5.3+ uses native bitwise operators, and Lua 5.1 / 5.2 use a pure-Lua arithmetic backend bundled with the library.
+`parse_sdp` is a Lua library that parses, validates, and serializes
+Session Description Protocol (SDP) files. In professional media over
+Internet Protocol (IP), an SDP file describes one Real-time Transport
+Protocol (RTP) stream that a sender transmits. The library runs on Lua
+5.1, 5.2, 5.3, 5.4, and 5.5. The parser is built with
+[LPEG](https://www.inf.puc-rio.br/~roberto/lpeg/) (Parsing Expression
+Grammars for Lua). The runtime dependencies are LPEG and
+[dkjson](https://github.com/LuaDist/dkjson). The command-line tool also
+uses argparse; `require("parse_sdp")` does not load argparse. No
+bit-manipulation rock is required on any Lua version: Lua 5.3 and later
+use the native bitwise operators, and Lua 5.1 and 5.2 use a pure-Lua
+arithmetic module that is included with the library.
 
-**Strictness is a primary feature.** The library enforces RFC 8866 (which obsoletes RFC 4566) exactly: required fields must be present, optional fields must appear in the correct position, and values must conform to their specified formats. SDP files that are "mostly valid" but technically non-conformant are rejected with a precise error message. The library will never produce an invalid SDP file.
-
-Three validation tiers:
+The library validates at three tiers:
 
 | Mode | Standard | Accepts |
 | --- | --- | --- |
-| `"sdp"` (default) | RFC 8866 | Any well-formed SDP |
-| `"st2110"` | SMPTE ST 2110 | ST 2110-compliant SDP only |
-| `"ipmx"` | IPMX | IPMX-compliant SDP only |
+| `"sdp"` (default) | RFC 8866 | Any SDP file that conforms to RFC 8866 |
+| `"st2110"` | SMPTE ST 2110 | SDP files that also conform to the SMPTE ST 2110 suite |
+| `"ipmx"` | IPMX (VSF TR-10) | SDP files that also conform to the IPMX TR-10 suite |
 
-Each tier is a strict superset of the previous.
+Each tier runs every check of the tier below it and adds its own checks.
+An SDP file that fails the `"sdp"` tier also fails the `"st2110"` and
+`"ipmx"` tiers.
+
+The library is strict, and the strictness is grounded in specification
+text. The library rejects an SDP file when the relevant standard
+explicitly requires, forbids, or defines the form of something and the
+file violates that text. The library does not reject an SDP file for a
+configuration that the standard does not address. Every check has a
+stable id and a `spec_ref` field that cites the clause. The section
+[What this library validates (and what it doesn't)](#what-this-library-validates-and-what-it-doesnt)
+states the rule and lists the RFC 8866 checks; the two sections after it
+list the ST 2110 and IPMX checks. The library has no lenient mode.
+
+At the RFC 8866 tier, the required lines must be present, the lines must
+be in the order that RFC 8866 section 5 defines, and every value must
+match the form the specification defines for it. An SDP file that
+violates one of these rules is rejected with an error that names the
+line and column, or the document field, and the check id. The serializer
+produces SDP text with CRLF (carriage return and line feed) line endings
+in the RFC 8866 field order.
 
 ---
 
-## Background
+## Background: SDP, ST 2110, and IPMX
 
-### SDP (RFC 4566)
+### SDP (RFC 8866)
 
-Session Description Protocol describes multimedia sessions in a plain-text format. Each line has the form:
+The Session Description Protocol describes multimedia sessions in a
+plain-text format. RFC 8866 is the current definition of SDP and
+obsoletes RFC 4566. Each line has the form:
 
 ```text
 <type>=<value>
 ```
 
-Fields must appear in a mandatory order. A session description opens with a session-level block (`v=` through `t=`), followed by zero or more media blocks (each starting with `m=`).
+The lines must appear in the order that RFC 8866 section 5 defines. A
+session description starts with a session-level section (`v=` through
+the session-level `a=` lines), followed by zero or more media
+descriptions. Each media description starts with an `m=` line.
 
 Minimal valid SDP:
 
@@ -57,23 +99,40 @@ s=My Session
 t=0 0
 ```
 
+RFC 8866 does not require a media description, so the four lines above
+are a valid SDP file at the `"sdp"` tier. SMPTE ST 2110 and IPMX require
+at least one media description.
+
 ### SMPTE ST 2110
 
-ST 2110 defines professional uncompressed media transport over IP using RTP. It requires specific SDP attributes that fully describe the media format, removing the need for out-of-band negotiation.
+SMPTE ST 2110 is a suite of standards from the Society of Motion Picture
+and Television Engineers (SMPTE) for professional media transport over
+IP using RTP. Each stream is described by an SDP file that includes the
+attributes a receiver needs to join the stream, so no other negotiation
+is needed. The validator cites these parts of the suite:
 
-Key sub-standards:
-
-| Standard | Covers |
+| Standard | Subject |
 | --- | --- |
-| ST 2110-10 | System timing and synchronization |
-| ST 2110-20 | Uncompressed video |
-| ST 2110-21 | Traffic shaping and delivery timing |
-| ST 2110-30 | Audio (PCM) |
-| ST 2110-40 | Ancillary data (captions, timecode, etc.) |
+| ST 2110-10 | System timing, the SDP requirements common to every stream, and ST 2022-7 redundancy grouping |
+| ST 2110-20 | Uncompressed active video (`raw`) |
+| ST 2110-21 | Traffic shaping and delivery timing of video |
+| ST 2110-22 | Constant bit-rate compressed video, with RFC 9134 for the JPEG XS (`jxsv`) payload format |
+| ST 2110-30 | PCM (pulse-code modulation) digital audio (`L16`, `L24`) |
+| ST 2110-31 | AES3 transparent transport (`AM824`) |
+| ST 2110-40 | Ancillary data (`smpte291`), with RFC 8331 |
+| ST 2110-41 | Fast metadata (`ST2110-41`) |
 
 ### IPMX
 
-IPMX (IP Media Experience) is an interoperability profile layered on ST 2110. It adds RTP header extensions, capability negotiation, and device discovery for plug-and-play professional AV over IP.
+IPMX (Internet Protocol Media Experience) is a set of specifications
+from the Video Services Forum (VSF), published as the TR-10 series, for
+professional audio-visual (AV) transport over IP. IPMX builds on ST 2110
+and adds requirements of its own. The validator cites these TR-10
+parts: TR-10-1 (system requirements), TR-10-2 (the UDP port rule for
+media streams), TR-10-5 (HDCP key exchange, the `a=hkep` attribute),
+TR-10-6 (forward error correction parameters), TR-10-10 (HDMI InfoFrame
+transport, the `a=infoframe` attribute), TR-10-13 (privacy encryption,
+the `a=privacy` attribute), and TR-10-14 (USB transport).
 
 ---
 
@@ -81,7 +140,11 @@ IPMX (IP Media Experience) is an interoperability profile layered on ST 2110. It
 
 ### Supported Lua versions
 
-Lua 5.1, 5.2, 5.3, 5.4, and 5.5. CI runs the full hermetic test suite on each version. No additional rocks are needed beyond the standard runtime deps; Lua 5.3+ uses native bitwise operators, and Lua 5.1 / 5.2 use a pure-Lua arithmetic backend (`parse_sdp.grammar.bitops_compat`) selected automatically at `require` time.
+The library supports Lua 5.1, 5.2, 5.3, 5.4, and 5.5. Continuous
+integration runs the full test suite on each version. Lua 5.3 and later
+use the native bitwise operators. Lua 5.1 and 5.2 use the pure-Lua
+arithmetic module `parse_sdp.grammar.bitops_compat`, which the library
+selects at `require` time. No additional rock is needed on any version.
 
 ### LuaRocks
 
@@ -89,35 +152,47 @@ Lua 5.1, 5.2, 5.3, 5.4, and 5.5. CI runs the full hermetic test suite on each ve
 luarocks install parse_sdp
 ```
 
-`lpeg`, `dkjson`, and `argparse` are installed automatically. `argparse` is only used by the CLI — `require("parse_sdp")` never loads it.
+LuaRocks installs `lpeg`, `dkjson`, and `argparse` as dependencies. Only
+the command-line tool uses `argparse`; `require("parse_sdp")` does not
+load it.
 
-### Manual
+### Manual installation
 
-Copy `parse_sdp.lua` into your project. Install `lpeg` and `dkjson` separately (and `argparse` if you want the CLI).
+Copy the `parse_sdp/` directory into the project's Lua module path. The
+directory contains `init.lua`, `errors.lua`, `serialize.lua`, and the
+`grammar/` modules; there is no single-file version of the library.
+Install `lpeg` and `dkjson` separately. Install `argparse` and copy
+`bin/parse_sdp` only when the command-line tool is needed.
 
 ### Docker
 
 ```sh
 docker build -t parse_sdp .
+docker run --rm -v "$(pwd):/data" parse_sdp lua bin/parse_sdp to_json /data/session.sdp
 ```
 
-The image includes Lua 5.5, LuaRocks, LPEG, dkjson, busted, and argparse.
+The image contains Lua 5.5, LuaRocks, LPEG, dkjson, busted, and
+argparse, with the repository copied to `/app`. The image has no entry
+point, so the command names the interpreter and the script. The image's
+default command runs the test suite (`busted spec/`).
 
 ### Browser playground
 
-<https://andrewstarks.github.io/parse_sdp/> is the library compiled to
-WebAssembly (Lua 5.5 + LPeg + `parse_sdp`, built with Emscripten) behind a
-static page. It accepts SDP text, the JSON form of a parsed document, or
-a Lua table literal in the same shape; reports every finding at all three
-tiers; lets you edit the document field by field with `doc:validate`
-running on each change; and downloads the serialized SDP or JSON. Nothing
-leaves the browser. The JSON request/response surface it uses is
-documented in [web/CONTRACT.md](web/CONTRACT.md), and `web/wasm/build.sh`
-reproduces the build locally.
+The playground at <https://andrewstarks.github.io/parse_sdp/> is the
+library compiled to WebAssembly (Lua 5.5, LPEG, and `parse_sdp`, built
+with Emscripten) behind a static page. The page accepts SDP text, the
+JSON form of a parsed document, or a Lua table literal in the same
+shape. The page reports every finding at all three tiers, lets the user
+edit the document field by field with `doc:validate` running on each
+change, and downloads the serialized SDP or JSON. Nothing is sent to a
+server. [web/MANUAL.md](web/MANUAL.md) is the user manual for the page.
+The JSON request and response format between the page and the library
+is documented in [web/CONTRACT.md](web/CONTRACT.md), and
+`web/wasm/build.sh` reproduces the build locally.
 
 ---
 
-## Quick Start
+## Quick start: parse, validate, serialize
 
 ```lua
 local sdp    = require("parse_sdp")
@@ -125,71 +200,85 @@ local errors = require("parse_sdp.errors")
 
 local text = io.open("session.sdp"):read("*a")
 
--- Parse and validate as base SDP (RFC 8866)
+-- Parse and validate at the RFC 8866 tier. On failure, doc is nil and
+-- err is a finding table (see "Error and finding tables").
 local doc, err = sdp.parse(text)
 if not doc then
   io.stderr:write(errors.format(err) .. "\n")
   os.exit(1)
 end
 
--- Access fields — doc is a plain table
+-- doc is a plain table. Read the fields directly.
 print(doc.session.name)
 print(doc.origin.unicast_address)
 print(#doc.media)
 
--- Soft-syntactic findings (bare LF, trailing whitespace, BOM, etc.)
--- come back as warnings without failing the parse.
+-- Soft-syntactic findings (a bare LF line ending, trailing whitespace,
+-- a byte order mark) are warnings. They do not fail the parse.
 for _, w in ipairs(doc:warnings()) do
-  io.stderr:write("warn: " .. w.id .. " — " .. w.message .. "\n")
+  io.stderr:write("warn: " .. w.id .. ": " .. w.message .. "\n")
 end
 
--- Validate at a stricter tier
+-- Validate at a stricter tier.
 local ok, err2 = doc:validate("st2110")
+if not ok then print(err2.id, err2.message) end
 
--- Mutate and re-check
+-- Change the table and check it again.
 doc.session.name = "Updated Session"
-print(doc:is_sdp())    -- still true
-print(doc:is_st2110()) -- depends on content
+print(doc:is_sdp())    -- true
+print(doc:is_st2110()) -- depends on the content
 
--- Serialize back to SDP text
+-- Serialize the table to SDP text.
 local out = doc:to_sdp()
 io.open("out.sdp", "w"):write(out)
 
--- Or get JSON
+-- Or to JSON.
 print(doc:to_json())
 ```
 
 ---
 
-## Producer Workflow
+## Producer workflow: building an SDP file for a sender
 
-If you are a device manufacturer or SDK developer **producing** SDP — not just parsing it — the library is designed to be your build-time validator. The intended loop:
+A device manufacturer or an SDK developer who produces SDP files can use
+the library as a build-time validator. The intended loop is:
 
 ```text
-1. Build a Lua table (sdp.new) or mutate an existing doc.
-2. doc:to_sdp()        → structural gaps (missing required fields).
-3. doc:validate(mode)  → spec-violation gaps (wrong values, missing
-                         per-tier attributes, value-form errors).
-4. Fix the gap the error points at.
-5. Repeat until is_<tier>() == true. Emit.
+1. Build a Lua table and wrap it with sdp.new, or change an existing doc.
+2. Call doc:to_sdp().        It reports structural gaps: missing required fields.
+3. Call doc:validate(mode).  It reports specification violations: wrong values,
+                             missing per-tier attributes, malformed values.
+4. Fix the field that the error names.
+5. Repeat until doc:is_<tier>() returns true. Then emit the text.
 ```
 
-**Two checkers, two questions.** `to_sdp()` answers *"can I render this at all?"* — it fails only on missing required fields. `validate()` answers *"does this conform to the tier I'm targeting?"* — it runs the full grammar + per-tier semantic checks. Use them together: `to_sdp()` keeps you honest about doc shape as you build, `validate()` tells you which spec clause to read next.
+`to_sdp()` and `validate()` answer two different questions. `to_sdp()`
+answers whether the document can be rendered at all; it fails only when
+a required field is missing. `validate()` answers whether the document
+conforms to the chosen tier; it runs the full grammar and the per-tier
+semantic checks. `to_sdp()` reports shape problems while the document is
+being built, and `validate()` names the specification clause to read
+next.
 
-### Worked example: ST 2110-20 video sender
+### Worked example: an ST 2110-20 video sender
 
-Build a 1080p25 raw video sender from an empty table. Run after each step — the error message is the next thing to add. (See [`examples/producer_walkthrough.lua`](examples/producer_walkthrough.lua) for the runnable version.)
+The example builds a 1080p25 raw video sender from an empty table. Run
+the checks after each step; the error message names the next thing to
+add. [`examples/producer_walkthrough.lua`](examples/producer_walkthrough.lua)
+is the runnable version and prints the result of every step.
 
 ```lua
 local sdp = require("parse_sdp")
 
--- Step 1: empty doc — to_sdp tells you the top-level shape it needs.
-sdp.new({}):to_sdp()
--- → nil, "cannot serialize: missing required field session"
+-- Step 1: an empty doc. to_sdp reports the first missing required field.
+local text, err = sdp.new({}):to_sdp()
+-- text           is nil
+-- err.message    is "cannot serialize: missing required field session"
+-- err.field_path is "session"
 
--- Step 2: minimal session — passes RFC 8866 and ST 2110 because there
--- are no media blocks yet. Adding a stream is where the per-tier
--- SHALLs kick in.
+-- Step 2: a minimal session. It passes the "sdp" tier. It fails the
+-- "st2110" tier because ST 2110-10:2022 section 8.1 requires the SDP
+-- file to describe an RTP stream, and there is no m= line yet.
 local doc = sdp.new({
   version = "0",
   origin  = { username="-", sess_id="1", sess_version="1",
@@ -200,22 +289,29 @@ local doc = sdp.new({
   },
   media = {},
 })
--- doc:validate("st2110") → OK
+-- doc:validate()         returns true
+-- doc:validate("st2110") returns nil, err with
+--   err.id = "st2110-10.m.media-description-required"
 
--- Step 3: bare m= block — RFC 8866 §6.5 dynamic PT 96 needs rtpmap.
+-- Step 3: a bare m= block. RFC 8866 section 8.2.3 requires an a=rtpmap
+-- line for a dynamic payload type such as 96.
 doc.media[1] = {
   media = "video", port = 50000, proto = "RTP/AVP", fmts = { "96" },
   connection = { net_type="IN", addr_type="IP4", address="239.0.0.1/64" },
   attributes = {},
 }
--- doc:validate() → dynamic RTP payload type (96-127) requires a matching a=rtpmap
+-- doc:validate() returns nil, err with
+--   err.message = "dynamic RTP payload type (96-127) requires a matching a=rtpmap"
 
--- Step 4: + rtpmap. Now ST 2110-20 §7.2 fmtp is on deck.
+-- Step 4: add a=rtpmap. The "sdp" tier passes. The "st2110" tier now
+-- requires the ST 2110-20:2022 section 7.2 fmtp parameters.
 table.insert(doc.media[1].attributes,
   { name="rtpmap", payload_type=96, encoding="raw", clock_rate=90000 })
--- doc:validate("st2110") → fmtp for raw video must include required 'sampling' parameter
+-- doc:validate("st2110") returns nil, err with
+--   err.message = "fmtp for raw video must include required 'sampling' parameter"
 
--- Step 5: + fmtp. Required params per ST 2110-20 §7.2 + ST 2110-21 §8.1.
+-- Step 5: add a=fmtp with the parameters that ST 2110-20:2022 section 7.2
+-- and ST 2110-21:2022 section 8.1 require.
 table.insert(doc.media[1].attributes, {
   name="fmtp", payload_type=96,
   params = {
@@ -224,127 +320,186 @@ table.insert(doc.media[1].attributes, {
     {"PM","2110GPM"},           {"SSN","ST2110-20:2022"}, {"TP","2110TPN"},
   },
 })
--- doc:validate("st2110") → media block must include a media-level 'a=mediaclk' attribute
+-- doc:validate("st2110") returns nil, err with
+--   err.id = "st2110.attr.mediaclk-required"
 
--- Step 6: + ts-refclk + mediaclk (ST 2110-10 §8.2 / §8.3, RFC 7273).
+-- Step 6: add a=ts-refclk and a=mediaclk (ST 2110-10:2022 sections 8.2
+-- and 8.3; the attribute forms are from RFC 7273).
 table.insert(doc.media[1].attributes,
   { name="ts-refclk", source="ptp", version="IEEE1588-2008",
     grandmaster="00-1D-9A-FF-FE-2C-32-0F", domain="0" })
 table.insert(doc.media[1].attributes,
   { name="mediaclk", mode="direct", offset=0 })
--- doc:is_st2110() → true.   doc:to_sdp() emits a conforming ST 2110 SDP.
+-- doc:is_st2110() returns true. doc:to_sdp() returns a conforming ST 2110 SDP file.
 ```
 
-The pattern is the same every step: read the error, add the field, re-run. You never have to look up "what do I need next" — the validator tells you, with a citable `spec_ref` for the clause.
+The loop is the same at each step: read the error, add the field, and
+run the checks again. The validator names the missing or malformed field
+and cites the clause in `spec_ref`.
 
-### IPMX delta
+### IPMX additions
 
-IPMX adds further required attributes beyond ST 2110 — measurement parameters on the video fmtp, per-block `a=source-filter`, etc. Same loop applies:
+IPMX requires attributes beyond ST 2110. For the video block above, the
+`"ipmx"` tier requires the bare `IPMX` flag in the `a=fmtp` line
+(TR-10-1 section 10.1) and the measurement parameters `measuredpixclk`,
+`vtotal`, and `htotal` (TR-10-1 section 10.2). The same loop applies:
 
 ```lua
 local ok, err = doc:validate("ipmx")
--- err.id       → tr-10-1.a.fmtp.measuredpixclk-required
--- err.message  → a=fmtp on a video IPMX media block must include 'measuredpixclk'
--- err.spec_ref → TR-10-1 §10.2
+-- err.id       is "tr-10-1.a.fmtp.measuredpixclk-required"
+-- err.message  is "a=fmtp on a video IPMX media block must include 'measuredpixclk'"
+-- err.spec_ref is "TR-10-1 §10.2"
 ```
 
-Add `measuredpixclk`, `vtotal`, `htotal` to the fmtp `params`, add `a=source-filter` per TR-10-TP-1 §13.2, re-validate. The [IPMX Validation](#ipmx-validation) section is the per-clause reference; the producer loop turns it into a checklist driven by your own SDP.
+Add `{"IPMX", true}`, `{"measuredpixclk", "74250000"}`,
+`{"vtotal", "1125"}`, and `{"htotal", "2640"}` to the fmtp `params` list
+and validate again. The validator reports the measurement parameters
+first and the `IPMX` flag after them, because the flag is checked once
+per media block after the block has been parsed. The section
+[IPMX validation checks](#ipmx-validation-checks) lists every IPMX
+check; the producer loop turns that list into a checklist for the SDP
+file being built.
 
-### Iterating with malformed-but-known values
+### Iterating with malformed values that are known
 
-While wiring up provisioning code that doesn't yet have, say, a real PTP grandmaster ID, you may want to render and inspect the SDP without the GMID check failing the parse. Demote the check via policy:
+While provisioning code is being written, a value such as a real PTP
+(Precision Time Protocol) grandmaster identity may not be available yet.
+The document can still be rendered and inspected without the grandmaster
+check failing the parse. Demote the check with a policy:
 
 ```lua
 local doc, err = sdp.parse(sdp_text, "st2110", {
   policy = {
-    ["sdp.a.ts-refclk.ptp-malformed"] = "warn",  -- collect, don't reject
+    ["sdp.a.ts-refclk.ptp-malformed"] = "warn",  -- record the finding; do not reject
   },
 })
 -- doc is returned; doc:warnings() contains the demoted finding.
--- Re-promote to "error" once the provisioning code is wired up.
+-- Set the check back to "error" once the provisioning code is complete.
 ```
 
-This is the same accessor pattern documented under the [`doc:findings()` / `doc:warnings()` / `doc:errors()`](#doc-methods) API entry — useful both for debugging the doc you produced and for prototyping against an incomplete environment.
+The same accessors are documented under
+[`doc:findings()`, `doc:warnings()`, and `doc:errors()`](#docfindings-docwarnings-and-docerrors).
+The pattern is useful both for debugging a document the producer built
+and for prototyping against an incomplete environment.
 
 ### Required-attribute checklists
 
-The validator drives the loop, but if you want a static reference for which attributes a tier requires, see:
+The validator drives the loop. A static reference for the attributes a
+tier requires is in these sections:
 
-- ST 2110 per-media-block requirements: [§ ST 2110 Validation > Per media block](#per-media-block).
-- ST 2110-20 video fmtp parameters: [§ ST 2110-20 (video) `fmtp` parameters](#st-2110-20-video-fmtp-parameters).
-- IPMX baseband measurement params: [§ Required IPMX fmtp parameters](#required-ipmx-fmtp-parameters).
+- ST 2110 per-media-block requirements: [ST 2110-10 checks](#st-2110-10-system-and-session-checks).
+- ST 2110-20 video fmtp parameters: [ST 2110-20 raw video checks](#st-2110-20-raw-video-checks).
+- IPMX measurement parameters: [TR-10-1 checks](#tr-10-1-system-checks).
 
-The doc shape for hand-built attributes (which keys are decomposed vs which keep `value`) is in [Parsed Table Structure](#parsed-table-structure) and [`sdp.new`](#sdpnewtable).
+The document shape for hand-built attributes (which keys each decomposed
+attribute requires, and which attributes keep the generic `value` string)
+is in [Parsed Table Structure](#parsed-table-structure) and under
+[`sdp.new`](#sdpnewtable).
 
-### Kitchen-sink references
+### Reference examples for every field
 
-A producer asking "what every Lua-table field looks like for every line type and attribute" should read these four runnable examples — read them in order, each layer adds onto the previous:
+Four runnable examples show the Lua-table field names for every line
+type and attribute. Each file builds on the previous one, so they are
+best read in order:
 
-| File | Covers | Asserts |
+| File | Content | Assertion at the end of the file |
 | --- | --- | --- |
-| [`examples/kitchen_sink.lua`](examples/kitchen_sink.lua) | RFC 8866 line types + cross-RFC base attributes (rtpmap, fmtp, ssrc, ssrc-group, msid, extmap, rtcp, rtcp-fb, rtcp-mux, source-filter, mid, group, ts-refclk, mediaclk) + a forward-compat `x-vendor-*` attribute | `parse → serialize → re-parse` deep-equal |
-| [`examples/kitchen_sink_st2110.lua`](examples/kitchen_sink_st2110.lua) | ST 2110-{10,20,21,22,30,40,41}: raw video + JPEG-XS + L24 audio + smpte291 ancillary + ST 2110-41 fast metadata in one doc; ST 2110-20 / -21 mandatory + optional fmtp params; TSMODE / TSDELAY; a=group:DUP redundancy pair | `is_st2110()` + round-trip |
-| [`examples/kitchen_sink_ipmx.lua`](examples/kitchen_sink_ipmx.lua) | IPMX deltas on top of ST 2110: TR-10-1 IPMX flag + measurement params, TR-10-TP-1 per-block a=source-filter, TR-10-10 a=infoframe, TR-10-5 a=hkep, TR-10-13 a=privacy, TR-10-6 FECPROFILE | `is_ipmx()` + round-trip |
-| [`examples/kitchen_sink_conflicts.lua`](examples/kitchen_sink_conflicts.lua) | Eight tiny per-conflict SDP fixtures for combinations the three valid sinks above can't show together (e.g. RFC 7273 traceable / non-traceable mix, ST 2110-10 §8.3 session-level mediaclk, TR-10-1 §10.1 missing IPMX flag) | Each fixture asserts a structured rejection with the expected `err.id` and `err.spec_ref` |
+| [`examples/kitchen_sink.lua`](examples/kitchen_sink.lua) | Every RFC 8866 line type and every base-tier decomposed attribute (`rtpmap`, `fmtp`, `ssrc`, `ssrc-group`, `msid`, `extmap`, `rtcp`, `rtcp-fb`, `rtcp-mux`, `source-filter`, `mid`, `group`, `ts-refclk`, `mediaclk`), plus an unknown `x-vendor-*` attribute that passes through unchanged | parse, serialize, and re-parse produce a deep-equal table |
+| [`examples/kitchen_sink_st2110.lua`](examples/kitchen_sink_st2110.lua) | One document with six media blocks: a raw video `a=group:DUP` pair, JPEG XS video, L24 audio, `smpte291` ancillary data, and ST 2110-41 fast metadata; the mandatory and optional ST 2110-20 and ST 2110-21 fmtp parameters; `TSMODE` and `TSDELAY` | `doc:is_st2110()` is true, and the document round-trips |
+| [`examples/kitchen_sink_ipmx.lua`](examples/kitchen_sink_ipmx.lua) | The IPMX additions on top of the ST 2110 document: the `IPMX` fmtp flag and measurement parameters (TR-10-1), an `a=source-filter` on each block, `a=infoframe` (TR-10-10), `a=hkep` (TR-10-5), `a=privacy` (TR-10-13), and `FECPROFILE` (TR-10-6) | `doc:is_ipmx()` is true, and the document round-trips |
+| [`examples/kitchen_sink_conflicts.lua`](examples/kitchen_sink_conflicts.lua) | Eight small SDP fixtures, one per forbidden combination that the three valid documents above cannot contain: a traceable and non-traceable `a=ts-refclk` mix, a malformed PTP grandmaster identity, a session-level-only `a=mediaclk`, `PM=2110BPM` with `MAXUDP`, a missing `IPMX` flag, an odd IPMX port, an IPv4 multicast `c=` without a TTL, and an IPv4 octet above 255 | each fixture is rejected with the expected `err.id` and `err.spec_ref` |
 
-Every field in each file carries an inline citation to its source RFC / SMPTE / TR-10 clause + a one-line description of the field's role, so the files double as a producer-side reference for "which Lua keys does this attribute expect, and where does the spec say so."
+Every field in the three valid files has an inline comment with the RFC,
+SMPTE, or TR-10 clause it comes from and a one-line description of the
+field. The files therefore also serve as a producer-side reference for
+which Lua keys each attribute requires and where the specification
+defines the value.
 
 #### Hex values in the Lua table
 
-SDP itself is a text format, so every "hex value" the specs reference is encoded as a *string* on the wire and passed through the Lua table as a string too. The library never converts hex-formatted SDP values to or from Lua numbers — the spec gives them structure (separators, length, prefixes) that a bare number would lose. Four hex shapes appear across the kitchen sinks:
+SDP is a text format, so every hexadecimal value that the specifications
+define is a string on the wire and is also a string in the Lua table.
+The library never converts a hexadecimal SDP value to or from a Lua
+number, because the specification gives these values a structure
+(separators, length, prefixes) that a number would lose. Four
+hexadecimal shapes appear across the reference examples:
 
-| Shape | Where it appears | Example | Demo'd in |
+| Shape | Where it appears | Example | Shown in |
 | --- | --- | --- | --- |
-| Dash-separated octets (EUI-64 / EUI-48) | `ts-refclk:ptp=` grandmaster, `mediaclk:IEEE1722=` stream id, `ts-refclk:localmac=`, IPMX `a=hkep` port_id | `"00-11-22-FF-FE-33-44-55"` | base, ST 2110, IPMX |
-| UUID dashed form (32 hex) | IPMX `a=hkep` node_id | `"00112233-4455-6677-8899-aabbccddeeff"` | IPMX |
-| Bare fixed-length hex string | IPMX `a=privacy` iv (16) / key_generator (32) / key_version (8) / key_id (16) | `"0123456789ABCDEF"` | IPMX |
-| `0x`-prefixed octet pairs in braces | `a=fmtp DID_SDID` per RFC 8331 §4 | `"{0x41,0x07}"` | ST 2110 |
+| Dash-separated octets (EUI-64 or EUI-48) | `ts-refclk:ptp=` grandmaster, `mediaclk:IEEE1722=` stream identity, `ts-refclk:localmac=`, IPMX `a=hkep` `port_id` | `"00-11-22-FF-FE-33-44-55"` | base, ST 2110, IPMX |
+| UUID dashed form (32 hex digits) | IPMX `a=hkep` `node_id` | `"00112233-4455-6677-8899-aabbccddeeff"` | IPMX |
+| Bare fixed-length hex string | IPMX `a=privacy` `iv` (16 digits), `key_generator` (32), `key_version` (8), `key_id` (16) | `"0123456789ABCDEF"` | IPMX |
+| `0x`-prefixed octets in braces | `a=fmtp` `DID_SDID` per RFC 8331 section 4 | `"{0x41,0x07}"` | ST 2110 |
 
-The only places a Lua-numeric type is in play are *decimal* fields (ports, payload types, ssrc_id, sample counts, sequence numbers).
+Only decimal fields are Lua numbers: ports, payload types, `ssrc_id`,
+clock rates, channel counts, bandwidth values, and the `t=` start and
+stop times.
 
 ---
 
-## API Reference
+## API reference
 
 ### Module functions
 
 #### `sdp.parse(text [, mode [, opts]])`
 
-Parses `text` and validates it.
+Parses `text` and validates it at the given tier.
 
 | Parameter | Type | Default | Description |
 | --- | --- | --- | --- |
-| `text` | string | required | Raw SDP content |
-| `mode` | string | `"sdp"` | `"sdp"`, `"st2110"`, or `"ipmx"` |
-| `opts` | table  | `nil` | See below |
+| `text` | string | required | The SDP text. CRLF and LF line endings are both accepted; LF produces a warning per line. |
+| `mode` | string | `"sdp"` | `"sdp"`, `"st2110"`, or `"ipmx"`. Any other value returns `nil, err` with `err.message` of the form `unknown mode: <value>`. |
+| `opts` | table | `nil` | The options below. |
 
-Returns `doc, nil` on success; `nil, err` on failure.
+Returns `doc` (a single value) on success. Returns `nil, err` on
+failure, where `err` is a finding table (see
+[Error and finding tables](#error-and-finding-tables)).
+
+`sdp.parse` returns `nil, err` whenever at least one error-severity
+finding was recorded. `err` is the first error-severity finding in the
+order the grammar recorded it. When the grammar cannot match the input
+and no error-severity finding was recorded (for example, the lines are
+out of order, a line letter is unknown, or an `m=` line is malformed),
+`err` has `code = "PARSE_ERROR"`, the line and column where matching
+stopped, and the text of that line in `line_text`.
 
 `opts` fields:
 
 | Field | Type | Default | Description |
 | --- | --- | --- | --- |
-| `policy` | table | `nil` | Per-check severity overrides — see below. |
-| `fail_on_first` | bool | `false` | When `true`, the first error-severity finding aborts the parse (the 1.0-compatible default). The new default collects every finding, then partitions: any error → `nil, err`; otherwise `doc` is returned with warnings reachable via `doc:warnings()`. |
+| `policy` | table | `nil` | Per-check severity overrides. See below. |
+| `fail_on_first` | boolean | `false` | When `true`, the grammar stops at the first error-severity finding. When `false`, the grammar continues to the end of the input and records every finding. The option does not change the return value: `sdp.parse` returns `nil, err` in both cases when an error-severity finding exists, and the findings recorded after the first error are not returned. |
 
-`opts.policy` is a `{[check_id] = "error"/"warn"/"off"}` map. Keys are
-validated against the registry at entry; an unknown id returns `nil, err`
-with `err.policy_key` naming the offending key. The registry is exposed
-via `sdp.checks()` and `sdp.default_policy()` — see the section below.
+To see every finding from one parse, demote the error-severity checks to
+`"warn"` with `opts.policy` and read `doc:warnings()`. The command-line
+option `--all-findings` does exactly this.
 
-The returned `doc` is a plain Lua table with the [doc methods](#doc-methods)
-attached via metatable.
+`opts.policy` is a map of the form `{[check_id] = "error" | "warn" | "off"}`.
+Every key is validated against the registry when `sdp.parse` is called;
+an unknown id returns `nil, err` with `err.policy_key` set to the
+unknown key. The registry is available through `sdp.checks()` and
+`sdp.default_policy()`, described below. A policy entry applies to every
+registered check id, including the two registered hard-syntactic checks
+(`sdp.a.ts-refclk.ptp-malformed` and
+`st2110-20.a.fmtp.no-whitespace-around-equals`). In version 1.5.1,
+demoting `sdp.a.ts-refclk.ptp-malformed` to `"warn"` returns a document
+in which the malformed `ptp=` text is kept in the attribute's `value`
+field. A policy cannot change the structural grammar rules that have no
+check id; those rules fail the parse with `code = "PARSE_ERROR"`.
+
+The returned `doc` is a plain Lua table with the
+[doc methods](#doc-methods) attached through a metatable.
 
 ```lua
 local doc, err = sdp.parse(text)
 local doc, err = sdp.parse(text, "st2110")
 local doc, err = sdp.parse(text, "ipmx")
 
--- Suppress the BOM warning; downgrade an ST 2110 raw-fmtp value-form
--- check from error to warn so the parse still returns a doc.
+-- Turn off the byte-order-mark warning, and demote one ST 2110 raw-video
+-- value-form check from error to warn so the parse still returns a doc.
 local doc, err = sdp.parse(text, "st2110", {
   policy = {
-    ["sdp.file.bom-present"]              = "off",
+    ["sdp.file.bom-present"]                 = "off",
     ["st2110-20.a.fmtp.depth-invalid-value"] = "warn",
   },
 })
@@ -352,14 +507,17 @@ local doc, err = sdp.parse(text, "st2110", {
 
 #### `sdp.new(table)`
 
-Wraps an existing Lua table as a doc object by attaching the metatable. Does not
-validate. Useful for building SDP documents programmatically. Hand-built docs
-must use the decomposed shape documented in [Parsed Table Structure](#parsed-table-structure)
-— in particular `session.time_descriptions` (not `session.timing`) and per-name
-decomposed attributes (e.g. `rtpmap` carrying `payload_type` / `encoding` /
-`clock_rate` rather than a single `value` string).
+Wraps an existing Lua table as a doc object by attaching the metatable.
+`sdp.new` does not validate the table. It is the entry point for
+building SDP documents in code. A hand-built table must use the
+decomposed shape documented in
+[Parsed Table Structure](#parsed-table-structure): the session timing is
+in `session.time_descriptions` (not `session.timing`), and every known
+attribute name uses its decomposed fields (for example, an `rtpmap`
+entry has `payload_type`, `encoding`, and `clock_rate` rather than one
+`value` string).
 
-Returns `doc` (never fails).
+Returns `doc`. `sdp.new` never fails.
 
 ```lua
 local doc = sdp.new({
@@ -369,32 +527,36 @@ local doc = sdp.new({
   session = {
     name = "My Session",
     time_descriptions = { { start=0, stop=0, repeats={} } },
-    -- emails / phones / bandwidths / attributes can be {} or omitted —
-    -- absence and an empty array are equivalent for serialization.
+    -- emails, phones, bandwidths, and attributes may be {} or omitted.
+    -- Absence and an empty array are equivalent for serialization.
   },
   media   = {},
 })
 ```
 
-Array-typed session fields (`emails`, `phones`, `bandwidths`, `attributes`)
-and the corresponding per-media-block fields are all optional in
-RFC 8866. The library accepts both nil and `{}` interchangeably:
+The array-typed session fields (`emails`, `phones`, `bandwidths`,
+`attributes`) and the corresponding per-media fields are all optional in
+RFC 8866. The library accepts `nil` and `{}` interchangeably:
 `sdp.parse(text)` returns empty tables when the corresponding lines are
-absent, and `doc:to_sdp()` renders nothing for either nil or `{}`. So a
-hand-built doc that omits these fields entirely round-trips cleanly.
+absent, and `doc:to_sdp()` renders nothing for either `nil` or `{}`. A
+hand-built doc that omits these fields round-trips without change.
 
-#### `sdp.checks()` / `sdp.default_policy()`
+#### `sdp.checks()` and `sdp.default_policy()`
 
-Inspect the parser's registry of toggleable checks.
+These two functions expose the registry of checks.
 
-- `sdp.checks()` returns an array of every registered check, sorted by id:
-  `{id, kind, default_severity, code, spec_ref, message_template, verified}`.
-- `sdp.default_policy()` returns a `{[id] = default_severity}` table over
-  every registered check. Dump it, edit it, pass it back via `opts.policy`.
+- `sdp.checks()` returns an array of every registered check, sorted by
+  id. Each entry has the fields `id`, `kind`, `default_severity`,
+  `code`, `spec_ref`, `message_template`, and `verified`. An entry whose
+  `verified` field is `false` also has a `verification_note` string. As
+  of version 1.5.1, every registered check has `verified = true`.
+- `sdp.default_policy()` returns a table of the form
+  `{[id] = default_severity}` over every registered check. A caller can
+  edit the table and pass it back as `opts.policy`.
 
 ```lua
 for _, c in ipairs(sdp.checks()) do
-  print(c.id, c.default_severity, c.spec_ref)
+  print(c.id, c.kind, c.default_severity, c.spec_ref)
 end
 
 local policy = sdp.default_policy()
@@ -402,35 +564,39 @@ policy["sdp.file.bom-present"] = "off"
 local doc, err = sdp.parse(text, "sdp", { policy = policy })
 ```
 
-#### `sdp.attr_get(block, name)` / `sdp.attrs_get(block, name)`
+#### `sdp.attr_get(block, name)` and `sdp.attrs_get(block, name)`
 
-Look up decomposed attributes by name on a block. A *block* is any table
-that carries an `attributes` array — `doc.session` or any `doc.media[i]`
-entry. These mirror [`sdp.params_get`](#sdpparams_getparams-key) (the
-inner-`fmtp` accessor) for the outer attribute list, so consumers never
-hand-roll the scan over the ordered `attributes` array.
+These functions look up decomposed attributes by name on a block. A
+block is any table that has an `attributes` array: `doc.session` or any
+`doc.media[i]` entry. The functions are the outer-list companions of
+[`sdp.params_get`](#sdpparams_getparams-key), so a consumer never scans
+the ordered `attributes` array by hand.
 
-- `sdp.attr_get(block, name)` returns the **first** attribute table whose
-  `name` matches, or `nil` when none is present.
-- `sdp.attrs_get(block, name)` returns an **array** of every matching
-  attribute table, in document order (empty table when none). SDP routinely
-  carries several `rtpmap` / `fmtp` / `ssrc` / `rtcp-fb` lines on one block,
-  so reach for `attrs_get` whenever more than one may appear.
+- `sdp.attr_get(block, name)` returns the first attribute table whose
+  `name` field equals `name`, or `nil` when there is none.
+- `sdp.attrs_get(block, name)` returns an array of every matching
+  attribute table in document order, or an empty table when there is
+  none. One block often has several `rtpmap`, `fmtp`, `ssrc`, or
+  `rtcp-fb` lines, so `attrs_get` is the right call whenever more than
+  one may appear.
 
-Both are nil-safe: a `nil` block (or a block with no `attributes`) yields
-`nil` / `{}`. The returned tables are the decomposed shapes described under
-[Parsed Table Structure](#parsed-table-structure) — e.g. an `rtpmap` result
-carries `payload_type` / `encoding` / `clock_rate`.
+Both functions accept `nil`: a `nil` block, or a block with no
+`attributes` field, returns `nil` from `attr_get` and `{}` from
+`attrs_get`. The returned tables have the decomposed shapes described in
+[Parsed Table Structure](#parsed-table-structure). For example, an
+`rtpmap` result has `payload_type`, `encoding`, and `clock_rate`, and an
+`rtcp-fb` result has `payload_type`, `feedback_type`, and an optional
+`parameters` string.
 
 ```lua
 local doc = sdp.parse(text, "st2110")
 local m   = doc.media[1]
 
-local rtpmap = sdp.attr_get(m, "rtpmap")        -- first (or nil)
+local rtpmap = sdp.attr_get(m, "rtpmap")        -- first match, or nil
 if rtpmap then print(rtpmap.encoding, rtpmap.clock_rate) end
 
-for _, fb in ipairs(sdp.attrs_get(m, "rtcp-fb")) do  -- all matches
-  print(fb.value)
+for _, fb in ipairs(sdp.attrs_get(m, "rtcp-fb")) do  -- every match
+  print(fb.payload_type, fb.feedback_type, fb.parameters)
 end
 
 local grp = sdp.attr_get(doc.session, "group")  -- session-level lookup
@@ -438,23 +604,26 @@ local grp = sdp.attr_get(doc.session, "group")  -- session-level lookup
 
 #### `sdp.params_get(params, key)`
 
-Look up a value in an ordered param list by key — the inner companion to
-`attr_get` / `attrs_get`. `a=fmtp` and `a=privacy` carry their key/value
-pairs as an ordered `params` list (input order preserved for byte-faithful
-round-trip); `params_get` returns the value for `key`, or `nil` when
-absent. A bare flag (a key with no `=value`) has `true` as its value.
+Looks up a value in an ordered parameter list by key. `a=fmtp` and
+`a=privacy` keep their key and value pairs in an ordered `params` list
+(input order is preserved so that serialization reproduces the input
+bytes). `params_get` returns the value for `key`, or `nil` when the key
+is absent. A bare flag (a key with no `=value`) has the value `true`.
 
-**Note the argument shape:** unlike `attr_get`, which takes a *block*,
-`params_get` takes the **inner list directly** — `fmtp.params`, not the
-`fmtp` attribute table. Param lists have no wrapping object, so there is
-nothing block-like to pass. nil-safe: a `nil` list yields `nil`.
+The argument shape differs from `attr_get`: `attr_get` takes a block,
+and `params_get` takes the inner list directly, which is `fmtp.params`
+rather than the `fmtp` attribute table. A parameter list has no wrapping
+object, so there is no block-like table to pass. A `nil` list returns
+`nil`. An `fmtp` attribute that was not decomposed (see the `raw` field
+in [Parsed Table Structure](#parsed-table-structure)) has no `params`
+field, so `params_get(fmtp.params, key)` returns `nil` for it.
 
 ```lua
 local doc  = sdp.parse(text, "st2110")
 local fmtp = sdp.attr_get(doc.media[1], "fmtp")   -- the fmtp attribute table
 if fmtp then
-  local width = sdp.params_get(fmtp.params, "width")   -- "1920", or nil
-  local seg   = sdp.params_get(fmtp.params, "interlace")  -- true if bare flag
+  local width = sdp.params_get(fmtp.params, "width")      -- "1920", or nil
+  local il    = sdp.params_get(fmtp.params, "interlace")  -- true when the flag is present
 end
 ```
 
@@ -464,65 +633,74 @@ end
 
 #### `doc:validate([mode])`
 
-Validates the doc against the given mode (`"sdp"`, `"st2110"`, or `"ipmx"`).
-Defaults to `"sdp"`. Implemented as serialize-then-reparse (round-trip), so
-it works on hand-built docs from `sdp.new()` as well as parsed ones.
+Validates the doc at the given tier (`"sdp"`, `"st2110"`, or `"ipmx"`).
+The default is `"sdp"`. The method serializes the doc with `to_sdp()`
+and parses the text again with `sdp.parse(text, mode)`, so it works on
+hand-built docs from `sdp.new()` as well as on parsed docs. When
+`to_sdp()` fails, `validate` returns that serializer error.
 
-Returns `true` on success; `nil, err` on failure.
+Returns `true` on success. Returns `nil, err` on failure.
 
 ```lua
 local ok, err = doc:validate()
 local ok, err = doc:validate("st2110")
 ```
 
-#### `doc:is_sdp()` / `doc:is_st2110()` / `doc:is_ipmx()`
+#### `doc:is_sdp()`, `doc:is_st2110()`, and `doc:is_ipmx()`
 
-Convenience boolean checks. Each runs `doc:validate(mode)` and returns
-`true` or `false`. Call `doc:validate(mode)` directly if you need the error
-detail.
+Each method runs `doc:validate(mode)` and returns `true` or `false`.
+Call `doc:validate(mode)` directly when the error detail is needed.
 
 ```lua
 if doc:is_st2110() then ... end
 ```
 
-#### `doc:findings()` / `doc:warnings()` / `doc:errors()`
+#### `doc:findings()`, `doc:warnings()`, and `doc:errors()`
 
-Inspect findings recorded while parsing the doc.
+These methods return the findings that were recorded while the doc was
+parsed.
 
-- `doc:findings()` returns every finding (warn + error).
-- `doc:warnings()` returns only the `"warn"`-severity findings.
-- `doc:errors()` returns only the `"error"`-severity findings.
+- `doc:findings()` returns every finding, in the order recorded.
+- `doc:warnings()` returns only the findings with severity `"warn"`.
+- `doc:errors()` returns only the findings with severity `"error"`.
 
-Each finding is a table with `{id, severity, message, spec_ref, code, line,
-col, field_path, context}`. With the default `fail_on_first = false`, every
-warning the grammar emits is reachable here; error-severity findings still
-surface via the `nil, err` return from `sdp.parse`, but the same finding
-is also accessible on the surviving doc when `fail_on_first` is set off
-explicitly.
+Each finding is a table with the fields `id`, `severity`, `message`,
+`spec_ref`, `code`, `line`, `col`, `line_text`, `field_path`, and
+`context` (see [Error and finding tables](#error-and-finding-tables)).
+A doc that `sdp.parse` returned has no error-severity findings, because
+`sdp.parse` returns `nil, err` when one exists; `doc:errors()` therefore
+returns an empty table for such a doc. A check that a policy demoted to
+`"warn"` appears in `doc:warnings()` with `severity = "warn"`.
 
-For `sdp.new()` docs (no parse happened) the lists are empty.
+For a doc from `sdp.new()`, no parse happened and all three lists are
+empty.
 
 ```lua
 local doc, err = sdp.parse(text)
 if doc then
   for _, w in ipairs(doc:warnings()) do
-    print(w.id, w.message)
+    print(w.id, w.line, w.message)
   end
 end
 ```
 
 #### `doc:to_sdp()`
 
-Converts the doc to a valid RFC 8866 SDP string.
+Renders the doc as SDP text.
 
-- Line endings are `\r\n` per RFC 8866 §9 ABNF.
-- Field order follows RFC 8866 §5 exactly.
-- Round-trip is a strong invariant: a successfully-parsed doc serializes back
-  to text that re-parses to an equivalent doc.
+- Line endings are CRLF, per the RFC 8866 section 9 ABNF.
+- Field order follows RFC 8866 section 5.
+- A doc that `sdp.parse` returned serializes to text that parses again
+  to an equivalent doc. The test suite checks this on every fixture.
 
-Returns a string on success; `nil, err` if the doc is missing a structurally-
-required field (the serializer never validates value forms; `doc:validate()`
-would have caught those). Optional fields are silently omitted when absent.
+Returns a string on success. Returns `nil, err` when a structurally
+required field is missing; `err.message` names the field, for example
+`cannot serialize: missing required field session`, and `err.field_path`
+is the path of the field, for example `session` or
+`media[0].attributes[2].payload_type` (the media index counts from 0 and
+the attribute index from 1). The serializer never validates
+value forms; `doc:validate()` does that. Optional fields that are `nil`
+are omitted from the output.
 
 ```lua
 local text, err = doc:to_sdp()
@@ -530,7 +708,8 @@ local text, err = doc:to_sdp()
 
 #### `doc:to_json()`
 
-Returns a JSON string representation of the doc (via dkjson).
+Returns the doc as a JSON string, encoded with dkjson. The JSON has the
+same shape as the Lua table.
 
 ```lua
 local json = doc:to_json()
@@ -538,40 +717,52 @@ local json = doc:to_json()
 
 ---
 
-## CLI Reference
+## Command-line reference
 
 ```text
 parse_sdp <subcommand> [options] [file]
 ```
 
-Five subcommands. `file` is a path to an SDP (or JSON, for `to_sdp`); pass
-`-` or omit it to read from stdin. Exit code is `0` on success, `1` on
-parse / validation failure (detail on stderr) — with one exception:
-`diagnose` exits `0` whether the file passes a tier or not, because the
-diagnostic ran. Run `parse_sdp <subcommand> --help` for per-command
-flags.
+The tool has five subcommands. `file` is the path to an SDP file (or to
+a JSON file, for `to_sdp`). When `file` is `-` or is omitted, the tool
+reads standard input. Run `parse_sdp <subcommand> --help` for the
+options of each subcommand.
 
-| Subcommand | When to reach for it |
+| Subcommand | Purpose |
 | --- | --- |
-| [`validate`](#parse_sdp-validate) | "Is this SDP valid at tier X?" Yes/no with structured error on failure. |
-| [`diagnose`](#parse_sdp-diagnose) | "Which tiers does this SDP pass?" Ladder report; always exit 0. |
-| [`to_json`](#parse_sdp-to_json) | Convert SDP to JSON for tooling / inspection. |
-| [`to_sdp`](#parse_sdp-to_sdp) | Render a JSON doc back to SDP text. |
-| [`checks`](#parse_sdp-checks) | List the registered checks (id / severity / spec_ref) — the validator's clause inventory. |
+| [`validate`](#parse_sdp-validate) | Reports whether the file is valid at one tier: `OK` or a formatted error. |
+| [`diagnose`](#parse_sdp-diagnose) | Reports which of the three tiers the file passes, one row per tier. |
+| [`to_json`](#parse_sdp-to_json) | Parses and validates the file, then writes the document as JSON. |
+| [`to_sdp`](#parse_sdp-to_sdp) | Renders a JSON document as SDP text. |
+| [`checks`](#parse_sdp-checks) | Lists the registered checks with id, severity, and `spec_ref`. |
+
+### Exit codes
+
+| Case | Exit code |
+| --- | --- |
+| `validate` or `to_json` succeeds | 0 |
+| `validate` or `to_json` fails to parse or validate the file (the detail is on standard error) | 1 |
+| `validate` or `to_json` with `--all-findings` finishes and at least one finding has the default severity `error` | 1 |
+| `validate` or `to_json` with `--all-findings` finishes and every finding has the default severity `warn`, or there are no findings | 0 |
+| `validate`, `diagnose`, or `to_json` with `--all-findings` cannot parse the file structurally (a hard-syntactic failure); the formatted error is printed | 1 |
+| `diagnose` finishes, whatever the verdict | 0 |
+| `to_sdp` cannot decode the input as JSON | 1 |
+| `to_sdp` input decodes but a required field is missing. The tool prints the serializer's error, which names the field in `field_path`. | 1 |
+| `--mode` has a value other than `sdp`, `st2110`, or `ipmx` (`unknown mode: <value>`) | 1 |
+| `checks --format` has a value other than `table` or `json` | 1 |
 
 ### `parse_sdp validate`
 
-Validates and reports a single yes/no verdict. Use when you want the
-answer without the JSON.
+Validates the file at one tier and reports a single verdict.
 
 ```text
 parse_sdp validate [--mode sdp|st2110|ipmx] [--all-findings] [file]
 ```
 
-| Flag | Description |
+| Option | Description |
 | --- | --- |
-| `--mode MODE` | Validation tier (default: `sdp`) |
-| `--all-findings` | Collect every finding instead of stopping at the first error. See [All findings](#all-findings) below. |
+| `--mode MODE` | The validation tier. The default is `sdp`. |
+| `--all-findings` | Collects every finding instead of stopping at the first error. See [All findings](#all-findings). |
 
 ```sh
 $ parse_sdp validate --mode st2110 session.sdp
@@ -592,24 +783,25 @@ $ echo $?
 
 ### `parse_sdp diagnose`
 
-Runs every tier and prints a ladder. Always exits 0 — the verdict *is*
-the output. The natural CLI for "what does this SDP claim compliance
-with, and where does it fall short?"
+Runs the RFC 8866, ST 2110, and IPMX tiers in that order and prints one
+row per tier. The exit code is always 0; the verdict is in the output.
+This subcommand answers the question of which standard an unknown SDP
+file conforms to and where it stops conforming.
 
 ```text
 parse_sdp diagnose [--all-findings] [file]
 ```
 
-| Flag | Description |
+| Option | Description |
 | --- | --- |
-| `--all-findings` | List every finding per tier (not just the first). Findings already emitted by a lower tier are suppressed; a tier with no *new* findings collapses to the inherits note. Exit code unchanged. See [All findings](#all-findings) below. |
+| `--all-findings` | Lists every finding at each tier instead of only the first. A finding that a lower tier already reported is not repeated. The exit code is still 0. See [All findings](#all-findings). |
 
 ```sh
-$ parse_sdp diagnose customer.sdp
+$ parse_sdp diagnose examples/st2110/invalid/01_missing_tsrefclk.sdp
   ✓ RFC 8866 (base SDP)
   ✗ SMPTE ST 2110
       st2110.attr.ts-refclk-required
-      media block must include an 'a=ts-refclk' attribute ...
+      media block must include an 'a=ts-refclk' attribute (every ST 2110 stream description requires one)
       ST 2110-10:2022 §8.2
       at media[0]
   ✗ IPMX (VSF TR-10)
@@ -619,39 +811,55 @@ $ parse_sdp diagnose customer.sdp
       at media[0].attributes[fmtp:pt=96]
 ```
 
-When a higher tier's finding matches a lower tier's, the higher row
-collapses to `(inherits <lower-tier> failure — fix it first)`.
+Under a failed row, the tool prints the finding's id, message,
+`spec_ref`, and either `at <field_path>` or `at line N, col M`. When a
+higher tier reports the same finding as a lower tier, the higher row
+shows `(inherits SMPTE ST 2110 failure; fix it first)` (or the RFC 8866
+equivalent) instead of the detail.
 
 ### `parse_sdp to_json`
 
-Parse SDP, validate, and emit JSON. JSON shape matches the parsed
-`doc` table — every known attribute is decomposed into typed
-sub-fields (see [Parsed Table Structure](#parsed-table-structure)).
+Parses the file, validates it at the chosen tier, and writes the
+document as JSON to standard output. The JSON has the same shape as the
+parsed `doc` table: every known attribute is decomposed into typed
+fields (see [Parsed Table Structure](#parsed-table-structure)).
 
 ```text
 parse_sdp to_json [--mode sdp|st2110|ipmx] [--pretty] [--all-findings] [file]
 ```
 
-| Flag | Description |
+| Option | Description |
 | --- | --- |
-| `--mode MODE` | Validation tier (default: `sdp`) |
-| `--pretty` | Pretty-print JSON output |
-| `--all-findings` | Emit JSON on stdout and list every finding on stderr. See [All findings](#all-findings) below. |
+| `--mode MODE` | The validation tier. The default is `sdp`. |
+| `--pretty` | Indents the JSON output. |
+| `--all-findings` | Writes the JSON to standard output and the list of every finding to standard error. See [All findings](#all-findings). |
 
 ```json
 {
   "version": "0",
-  "origin": { "username": "-", "sess_id": "...", ... },
-  "session": { "name": "My Session", ... },
-  "media": [ { "type": "video", "port": 5004, ... } ]
+  "origin": { "username": "-", "sess_id": "3720000001", "sess_version": "1",
+              "net_type": "IN", "addr_type": "IP4", "unicast_address": "127.0.0.1" },
+  "session": { "name": "Simple Video", "time_descriptions": [ { "start": 0, "stop": 0, "repeats": [] } ],
+               "emails": [], "phones": [], "bandwidths": [], "attributes": [] },
+  "media": [ { "media": "video", "port": 5000, "proto": "RTP/AVP", "fmts": [ "96" ],
+               "connection": { "net_type": "IN", "addr_type": "IP4", "address": "224.0.0.2/64" },
+               "bandwidths": [],
+               "attributes": [ { "name": "rtpmap", "payload_type": 96,
+                                 "encoding": "H264", "clock_rate": 90000 } ] } ]
 }
 ```
 
+The example above is the output for
+`examples/generic/valid/02_simple_video.sdp`, reformatted. dkjson does
+not order the keys of an object, so the key order in the real output
+differs from run to run.
+
 ### `parse_sdp to_sdp`
 
-Render a JSON doc back to SDP text. Output uses CRLF line endings and
-strict RFC 8866 field ordering; piping `to_json | to_sdp` always
-round-trips.
+Renders a JSON document as SDP text on standard output. The output uses
+CRLF line endings and RFC 8866 field order. The JSON must have the
+parsed-document shape; `to_json` followed by `to_sdp` reproduces the
+input SDP file, and the test suite checks this on every fixture.
 
 ```text
 parse_sdp to_sdp [file.json]
@@ -664,21 +872,21 @@ cat doc.json | parse_sdp to_sdp
 
 ### `parse_sdp checks`
 
-Dumps the validator's registry — every check the parser may emit, the
-spec clause it cites, and its default severity. Useful for compliance
-testers (the *clause inventory* of the validator), for downstream
-tooling (machine-readable severity + spec_ref via `--format json`), and
-for auditing "which checks does this version actually enforce?"
+Lists the validator's registry: every check the parser can report, the
+clause it cites, and its default severity. Compliance testers can use
+the list as the inventory of clauses the validator covers. Tools can
+read the `--format json` output, which includes every field of every
+check.
 
 ```text
 parse_sdp checks [--filter SUBSTR] [--format table|json] [--unverified]
 ```
 
-| Flag | Description |
+| Option | Description |
 | --- | --- |
-| `--filter SUBSTR` | Plain-substring match against the check id. Not a Lua pattern — `-` in id slugs (`ts-refclk`, `tr-10-1`) stays literal. |
-| `--format MODE` | `table` (default; column-aligned id / severity / spec_ref) or `json` (array of full registry entries — every field). |
-| `--unverified` | Only emit checks with `verified=false` (pending primary-source re-verification). |
+| `--filter SUBSTR` | Keeps only the checks whose id contains the text. The match is a plain substring match, not a Lua pattern, so a `-` in an id (`ts-refclk`, `tr-10-1`) matches literally. |
+| `--format MODE` | `table` (the default; column-aligned id, severity, and `spec_ref`) or `json` (an array of the full registry entries). |
+| `--unverified` | Keeps only the checks with `verified = false`. As of version 1.5.1, no check has `verified = false`, so the list is empty. |
 
 ```sh
 $ parse_sdp checks --filter ts-refclk
@@ -693,71 +901,76 @@ $ parse_sdp checks --format json --filter tr-10-1.a.fmtp | jq '.[] | .id'
 ...
 ```
 
-This is the CLI surface over `sdp.checks()` — see
-[`sdp.checks()` / `sdp.default_policy()`](#sdpchecks--sdpdefault_policy)
-for the Lua-side accessor. Same data, two consumption modes.
+This subcommand prints the same data that
+[`sdp.checks()`](#sdpchecks-and-sdpdefault_policy) returns in Lua.
 
 ### All findings
 
-By default `validate`, `diagnose`, and `to_json` stop reporting at the
-first error-severity finding — convenient for "is this valid?" but
-inconvenient when a customer SDP has half a dozen things wrong and you
-want them all in one pass. Adding `--all-findings` collects every
-finding (errors *and* warnings) and lists them in the order they were
-recorded.
+By default, `validate`, `diagnose`, and `to_json` stop reporting at the
+first error-severity finding. The default gives a pass-or-fail answer.
+When a file has several problems and the user wants all of them from
+one run, the `--all-findings` option collects every finding (errors and
+warnings) and lists them in the order they were recorded.
 
-Under the hood the CLI demotes every error-severity check to `"warn"`
-via `opts.policy` so the parse runs to completion; the original
-severity is recovered for the exit-code rule and is shown in
-parentheses next to each finding's id ([doc methods](#doc-methods)
-covers the underlying mechanism). What changes per subcommand:
+The tool implements the option by demoting every error-severity check to
+`"warn"` through `opts.policy`, so the parse runs to the end of the
+input. The tool keeps the original severity for the exit-code rule and
+prints it in parentheses after each finding's id. The behavior per
+subcommand:
 
 | Subcommand | Output | Exit code |
 | --- | --- | --- |
-| `validate` | Numbered list on stderr; `OK` on stdout only when zero findings | 1 if any finding's *default* severity is `error`; 0 otherwise |
-| `to_json` | JSON on stdout, numbered list on stderr | 1 if any default-error; 0 otherwise |
-| `diagnose` | Each tier shows only the findings *introduced* at that tier (inherited ones are suppressed); a tier with no new findings still shows the inherits note | Always 0 (diagnose's normal contract is preserved) |
+| `validate` | A numbered list on standard error; `OK` on standard output only when there are no findings | 1 when any finding's default severity is `error`; 0 otherwise |
+| `to_json` | The JSON on standard output; the numbered list on standard error | 1 when any finding's default severity is `error`; 0 otherwise |
+| `diagnose` | Each tier shows only the findings that the tier introduced; a tier with no new findings shows the inherits note | Always 0 |
+
+A structural (hard-syntactic) failure cannot be demoted. In that case
+the tool prints the formatted error and exits 1 even with
+`--all-findings`.
 
 ```sh
 $ parse_sdp validate --all-findings --mode st2110 examples/st2110/invalid/03_missing_fmtp.sdp
-9 finding(s):
+9 findings:
 [1] st2110-20.a.fmtp.sampling-required  (error)
     fmtp for raw video must include required 'sampling' parameter
     ST 2110-20:2022 §7.2
+    at media[0].attributes[fmtp:pt=96]
 [2] st2110-20.a.fmtp.width-required  (error)
     fmtp for raw video must include required 'width' parameter
     ST 2110-20:2022 §7.2
+    at media[0].attributes[fmtp:pt=96]
 ...
 $ echo $?
 1
 ```
 
-The `(error)` / `(warn)` label is the check's *default* severity — what
-would have aborted the parse without `--all-findings`. A check
-demoted via `opts.policy` shows `(warn)` because that *is* its default.
+The header is `N findings:` (or `1 finding:` for one). The `(error)` or
+`(warn)` label after each id is the check's default severity, which is
+the severity that would have stopped the parse without `--all-findings`.
+A check whose default severity is `warn` is labeled `(warn)`.
 
 ### Examples
 
 ```sh
-# Quick yes/no check at the ST 2110 tier
+# Pass or fail at the ST 2110 tier
 parse_sdp validate --mode st2110 session.sdp
 
-# Tier ladder — useful when you don't know what the file claims to be
+# One row per tier, for a file whose intended standard is unknown
 parse_sdp diagnose customer.sdp
 
-# SDP → JSON, pretty-printed, IPMX-validated
+# SDP to JSON, indented, validated at the IPMX tier
 parse_sdp to_json --mode ipmx --pretty session.sdp
 
-# Pipe-friendly
+# Standard input
 cat session.sdp | parse_sdp to_json --mode ipmx
 
-# Round-trip: SDP → JSON → SDP
+# Round trip: SDP to JSON to SDP
 parse_sdp to_json session.sdp | parse_sdp to_sdp > out.sdp
 
-# Every finding in one pass — useful when a customer SDP has several issues
+# Every finding in one run
 parse_sdp validate --all-findings --mode st2110 customer.sdp
 
-# Inspect the registered checks, pipe to jq
+# The registered checks, as JSON, filtered and piped to jq
 parse_sdp checks --format json --filter ts-refclk | jq '.[] | {id, spec_ref}'
 ```
 
@@ -765,20 +978,20 @@ parse_sdp checks --format json --filter ts-refclk | jq '.[] | {id, spec_ref}'
 
 ## Parsed Table Structure
 
-The doc is a fully-decomposed table — consumers never need to re-parse a
-string from it. Compound attributes (`rtpmap`, `fmtp`, `ts-refclk`,
-`mediaclk`, `group`, `source-filter`, `ssrc`, `extmap`, …) carry typed
-fields; only unknown / forward-compat attribute names use the generic
-`{name, value}` carrier.
+The doc is a fully decomposed table. A consumer never needs to parse a
+string from it. Every known attribute name (`rtpmap`, `fmtp`,
+`ts-refclk`, `mediaclk`, `group`, `source-filter`, `ssrc`, `extmap`, and
+the others listed below) is decomposed into typed fields. Only unknown
+attribute names use the generic `{name, value}` shape.
 
 ```lua
 {
-  version = "0",                   -- v=
+  version = "0",                   -- v=  (string)
 
   origin = {                       -- o=
     username        = "-",
-    sess_id         = "1234567890",
-    sess_version    = "1",
+    sess_id         = "1234567890",   -- string, to keep NTP-range precision
+    sess_version    = "1",            -- string
     net_type        = "IN",
     addr_type       = "IP4",
     unicast_address = "192.0.2.1",
@@ -788,28 +1001,28 @@ fields; only unknown / forward-compat attribute names use the generic
     name        = "My Session",    -- s=  (required)
     info        = nil,             -- i=  (optional)
     uri         = nil,             -- u=  (optional)
-    emails      = {},              -- e=  (array, zero or more)
-    phones      = {},              -- p=  (array, zero or more)
+    emails      = {},              -- e=  (array of strings, zero or more)
+    phones      = {},              -- p=  (array of strings, zero or more)
     connection  = nil,             -- c=  (optional)
     bandwidths  = {},              -- b=  (array, zero or more)
-    time_descriptions = {          -- t= + r=*  (one entry per t= block)
+    time_descriptions = {          -- one entry per t= line, with its r= lines
       { start = 0, stop = 0, repeats = {} },
     },
     time_zones  = nil,             -- z=  (optional; array of pairs)
-    attributes  = {},              -- a=  (array, preserves order)
+    attributes  = {},              -- a=  (array, in input order)
   },
 
-  media = {                        -- one entry per m= block
+  media = {                        -- one entry per m= line
     {
-      media      = "video",        -- m=  media type
-      port       = 5004,           -- m=  port
-      port_count = nil,            -- m=  /count suffix, if present
-      proto      = "RTP/AVP",      -- m=  transport protocol
-      fmts       = { "96" },       -- m=  fmt list (array of strings)
+      media      = "video",        -- m=  media type (string)
+      port       = 5004,           -- m=  port (number)
+      port_count = nil,            -- m=  the /<count> suffix, when present (number)
+      proto      = "RTP/AVP",      -- m=  transport protocol (string)
+      fmts       = { "96" },       -- m=  format list (array of strings)
       info       = nil,            -- i=  (optional)
       connection = nil,            -- c=  (optional)
       bandwidths = {},             -- b=  (array, zero or more)
-      attributes = {               -- a=  (array, preserves order)
+      attributes = {               -- a=  (array, in input order)
         -- Decomposed: a=rtpmap:96 raw/90000
         { name = "rtpmap",
           payload_type = 96, encoding = "raw", clock_rate = 90000 },
@@ -818,11 +1031,11 @@ fields; only unknown / forward-compat attribute names use the generic
           params = {
             { "sampling", "YCbCr-4:2:2" },
             { "width",    "1920" },
-            -- ... ordered list of {key, value | true} pairs
+            -- an ordered list of {key, value} or {flag, true} pairs
           } },
-        -- Flag-only (no value): a=recvonly
+        -- Flag attribute with no value: a=recvonly
         { name = "recvonly" },
-        -- Unknown name → generic carrier
+        -- Unknown name: generic shape
         { name = "tool", value = "test-sender/1.0" },
       },
     },
@@ -830,78 +1043,124 @@ fields; only unknown / forward-compat attribute names use the generic
 }
 ```
 
-All array fields (`emails`, `phones`, `bandwidths`, `attributes`,
-`time_descriptions`, `media`) are always present as tables, even when
-empty. Optional scalar fields absent from the source SDP are `nil`.
+### Field types
 
-`connection` (when present) is `{ net_type, addr_type, address }`.
-`bandwidths` entries are `{ type, value }` where `value` is a number.
-`time_descriptions` entries carry `repeats` as an array of
-`{ interval, duration, offsets = {...} }`.
+The array fields `emails`, `phones`, `bandwidths`, `attributes`,
+`time_descriptions`, and `media` are always present as tables, even when
+empty. An optional scalar field that is absent from the source SDP is
+`nil`.
 
-**Attribute decomposition.** Known attribute names land in typed shapes:
-`rtpmap` (`payload_type` / `encoding` / `clock_rate` / `channels?`),
-`fmtp` (`payload_type` + ordered `params`), `ts-refclk` (`source` plus
-per-source fields), `mediaclk` (`mode` plus per-mode fields), `group`
-(`semantics` + `tags`), `source-filter` (`filter_mode`, `net_type`,
-`addr_type`, `dest_address`, `src_addresses`), `ssrc` (`ssrc_id`,
-`attribute`, optional `value`), `extmap` (`id`, `uri`, optional
-`direction` / `attributes`), `rtcp` / `rtcp-fb` / `ssrc-group` / `mid` /
-`ptime` / `maxptime` / `framerate` / `quality` / `msid`, and the IPMX
-extensions `infoframe` / `hkep` / `privacy`. Flag-only attributes
-(`recvonly`, `sendonly`, `sendrecv`, `inactive`, `rtcp-mux`) have only a
-`name`. Any other attribute name keeps the forward-compat
-`{name, value}` carrier shape.
+| Field | Shape |
+| --- | --- |
+| `connection` | `{ net_type, addr_type, address }`. `address` is the whole connection address as a string, including any `/<ttl>` or `/<numaddr>` suffix. |
+| `bandwidths[i]` | `{ type, value }`. `type` is the `b=` modifier string (for example `"AS"`); `value` is a number. |
+| `time_descriptions[i]` | `{ start, stop, repeats }`. `start` and `stop` are numbers. |
+| `time_descriptions[i].repeats[j]` | `{ interval, duration, offsets }`. The three are typed-time strings as written in the `r=` line (for example `"7d"`, `"1h"`, `"0"`); the library does not convert them to seconds. `offsets` is an array of such strings. |
+| `time_zones[i]` | `{ adjustment_time, offset }`. Both are strings as written in the `z=` line (for example `"2882844526"` and `"-1h"`). |
 
-The `attributes` array is ordered (for byte-faithful round-trip), so look
-attributes up by name with
-[`sdp.attr_get` / `sdp.attrs_get`](#sdpattr_getblock-name--sdpattrs_getblock-name)
-rather than scanning it yourself.
+### Decomposed attributes
 
-`fmtp.params` and `privacy.params` are **ordered lists** of `{key, value}`
-sub-tables (input order preserved for byte-faithful round-trip). Use
-[`sdp.params_get(params, key)`](#sdpparams_getparams-key) to look one up; a
-bare flag has `true` as its value.
+The table below lists the field names of every decomposed attribute.
+The `name` field is always present. A hand-built doc passed to
+`sdp.new` must use these field names; the serializer reads only these
+fields for known attribute names.
+
+| Attribute | Fields |
+| --- | --- |
+| `rtpmap` | `payload_type` (number), `encoding` (string), `clock_rate` (number), `channels` (number, optional) |
+| `fmtp` | `payload_type` (number) and either `params` or `raw`. `params` is an ordered list of `{key, value}` pairs (string value) and `{flag, true}` entries. When the value after the payload type is not a list of `key=value` and flag tokens, for example `a=fmtp:0 0-15`, the attribute has `raw` (the value as one string) and no `params` field. |
+| `mid` | `tag` (string) |
+| `group` | `semantics` (string), `tags` (array of strings, possibly empty) |
+| `ssrc-group` | `semantics` (string), `ssrc_ids` (array of numbers) |
+| `ssrc` | `ssrc_id` (number), `attribute` (string), `value` (string, optional) |
+| `msid` | `msid_id` (string), `appdata` (string, optional) |
+| `extmap` | `id` (number), `uri` (string), `direction` (string, optional), `attributes` (string, optional) |
+| `rtcp` | `port` (number); `net_type`, `addr_type`, and `address` (strings, present together when the line has them) |
+| `rtcp-fb` | `payload_type` (a number, or the string `"*"`), `feedback_type` (string), `parameters` (string, optional) |
+| `rtcp-mux` | no other fields |
+| `ptime`, `maxptime`, `framerate`, `quality` | `value` (number) |
+| `source-filter` | `filter_mode` (`"incl"` or `"excl"`), `net_type`, `addr_type` (`"IP4"`, `"IP6"`, or `"*"`), `dest_address` (string), `src_addresses` (array of strings) |
+| `ts-refclk` | `source` (string) plus per-source fields. `ptp`: `version` (string), then either `grandmaster` (string) with optional `domain` (string), or `traceable = true`; a `ptp=` value that does not match that form has `value` (the text) and the finding `sdp.a.ts-refclk.ptp-malformed`. `ntp`: `address` (string) or `traceable = true`. `private`: optional `traceable = true`. `gps`, `gal`, `glonass`, `local`: no other fields. Any other source (for example `localmac`): optional `value` (string). |
+| `mediaclk` | `mode` (string), optional `id` (string, the `id=` prefix including a `src:` marker when present), plus per-mode fields. `sender`: no other fields. `direct`: optional `offset` (number) and optional `rate = { num, den }` (numbers). `IEEE1722`: `stream_id` (string). Any other mode: optional `value` (string). |
+| `infoframe` (IPMX) | `port` (number), `ssn` (string), `dit` (string) |
+| `hkep` (IPMX) | `port` (number), `nettype`, `addrtype`, `addr`, `node_id`, `port_id` (strings). These field names have no underscore between `net` and `type`, unlike the `c=` fields. |
+| `privacy` (IPMX) | `params` (an ordered list of `{key, value}` pairs, as for `fmtp`) and `trailing_semi` (boolean; `true` when the line ended with a semicolon). The boolean is part of the doc and of the JSON. |
+
+The three IPMX attributes (`infoframe`, `hkep`, `privacy`) are
+decomposed only when the document is parsed in `"ipmx"` mode. In
+`"sdp"` and `"st2110"` mode they are returned in the generic
+`{name, value}` shape.
+
+The flag attributes `recvonly`, `sendonly`, `sendrecv`, and `inactive`
+are generic attributes with a `name` and no `value`. `rtcp-mux` is
+recognized by name, so `a=rtcp-mux:<anything>` fails the parse. Any
+other attribute name keeps the generic `{name, value}` shape, where
+`value` is absent for a flag form such as `a=foo` and is the whole text
+after the colon for `a=foo:bar`.
+
+The `attributes` array keeps the input order so that serialization
+reproduces the input bytes. Look attributes up by name with
+[`sdp.attr_get` and `sdp.attrs_get`](#sdpattr_getblock-name-and-sdpattrs_getblock-name)
+rather than by scanning the array.
+
+`fmtp.params` and `privacy.params` are ordered lists of `{key, value}`
+pairs, in input order. Use
+[`sdp.params_get(params, key)`](#sdpparams_getparams-key) to look one
+up; a bare flag has the value `true`.
 
 ---
 
-## Error Handling
+## Error and finding tables
 
-Errors are returned as values. The library never calls `error()` for parse or
-validation failures.
+Errors are returned as values. The library never calls `error()` for a
+parse or validation failure; `error()` is reserved for programming
+mistakes such as a wrong argument type.
 
-Every error or warning produced by a registered check carries the registry
-shape:
+Every error and every warning that a registered check produces is a
+finding table with these fields:
 
 | Field | Type | Description |
 | --- | --- | --- |
-| `id` | string | Stable check id (e.g. `"st2110-20.a.fmtp.depth-invalid-value"`); grep-able key into `sdp.checks()` |
-| `severity` | string | `"error"` or `"warn"` (per the effective policy) |
-| `message` | string | Human-readable description |
-| `code` | string | Machine-readable enum: `MISSING_FIELD`, `INVALID_VALUE`, `WRONG_ORDER`, `MALFORMED_LINE` |
-| `spec_ref` | string | e.g. `"ST 2110-20:2022 §7.4.2"` |
-| `field_path` | string | e.g. `"media[0].attributes[fmtp:pt=96]"`; empty when not applicable |
-| `line` | integer | 1-based line number (0 when not applicable) |
-| `col` | integer | 1-based column number (0 when not applicable) |
-| `context` | table or string | Optional structured metadata (e.g. `{encoding = "L24"}`) or, for legacy syntactic errors, the source-line text |
+| `id` | string | The stable check id, for example `"st2110-20.a.fmtp.depth-invalid-value"`. The id is the key into `sdp.checks()`. |
+| `severity` | string | `"error"` or `"warn"`, after the policy is applied. |
+| `message` | string | A description for a person. |
+| `code` | string | One of `MISSING_FIELD`, `INVALID_VALUE`, `MALFORMED_LINE`, `WRONG_ORDER`, or `PARSE_ERROR`. `PARSE_ERROR` appears only on the structural failure described below. |
+| `spec_ref` | string | The cited clause, for example `"ST 2110-20:2022 §7.4.2"`. |
+| `field_path` | string or nil | The document path, for example `"media[0].attributes[fmtp:pt=96]"`. Absent when the finding is positioned by line instead. Media indexes in a `field_path` count from 0. |
+| `line` | integer | The 1-based line number, or 0 when the finding has no line. |
+| `col` | integer | The 1-based column number, or 0 when the finding has no line. |
+| `line_text` | string or nil | The text of the source line, without its terminator, when the finding has a line. |
+| `context` | table or string | Structured metadata, for example `{encoding = "L24"}`, or the empty string when there is none. |
 
-Errors returned via `nil, err` from `sdp.parse` carry the same shape;
-`errors.format(err)` (in `parse_sdp.errors`) renders them to the standard
-multi-line text format. A policy-key validation failure additionally carries
-`err.policy_key` naming the offending id.
+The `err` that `sdp.parse` returns has the same fields. Two other error
+tables also appear:
+
+- A structural parse failure. When the grammar cannot match the input
+  and no error-severity finding was recorded, `err` has
+  `code = "PARSE_ERROR"`, `message = "could not parse from this line"`,
+  the `line`, `col`, and `line_text` of the line where matching stopped,
+  and no `id`. Lines out of order, an unknown line letter, `v=1`, an
+  empty `o=` username, and a malformed `m=` or `o=` line produce this
+  error.
+- A policy failure. When `opts.policy` names an unknown check id, `err`
+  has `err.policy_key` set to that id.
+
+`errors.format(err)` in the module `parse_sdp.errors` renders any of
+these tables as the multi-line text that the command-line tool prints.
 
 ### Rendering an error
 
 ```lua
+local sdp     = require("parse_sdp")
 local errors  = require("parse_sdp.errors")
-local doc, err = sdp.parse(text)
+local doc, err = sdp.parse(text, "st2110")
 if not doc then
   io.stderr:write(errors.format(err) .. "\n")
   os.exit(1)
 end
 ```
 
-Output:
+Output for a document-level finding:
 
 ```text
 error: [MISSING_FIELD] media block must include an 'a=ts-refclk' attribute (every ST 2110 stream description requires one)
@@ -909,545 +1168,686 @@ error: [MISSING_FIELD] media block must include an 'a=ts-refclk' attribute (ever
   = note: required by ST 2110-10:2022 §8.2
 ```
 
+Output for a line-positioned finding includes the source line and a
+caret under the column:
+
+```text
+error: [PARSE_ERROR] could not parse from this line
+ --> line 2, col 1
+  |
+ 2 | t=0 0
+   | ^
+```
+
 ---
 
 ## What this library validates (and what it doesn't)
 
-Strictness here is grounded in spec text, not opinion. The rule:
+Every check is grounded in specification text. The rule is:
 
-> A check belongs in this library only if the relevant standard explicitly
-> **requires** something (*shall*, *MUST*), explicitly **forbids** something
-> (*shall not*, *MUST NOT*, *is forbidden*), or **defines the form** an
-> optional value must take when present. Anything the spec leaves silent
-> passes.
+> A check belongs in this library only if the relevant standard
+> explicitly requires something (*shall*, *MUST*), explicitly forbids
+> something (*shall not*, *MUST NOT*, *is forbidden*), or defines the
+> form an optional value must take when the value is present. Anything
+> the standard leaves silent passes.
 
-This boundary is intentional. The library's job is **conformance** — not "is
-this a sensible product configuration." Many SDPs from real ST 2110 and IPMX
-senders contain unusual but legal choices; rejecting them would make the
-library a liability rather than a guard.
+The library tests conformance. It does not test whether a configuration
+is a sensible product configuration. Many SDP files from real ST 2110
+and IPMX senders contain unusual but legal choices, and the library
+accepts them.
 
-### What we do reject
+### Check kinds and what a policy can change
 
-- **Required fields that are missing or malformed.** Examples:
-  - RFC 8866 §5 required lines (`v=`, `o=`, `s=`, `t=`, `m=`) missing or in the
-    wrong order.
-  - ST 2110-20 video `a=fmtp` missing `sampling`, `depth`, `width`, `height`,
-    `exactframerate`, `colorimetry`, `PM`, or `SSN` — every one of these is a
-    "shall be signaled" parameter under §7.2. (TCS lives in §7.3 and is
-    optional; receivers assume `SDR` when absent per §7.6.)
-  - AM824 `a=rtpmap` missing the channel count field (ST 2110-31:2022 §6.1
-    — the AES3 Subframe sequence count is mandatory). L16 / L24 channel
-    count is optional per RFC 3551 §6 (defaults to 1 when absent), and the
-    library follows that.
-  - Dynamic payload types (96–127) without a corresponding `a=rtpmap` to give
-    them meaning (RFC 3551 §6).
-- **Explicit prohibitions.** Examples:
-  - `depth=14` (ST 2110-20 §7.4.2 enumerates `{8, 10, 12, 16, 16f}`).
-  - `width=40000` (ST 2110-20 §7.2 — "integers between 1 and 32767 inclusive").
-  - `segmented` without `interlace` (ST 2110-20 §7.3 — "is forbidden").
-  - `MAXUDP` with `PM=2110BPM` (ST 2110-20 §6.3.3 — "shall not be used in the
-    Block Packing Mode").
-  - `mediaclk:direct=10` (ST 2110-10 §7.3 — direct offset SHALL be zero).
-  - `TROFF=0` (ST 2110-21 §8 — "decimal positive integer").
-  - IPMX `a=rtcp-mux` (TR-10-1 §8.7 — RTCP must be on port+1).
-  - IPMX `m=` ports that are odd or ≤ 1024 (TR-10-12 §7).
-- **Optional fields whose values are ill-formed when present.** Optional
-  parameters that the spec defines a value form or value set for are validated
-  when present — absence is fine, malformed presence is not. Examples:
-  - `a=mediaclk:direct=N` where N ≠ 0 (mediaclk is optional in RFC 8866; ST
-    2110-10 §7.3 constrains the value when used).
-  - Unrecognized `a=fmtp` flags that overlap a defined name — e.g.
-    `interlace=anything` and `segmented=anything` are rejected because ST
-    2110-20 §7.1/§7.3 define these as flag-only.
-- **Cross-stream consistency** that ST 2022-7 / RFC 7104 requires for
-  `a=group:DUP` legs — identical essence parameters, identical payload type
-  number, distinct addresses on at least one axis.
+Every registered check has one of three `kind` values, which
+`sdp.checks()` reports:
 
-### What we do not reject
+| Kind | Definition | Default severity |
+| --- | --- | --- |
+| hard-syntactic | The input shape is wrong and parsing cannot continue past the violation. Most of these rules are grammar rules with no check id (a line with no `=`, an unknown line letter, lines out of order, a malformed `m=` or `o=` line). Two of them are registered with ids: `sdp.a.ts-refclk.ptp-malformed` and `st2110-20.a.fmtp.no-whitespace-around-equals`. | `error` |
+| soft-syntactic | The specification requires a strict form, but a lax form has only one possible meaning. The parser accepts the lax form and records a finding. There are five: the four line and file checks (`sdp.line.*`, `sdp.file.*`) and `sdp.a.fmtp.trailing-semicolon`. | `warn` |
+| semantic | A captured value violates a value set, a presence requirement, or a cross-section rule. | `error` |
 
-- Configurations the spec describes as **"out of scope"** or
-  **"permitted but not required."** For example, ST 2110-30 §6.1 mandates 48 kHz
-  audio and permits 44.1/96 kHz, then says *"Other sampling frequencies and
-  resolutions are out of scope of this standard."* That is not the same as
-  *"shall not."* The validator accepts any well-formed positive rate. The same
-  applies to audio channel count — ST 2110-30 documents Conformance Levels up
-  to 64 channels but contains no global upper bound, so neither does the
-  validator.
-- Combinations the spec doesn't address. The spec lists `sampling`,
-  `colorimetry`, `TCS`, and `RANGE` value sets independently. It does not list
-  forbidden combinations of those values, so the validator accepts any
-  combination of valid individual values. Some combinations (e.g.
-  `sampling=RGB` with `colorimetry=BT2020`) are unusual but the spec contains
-  no "shall not" against them.
-- **NMOS-level concerns.** The IPMX profile documents describe MUST-support
-  requirements at the device level — Senders MUST expose BCP-004-02 Sender
-  Capabilities; Receivers MUST support both required format combinations; IS-04
-  / IS-05 / IS-11 must be wired up. These are device-certification concerns and
-  require state beyond a single SDP file. They live in the NMOS APIs, not in
-  SDP, so this library cannot and does not validate them.
-- **RTCP and Info Blocks.** IPMX Media Info Blocks (uncompressed, JPEG-XS, PCM,
-  AES3), PEP Media Info Blocks, HKEP HDCP exchanges, and HDR metadata travel
-  in RTP / RTCP, not in SDP. They are out of scope here even though the
-  TR-10 documents discuss them.
-- **Sender/Receiver capability subsetting.** The fact that a sender implements
-  only Format A (RGB 4:4:4 8-bit) and not Format B (YUV 4:2:2 10-bit) is
-  signaled via NMOS Sender Capabilities, not via SDP. The library accepts any
-  conformant single SDP and does not infer device-wide capability claims from
-  it.
-- **SDPs with zero media blocks at the RFC 8866 tier.** RFC 8866 does not
-  require a media description, so a session-only SDP is valid base SDP.
-  (ST 2110 and IPMX reject it — see ST 2110-10 §8.1 below.)
-- **Specific audio shapes that the 1.0 parser flagged without primary-text
-  grounding.** Three checks the 1.0 parser enforced are not enforced here
-  because their cites don't carry the SHALL in the primary spec text:
-  AM824 `MAXUDP`-forbidden (cite was "ST 2110-31 §5.x inherits"; -31 §5.2
-  actually defers to -10 which permits MAXUDP), L16/L24 channels-required
-  (RFC 3551 §6 makes channels optional), AM824 packet-payload-fit (no
-  -31 UDP-size SHALL of its own).
+A policy (`opts.policy`, or the Policy panel in the browser playground)
+sets the severity of any registered id to `"error"`, `"warn"`, or
+`"off"`. A policy can promote a soft-syntactic warning to an error, so
+that a file with bare LF line endings is rejected. A policy can demote a
+semantic error to a warning, so that `sdp.parse` returns the document
+with the finding in `doc:warnings()`. A policy cannot change the grammar
+rules that have no id; those rules fail the parse with
+`code = "PARSE_ERROR"` whatever the policy says.
 
-### A practical test
+### RFC 8866 checks
 
-When considering whether to add a check, you should be able to point to a
-specific clause in a spec PDF or RFC and quote normative language — either a
-positive *"shall"* / *"MUST"*, a prohibitive *"shall not"* / *"MUST NOT"* /
-*"is forbidden"*, or a defined value form / value set for an optional
-parameter. If the case for the check is *"but obviously a device that sends X
-is broken"*, that's an indicator the check is opinion, not conformance — and
-it doesn't belong here. If the case is *"the spec says SHALL X"*, *"the spec
-says SHALL NOT X"*, or *"the spec defines the legal values for X as {…}"*,
-quote it in the code comment and as the `spec_ref` field on the error.
+The checks below run at every tier. The tables have three columns: the
+check id, what the check rejects, and the `spec_ref` string as the
+registry stores it.
+
+#### Document and line checks
+
+| Id | The check rejects | `spec_ref` |
+| --- | --- | --- |
+| `sdp.v.must-be-zero` | A `v=` value other than `0`. In version 1.5.1 the grammar rejects this structurally with `PARSE_ERROR`; the id is registered but is not emitted. | RFC 8866 §5.1 |
+| `sdp.o.username-required` | An `o=` line with an empty username. In version 1.5.1 the grammar rejects this structurally with `PARSE_ERROR`; the id is registered but is not emitted. | RFC 8866 §5.2 |
+| `sdp.session.connection-required` | A media description with no `c=` line when the session level has no `c=` line either. A session with no media descriptions and no `c=` line is accepted. | RFC 8866 §5.7 |
+| `sdp.m.rtpmap-required-for-dynamic-pt` | An RTP media description whose `m=` line lists a payload type from 96 to 127 with no `a=rtpmap` for that payload type. | RFC 8866 §8.2.3 |
+| `sdp.file.bom-present` | A file that starts with a UTF-8 byte order mark (warning). | RFC 8866 §6 |
+| `sdp.file.trailing-newline-missing` | A last line with no line terminator (warning). | RFC 8866 §5 |
+| `sdp.line.lf-only-line-ending` | A line that ends with LF alone instead of CRLF (warning). The finding names the line that ended with the LF. | RFC 8866 §9 |
+| `sdp.line.trailing-whitespace` | A line with spaces or tabs before the line terminator (warning). | RFC 8866 §9 |
+| `sdp.a.fmtp.trailing-semicolon` | An `a=fmtp` value that ends with a semicolon after the last parameter (warning). | RFC 8866 §6.15 |
+
+#### Connection address (`c=`) checks
+
+A connection address is required at the session level or in every media
+description (RFC 8866 section 5.7: *"A session description MUST contain
+either at least one 'c=' line in each media description or a single
+'c=' line at the session level."*). When a `c=` line is present at
+either level, its address is checked against the RFC 8866 section 9
+grammar for the declared address type. An IPv4 address from 224.0.0.0
+to 239.255.255.255 is multicast; an IPv6 address that starts with `ff`
+is multicast. The layered multicast form `<address>/<ttl>/<numaddr>` is
+accepted, as in the RFC 8866 example `c=IN IP4 233.252.0.1/127/3`.
+
+| Id | The check rejects | `spec_ref` |
+| --- | --- | --- |
+| `sdp.c.address.invalid-ipv4` | An `IP4` address that is not four decimal octets from 0 to 255 separated by dots (for example `1.2.3` or `999.0.0.0`). A host name is rejected. | RFC 8866 §9 (IP4-address ABNF) |
+| `sdp.c.address.invalid-ipv6` | An `IP6` address that is not a valid IPv6 address. | RFC 8866 §9 (IP6-address ABNF) |
+| `sdp.c.ipv4-multicast.ttl-required` | An IPv4 multicast address with no `/<ttl>` suffix, or with a suffix that is not decimal digits. | RFC 8866 §9 (IP4-multicast ABNF) |
+| `sdp.c.ipv4-multicast.ttl-out-of-range` | An IPv4 multicast TTL greater than 255. A TTL of 0 is accepted. | RFC 8866 §5.7 |
+| `sdp.c.ipv4-multicast.numaddr-invalid` | An IPv4 multicast `<numaddr>` (the second suffix) that is not a positive integer. | RFC 8866 §9 (IP4-multicast ABNF) |
+| `sdp.c.ipv4-unicast.suffix-not-allowed` | An IPv4 unicast address with a `/` suffix. | RFC 8866 §5.7 |
+| `sdp.c.ipv6-multicast.suffix-form-invalid` | An IPv6 multicast address whose suffix is not a single `/<numaddr>`. IPv6 multicast has no TTL field. | RFC 8866 §9 (IP6-multicast ABNF) |
+| `sdp.c.ipv6-multicast.numaddr-invalid` | An IPv6 multicast `<numaddr>` that is not a positive integer. | RFC 8866 §9 (IP6-multicast ABNF) |
+| `sdp.c.ipv6-unicast.suffix-not-allowed` | An IPv6 unicast address with a `/` suffix. | RFC 8866 §5.7 |
+
+#### Attribute checks from the RFCs that RFC 8866 builds on
+
+| Id | The check rejects | `spec_ref` |
+| --- | --- | --- |
+| `sdp.a.mid.duplicate-tag` | Two media descriptions with the same `a=mid` tag. | RFC 5888 §4 |
+| `sdp.a.group.requires-mid-on-all-media` | A session that has an `a=group` line and a media description with no `a=mid` line. | RFC 5888 §6 |
+| `sdp.a.group.references-port-zero-mid` | An `a=group` line that names a tag whose media description has port 0. | RFC 5888 §9.2 |
+| `sdp.a.source-filter.dest-not-in-connections` | An `a=source-filter` whose destination address does not equal any `c=` address in the SDP file, after expansion of layered multicast ranges. A filter with address type `*` is not checked. The source addresses are not checked. | RFC 4570 §3.1 |
+| `sdp.a.ts-refclk.ptp-malformed` | An `a=ts-refclk:ptp=` value that is not `<version>:<EUI-64>[:<domain>]` or `<version>:traceable`, where the EUI-64 is eight hexadecimal octets separated by dashes. The version token and the domain are not checked. | RFC 7273 §4.8 (ptp / ptp-server / EUI64 ABNF) |
+| `sdp.a.ts-refclk.traceable-mix` | A traceable `a=ts-refclk` source (`gps`, `gal`, `glonass`, or a `traceable` form of `ntp`, `ptp`, or `private`) and a non-traceable source at the same level: the session level, or one media description. Mixing across levels is accepted. | RFC 7273 §4.8 |
+
+### What the library does not reject
+
+- Configurations that a specification calls out of scope or permits
+  without requiring. ST 2110-30 section 6.1 requires support for 48 kHz
+  audio, permits 44.1 kHz and 96 kHz, and then says *"Other sampling
+  frequencies and resolutions are out of scope of this standard."* Out
+  of scope is not the same as forbidden, so the validator accepts any
+  positive clock rate for `L16` and `L24`. The same applies to the audio
+  channel count: ST 2110-30 documents conformance levels up to 64
+  channels and has no global upper bound, so the validator has none.
+- Combinations that the specification does not address. ST 2110-20
+  lists the `sampling`, `colorimetry`, `TCS`, and `RANGE` value sets
+  independently and forbids only the combinations listed under
+  [ST 2110-20 raw video checks](#st-2110-20-raw-video-checks). Any other
+  combination of valid individual values is accepted, for example
+  `sampling=RGB` with `colorimetry=BT2020`.
+- NMOS (Networked Media Open Specifications) requirements. The IPMX
+  profile documents require device-level behavior: senders expose
+  BCP-004-02 Sender Capabilities, receivers support defined format
+  combinations, and IS-04, IS-05, and IS-11 are implemented. These
+  requirements need state beyond one SDP file and are not checked.
+- RTCP (RTP Control Protocol) content. IPMX Media Info Blocks, PEP
+  (Privacy Encryption Protocol) Media Info Blocks, HKEP (HDCP Key
+  Exchange Protocol) exchanges, and HDR (high dynamic range) metadata
+  are transmitted in RTP or RTCP, not in SDP, and are not checked.
+- Sender and receiver capability sets. An SDP file describes one
+  stream. Whether a device supports other formats is signaled through
+  NMOS Sender Capabilities, not through SDP.
+- A session with no media description, at the RFC 8866 tier. RFC 8866
+  does not require one. ST 2110 and IPMX reject it
+  (`st2110-10.m.media-description-required`).
+- Audio shapes for which no primary text was found: `MAXUDP` on an
+  `AM824` stream (ST 2110-31 defers to ST 2110-10, which permits
+  `MAXUDP`), a missing channel count on `L16` or `L24` (RFC 3551
+  section 6 makes the count optional), and the packet-payload-fit
+  computation for `AM824` (ST 2110-31 has no UDP size requirement of its
+  own).
+
+The library also does not check the following. Each item is a
+limitation of the current implementation, not a statement that the
+specifications are silent.
+
+- The `a=setup` and `a=connection` values (RFC 4145) on any block other
+  than an IPMX USB transport block, where `a=setup` must be `passive`.
+- The `m=` port value against an upper bound. `m=video 70000` is
+  accepted at every tier.
+- The `a=extmap` id range, the uniqueness of extmap ids, and the form of
+  the extmap URI. The only extmap check is the IPMX
+  `tr-10-13.a.extmap.pep-direction-must-be-sendonly`.
+- The PTP version token (`IEEE1588-2008`, `IEEE1588-2019`, or any other
+  token) and the PTP domain value in `a=ts-refclk:ptp=`.
+- The `a=mediaclk:direct=<offset>` value. Any digit string is accepted
+  at every tier.
+- The `a=rtpmap` encoding name of an audio or video stream. Encodings
+  other than `raw`, `jxsv`, `smpte291`, `AM824`, and `ST2110-41` get no
+  per-encoding checks at the ST 2110 tier; `opus/48000/2` passes.
+- The presence of `a=ptime` on audio streams, and the `a=ptime` value
+  against the ST 2110-31 Table 1 packet times.
+- That the payload type of an `a=fmtp` line matches an `a=rtpmap` line.
+  An `a=fmtp` for a payload type with no `a=rtpmap` gets only the
+  cross-encoding checks (`TSMODE`, `TSDELAY`, and at the IPMX tier the
+  FEC parameters).
+- `TROFF` and `CMAX` on a `raw` video `a=fmtp`. `TROFF` is checked only
+  on `smpte291` and `CMAX` only on `jxsv`.
+- Frame-rate signaling on a `jxsv` stream. Neither `a=framerate` nor
+  `exactframerate` is required.
+- `a=group:FID` at the ST 2110 tier. The IPMX tier rejects it
+  (`tr-10-1.a.group.fid-forbidden`).
+- Multicast control-block addresses such as 224.0.0.0/24. Any address
+  from 224.0.0.0 to 239.255.255.255 is treated as multicast and accepted
+  with a TTL.
+- RTP attributes (`a=rtpmap`, `a=fmtp`, `a=mediaclk`, `a=ts-refclk`) on
+  an IPMX USB transport block. TR-10-14 section 14 does not forbid them
+  in explicit text, so the library accepts them.
+- The `a=privacy` `protocol` value on an RTP block, other than the
+  forbidden value `NULL`. Only a USB block requires `USB_KV`.
+- `b=AS` on a non-`jxsv` block. The `b=AS` checks apply only to `jxsv`
+  blocks.
+- The `a=hkep` port and the `a=infoframe` port against an upper bound.
+  Both must be positive integers; `a=hkep:70000` is accepted.
+- The `k=` line. The parser accepts a `k=` line in the RFC 8866 position
+  and discards it, so a file with a `k=` line does not round-trip
+  byte for byte.
+
+### Adding a check
+
+A new check needs a specific clause in a standard or RFC with normative
+language: a positive *shall* or *MUST*, a prohibitive *shall not*,
+*MUST NOT*, or *is forbidden*, or a defined value form or value set for
+an optional parameter. The argument that a device sending a value must
+be broken is an opinion, and an opinion-based check is not added. When
+the clause exists, the check quotes it in the code comment
+and cites it in the `spec_ref` field of the error.
 
 ---
 
-## ST 2110 Validation
+## ST 2110 validation checks
 
-`sdp.parse(text, "st2110")` or `doc:validate("st2110")` enforces:
+`sdp.parse(text, "st2110")` and `doc:validate("st2110")` run every
+RFC 8866 check and then the checks in this section. The tables have
+three columns: the check id, what the check rejects, and the `spec_ref`
+string as the registry stores it. The section is organized by the
+ST 2110 part that authors each requirement.
 
-### Session-level
+The ST 2110 per-stream checks apply to RTP media descriptions, which
+are media descriptions whose `m=` protocol is `RTP` or starts with
+`RTP/`. A media description with another protocol, such as the IPMX USB
+transport block, is not subject to them.
 
-#### The SDP must describe an RTP stream (ST 2110-10 §8.1)
+### ST 2110-10: system and session checks
 
-ST 2110-10:2022 §8.1: *"Devices which contain one or more Senders shall
-construct one SDP session description as specified in IETF RFC 4566 for each
-RTP stream (or redundant pair of streams) that is originated by that
-device."* A session with no `m=` line describes no RTP stream, so it is
-rejected at the ST 2110 tier (`st2110-10.m.media-description-required`) and,
-by inheritance, at IPMX. RFC 8866 alone accepts it.
+ST 2110-10:2022 section 8.1 says: *"Devices which contain one or more
+Senders shall construct one SDP session description as specified in
+IETF RFC 4566 for each RTP stream (or redundant pair of streams) that is
+originated by that device."* A session with no `m=` line describes no
+RTP stream, so the ST 2110 tier rejects it. The IPMX tier inherits the
+rejection. The RFC 8866 tier accepts the session.
 
-#### ST 2022-7 redundancy grouping — `a=group:DUP` (ST 2110-10 §8.5)
+Section 8.2 requires an `a=ts-refclk` attribute for every stream. The
+attribute may be at the session level, where it covers every media
+description, or in each media description. Section 8.3 requires a
+media-level `a=mediaclk` attribute; a session-level `a=mediaclk` does
+not satisfy that requirement, although it is accepted when every RTP
+media description also has its own.
 
-When `a=group:DUP <mid1> <mid2> …` is present at session level, the library validates:
+| Id | The check rejects | `spec_ref` |
+| --- | --- | --- |
+| `st2110-10.m.media-description-required` | An SDP file with no `m=` line. | ST 2110-10:2022 §8.1 |
+| `st2110-10.m.proto-must-be-rtp-avp` | An RTP media description whose protocol is not `RTP/AVP`, for example `RTP/AVPF` or `RTP/SAVP`. | ST 2110-10:2022 §6.2 |
+| `st2110.attr.ts-refclk-required` | An RTP media description with no `a=ts-refclk` when the session level has none either. | ST 2110-10:2022 §8.2 |
+| `st2110.attr.mediaclk-required` | An RTP media description with no media-level `a=mediaclk`. | ST 2110-10:2022 §8.3 |
+| `st2110-10.a.fmtp.tsmode-invalid-value` | An `a=fmtp` `TSMODE` value other than `SAMP`, `NEW`, or `PRES`. The check runs on every decomposed `a=fmtp` line, whatever the encoding. | ST 2110-10:2022 §8.7 |
+| `st2110-10.a.fmtp.tsdelay-invalid-value` | An `a=fmtp` `TSDELAY` value that is not a positive decimal integer. `TSDELAY=0` is rejected. The check runs on every decomposed `a=fmtp` line. | ST 2110-10:2022 §8.7 |
 
-- Every named `mid` must correspond to a media block carrying a matching `a=mid` attribute.
-- All legs in the DUP group must have the same media type (`video`, `audio`, etc.).
-- All legs must share the same rtpmap encoding name and clock rate.
-- All legs must use the same RTP payload type number (ST 2022-7 §6 — *"Senders shall transmit on both flows the same RTP payload data and shall use the same payload type number"*).
-- All legs must carry identical `a=fmtp` value strings (ST 2022-7 §6 — identical payload implies identical essence parameters).
-- No two legs may use **both** the same destination address (`c=`) and the same source address (`a=source-filter` src). Distinct on at least one axis is required (ST 2110-10 §8.5).
-- A DUP group with fewer than 2 legs is rejected.
-- Absence of `a=group:DUP` is not an error.
-- More than two legs are allowed (RFC 7104 permits any number ≥ 2).
-- Legs may use different destination addresses or ports (ST 2022-7 permits this).
+#### ST 2022-7 redundancy grouping (`a=group:DUP`)
 
-### Connection address (`c=`)
+ST 2110-10:2022 section 8.5 requires duplicate streams to meet ST
+2022-7. When a session-level `a=group:DUP <tag> <tag> ...` line is
+present, the library resolves each tag to the media description with
+the matching `a=mid` and compares the legs. The absence of
+`a=group:DUP` is not an error. More than two legs are accepted. Legs
+may use different destination addresses or ports.
 
-A connection address is required at either session level or media-block level (RFC 8866 §5.7: *"A session description MUST contain either at least one 'c=' line in each media description or a single 'c=' line at the session level."*). A media block with no per-media `c=` and no session-level `c=` is rejected. A zero-media SDP without any `c=` is accepted — the SHALL is vacuously satisfied.
+| Id | The check rejects | `spec_ref` |
+| --- | --- | --- |
+| `st2110-10.a.group-dup.mid-resolve` | A tag in an `a=group:DUP` line that matches no `a=mid` in the session. | ST 2110-10:2022 §8.5 |
+| `st2110-10.a.group-dup.min-2-legs` | An `a=group:DUP` line in which fewer than two tags resolve to media descriptions. | ST 2110-10:2022 §8.5 |
+| `st2110-10.a.group-dup.media-type-same` | Two legs with different `m=` media types. | ST 2110-10:2022 §8.5 |
+| `st2110-10.a.group-dup.rtpmap-same` | Two legs whose first `a=rtpmap` lines differ in encoding name or clock rate. | ST 2110-10:2022 §8.5 |
+| `st2110-10.a.group-dup.payload-type-same` | Two legs whose first `a=rtpmap` lines have different payload type numbers. | ST 2110-10:2022 §8.5 |
+| `st2110-10.a.group-dup.fmtp-same` | Two legs whose first `a=fmtp` lines have different parameter sets. The sets are compared by key and value; the order of the parameters is ignored. | ST 2110-10:2022 §8.5 |
+| `st2110-10.a.group-dup.addr-coherence` | Two legs with the same destination address (the media-level or session-level `c=` address) and the same source address (the first address of the first `a=source-filter`). The legs must differ in at least one of the two. | ST 2110-10:2022 §8.5 |
 
-When a `c=` line is present (at either session or media level), the address is validated (ST 2110-10 §6.5 / RFC 4566 §5.7):
+### ST 2110-20 raw video checks
 
-- The address (before any `/<ttl>` or `/<numaddr>` suffix) must parse as a literal IPv4 (RFC 791) or IPv6 (RFC 2460) address, depending on the declared `addr_type`. FQDNs and malformed addresses (e.g. `c=IN IP4 1.2.3`, `c=IN IP4 999.0.0.0`, `c=IN IP6 not-an-ipv6`) are rejected.
-- IPv4 multicast addresses (224.0.0.0–239.255.255.255) must include a TTL suffix (e.g. `239.100.0.1/64`). Per RFC 8866 §9 ABNF (`IP4-multicast = m1 3("." decimal-uchar) "/" ttl [ "/" numaddr ]`) the layered/hierarchical-multicast form `<addr>/<ttl>/<numaddr>` is also accepted (spec example `c=IN IP4 233.252.0.1/127/3`).
-- IPv4 TTL must be an integer in the range 0–255 (RFC 8866 §5.7: *"TTL values MUST be in the range 0-255"*; §9 ABNF explicitly admits `"0"`).
-- IPv4 layered `<numaddr>` must be a positive integer (RFC 8866 §9: `numaddr = integer = POS-DIGIT *DIGIT`).
-- The Local Network Control Block (`224.0.0.0/24`) and Internetwork Control Block (`224.0.1.0/24`) are forbidden per RFC 5771.
-- IPv4 unicast addresses must not carry a TTL suffix.
-- IPv6 multicast addresses (`ff` prefix) may carry an optional `/<numaddr>` suffix (e.g. `ff02::1/64`) per RFC 8866 §9 ABNF (`IP6-multicast = IP6-address [ "/" numaddr ]`). Note: this is a layered-address count, **not** a TTL — RFC 8866 §5.7 prohibits TTL on IPv6 multicast.
-- IPv6 unicast addresses must not include any `/` suffix.
+The checks in this subsection apply to a media description with an
+`a=rtpmap` whose encoding name is `raw`. ST 2110-20:2022 section 7.2
+requires eight `a=fmtp` parameters, and ST 2110-21:2022 section 8.1
+adds `TP` as a ninth. A `raw` payload type with no `a=fmtp` line is
+reported with the same `-required` ids as an `a=fmtp` line that lacks
+the parameters. `TCS` is defined in section 7.3 with a default and is
+optional; section 7.6 says a receiver assumes `SDR` when `TCS` is
+absent.
 
-### Per media block
+Value sets for the enumerated parameters:
 
-`a=ts-refclk` may appear at session level (applying to all media blocks) or at each media-block level; the library accepts either location. **All** `a=ts-refclk` attributes are validated individually — if multiple are present (at any combination of session and media level), each must be a recognized, well-formed clock source (ST 2110-10 §8.2). All other attributes in this table must be per-media.
-
-| Attribute | Requirement |
+| Parameter | Permitted values |
 | --- | --- |
-| `a=ts-refclk` | Required. The `ptp=` version token is restricted to `IEEE1588-2008` (ST 2110-10:2022 §6.1 mandates PTPv2; TR-10-1 §10.4 confirms the same for IPMX). `IEEE1588-2002`, `IEEE1588-2019`, and bare `IEEE1588` are rejected at both tiers. Accepted: `ptp=IEEE1588-2008:<gmid>:<domain>` (gmid is EUI-64; domain is 0–127; domain is required per ST 2110-10:2022 §8.2 "shall signal either clockIdentity AND domain number, OR traceable"); `ptp=IEEE1588-2008:traceable`; `localmac=<mac>`; `ntp=<addr>`; `gps`; `gal`; `glonass` |
-| `a=mediaclk` | Required, **media-level only**. Accepted: `direct=0` (offset SHALL be zero per ST 2110-10 §8.3), `direct=0 rate=<int>/<int>` (RFC 7273 §5.4 pull-down form), or `sender`. Session-level `a=mediaclk` is rejected (ST 2110-10 §8.3) |
-| `a=mid` | Optional. When present, value must be unique within the session (RFC 5888 §8.1). RFC 5888 imposes no position requirement on `a=mid` within a media block |
-| `a=source-filter` | At ST 2110 tier: optional. At IPMX tier: **required** on every RTP block, either media-level or session-level (TR-10-TP-1 §13.2). Format follows RFC 4570 §3: `<incl\|excl> IN <addrtype> <dest> <src>+` where `addrtype` is `IP4`, `IP6`, or `*` (the last per RFC 4570 §3 ABNF — `*` mode expects FQDN dest/src). For `IP4` / `IP6` the dest and every src must be a literal address of the declared family — malformed addresses are rejected (ST 2110-10 §6.5 / RFC 4570). |
-| `a=rtpmap` | Required. RTP payload type must be in the dynamic range 96–127 per ST 2110-10 §6.2 — *"unless a fixed payload type designation exists for that RTP Stream within the IETF standard which specifies it."* The carve-out admits two RFC 3551 §6 statics that match ST 2110-30 essences: PT 10 with `L16/44100/2` and PT 11 with `L16/44100/1`. No other ST 2110 encoding has a static PT. Clock rate validated: must be 90000 for video and `smpte291`. For `ST2110-41`, the rate is Data-Item-defined per §5.3 — the parser checks only that it is a positive integer. Audio clock rate accepted for any positive integer (ST 2110-30 §6.1 puts non-{44.1, 48, 96} kHz "out of scope" but does not forbid). Audio encoding name validated: must be `L16`, `L24`, or `AM824`. Payload type must match the payload type in `a=fmtp` |
-| `a=fmtp` | Required for encodings whose spec mandates fmtp parameters (`raw` per ST 2110-20 §7.2, `jxsv` per ST 2110-22 §7, `ST2110-41` per ST 2110-41:2024 §6 — `SSN` required, `DIT` optional). **Not** required for audio (`L16`/`L24`/`AM824`) or `smpte291` ancillary — ST 2110-10:2022 §8 imposes no universal fmtp requirement, and the per-encoding IANA registrations leave fmtp optional for these. Key=value pairs are validated per sub-standard when present. Payload type must match the payload type in `a=rtpmap` (RFC 4566 §6) |
+| `sampling` | `YCbCr-4:4:4`, `YCbCr-4:2:2`, `YCbCr-4:2:0`, `CLYCbCr-4:4:4`, `CLYCbCr-4:2:2`, `CLYCbCr-4:2:0`, `ICtCp-4:4:4`, `ICtCp-4:2:2`, `ICtCp-4:2:0`, `RGB`, `XYZ`, `KEY` |
+| `depth` | `8`, `10`, `12`, `16`, `16f` |
+| `colorimetry` | `BT601`, `BT709`, `BT2020`, `BT2100`, `ST2065-1`, `ST2065-3`, `XYZ`, `ALPHA`, `UNSPECIFIED` |
+| `PM` | `2110GPM`, `2110BPM` |
+| `SSN` | `ST2110-20:2017`, `ST2110-20:2022` |
+| `TP` | `2110TPN`, `2110TPNL`, `2110TPW` |
+| `TCS` | `SDR`, `PQ`, `HLG`, `LINEAR`, `BT2100LINPQ`, `BT2100LINHLG`, `ST2065-1`, `ST428-1`, `DENSITY`, `ST2115LOGS3`, `UNSPECIFIED` |
+| `RANGE` | `NARROW`, `FULLPROTECT`, `FULL` |
 
-### ST 2110-20 (video) `fmtp` parameters
+Presence checks:
 
-ST 2110-20 §7.2 requires eight `fmtp` parameters; ST 2110-21:2022 §8.1 adds a
-ninth required parameter (`TP`) for any video stream conforming to
-ST 2110-20:2022 §6.1.1's compliance chain. All nine are validated for both
-presence and value format. TCS lives in §7.3 ("Media Type Parameters with
-default values") and is optional — §7.6 says receivers assume `SDR` when TCS
-is not signaled.
-
-| Parameter | Example | Valid values |
+| Id | The check rejects | `spec_ref` |
 | --- | --- | --- |
-| `sampling` | `YCbCr-4:2:2` | `YCbCr-4:4:4`, `YCbCr-4:2:2`, `YCbCr-4:2:0`, `CLYCbCr-4:4:4`, `CLYCbCr-4:2:2`, `CLYCbCr-4:2:0`, `ICtCp-4:4:4`, `ICtCp-4:2:2`, `ICtCp-4:2:0`, `RGB`, `XYZ`, `KEY` |
-| `width` | `1920` | integer between 1 and 32767 inclusive (ST 2110-20 §7.2) |
-| `height` | `1080` | integer between 1 and 32767 inclusive (ST 2110-20 §7.2) |
-| `exactframerate` | `30000/1001` | positive integer or `n/d` fraction (both parts positive, **in lowest terms** — `60000/2002` is rejected because ST 2110-20:2022 §7.2 requires "the numerically smallest numerator value possible") |
-| `depth` | `10` | one of `8`, `10`, `12`, `16`, `16f` (ST 2110-20 §7.4.2) |
-| `colorimetry` | `BT709` | `BT601`, `BT709`, `BT2020`, `BT2100`, `ST2065-1`, `ST2065-3`, `UNSPECIFIED`, `ALPHA`, `XYZ` |
-| `PM` | `2110GPM` | `2110GPM`, `2110BPM` |
-| `SSN` | `ST2110-20:2022` | must be `ST2110-20:YYYY` where YYYY is a 4-digit year. Per ST 2110-20:2022 §7.2, `SSN=ST2110-20:2022` is **required** whenever `TCS=ST2115LOGS3` or `colorimetry=ALPHA` is signaled (those values aren't defined in :2017). The reverse direction ("default to :2017 unless a :2022-only value is used") is not enforced — see PLAN.md "Known Deferred Items". |
-| `TP` | `2110TPN`, `2110TPNL`, `2110TPW` | ST 2110-21:2022 §8.1 — required for any video stream conforming to the ST 2110-20 §6.1.1 → ST 2110-21 chain (i.e. all raw video) |
+| `st2110-20.a.fmtp.sampling-required` | A `raw` video stream with no `sampling` parameter. | ST 2110-20:2022 §7.2 |
+| `st2110-20.a.fmtp.width-required` | A `raw` video stream with no `width` parameter. | ST 2110-20:2022 §7.2 |
+| `st2110-20.a.fmtp.height-required` | A `raw` video stream with no `height` parameter. | ST 2110-20:2022 §7.2 |
+| `st2110-20.a.fmtp.exactframerate-required` | A `raw` video stream with no `exactframerate` parameter. | ST 2110-20:2022 §7.2 |
+| `st2110-20.a.fmtp.depth-required` | A `raw` video stream with no `depth` parameter. | ST 2110-20:2022 §7.4.2 |
+| `st2110-20.a.fmtp.colorimetry-required` | A `raw` video stream with no `colorimetry` parameter. | ST 2110-20:2022 §7.2 |
+| `st2110-20.a.fmtp.PM-required` | A `raw` video stream with no `PM` parameter. | ST 2110-20:2022 §7.2 |
+| `st2110-20.a.fmtp.SSN-required` | A `raw` video stream with no `SSN` parameter. | ST 2110-20:2022 §7.2 |
+| `st2110-20.a.fmtp.TP-required` | A `raw` video stream with no `TP` parameter. | ST 2110-21:2022 §8.1 |
 
-Optional parameters validated when present:
+Value-form checks, which run when the parameter is present:
 
-| Parameter | Valid values | Spec ref |
+| Id | The check rejects | `spec_ref` |
 | --- | --- | --- |
-| `TCS` | `SDR`, `PQ`, `HLG`, `LINEAR`, `BT2100LINPQ`, `BT2100LINHLG`, `ST2065-1`, `ST428-1`, `DENSITY`, `ST2115LOGS3`, `UNSPECIFIED` (the full 11-value enum per ST 2110-20:2022 §7.6; `ST2115LOGS3` was added in :2022). Absent → receivers assume `SDR` per §7.6. | ST 2110-20:2022 §7.3 / §7.6 |
-| `RANGE` | `NARROW`, `FULLPROTECT`, `FULL` | ST 2110-20 §7.2 |
-| `MAXUDP` | positive integer ≤ 8960 (Extended UDP Size Limit). Must **not** be signaled when `PM=2110BPM` — ST 2110-20 §6.3.3 forbids the Extended UDP size in Block Packing Mode. | ST 2110-10 §6.4, ST 2110-20 §6.3.3 |
-| `PAR` | `W:H` (both positive integers, **in lowest terms** per ST 2110-20 §7.3 — e.g. `1:1`, `12:11`, `64:45`; `2:2` is rejected) | ST 2110-20 §7.3 |
-| `TROFF` | positive integer in microseconds (`TROFF=0` rejected per the §8.2 value-form SHALL — §6.2 separately permits the underlying TROFFSET to be zero) | ST 2110-21:2022 §8.2 |
-| `CMAX` | any integer. §8.2 defines the SDP form as "expressed as an integer number" — zero and negative integers are accepted because the spec attaches no sign restriction; §7.1's `MAX(4, …)` / `MAX(16, …)` formula is an upper bound on `CINST` (§6.6.1), not a lower bound on the SDP value. | ST 2110-21:2022 §8.2 |
-| `TSMODE` | `SAMP`, `NEW`, `PRES` | ST 2110-10 §8.7 |
-| `TSDELAY` | positive integer (microseconds — ST 2110-10 §8.7 defines this as a decimal positive integer; `TSDELAY=0` is rejected) | ST 2110-10 §8.7 |
+| `st2110-20.a.fmtp.sampling-invalid-value` | A `sampling` value outside the set above. | ST 2110-20:2022 §7.2 |
+| `st2110-20.a.fmtp.width-invalid-value` | A `width` that is not an integer from 1 to 32767. | ST 2110-20:2022 §7.2 |
+| `st2110-20.a.fmtp.height-invalid-value` | A `height` that is not an integer from 1 to 32767. | ST 2110-20:2022 §7.2 |
+| `st2110-20.a.fmtp.exactframerate-invalid-value` | An `exactframerate` that is not a positive integer or a positive `n/d` ratio in lowest terms. `60000/2002` is rejected because section 7.2 requires *"the numerically smallest numerator value possible"*. | ST 2110-20:2022 §7.2 |
+| `st2110-20.a.fmtp.depth-invalid-value` | A `depth` outside the set above, for example `14`. | ST 2110-20:2022 §7.4.2 |
+| `st2110-20.a.fmtp.colorimetry-invalid-value` | A `colorimetry` value outside the set above. | ST 2110-20:2022 §7.5 |
+| `st2110-20.a.fmtp.PM-invalid-value` | A `PM` value other than `2110GPM` or `2110BPM`. | ST 2110-20:2022 §6.3 |
+| `st2110-20.a.fmtp.SSN-invalid-value` | An `SSN` value other than `ST2110-20:2017` or `ST2110-20:2022`. | ST 2110-20:2022 §7.2 |
+| `st2110-20.a.fmtp.TP-invalid-value` | A `TP` value outside the set above. | ST 2110-21:2022 §8.1 |
+| `st2110-20.a.fmtp.TCS-invalid-value` | A `TCS` value outside the set above. | ST 2110-20:2022 §7.6 |
+| `st2110-20.a.fmtp.RANGE-invalid-value` | A `RANGE` value outside the set above. | ST 2110-20:2022 §7.3 |
+| `st2110-20.a.fmtp.MAXUDP-invalid-value` | A `MAXUDP` that is not a positive integer, or that is greater than 8960 (the Extended UDP Size Limit). | ST 2110-20:2022 §7.3 |
+| `st2110-20.a.fmtp.PAR-invalid-value` | A `PAR` that is not `W:H` with both parts positive integers in lowest terms. `12:11` is accepted; `2:2` is rejected. | ST 2110-20:2022 §7.3 |
+| `st2110-20.a.fmtp.interlace-invalid-value` | An `interlace` parameter with an `=value`. The parameter is a bare flag. | ST 2110-20:2022 §7.3 |
+| `st2110-20.a.fmtp.segmented-invalid-value` | A `segmented` parameter with an `=value`. The parameter is a bare flag. | ST 2110-20:2022 §7.3 |
+| `st2110-20.a.fmtp.no-whitespace-around-equals` | A space or tab before or after the `=` of any parameter on a `raw` video `a=fmtp` line. This check is hard-syntactic. | ST 2110-20:2022 §7.1 |
 
-Bare-flag parameters `interlace` and `segmented` are accepted. `segmented` SHALL only appear together with `interlace` (ST 2110-20 §7.3); signaling `segmented` alone is rejected. Both are flag-only — `interlace=anything` and `segmented=anything` are rejected (ST 2110-20 §7.1/§7.3 define no value form for these names). Any other unrecognized key=value pairs pass through silently.
+Parameters that ST 2110-20 does not define, for example a vendor
+parameter, pass through without a finding.
 
-**Cross-parameter SHALLs (raw video only):**
+Cross-parameter checks:
 
-- **§7.4.1 KEY-sampling.** When `sampling=KEY`, the stream **shall** signal `colorimetry=ALPHA` and **shall not** signal a `TCS` value. Both halves are enforced. (RFC 9134 §7.1 carries the `sampling` value set into jxsv but does not import these cross-parameter constraints, so jxsv is unaffected — see PLAN.md "Pre-1.0 Conformance Audit" jxsv-scope discussion.)
-- **§6.2.5 4:2:0 progressive-only.** *"The 4:2:0 sampling system shall only be applied to progressive scan images transmitted in a progressive manner. This sampling system does not apply to PsF or interlaced video essence."* `sampling=YCbCr-4:2:0`, `CLYCbCr-4:2:0`, or `ICtCp-4:2:0` combined with the bare `interlace` flag is rejected. (§6.2.5 sits in the RTP-payload pgroup-construction chapter, which jxsv does not use; RFC 9134 §7.1 inherits the sampling values, not the §6 packaging constraints, so jxsv is unaffected.)
+| Id | The check rejects | `spec_ref` |
+| --- | --- | --- |
+| `st2110-20.a.fmtp.segmented-requires-interlace` | `segmented` without `interlace`. | ST 2110-20:2022 §7.3 |
+| `st2110-20.a.fmtp.bpm-with-maxudp-forbidden` | `MAXUDP` together with `PM=2110BPM`. Section 6.3.3 says the Extended UDP Size Limit *"shall not be used in the Block Packing Mode"*. | ST 2110-20:2022 §6.3.3 |
+| `st2110-20.a.fmtp.bt2100-range-fullprotect-forbidden` | `RANGE=FULLPROTECT` together with `colorimetry=BT2100`. Only `NARROW` and `FULL` are permitted with `BT2100`. | ST 2110-20:2022 §7.3 |
+| `st2110-20.a.fmtp.key-requires-alpha-colorimetry` | `sampling=KEY` without `colorimetry=ALPHA`. | ST 2110-20:2022 §7.4.1 |
+| `st2110-20.a.fmtp.key-forbids-tcs` | `sampling=KEY` together with any `TCS` value. | ST 2110-20:2022 §7.4.1 |
+| `st2110-20.a.fmtp.subsampling-420-with-interlace-forbidden` | A `4:2:0` sampling value (`YCbCr-4:2:0`, `CLYCbCr-4:2:0`, or `ICtCp-4:2:0`) together with `interlace`. Section 6.2.5 says *"The 4:2:0 sampling system shall only be applied to progressive scan images transmitted in a progressive manner."* | ST 2110-20:2022 §6.2.5 |
+| `st2110-20.a.fmtp.subsampling-420-depth-restricted` | A `4:2:0` sampling value with `depth=16` or `depth=16f`. Table 3 defines 4:2:0 only for depths 8, 10, and 12. | ST 2110-20:2022 §6.2.5 Table 3 |
+| `st2110-20.a.fmtp.tcs-linear-requires-depth-16f` | `TCS=LINEAR` with a `depth` other than `16f`. | ST 2110-20:2022 §7.6 |
+| `st2110-20.a.fmtp.tcs-bt2100linpq-requires-depth-16f` | `TCS=BT2100LINPQ` with a `depth` other than `16f`. | ST 2110-20:2022 §7.6 |
+| `st2110-20.a.fmtp.tcs-bt2100linhlg-requires-depth-16f` | `TCS=BT2100LINHLG` with a `depth` other than `16f`. | ST 2110-20:2022 §7.6 |
+| `st2110-20.a.fmtp.tcs-st2065-1-requires-depth-16f` | `TCS=ST2065-1` with a `depth` other than `16f`. | ST 2110-20:2022 §7.6 |
+| `st2110-20.a.fmtp.ssn-required-for-2022-only-values` | `TCS=ST2115LOGS3` or `colorimetry=ALPHA` with an `SSN` other than `ST2110-20:2022`. Those two values are not defined in the 2017 revision. The reverse direction (requiring `ST2110-20:2017` when no 2022-only value is used) is not enforced; see "Known Deferred Items" in PLAN.md. | ST 2110-20:2022 §7.2 |
 
-### ST 2110-30 (audio) `rtpmap` and `fmtp` parameters
+Checks on the `a=rtpmap` line:
 
-The `a=rtpmap` encoding name is validated: must be `L16`, `L24`, or `AM824`
-(ST 2110-30 §6.1 mandates L16/L24; ST 2110-31 adds AM824 for AES3 transparent
-transport).
+| Id | The check rejects | `spec_ref` |
+| --- | --- | --- |
+| `st2110-20.a.rtpmap.raw-clock-rate` | An `a=rtpmap` for `raw` with a clock rate other than 90000. | ST 2110-20:2022 §7.1 |
+| `st2110-20.a.rtpmap.raw-media-type` | An `a=rtpmap` for `raw` in a media description whose `m=` media type is not `video`. | ST 2110-20:2022 §7.1 |
 
-**For L16 / L24:** the clock rate is **not enumerated**. ST 2110-30 §6.1
-mandates 48 kHz and permits 44.1/96 kHz, then says *"Other sampling
-frequencies and resolutions are out of scope of this standard."* Out-of-scope
-is not the same as forbidden (no "shall not"), so any well-formed positive
-rate is accepted. This matches IPMX practice, which already permits
-AES67-extended rates such as 32 kHz, 88.2 kHz, 176.4 kHz, and 192 kHz.
+### ST 2110-21 and ST 2110-22: JPEG XS (`jxsv`) checks
 
-**For AM824 (ST 2110-31:2022):** the clock rate **SHALL** be one of `44100`,
-`48000`, or `96000` (§5.5 / §6.1). Channel count **SHALL** be even (§6.1:
-each AES3 signal contains two AES3 Subframe sequences). `a=ptime` is
-**required** (§6.1) and its value **SHALL** be one of the Table 1 entries
-for the prevailing clock rate:
+The checks in this subsection apply to a media description with an
+`a=rtpmap` whose encoding name is `jxsv`. ST 2110-22:2022 section 7.2
+Table 1 lists `width`, `height`, and `TP` as the mandatory
+format-specific parameters, and the IANA `video/jxsv` registration in
+RFC 9134 section 7.1 adds `packetmode`. Section 7.3 Table 3 requires a
+media-level `b=AS:<kbps>` line. `PM` is an ST 2110-20 parameter, not a
+`jxsv` parameter; the corresponding `jxsv` control is `packetmode`.
 
-| `<clock-rate>` (Hz) | Permitted `<packet-time>` (ms) |
+The parameters `sampling`, `depth`, `TCS`, `colorimetry`, `profile`,
+`level`, `sublevel`, `transmode`, `RANGE`, `MAXUDP`, `CMAX`,
+`exactframerate`, and `SSN` are optional and are checked only when
+present. `fbblevel` is not an SDP parameter in any specification the
+library covers (it is a field of the RTCP JPEG XS Media Info Block), so
+the library accepts `fbblevel=...` without checking its value.
+
+Value sets for the enumerated `jxsv` parameters. Three of the sets
+differ from the ST 2110-20 sets because RFC 9134 defines them for
+`jxsv`.
+
+| Parameter | Permitted values |
 | --- | --- |
-| 44100 | 1.09, 0.14, 0.09 |
-| 48000 | 1, 0.12, 0.08 |
-| 96000 | 1, 0.12, 0.08 |
+| `TP` | `2110TPN`, `2110TPNL`, `2110TPW` |
+| `packetmode`, `transmode` | `0`, `1` |
+| `sampling` | The ST 2110-20 set plus `UNSPECIFIED` |
+| `TCS` | `SDR`, `PQ`, `HLG`, `UNSPECIFIED` |
+| `colorimetry` | `BT601-5`, `BT709-2`, `SMPTE240M`, `BT601`, `BT709`, `BT2020`, `BT2100`, `ST2065-1`, `ST2065-3`, `XYZ`, `UNSPECIFIED` (no `ALPHA`) |
+| `RANGE` | `NARROW`, `FULLPROTECT`, `FULL` |
+| `SSN` | `ST2110-22:2019`, `ST2110-22:2022` |
+| `profile` | `Unrestricted`, `Light422.10`, `Light444.12`, `LightSubline422.10`, `LightSubline444.12`, `Main422.10`, `Main444.12`, `High444.12`, `MLS.12`, `LightBayer`, `MainBayer`, `HighBayer`, `MLSBayer` |
+| `level` | `Unrestricted`, `1k-1`, `2k-1`, `4k-1`, `4k-2`, `4k-3`, `8k-1`, `8k-2`, `8k-3`, `16k-1`, `16k-2`, `16k-3` |
+| `sublevel` | `Unrestricted`, `Full`, `Sublev12bpp`, `Sublev9bpp`, `Sublev6bpp`, `Sublev4bpp`, `Sublev3bpp`, `Sublev2bpp` |
 
-The channel count (third `/`-separated component in the rtpmap value,
-e.g. `L24/48000/8`) is required and must be a positive integer (RFC 3551 §6).
-ST 2110-30 §6.2.2 / Table 2 documents Conformance Levels with channel counts
-up to 64; the spec contains no global upper bound, so the validator imposes
-none. `channel-order` is **optional** per ST 2110-30:2017 §6.2.2 ("If the
-channel-order parameter is not present, the audio channels shall be treated as
-Undefined"). When present, its value format is validated; mono
-(`SMPTE2110.(M)`) is permitted.
-
-`a=ptime` is **required** for every audio stream — ST 2110-30:2025 §6.2.1
-chains audio to AES67 (*"Digital audio streams shall conform to AES67,
-including the Session Description Protocol (SDP) as described in IETF
-RFC 8866"*), and AES67-2018 §8.1: *"Descriptions shall include a ptime
-attribute indicating the desired packet time."* Value must be a positive
-decimal (RFC 4566). For AM824, `<packet-time>` must additionally come from
-ST 2110-31:2022 §6.1 Table 1.
-
-The validator also enforces that the resulting RTP payload size
-(`channels × samples-per-packet × bytes-per-sample`, where L16=2 B, L24=3 B,
-AM824=4 B) fits within `1460 − 12 B = 1448 B` of UDP payload (Standard UDP
-Size Limit per ST 2110-10 §6.3, minus the 12-octet RTP fixed header).
-**MAXUDP must not be signaled on audio** (ST 2110-30:2025 §6.2.1 mandates
-the Standard limit); raising it is rejected — see N11 in PLAN.md.
-
-| Parameter | Example | Valid values |
+| Id | The check rejects | `spec_ref` |
 | --- | --- | --- |
-| `channel-order` | `SMPTE2110.(ST)` | RFC 3190 §6 form `<convention>.<order>`. The convention is **SHOULD** `SMPTE2110` per ST 2110-30:2025 §6.2.2 — other tokens are accepted structurally (spec defines no symbol set for them). When the convention **is** `SMPTE2110`, the order **SHALL** be `(<group>[,<group>...])` where each group is `M`, `DM`, `ST`, `LtRt`, `51`, `71`, `222`, `SGRP`, `U01`–`U64`, or — only on AM824 streams — `AES3` (ST 2110-31:2022 §6.2 Table 2) |
+| `st2110-22.a.rtpmap.jxsv-clock-rate` | An `a=rtpmap` for `jxsv` with a clock rate other than 90000. | ST 2110-22:2022 §5.2 |
+| `st2110-22.a.rtpmap.jxsv-media-type` | An `a=rtpmap` for `jxsv` in a media description whose `m=` media type is not `video`. | ST 2110-22:2022 §6.2 / RFC 9134 |
+| `st2110-22.b.as-required` | A `jxsv` media description with no media-level `b=AS` line. | ST 2110-22:2022 §7.3 |
+| `st2110-22.b.as-invalid-value` | A `b=AS` value on a `jxsv` media description that is not a positive integer. | ST 2110-22:2022 §7.3 |
+| `st2110-22.a.fmtp.width-required` | A `jxsv` stream with no `width` parameter. | ST 2110-22:2022 §7.2 |
+| `st2110-22.a.fmtp.height-required` | A `jxsv` stream with no `height` parameter. | ST 2110-22:2022 §7.2 |
+| `st2110-22.a.fmtp.TP-required` | A `jxsv` stream with no `TP` parameter. | ST 2110-22:2022 §7.2 |
+| `st2110-22.a.fmtp.packetmode-required` | A `jxsv` stream with no `packetmode` parameter. | RFC 9134 §7.1 |
+| `st2110-22.a.fmtp.width-invalid-value` | A `width` that is not an integer from 1 to 32767. | ST 2110-22:2022 §7.2 |
+| `st2110-22.a.fmtp.height-invalid-value` | A `height` that is not an integer from 1 to 32767. | ST 2110-22:2022 §7.2 |
+| `st2110-22.a.fmtp.TP-invalid-value` | A `TP` value outside the set above. | ST 2110-22:2022 §5.3 |
+| `st2110-22.a.fmtp.packetmode-invalid-value` | A `packetmode` other than `0` or `1`. | RFC 9134 §7.1 |
+| `st2110-22.a.fmtp.transmode-invalid-value` | A `transmode` other than `0` or `1`. | RFC 9134 §7.1 |
+| `st2110-22.a.fmtp.sampling-invalid-value` | A `sampling` value outside the set above. | RFC 9134 §7.1 |
+| `st2110-22.a.fmtp.TCS-invalid-value` | A `TCS` value outside the four-value set above. | RFC 9134 §7.1 |
+| `st2110-22.a.fmtp.colorimetry-invalid-value` | A `colorimetry` value outside the set above. | RFC 9134 §7.1 |
+| `st2110-22.a.fmtp.RANGE-invalid-value` | A `RANGE` value outside the set above. | RFC 9134 §7.1 |
+| `st2110-22.a.fmtp.profile-invalid-value` | A `profile` value outside the set above. | RFC 9134 §7.1 |
+| `st2110-22.a.fmtp.level-invalid-value` | A `level` value outside the set above. | RFC 9134 §7.1 |
+| `st2110-22.a.fmtp.sublevel-invalid-value` | A `sublevel` value outside the set above. | RFC 9134 §7.1 |
+| `st2110-22.a.fmtp.depth-invalid-value` | A `depth` that is not a positive integer. RFC 9134 lists 8, 10, 12, and 16 as typical values without closing the set. | RFC 9134 §7.1 |
+| `st2110-22.a.fmtp.exactframerate-invalid-value` | An `exactframerate` that is not a positive integer or a positive `n/d` ratio in lowest terms. | RFC 9134 §7.1 |
+| `st2110-22.a.fmtp.MAXUDP-invalid-value` | A `MAXUDP` that is not a positive integer, or that is greater than 8960. | ST 2110-10 §6.4 |
+| `st2110-22.a.fmtp.CMAX-invalid-value` | A `CMAX` that is not an integer. Zero and negative integers are accepted, because ST 2110-21:2022 section 8.2 defines the value as *"expressed as an integer number"* with no sign restriction. | ST 2110-21:2022 §8.2 |
+| `st2110-22.a.fmtp.SSN-invalid-value` | An `SSN` value other than `ST2110-22:2019` or `ST2110-22:2022`. | ST 2110-22:2022 §7.2 |
+| `st2110-22.a.fmtp.interlace-invalid-value` | An `interlace` parameter with an `=value`. | RFC 9134 §7.1 |
+| `st2110-22.a.fmtp.segmented-invalid-value` | A `segmented` parameter with an `=value`. | RFC 9134 §7.1 |
+| `st2110-22.a.fmtp.segmented-requires-interlace` | `segmented` without `interlace`. RFC 9134 section 7.1 says *"Signaling of this parameter without the interlace parameter is forbidden."* | RFC 9134 §7.1 |
+| `st2110-22.a.fmtp.bt2100-range-fullprotect-forbidden` | `RANGE=FULLPROTECT` together with `colorimetry=BT2100`. | RFC 9134 §7.1 |
 
-### ST 2110-22 (JPEG-XS / jxsv) `fmtp` parameters
+A trailing semicolon after the last `jxsv` parameter produces the
+RFC 8866 tier warning `sdp.a.fmtp.trailing-semicolon`; the ST 2110 tier
+does not add an error for it.
 
-Compressed video flows use rtpmap encoding name `jxsv` at clock rate 90000
-(ST 2110-22 / TR-10-11). The media type **must** be `video` per
-ST 2110-22:2022 §6.2 (*"The media type name shall be 'video'"*); `m=application
-… jxsv` is rejected. `PM` is **not** an ST 2110-22 parameter — that is a
-ST 2110-20 (uncompressed video) packing-mode marker; the analogous control
-for jxsv is `packetmode` (IANA `video/jxsv` / RFC 9134 §4.3).
+### ST 2110-30 and ST 2110-31: audio checks
 
-ST 2110-22:2022 §7.2 Table 1 lists `width`, `height`, and `TP` as the only
-mandatory format-specific parameters; the IANA `video/jxsv` registration
-(RFC 9134 §7.1) additionally requires `packetmode`. §7.3 Table 3 makes
-`b=AS:<kbps>` REQUIRED on every jxsv media block (now enforced at the
-ST 2110 tier — was previously IPMX-only). §7.4 Table 4 makes frame-rate
-signaling REQUIRED via either `a=framerate:<rate>` or fmtp
-`exactframerate=<rate>`. §7.2 also forbids a trailing semicolon after the
-last fmtp item (the post-`;` whitespace, however, is OPTIONAL in -22 §7.2,
-unlike in -20 §7.1).
+The checks in this subsection apply to media descriptions with an
+`a=rtpmap` whose encoding name is `L16`, `L24`, or `AM824`. The clock
+rate of `L16` and `L24` is not restricted; see the previous section.
+The channel count (the third `/`-separated field of the `a=rtpmap`
+value) is optional for `L16` and `L24` and required for `AM824`.
 
-Everything else defined by the spec — `sampling`, `depth`, `TCS`,
-`colorimetry`, `profile`, `level`, `sublevel`, `transmode` — is optional
-and validated only when present. The IPMX JPEG-XS Video Profile §6.1.4
-references several of these fields for the RTCP **JPEG-XS Media Info
-Block** (type 0x0003), not SDP fmtp, and Media Info Blocks are out of
-scope for this validator.
+`channel-order` is optional (ST 2110-30:2017 section 6.2.2: *"If the
+channel-order parameter is not present, the audio channels shall be
+treated as Undefined"*). When present, the value must have the RFC 3190
+form `<convention>.<order>`. When the convention is `SMPTE2110`, the
+order must be `(<group>[,<group>...])` where each group is `M`, `DM`,
+`ST`, `LtRt`, `51`, `71`, `222`, `SGRP`, `U01` to `U64`, or, only on an
+`AM824` stream, `AES3`. A convention other than `SMPTE2110` is accepted
+without a check on the order.
 
-`fbblevel` is **not** an SDP fmtp parameter in any spec the parser tracks.
-It appears only in the RTCP JPEG-XS Media Info Block (TR-10-15-Part1 §12,
-encoded in the Plev 16-bit field alongside `sublevel`). The parser
-accepts `fbblevel=…` in fmtp without validating its value form — there is
-no SDP value form to validate.
-
-`TP` permits all three values `2110TPN`, `2110TPNL`, `2110TPW` per the 2022
-revision (`2110TPN` was added in ST 2110-22:2022 §7.2 Table 1).
-
-Required parameters (all must be present):
-
-| Parameter | Example | Valid values |
+| Id | The check rejects | `spec_ref` |
 | --- | --- | --- |
-| `width` | `1920` | positive integer |
-| `height` | `1080` | positive integer |
-| `TP` | `2110TPN` | `2110TPN`, `2110TPNL`, `2110TPW` (per ST 2110-22:2022 §7.2 Table 1) |
-| `packetmode` | `0` or `1` | 1-bit value (IANA `video/jxsv` / RFC 9134 §4.3) |
+| `st2110-30.a.fmtp.channel-order-invalid` | A `channel-order` value that is not `<convention>.<order>`, or an `SMPTE2110` order that is not a parenthesized, comma-separated list of the group symbols above. | ST 2110-30:2025 §6.2.2 |
+| `st2110-30.a.fmtp.maxudp-forbidden` | A `MAXUDP` parameter on an `L16` or `L24` stream. Section 6.2.1 requires the Standard UDP Size Limit, and `MAXUDP` signals operation beyond it. `AM824` is not checked. | ST 2110-30:2025 §6.2.1 |
+| `st2110-30.audio.packet-payload-fit` | An `L16` or `L24` stream whose RTP payload per packet exceeds 1448 octets (the 1460-octet Standard UDP Size Limit minus the 12-octet RTP header). The payload is channels (1 when absent) times bytes per sample (2 for `L16`, 3 for `L24`) times samples per packet (clock rate times `a=ptime` in milliseconds, divided by 1000 and rounded to the nearest integer). The check runs only when the media description has an `a=ptime` line. `AM824` is not checked. | ST 2110-30:2025 §6.2.1 |
+| `st2110-31.a.fmtp.channel-order-aes3-requires-am824` | The group `AES3` in a `channel-order` on a stream whose encoding is not `AM824`. | ST 2110-31:2022 §6.2 |
+| `st2110-31.a.rtpmap.am824-channels-required` | An `a=rtpmap` for `AM824` with no channel count. | ST 2110-31:2022 §6.1 |
+| `st2110-31.a.rtpmap.am824-channels-must-be-even` | An `a=rtpmap` for `AM824` with an odd channel count. Each AES3 signal has two subframe sequences. | ST 2110-31:2022 §6.1 |
+| `st2110-31.a.rtpmap.am824-clock-rate-set` | An `a=rtpmap` for `AM824` with a clock rate other than 44100, 48000, or 96000. | ST 2110-31:2022 §6.1 |
+| `st2110-31.a.rtpmap.am824-media-type` | An `a=rtpmap` for `AM824` in a media description whose `m=` media type is not `audio`. | ST 2110-31:2022 §6.1 |
 
-Optional parameters validated when present:
+### ST 2110-40: ancillary data (`smpte291`) checks
 
-| Parameter | Valid values | Spec ref |
+The checks in this subsection apply to a media description with an
+`a=rtpmap` whose encoding name is `smpte291`. ST 2110-40:2023 section 7
+adds SDP requirements to RFC 8331, and the library enforces the 2023
+revision. An `a=fmtp` line is required, because `SSN` and
+`exactframerate` are required; a `smpte291` payload type with no
+`a=fmtp` line is reported with the `-required` ids. `TM`, `TROFF`,
+`DID_SDID`, and `VPID_Code` are optional and are checked when present.
+`DID_SDID` may appear several times, and every occurrence is checked.
+
+| Id | The check rejects | `spec_ref` |
 | --- | --- | --- |
-| `sampling` | same set as ST 2110-20 (including `RGB`, `XYZ`, `KEY`) | RFC 9134 §7.1 |
-| `depth` | positive integer | RFC 9134 §7.1 |
-| `exactframerate` | positive integer or `n/d` fraction | RFC 9134 §7.1 |
-| `TCS` | same set as ST 2110-20 | RFC 9134 §7.1 |
-| `colorimetry` | same set as ST 2110-20 | RFC 9134 §7.1 |
-| `SSN` | `ST2110-22:YYYY` (4-digit year) | ST 2110-22:2022 §7.2 Table 2 (not defined in 2019) |
-| `profile` | enum (TR-10-15 §8 / TR-08 §8.1.1): `Unrestricted`, `Light422.10`, `Light444.12`, `LightSubline422.10`, `LightSubline444.12`, `Main422.10`, `Main444.12`, `High444.12`, `MLS.12`, `LightBayer`, `MainBayer`, `HighBayer`, `MLSBayer` | ST 2110-22:2022 §7.2 |
-| `level` | enum (TR-10-15 §9 / ISO/IEC 21122-2): `Unrestricted`, `1k-1`, `2k-1`, `4k-1`, `4k-2`, `4k-3`, `8k-1`, `8k-2`, `8k-3`, `16k-1`, `16k-2`, `16k-3` | ST 2110-22:2022 §7.2 |
-| `sublevel` | enum (TR-10-15 §7.1 / ISO/IEC 21122-2): `Unrestricted`, `Full`, `Sublev12bpp`, `Sublev9bpp`, `Sublev6bpp`, `Sublev4bpp`, `Sublev3bpp`, `Sublev2bpp` | ST 2110-22:2022 §7.2 |
-| `transmode` | `0` or `1` (1-bit value) | IANA `video/jxsv` / TR-10-15 §9 |
-| `RANGE` | `NARROW`, `FULLPROTECT`, `FULL` | RFC 9134 §7.1 |
-| `MAXUDP` | positive integer ≤ 8960 (Extended UDP Size Limit) | ST 2110-10 §6.4 |
-| `CMAX` | any integer (per ST 2110-21:2022 §8.2 — see uncompressed-video table above for the §7.1 upper-bound caveat) | ST 2110-21:2022 §8.2 (referenced by ST 2110-22:2022 §7.2 Table 2) |
+| `st2110-40.a.rtpmap.smpte291-clock-rate` | An `a=rtpmap` for `smpte291` with a clock rate other than 90000. | ST 2110-40:2023 §5.3 |
+| `st2110-40.a.rtpmap.smpte291-media-type` | An `a=rtpmap` for `smpte291` in a media description whose `m=` media type is not `video`. | RFC 8331 §4 |
+| `st2110-40.a.fmtp.ssn-required` | A `smpte291` stream with no `SSN` parameter. | ST 2110-40:2023 §7 |
+| `st2110-40.a.fmtp.ssn-invalid-value` | An `SSN` other than `ST2110-40:2018` when `TM` is absent, or other than `ST2110-40:2023` or `ST2110-40:2021` when `TM` is present. Section 7 says a receiver treats `ST2110-40:2021` as equivalent to `ST2110-40:2023`, and the library accepts it from a sender on the same terms. | ST 2110-40:2023 §7 |
+| `st2110-40.a.fmtp.exactframerate-required` | A `smpte291` stream with no `exactframerate` parameter. | ST 2110-40:2023 §7 |
+| `st2110-40.a.fmtp.exactframerate-invalid-value` | An `exactframerate` that is not a positive integer or a positive `n/d` ratio in lowest terms (the ST 2110-20 form). | ST 2110-20:2022 §7.2 |
+| `st2110-40.a.fmtp.tm-invalid-value` | A `TM` value other than `LLTM` or `CTM`. | ST 2110-40:2023 §7 |
+| `st2110-40.a.fmtp.troff-invalid-value` | A `TROFF` that is not a positive integer. `TROFF=0` is rejected; see "Known Deferred Items" in PLAN.md. | ST 2110-21:2022 §8.2 |
+| `st2110-40.a.fmtp.did-sdid-invalid-value` | A `DID_SDID` value that is not `{0xH[H],0xH[H]}`, where each `H[H]` is one or two hexadecimal digits. | RFC 8331 §4 |
+| `st2110-40.a.fmtp.vpid-code-invalid-value` | A `VPID_Code` that is not a non-negative integer. | RFC 8331 §4 |
+| `st2110-40.a.fmtp.vpid-code-too-many` | More than one `VPID_Code` parameter on one `a=fmtp` line. | RFC 8331 §4 |
 
-Bare-flag parameters `interlace` and `segmented` are accepted on jxsv flows under the same rules as raw video (RFC 9134 §7.1 — same wording as ST 2110-20 §7.3): both are flag-only (`interlace=anything` / `segmented=anything` are rejected), and `segmented` SHALL only appear together with `interlace` (RFC 9134 §7.1: *"Signaling of this parameter without the interlace parameter is forbidden."*).
+### ST 2110-41: fast metadata checks
 
-A `b=AS:<positive integer>` bandwidth line is **required** on every `jxsv` media block (TR-10-7 §11 / ST 2110-22 §7.3).
+The checks in this subsection apply to a media description with an
+`a=rtpmap` whose encoding name is `ST2110-41`. The clock rate is defined
+per data item (ST 2110-41:2024 section 5.3: *"The RTP Clock rate and
+RTP Timestamp requirements of each Data Item are defined in the
+document that specifies the Data Item Package Contents"*), so the
+library checks only that the rate is a positive integer, which the
+RFC 8866 `a=rtpmap` grammar already requires. An `a=fmtp` line is
+required because `SSN` is required. `DIT` is optional.
 
-### ST 2110-40 (smpte291 ancillary data) `fmtp` parameters
-
-Ancillary data flows use rtpmap encoding name `smpte291` at clock rate 90000 (RFC 8331). ST 2110-40:2023 §7 adds explicit SDP requirements on top of RFC 8331; the parser enforces the 2023 revision.
-
-Required parameters (all must be present):
-
-| Parameter | Example | Valid values |
+| Id | The check rejects | `spec_ref` |
 | --- | --- | --- |
-| `SSN` | `ST2110-40:2018` | `ST2110-40:2018` when `TM` is absent; `ST2110-40:2023` when `TM` is signaled (ST 2110-40:2023 §7) |
-| `exactframerate` | `25` | positive integer or `n/d` fraction (ST 2110-20:2022 §7.2 form, per ST 2110-40:2023 §7) |
-
-Optional parameters validated when present:
-
-| Parameter | Valid values | Spec ref |
-| --- | --- | --- |
-| `TM` | `LLTM` or `CTM` | ST 2110-40:2023 §7 (LLTM required if sender implements the Low-Latency Transmission Model; CTM may be signaled; if absent, receivers default to CTM) |
-| `TROFF` | positive integer (µs), per ST 2110-21 §8 form | ST 2110-40:2023 §7 (presence required only when the sender's TR_OFFSETANC differs from the prevailing video format's TRO_DEFAULT — a runtime property not observable from SDP, so only value form is validated here) |
-| `DID_SDID` | `{0xHH,0xHH}` (two hex octets) | RFC 8331 §4 — optional; may appear multiple times; every entry is validated |
-| `VPID_Code` | non-negative integer | ST 2110-40 §7.2 — optional |
-
-`SSN=ST2110-40:2021` is not accepted from senders. Per ST 2110-40:2023 §7, receivers shall treat that value as equivalent to `ST2110-40:2023`, but senders shall signal `ST2110-40:2023` itself. Validating an SDP authored by a sender, this parser holds senders to the strict form.
-
-ST 2110-40:2023 §7 also forbids `a=group:FID` semantics: *"Flow Identification ('FID') semantics shall not be used under this standard."* At the ST 2110 tier, the parser rejects session-level `a=group:FID` whenever any media block carries an `smpte291` rtpmap. (At the IPMX tier, TR-10-1 §10 broadens the prohibition: any `a=group:FID` is rejected regardless of essence.)
-
-### ST 2110-41 (fast metadata) `fmtp` parameters
-
-Fast metadata flows use rtpmap encoding name `ST2110-41`. The clock rate is
-Data-Item-defined per ST 2110-41:2024 §5.3 (*"The RTP Clock rate and RTP
-Timestamp requirements of each Data Item are defined in the document that
-specifies the Data Item Package Contents"*), so the parser validates only
-that the rate is a positive integer — it is **not** fixed at 90 kHz.
-
-| Parameter | Example | Validated |
-| --- | --- | --- |
-| `SSN` | `ST2110-41:2024` | yes — required per ST 2110-41:2024 §6; must be `ST2110-41:YYYY` (4-digit year) |
-| `DIT` | `100,2000A1,1013FC,3FFF00` | optional (SHOULD per §6; Optional Parameter per §9.2.3). When present: comma-separated uppercase hex tokens; no `0x` prefix; no whitespace |
+| `st2110-41.a.fmtp.SSN-required` | An `ST2110-41` stream with no `SSN` parameter. | ST 2110-41:2024 §6 |
+| `st2110-41.a.fmtp.SSN-invalid-value` | An `SSN` value other than `ST2110-41:2024`. | ST 2110-41:2024 §6 |
+| `st2110-41.a.fmtp.DIT-invalid-value` | A `DIT` value that is not a comma-separated list of uppercase hexadecimal tokens with no `0x` prefix and no whitespace, for example `100,2000A1,1013FC,3FFF00`. | ST 2110-41:2024 §6 |
+| `st2110-41.a.fmtp.maxudp-forbidden` | A `MAXUDP` parameter on an `ST2110-41` stream. Section 5.4 limits the stream to the Standard UDP Size Limit. | ST 2110-41:2024 §5.4 |
 
 ---
 
-## IPMX Validation
+## IPMX validation checks
 
-`sdp.parse(text, "ipmx")` or `doc:validate("ipmx")` runs ST 2110 validation first
-on all non-USB media blocks, then checks IPMX-specific requirements:
+`sdp.parse(text, "ipmx")` and `doc:validate("ipmx")` run every RFC 8866
+and ST 2110 check and then the checks in this section. The ST 2110
+per-stream checks apply to RTP media descriptions; a USB transport
+block (`m=application <port> TCP usb`) is not an RTP stream and gets
+only the TR-10-14 checks. The tables have three columns: the check id,
+what the check rejects, and the `spec_ref` string as the registry
+stores it.
 
-### Core requirements
+### TR-10-1: system checks
 
-| Check | Spec ref | Detail |
+TR-10-1 section 10.1 says: *"IPMX Senders shall include the ' IPMX'
+declaration in the a=fmtp clause of the SDP file."* The library
+requires at least one `a=fmtp` line per RTP media description to
+include the bare `IPMX` flag. A media description with no `a=fmtp` line
+at all is not reported by this check; the ST 2110 tier reports a
+missing `a=fmtp` for the encodings that require one.
+
+TR-10-1 section 10.2 says: *"the sender shall include the
+measuredpixclk, vtotal and htotal parameters in the a=fmtp clause of
+the SDP file."* Section 10.3 requires `measuredsamplerate` for audio.
+TR-10-9 section 10 extends both requirements to senders that are not
+converting from a baseband signal, so the library requires the
+parameters on every `raw` and `jxsv` video `a=fmtp` and on every `L16`,
+`L24`, and `AM824` audio `a=fmtp`. A media description with another
+encoding is not checked for them.
+
+TR-10-1 section 8.7 says: *"RTCP Sender Report packets shall be sent to
+the UDP destination port that corresponds to +1 from the port used by
+their corresponding media payload."* `a=rtcp-mux` (RFC 5761) requests
+RTP and RTCP on one port, which contradicts that requirement. An
+`a=rtcp:<port>` line (RFC 3605) must name the media port plus 1. The
+absence of `a=rtcp` is accepted. The ST 2110 tier accepts `a=rtcp-mux`
+and any `a=rtcp` port.
+
+| Id | The check rejects | `spec_ref` |
 | --- | --- | --- |
-| `a=group:FID` forbidden | TR-10-1 §10 | FID (Flow Identification) semantics shall not be used; any session-level `a=group:FID` is rejected |
-| At least one media block required | ST 2110-10:2022 §8.1 | Inherited from the ST 2110 tier (see below): an SDP with zero `m=` blocks describes no RTP stream |
-| Media port must be even and > 1024 | TR-10-2 §7 | "All IPMX Media streams shall have a UDP destination port value that is even and that is greater than 1024." Wording is repeated identically across every per-essence TR-10 (-2 §7, -3 §7, -4 §7, -11 §7, -12 §7); TR-10-2 cited as canonical. Applies to all non-USB RTP media blocks |
-| Media port must be ≤ 65535 | RFC 768 | Applies at the parser level to all `m=` blocks (rejected during parse, not validate) |
-| `a=extmap` format when present | RFC 5285 | `a=extmap` is **not required** at the IPMX baseline (M31 removed an unconditional requirement that had no spec basis). When present, every `a=extmap` value must be in RFC 5285 format: `entry-count[/direction] URI` where direction is `sendonly`, `recvonly`, `sendrecv`, or `inactive` and URI has a scheme (e.g. `urn:`, `http:`); ID must be 1–255; IDs must be unique within their scope. TR-10-13 §1.1.1 mandates `a=extmap` only when declaring RTP Extension Headers for PEP (privacy) |
-| PEP IV-Counter `a=extmap` direction must be `/sendonly` | TR-10-13 §20.1 | Applies when URI is `urn:ietf:params:rtp-hdrext:PEP-Full-IV-Counter` or `…:PEP-Short-IV-Counter` |
-| `IPMX` bare flag in every `a=fmtp` | TR-10-1 §10.1 | Required in all non-USB media blocks |
-| Audio encoding | TR-10-3 §8 / TR-10-12 | `L16`, `L24` (TR-10-3 PCM) or `AM824` (TR-10-12 AES3 transparent transport) |
-| `a=ptime` required for audio blocks | TR-10-3 §8 | Must be present on every IPMX audio media block |
-| `a=setup` enum | RFC 4145 §4 | `active`, `passive`, `actpass`, or `holdconn` (USB blocks further required to be `passive` per TR-10-14 §14) |
-| `a=connection` enum | RFC 4145 §4 | `new` or `existing` |
+| `tr-10-1.a.fmtp.marker-required` | An RTP media description with one or more `a=fmtp` lines, none of which has the bare `IPMX` flag. | TR-10-1 §10.1 |
+| `tr-10-1.a.fmtp.measuredpixclk-required` | A `raw` or `jxsv` `a=fmtp` line with no `measuredpixclk` parameter. | TR-10-1 §10.2 |
+| `tr-10-1.a.fmtp.measuredpixclk-invalid-value` | A `measuredpixclk` that is not a positive integer (hertz). | TR-10-1 §10.2 |
+| `tr-10-1.a.fmtp.vtotal-required` | A `raw` or `jxsv` `a=fmtp` line with no `vtotal` parameter. | TR-10-1 §10.2 |
+| `tr-10-1.a.fmtp.vtotal-invalid-value` | A `vtotal` that is not a positive integer (total lines per frame). | TR-10-1 §10.2 |
+| `tr-10-1.a.fmtp.htotal-required` | A `raw` or `jxsv` `a=fmtp` line with no `htotal` parameter. | TR-10-1 §10.2 |
+| `tr-10-1.a.fmtp.htotal-invalid-value` | An `htotal` that is not a positive integer (luminance sample periods per line). | TR-10-1 §10.2 |
+| `tr-10-1.a.fmtp.measuredsamplerate-required` | An `L16`, `L24`, or `AM824` `a=fmtp` line with no `measuredsamplerate` parameter. | TR-10-1 §10.3 |
+| `tr-10-1.a.fmtp.measuredsamplerate-invalid-value` | A `measuredsamplerate` that is not a positive integer (hertz). | TR-10-1 §10.3 |
+| `tr-10-1.a.group.fid-forbidden` | A session-level `a=group:FID` line. Section 10 says FID grouping *"shall not be used under this TR"*. | TR-10-1 §10 |
+| `tr-10-1.a.rtcp-mux.forbidden` | An `a=rtcp-mux` line in an RTP media description. | TR-10-1 §8.7 |
+| `tr-10-1.a.rtcp.port-must-be-media-port-plus-1` | An `a=rtcp:<port>` line whose port is not the media port plus 1. | TR-10-1 §8.7 |
 
-### Required IPMX fmtp parameters
+### TR-10-2: media port checks
 
-#### Baseband measurement params (TR-10-1 §10.2 / §10.3, TR-10-9 §10)
+TR-10-2 section 7 says: *"All IPMX Media streams shall have a UDP
+destination port value that is even and that is greater than 1024."*
+The same sentence appears in TR-10-3, TR-10-4, TR-10-11, and TR-10-12
+section 7; the registry cites TR-10-2. The checks apply to every RTP
+media description.
 
-Every IPMX video and audio media block's `a=fmtp` must include these parameters
-as positive integers. TR-10-1 specifies them for baseband senders; TR-10-9 §10
-extends the requirement to non-baseband IPMX senders (with the values reflecting
-the rtpmap signaling). The SDP-level validator therefore requires presence on
-every IPMX video/audio fmtp.
-
-| Parameter | Media type | Spec ref |
+| Id | The check rejects | `spec_ref` |
 | --- | --- | --- |
-| `measuredpixclk` | video | TR-10-1 §10.2 |
-| `vtotal` | video | TR-10-1 §10.2 |
-| `htotal` | video | TR-10-1 §10.2 |
-| `TP` | video | TR-10-TP-1 §13.2 |
-| `measuredsamplerate` | audio | TR-10-1 §10.3 |
+| `ipmx.m.port-must-be-even` | An RTP media description with an odd `m=` port. | TR-10-2 §7 |
+| `ipmx.m.port-must-exceed-1024` | An RTP media description with an `m=` port of 1024 or less. | TR-10-2 §7 |
 
-### Optional extensions (validated when present)
+### TR-10-5: HDCP key exchange (`a=hkep`) checks
 
-#### HDCP Key Exchange — `a=hkep` (TR-10-5 §10 / §17)
-
-`a=hkep` may appear at session level, at media level, or at both
-(TR-10-5 §17 IANA Registration: *"its Usage Level is 'session, media'"* —
-a session-level value acts as the default for media legs lacking an
-explicit `a=hkep`). TR-10-5 §10 separately requires *at least one*
-session-level `a=hkep` whenever the stream carries HDCP Content. When
-present at either level, the value is validated against:
+`a=hkep` may appear at the session level, at the media level, or at
+both (TR-10-5 section 17 registers the attribute with usage level
+*"session, media"*). TR-10-5 section 10 requires at least one
+session-level `a=hkep` when the stream is HDCP (High-bandwidth Digital
+Content Protection) content; whether a stream is HDCP content is not
+visible in the SDP, so the library checks the form of the attribute
+when it is present. The form is:
 
 ```text
 a=hkep:<port> IN <IP4|IP6> <unicast-address> <node-id> <port-id>
 ```
 
-| Field | Validation |
-| --- | --- |
-| `<port>` | Integer 0–65535 |
-| nettype | Must be `IN` |
-| addrtype | Must be `IP4` or `IP6` |
-| `<node-id>` | UUID format: `xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx` (hex digits) |
-| `<port-id>` | Five hex-digit pairs: `xx-xx-xx-xx-xx` |
+The port must be a positive integer in the RFC 8866 integer form; a
+port of `0` or with a leading zero does not match the attribute
+grammar, and the parse fails. Several `a=hkep` lines are accepted.
+`a=hkep` and `a=privacy` may both be present.
 
-Multiple `a=hkep` lines are allowed (ordered by Sender preference). HKEP and PEP
-may coexist in the same session.
+| Id | The check rejects | `spec_ref` |
+| --- | --- | --- |
+| `tr-10-5.a.hkep.nettype-invalid-value` | A network type other than `IN`. | TR-10-5 §10 |
+| `tr-10-5.a.hkep.addrtype-invalid-value` | An address type other than `IP4` or `IP6`. | TR-10-5 §10 |
+| `tr-10-5.a.hkep.node-id-invalid-form` | A node id that is not 32 hexadecimal digits in the form `xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx`. | TR-10-5 §10 |
+| `tr-10-5.a.hkep.port-id-invalid-form` | A port id that is not 10 hexadecimal digits in the form `xx-xx-xx-xx-xx`. | TR-10-5 §10 |
 
-#### Privacy Encryption Protocol — `a=privacy` (TR-10-13 §13)
+### TR-10-6: forward error correction parameter checks
 
-When present (at session or media level), the `a=privacy` attribute is validated:
+The checks run on every decomposed `a=fmtp` line, whatever the
+encoding. `FECPROFILE` is optional. The two
+latency parameters signal a FEC (forward error correction) companion
+stream and therefore require `FECPROFILE` on the same line.
+
+| Id | The check rejects | `spec_ref` |
+| --- | --- | --- |
+| `tr-10-6.a.fmtp.fecprofile-invalid-value` | A `FECPROFILE` value other than `profile-a`, the only IPMX FEC profile defined. | TR-10-6 §7.6 |
+| `tr-10-6.a.fmtp.fec-add-latency-video-invalid-value` | A `FEC_ADD_LATENCY_VIDEO` that is not a non-negative integer (microseconds). | TR-10-6 §7.6 |
+| `tr-10-6.a.fmtp.fec-add-latency-video-requires-fecprofile` | `FEC_ADD_LATENCY_VIDEO` without `FECPROFILE` on the same line. | TR-10-6 §7.6 |
+| `tr-10-6.a.fmtp.fec-add-latency-audio-invalid-value` | A `FEC_ADD_LATENCY_AUDIO` that is not a non-negative integer (microseconds). | TR-10-6 §7.6 |
+| `tr-10-6.a.fmtp.fec-add-latency-audio-requires-fecprofile` | `FEC_ADD_LATENCY_AUDIO` without `FECPROFILE` on the same line. | TR-10-6 §7.6 |
+
+### TR-10-10: HDMI InfoFrame (`a=infoframe`) checks
+
+TR-10-10 section 8 defines a session-level attribute of the form:
 
 ```text
-a=privacy: protocol=<p>; mode=<m>; iv=<iv>; key_generator=<kg>; key_version=<kv>; key_id=<kid>
+a=infoframe:<port> SSN=ST2110-41:<year>;DIT=100100
 ```
 
-A trailing semicolon after the last parameter is rejected (TR-10-13 §13).
+The attribute is optional in the SDP, because whether the stream has an
+HDMI (High-Definition Multimedia Interface) InfoFrame companion is not
+visible in the SDP. When the attribute is present, the library checks
+its level and its value. The port must be a positive integer. The
+`SSN` year is checked only as a run of digits.
 
-A session-level `a=privacy` is the default for each media-level `a=privacy`
-(TR-10-13 §13 line 859). For DUP-group consistency checks, the library compares
-the *effective* (media-or-session) value across legs — a leg without a
-media-level `a=privacy` inherits the session-level value.
+| Id | The check rejects | `spec_ref` |
+| --- | --- | --- |
+| `tr-10-10.a.infoframe.must-be-session-level` | An `a=infoframe` line inside a media description. | TR-10-10 §8 |
+| `tr-10-10.a.infoframe.ssn-invalid-form` | An `SSN` that is not `ST2110-41:` followed by digits. | TR-10-10 §8 |
+| `tr-10-10.a.infoframe.dit-invalid-value` | A `DIT` other than `100100`. | TR-10-10 §8 |
+| `tr-10-10.a.infoframe.port-must-match-media-plus-3` | An `a=infoframe` port that is not equal to some media description's `m=` port plus 3. | TR-10-10 §8 |
+| `tr-10-10.a.infoframe.duplicate-port` | Two session-level `a=infoframe` lines with the same port. | TR-10-10 §8 |
 
-| Parameter | Valid values |
-| --- | --- |
-| `protocol` | RTP blocks: `RTP` or `RTP_KV`. USB blocks: `USB_KV` (only) |
-| `mode` | RTP blocks: any of the 12 AES modes below. USB blocks: AAD variants only |
-| `iv` | 16 hex digits (64-bit) |
-| `key_generator` | 32 hex digits (128-bit) |
-| `key_version` | 8 hex digits (32-bit) |
-| `key_id` | 16 hex digits (64-bit) |
+### TR-10-13: privacy encryption (`a=privacy`) checks
 
-**Valid `mode` values (RTP blocks):**
-`AES-128-CTR`, `AES-256-CTR`, `AES-128-CTR_CMAC-64`, `AES-256-CTR_CMAC-64`,
-`AES-128-CTR_CMAC-64-AAD`, `AES-256-CTR_CMAC-64-AAD`,
-`ECDH_AES-128-CTR`, `ECDH_AES-256-CTR`, `ECDH_AES-128-CTR_CMAC-64`,
-`ECDH_AES-256-CTR_CMAC-64`, `ECDH_AES-128-CTR_CMAC-64-AAD`, `ECDH_AES-256-CTR_CMAC-64-AAD`
+TR-10-13 section 13 defines the attribute as a semicolon-separated list
+of `key=value` parameters, with a space permitted after each semicolon:
 
-On **USB blocks** (`m=application <port> TCP usb`), only the four AAD variants are accepted
-(TR-10-14 §14): `AES-128-CTR_CMAC-64-AAD`, `AES-256-CTR_CMAC-64-AAD`,
+```text
+a=privacy:protocol=<p>;mode=<m>;iv=<iv>;key_generator=<kg>;key_version=<kv>;key_id=<kid>
+```
+
+`a=privacy` may appear at the session level or at the media level. A
+session-level `a=privacy` is the default for a media description that
+has none. The library applies that default before comparing the legs
+of an `a=group:DUP` group.
+
+Permitted `mode` values, at every level and on every block type:
+`AES-128-CTR`, `AES-256-CTR`, `AES-128-CTR_CMAC-64`,
+`AES-256-CTR_CMAC-64`, `AES-128-CTR_CMAC-64-AAD`,
+`AES-256-CTR_CMAC-64-AAD`, `ECDH_AES-128-CTR`, `ECDH_AES-256-CTR`,
+`ECDH_AES-128-CTR_CMAC-64`, `ECDH_AES-256-CTR_CMAC-64`,
 `ECDH_AES-128-CTR_CMAC-64-AAD`, `ECDH_AES-256-CTR_CMAC-64-AAD`.
 
-#### USB transport — TR-10-14
+The `protocol` value is not restricted on an RTP block, except that
+`NULL` is forbidden. On a USB transport block the value must be
+`USB_KV` (see TR-10-14 below).
 
-Strictly identified by `m=application <port> TCP usb` (per TR-10-14 §14). USB blocks
-bypass ST 2110 media-block validation (they are not RTP streams) and additionally
-require:
-
-| Check | Spec ref |
-| --- | --- |
-| `a=setup:passive` is present (no other value accepted) | TR-10-14 §14 (RFC 4145) |
-| `a=privacy` (when present) uses `protocol=USB_KV` and an AAD mode | TR-10-14 §14 |
-| RTP-specific attributes (`a=rtpmap`, `a=fmtp`, `a=mediaclk`, `a=ts-refclk`) are rejected — RFC 4145 transport has no RTP layer | TR-10-14 §14 (RFC 4145) |
-
-Other non-RTP application blocks (e.g. `m=application <port> TCP/MSRP *`) bypass
-ST 2110 RTP-specific checks but are not subject to the TR-10-14 USB rules.
-
-#### HDMI InfoFrame — `a=infoframe` (TR-10-10 §8)
-
-`a=infoframe` is a **session-level** attribute; media-level placement is
-rejected. When present, the value is validated:
-
-```text
-a=infoframe:<port> SSN=ST2110-41:YYYY;DIT=100100
-```
-
-| Field | Validation |
-| --- | --- |
-| `<port>` | Integer; SHALL equal some media block's UDP port + 3 (TR-10-10 §8). Multiple `a=infoframe` lines must use distinct ports. |
-| `SSN` | Must be `ST2110-41:YYYY` (4-digit year) |
-| `DIT` | Must be exactly `100100` (HDMI InfoFrame Data Item Type) |
-
-Absence is fine (the attribute is optional).
-
-#### Bit rate — `b=AS` (TR-10-7 §11)
-
-When present on an RTP media block, the `b=AS` value (kbps) must be a positive integer. This is the maximum target bit rate of the stream including IP/UDP/RTP headers. Required for VBR compressed video flows (TR-10-7).
-
-#### FEC — `FECPROFILE` and latency parameters (TR-10-6 §7.6)
-
-When the `FECPROFILE` key appears in a media block's `a=fmtp`, the library validates:
-
-| Parameter | Validation |
-| --- | --- |
-| `FECPROFILE` | Must be `profile-a` |
-| `FEC_ADD_LATENCY_VIDEO` | Non-negative integer (microseconds); `FECPROFILE` must also be present |
-| `FEC_ADD_LATENCY_AUDIO` | Non-negative integer (microseconds); `FECPROFILE` must also be present |
-
-#### ST 2022-7 DUP group — privacy consistency (TR-10-13 §13)
-
-When `a=group:DUP` is present, the library checks that all legs in the group
-carry **identical** `a=privacy` values. Inheritance is applied first: a leg
-without a media-level `a=privacy` inherits the session-level value (TR-10-13
-§13 line 859) before legs are compared.
-
-#### RTCP port convention (TR-10-1 §8.7)
-
-TR-10-1 §8.7 mandates that RTCP Sender Reports are sent to media port + 1. The library
-checks:
-
-| Check | Spec ref | Result |
+| Id | The check rejects | `spec_ref` |
 | --- | --- | --- |
-| `a=rtcp-mux` present on a media block | TR-10-1 §8.7 + RFC 5761 | Rejected — TR-10-1 §8.7 mandates port+1; RFC 5761 defines `rtcp-mux` as RTP/RTCP on the same port, which contradicts the §8.7 "shall" |
-| `a=rtcp:<port>` present but `port ≠ media-port + 1` | TR-10-1 §8.7 | Rejected |
-| No `a=rtcp` present | — | Accepted (implicit port+1 convention) |
+| `tr-10-13.a.privacy.protocol-required` | An `a=privacy` with no `protocol` parameter. | TR-10-13 §13 |
+| `tr-10-13.a.privacy.mode-required` | An `a=privacy` with no `mode` parameter. | TR-10-13 §13 |
+| `tr-10-13.a.privacy.iv-required` | An `a=privacy` with no `iv` parameter. | TR-10-13 §13 |
+| `tr-10-13.a.privacy.key_generator-required` | An `a=privacy` with no `key_generator` parameter. | TR-10-13 §13 |
+| `tr-10-13.a.privacy.key_version-required` | An `a=privacy` with no `key_version` parameter. | TR-10-13 §13 |
+| `tr-10-13.a.privacy.key_id-required` | An `a=privacy` with no `key_id` parameter. | TR-10-13 §13 |
+| `tr-10-13.a.privacy.protocol-null-forbidden` | `protocol=NULL`. Section 13 says to omit the attribute instead. | TR-10-13 §13 |
+| `tr-10-13.a.privacy.mode-invalid-value` | A `mode` outside the twelve values above. `NULL` is therefore rejected. | TR-10-13 §20.1 (per §13 'NULL mode shall not be used') |
+| `tr-10-13.a.privacy.iv-invalid-form` | An `iv` that is not 16 hexadecimal digits (64 bits) with no spaces. | TR-10-13 §13 |
+| `tr-10-13.a.privacy.key_generator-invalid-form` | A `key_generator` that is not 32 hexadecimal digits (128 bits). | TR-10-13 §13 |
+| `tr-10-13.a.privacy.key_version-invalid-form` | A `key_version` that is not 8 hexadecimal digits (32 bits). | TR-10-13 §13 |
+| `tr-10-13.a.privacy.key_id-invalid-form` | A `key_id` that is not 16 hexadecimal digits (64 bits). | TR-10-13 §13 |
+| `tr-10-13.a.privacy.trailing-semicolon` | An `a=privacy` line that ends with a semicolon. | TR-10-13 §13 |
+| `tr-10-13.a.privacy.dup-legs-must-match` | Two legs of an `a=group:DUP` group whose effective `a=privacy` parameters differ. The parameters are compared by key and value; order is ignored. Section 13 says: *"When using redundancy, as in ST 2022-7, the legs shall use the same privacy encryption parameters."* | TR-10-13 §13 |
+| `tr-10-13.a.extmap.pep-direction-must-be-sendonly` | An `a=extmap` line, at either level, whose URI is `urn:ietf:params:rtp-hdrext:PEP-Full-IV-Counter` or `urn:ietf:params:rtp-hdrext:PEP-Short-IV-Counter` and whose direction is not `sendonly`. `a=extmap` itself is not required. | TR-10-13 §20.1 |
 
-These checks apply at the **IPMX tier only**. ST 2110 mode accepts `a=rtcp-mux` and any
-`a=rtcp` value.
+### TR-10-14: USB transport block checks
+
+A USB transport block is a media description of the exact form
+`m=application <port> TCP usb`. It is not an RTP stream, so the ST 2110
+per-stream checks and the IPMX RTP checks (the `IPMX` flag, the port
+rule, the RTCP port rule) do not apply to it. TR-10-14 section 14 says
+the SDP *"shall follow RFC 4145 with the following restrictions"*;
+RFC 4145 section 3 requires the `a=setup` attribute, and TR-10-14
+section 14 requires its value to be `passive`. The library does not
+check `a=setup` on any other block, and it does not reject RTP
+attributes on a USB block. Another non-RTP `m=application` block, for
+example `TCP/MSRP`, is not subject to the TR-10-14 checks.
+
+| Id | The check rejects | `spec_ref` |
+| --- | --- | --- |
+| `tr-10-14.usb.setup-required` | A USB transport block with no `a=setup` line. | TR-10-14 §14 (per RFC 4145 §3) |
+| `tr-10-14.usb.setup-must-be-passive` | A USB transport block whose `a=setup` value is not `passive`. | TR-10-14 §14 |
+| `tr-10-14.a.privacy.usb-protocol-must-be-usb_kv` | An `a=privacy` on a USB transport block whose `protocol` is not `USB_KV`. | TR-10-14 §14 |
 
 ---
 
-## Serialization
+## Serialization to SDP text
 
-`doc:to_sdp()` produces RFC 8866-compliant SDP text. Field order follows
-RFC 8866 §5 exactly:
+`doc:to_sdp()` renders the doc as RFC 8866 SDP text. The field order
+follows RFC 8866 section 5:
 
 ```text
 v=
@@ -1470,82 +1870,93 @@ s=
 ]*
 ```
 
-Line endings are `\r\n` per RFC 8866 §9 ABNF. The serializer never emits
-optional fields that are `nil`. `k=` (RFC 4566 §5.12) is obsolete per
-RFC 8866 §5 and is never emitted.
+Line endings are CRLF, per the RFC 8866 section 9 ABNF. The serializer
+omits every optional field that is `nil`. The `k=` line (RFC 4566
+section 5.12) is obsolete in RFC 8866 section 5 and is never emitted.
+The parser accepts a `k=` line in its RFC 8866 position and discards
+it, so an input with a `k=` line does not round-trip byte for byte.
 
-**Serializer / validator separation.** `to_sdp()` checks only structural
-completeness (the fields RFC 8866 / per-attribute grammar mark as
-required, so a renderable line can be produced) and emits faithfully on
-success. Value-form correctness, enum membership, and cross-section
-invariants are `doc:validate()`'s job. A missing-required field is the
-only thing `to_sdp()` errors on; a present-but-wrong field is stringified
-and emitted (round-trip will then fail — that's the developer's signal).
-This separation lets a developer build a doc piecemeal, render at any
-point to see *structural* gaps, and validate when they think they're done.
+### Serializer and validator separation
 
-**Round-trip invariant.** Parsing valid text → serializing → re-parsing
-yields a doc deep-equal to the first, and the second serialization is
-byte-identical to the first. This is exercised across every fixture in
-`examples/{generic,st2110,ipmx}/valid/` by `spec/roundtrip_spec.lua`.
+`to_sdp()` checks only structural completeness: the fields that
+RFC 8866 and the per-attribute grammar mark as required, so that a line
+can be rendered. On success it emits the fields as they are. Value-form
+correctness, membership in a value set, and cross-section invariants
+are checked by `doc:validate()`, not by the serializer. A missing
+required field is the only thing `to_sdp()` reports; a present field
+with a wrong value is converted to a string and emitted, and the
+round trip then fails at `validate()`, which is the signal to the
+developer. This separation lets a developer build a doc in steps,
+render it at any point to see the structural gaps, and validate it when
+the doc is complete.
 
-**Doc-shape contracts the serializer relies on.** `session.time_descriptions`
-is a list of `{ start, stop, repeats }` entries (one per `t=` block);
-`session.time_zones` is a list of `{ adjustment_time, offset }` pairs.
-Known compound attributes (`rtpmap`, `fmtp`, `ts-refclk`, `mediaclk`,
-`group`, `source-filter`, etc.) are read from their decomposed fields —
-there is no fallback to a stored `attr.value` string for known names.
-Unknown / forward-compat attributes keep the `{name, value}` carrier
-shape.
+### Round-trip invariant
 
-## Test Suite Organization
+Parsing valid text, serializing the doc, and parsing the result again
+yields a doc that is deep-equal to the first, and the second
+serialization is byte-identical to the first. `spec/roundtrip_spec.lua`
+checks this for every fixture in `examples/{generic,st2110,ipmx}/valid/`.
 
-The hermetic test suite (`busted spec/`) splits along a single axis:
-**what kind of code each test exercises.** Every `it` block falls into
-one of four buckets.
+### Doc-shape contracts the serializer relies on
 
-| File | Bucket | What it tests |
+`session.time_descriptions` is a list of `{ start, stop, repeats }`
+entries, one per `t=` line. Each `repeats` entry needs `interval`,
+`duration`, and at least one entry in `offsets`. `session.time_zones`
+is a list of `{ adjustment_time, offset }` pairs. A media block needs
+`media`, `port`, `proto`, and at least one entry in `fmts`. Every known
+compound attribute (`rtpmap`, `fmtp`, `ts-refclk`, `mediaclk`, `group`,
+`source-filter`, and the others listed in
+[Parsed Table Structure](#parsed-table-structure)) is rendered from its
+decomposed fields; there is no fallback to a stored `attr.value` string
+for a known name, and a known-name attribute that lacks a required
+field makes `to_sdp()` return `nil, err`. Unknown attribute names keep
+the `{name, value}` shape and render as `a=<name>` or `a=<name>:<value>`.
+
+The three IPMX attributes (`infoframe`, `hkep`, `privacy`) have
+renderers for their decomposed shapes. A document parsed in `"sdp"` or
+`"st2110"` mode has those attributes in the generic shape, and the
+generic renderer reproduces them unchanged.
+
+---
+
+## Test suite organization
+
+The hermetic test suite (`busted spec/`) has 1278 tests at the time of
+writing. The files are organized by what each test exercises: a
+standard's clauses, the public library and command-line surface, or an
+internal helper.
+
+| File | Group | What it tests |
 | --- | --- | --- |
-| `spec/grammar_base_spec.lua` | **standards** | RFC 8866 base SDP — every leaf rule, every soft- and semantic-syntactic finding, doc shape. |
-| `spec/grammar_st2110_spec.lua` | **standards** | SMPTE ST 2110 overrides + per-block / cross-section checks (-10, -20, -21, -22, -30, -31, -40, -41). |
-| `spec/grammar_ipmx_spec.lua` | **standards** | VSF TR-10 / IPMX overrides + per-block / cross-section checks (TR-10-1 through TR-10-14). |
-| `spec/grammar_compose_spec.lua` | **standards** | Composition mechanism: `base.extend` parent/child rule merging, semantic-check inheritance, distinct grammars. |
-| `spec/grammar_addresses_spec.lua` | **standards** | IPv4 / IPv6 / hostname LPeg primitives in `parse_sdp.grammar.addresses`. |
-| `spec/grammar_patterns_spec.lua` | **standards** | Shared numeric value-form patterns in `parse_sdp.grammar.patterns`. |
-| `spec/roundtrip_spec.lua` | **standards** | Doc-shape round-trip per attribute + full-fixture parse → serialize → re-parse deep-equal across `examples/{generic,st2110,ipmx}/valid/*.sdp`. |
-| `spec/error_registry_spec.lua` | **standards** | Error-registry schema, severity resolution, `validate_policy`, `record()` semantics, deepest-failure tracker. |
-| `spec/library_spec.lua` | **library API** | Public surface — `sdp.parse(text, mode, opts)`, `sdp.new`, `sdp.checks` / `sdp.default_policy`, `doc:validate` / `doc:is_*` / `doc:to_sdp` / `doc:to_json` / `doc:findings` / `doc:warnings` / `doc:errors`. Policy validation, mode dispatch, accessor shape. Not tied to any single spec clause. |
-| `spec/cli_spec.lua` | **library API** | The CLI surface — `parse_sdp to_json` / `to_sdp` subcommands, exit codes, `--help`, `--pretty`, `--mode`. |
-| `spec/errors_spec.lua` | **internal helpers** | The 1.0 error formatter compatibility surface (`errors.new` / `errors.format`). Internal-only; white-box. |
-| `spec/support.lua` | (not a spec) | Shared spec helpers: `finding_for(ctx, id)`, `TIMING_*` fixture constants. |
+| `spec/grammar_base_spec.lua` | standards | RFC 8866 base SDP: every leaf rule, every soft-syntactic and semantic finding, and the doc shape. Each test cites the clause. |
+| `spec/grammar_st2110_spec.lua` | standards | SMPTE ST 2110 overrides and per-block and cross-section checks (parts -10, -20, -21, -22, -30, -31, -40, -41). |
+| `spec/grammar_ipmx_spec.lua` | standards | VSF TR-10 / IPMX overrides and per-block and cross-section checks (TR-10-1 through TR-10-14). |
+| `spec/roundtrip_spec.lua` | standards | Every base and IPMX attribute renderer, and the parse, serialize, and re-parse round trip over `examples/{generic,st2110,ipmx}/valid/*.sdp`. |
+| `spec/examples_spec.lua` | standards | Every file under `examples/<tier>/valid/` passes its tier, and every file under `examples/<tier>/invalid/` fails its tier. |
+| `spec/library_spec.lua` | library API | The public surface: `sdp.parse(text, mode, opts)`, `sdp.new`, `sdp.checks`, `sdp.default_policy`, the accessors, and the doc methods. Policy validation, mode dispatch, and finding access. |
+| `spec/cli_spec.lua` | library API | The command-line tool: `validate`, `diagnose`, `to_json`, `to_sdp`, and `checks`; `--mode`, `--pretty`, `--all-findings`, `--help`; exit codes. |
+| `spec/grammar_compose_spec.lua` | internal helpers | The composition mechanism: `base.extend` parent and child rule merging, semantic-check inheritance, and distinct grammars per tier. |
+| `spec/grammar_addresses_spec.lua` | internal helpers | The IPv4, IPv6, and host-name LPEG patterns in `parse_sdp.grammar.addresses`, with multicast expansion and canonicalization. |
+| `spec/grammar_patterns_spec.lua` | internal helpers | The shared numeric value-form patterns in `parse_sdp.grammar.patterns`. |
+| `spec/grammar_bitops_spec.lua` | internal helpers | The bitwise helper modules: native operators on Lua 5.3 and later, and the arithmetic implementation on Lua 5.1 and 5.2. |
+| `spec/error_registry_spec.lua` | internal helpers | The registry schema, severity resolution, `validate_policy`, `record()`, and the deepest-failure tracker. |
+| `spec/errors_spec.lua` | internal helpers | The error formatter and the `errors.new` table shape. |
+| `spec/support.lua` | (not a spec) | Shared helpers: `finding_for(ctx, id)` and the `TIMING_*` fixture constants. |
 
-The standards-tied files cover every grounded check the grammar tier
-enforces — each test cites the relevant clause. The library/CLI tests
-exercise the public surface without asserting against a specific spec
-clause. The internal-helper file covers a 1.0-compatibility shim
-slated for removal in Phase 10.A.
+The standards files cover every check that the grammar tier enforces,
+and each test names the clause it tests. The library and command-line
+files exercise the public surface without asserting against a clause.
 
-### Running tests
+### Running the tests
 
 ```sh
-busted spec/                            # full hermetic suite
+busted spec/                            # the full hermetic suite
 busted spec/grammar_base_spec.lua       # one file
-busted spec/library_spec.lua            # just the library API tests
+busted spec/library_spec.lua            # the library API tests only
 ```
-
-### Legacy 1.0 tests (`spec_legacy_1.0/`)
-
-The four spec files tied to the 1.0 parser's doc shape and over-strict
-checks live in `spec_legacy_1.0/`:
-`sdp_spec.lua`, `st2110_spec.lua`, `ipmx_spec.lua`, `grammar_spec.lua`.
-They assert against `session.timing.start/stop` (the 1.0 shape; the new
-shape is `session.time_descriptions[]`) and against three documented
-1.0-over-strict drops. They are **not** part of `busted spec/`; they
-remain on disk as the Phase 10.B coverage-parity reference. Phase 10.A
-will delete them along with the 1.0 implementation.
 
 ### Conformance suite (`spec_conformance/`)
 
-There is also an opt-in conformance suite under `spec_conformance/` that
-downloads pinned AMWA fixtures and parses them; see that directory's
-README for details.
+An opt-in suite under `spec_conformance/` downloads pinned AMWA
+(Advanced Media Workflow Association) fixtures and parses them. The
+README in that directory describes how to run it.
