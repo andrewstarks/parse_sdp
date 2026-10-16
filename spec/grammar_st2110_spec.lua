@@ -528,8 +528,11 @@ describe("ST 2110-20 raw video fmtp — required parameters", function()
     assert.is_nil(doc)
     -- The first missing-param finding identifies the failure mode; the
     -- semantic check records the first absent key in §7.2 order.
-    assert.is_not_nil(finding_for(ctx,
-      "st2110-20.a.fmtp.sampling-required"))
+    local f = finding_for(ctx, "st2110-20.a.fmtp.sampling-required")
+    assert.is_not_nil(f)
+    -- No fmtp line exists to point at; the finding names the attribute
+    -- list the fmtp belongs in so consumers can place it.
+    assert.equal("media[0].attributes[fmtp:pt=96]", f.field_path)
   end)
 end)
 
@@ -1424,8 +1427,9 @@ describe("ST 2110-22 jxsv fmtp — required parameters", function()
     assert.is_nil(doc)
     -- The first missing-param finding identifies the failure mode
     -- (width is first in ORDER).
-    assert.is_not_nil(finding_for(ctx,
-      "st2110-22.a.fmtp.width-required"))
+    local f = finding_for(ctx, "st2110-22.a.fmtp.width-required")
+    assert.is_not_nil(f)
+    assert.equal("media[0].attributes[fmtp:pt=96]", f.field_path)
   end)
 end)
 

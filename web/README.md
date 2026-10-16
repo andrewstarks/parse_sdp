@@ -25,6 +25,8 @@ Pure logic (no DOM, unit-tested under `test/`):
 - `findings.js` — collapses the three per-tier finding lists into one de-duplicated table (same `id` + `line` + `col` + `field_path`) tagged with the tiers that raised each finding; tier summaries; filtering.
 - `diff.js` — LCS line diff for the output view.
 - `coerce.js` — type-preserving coercion between input text and doc values (a number field stays a number; an emptied field becomes absent).
+- `line_map.js` — which document field each SDP line produced (the parser's fill order), so line-anchored findings can be shown on the editor field too.
+- `field_findings.js` — maps report findings onto editor fields: resolves each `field_path` (missing fields attach to the nearest existing ancestor, flagged), aggregates error/warning counts up every ancestor for card badges.
 - `checks.js` — policy helpers: grouping the registry by id prefix, sanitising stored overrides against the live registry, effective-severity lookup, silenced-check count.
 - `lua_literal.js` — Lua table-constructor reader (used by the mock; the real engine runs `from_lua` in Lua) and `toLuaLiteral(doc)`, the writer behind the "Lua table literal" output format.
 - `examples.js` — turns the build's `examples/index.json` manifest into labelled option groups for the examples dropdown (falls back to the three bundled fixtures without a build).
@@ -36,7 +38,8 @@ Thin DOM modules:
 - `input.js` — paste area, drop zone, file picker, examples dropdown.
 - `nav.js` — sticky-bar section navigation: hamburger on narrow screens, `--bar-h` for scroll offsets, current-section marking via IntersectionObserver.
 - `report.js` — tier cards, de-duplicated and grouped findings list with filters, a per-row severity control for the check behind each finding, the "N checks silenced" notice, and the numbered source view.
-- `editor.js` — generic structured editor over the document table.
+- `editor.js` — generic structured editor over the document table; findings are shown in place (a summary block first — counts, collapsible, persisted — then card badges, field highlights, stacked expandable disclosures with a severity control and a reserved action slot), re-applied without re-rendering after each validate.
+- `severity_control.js` — the per-finding severity `<select>` shared by report rows and editor disclosures.
 - `output.js` — the document as SDP / JSON / Lua table literal: the sticky bar's format selector + Download + Copy, and the read-only Output section (same selector, Copy, rendered text; diff markers in the SDP view only).
 - `policy.js` — one severity-override store (persisted in `localStorage`) behind the popout panel anchored to the report toolbar (filter, grouped list with a select per check, count, reset) and the row controls in `report.js`; every change re-runs the analysis.
 - `dom.js` — element builder (no `innerHTML` anywhere).

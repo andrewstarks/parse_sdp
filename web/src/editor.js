@@ -7,6 +7,9 @@
 import { h, replace, setText, debounce } from "./dom.js";
 import { kindOf, coerceScalar, coerceToken, emptyOfKind, scalarToText } from "./coerce.js";
 import { getAt, setAt, pathToString, resolvePath, clone } from "./docpath.js";
+import { attachFindings, countsLabel, shortMessage, summaryEntries } from "./field_findings.js";
+import { severityControl } from "./severity_control.js";
+import { locationLabel } from "./findings.js";
 
 // Keys whose arrays hold scalars even when empty (dkjson encodes {} as []).
 const SCALAR_LISTS = new Set(["fmts", "emails", "phones", "offsets", "src_addresses", "tags"]);
@@ -99,12 +102,22 @@ function titleOf(key, item, index) {
   }
 }
 
-export function initEditor(root, { onChange }) {
+// policy: the store from policy.js, for the per-finding severity controls.
+export function initEditor(root, { onChange, policy }) {
   const body = root.querySelector("#editor-root");
   const banner = root.querySelector("#serialize-error");
+  const summary = root.querySelector("#editor-summary");
+  const summaryCounts = root.querySelector("#editor-summary-title");
+  const summaryToggle = root.querySelector("#editor-summary-toggle");
+  const summaryList = root.querySelector("#editor-summary-list");
+  const SUMMARY_KEY = "parse_sdp.editor.summary.v1";
   let doc = null;
   let openState = new Map();
   let uid = 0;
+  let lastRows = [];                 // rows from the last markFindings, re-applied after a re-render
+  let lastMarkOptions = {};
+  let lastSerializeError = null;
+  const expandedFindings = new Set(); // disclosure keys kept open across updates
   const notify = debounce(() => onChange?.(doc), 150);
 
   const nextId = () => `ed-${++uid}`;
@@ -307,12 +320,14 @@ export function initEditor(root, { onChange }) {
   function rerender() {
     captureOpenState();
     render(doc);
+    applyMarks();
   }
 
   function render(nextDoc) {
     doc = nextDoc;
     if (!doc || typeof doc !== "object") {
       replace(body, h("p", { class: "empty" }, "No document to edit. Analyze an input first."));
+      summary.hidden = true;
       return;
     }
     replace(body, h("div", { dataset: { path: "" } }, renderObjectBody(doc, [], { level: 0 })));
@@ -331,65 +346,227 @@ export function initEditor(root, { onChange }) {
     el.scrollIntoView({ block: "center", behavior: "smooth" });
   }
 
-  // fieldPath: grammar or serializer field_path string.
-  function highlightPath(fieldPath) {
+  // ── findings on fields ───────────────────────────────────────────────
+  // Where a disclosure for `el` goes: inside a row (under the input), at
+  // the top of a card body / list / params container, or after a token's
+  // list label.
+  function disclosureHost(el) {
+    if (el.classList.contains("token")) el = el.closest(".list");
+    if (el.tagName === "DETAILS") return { host: el.querySelector(":scope > .card-body"), first: true };
+    if (el.classList.contains("list") || el.classList.contains("params")) return { host: el, afterLabel: true };
+    if (el.dataset.path === "") return { host: el, first: true };
+    return { host: el, first: false };
+  }
+
+  function insertDisclosure(el, node) {
+    const { host, first, afterLabel } = disclosureHost(el);
+    if (!host) return;
+    if (afterLabel) {
+      const label = host.querySelector(":scope > .list-label, :scope > .params-label");
+      const anchor = host.querySelector(":scope > .field-findings");
+      if (anchor) anchor.append(node);
+      else {
+        const wrap = h("div", { class: "field-findings" }, node);
+        if (label) label.after(wrap); else host.prepend(wrap);
+      }
+      return;
+    }
+    let wrap = host.querySelector(":scope > .field-findings");
+    if (!wrap) {
+      wrap = h("div", { class: "field-findings" });
+      if (first) host.prepend(wrap); else host.append(wrap);
+    }
+    wrap.append(node);
+  }
+
+  // The disclosure: one-line summary that expands to the full finding.
+  // `actions` is the reserved slot for a future per-finding "Fix" button.
+  function disclosure({ key, severity, id, message, spec_ref, location, missing, fieldPath, control, marker }) {
+    const bodyId = nextId();
+    const open = expandedFindings.has(key);
+    const details = h("div", { class: "fdisc-body", id: bodyId, hidden: !open },
+      h("p", { class: "fdisc-msg" }, message ?? ""),
+      h("p", { class: "fdisc-meta" },
+        spec_ref ? h("span", {}, spec_ref) : null,
+        location ? h("span", { class: "mono" }, location) : null,
+        fieldPath && missing ? h("span", { class: "mono" }, `expected at ${fieldPath}`) : null,
+        !fieldPath && missing ? h("span", {}, "the engine reported no field for this finding") : null),
+      h("div", { class: "fdisc-foot" },
+        control ? h("label", { class: "fdisc-sev" }, "Severity ", control) : null,
+        h("span", { class: "fdisc-actions", dataset: { checkId: id ?? "" }, "aria-hidden": "true" })));
+    const toggle = h("button", {
+      type: "button", class: "fdisc-summary", "aria-expanded": String(open), "aria-controls": bodyId,
+      on: { click: () => setDisclosure(toggle, details, key, toggle.getAttribute("aria-expanded") !== "true") },
+    },
+      h("span", { class: `fdisc-glyph sev-${severity}`, "aria-hidden": "true" }, severity === "error" ? "✗" : "!"),
+      h("span", { class: "visually-hidden" }, severity === "error" ? "error: " : "warning: "),
+      missing || (marker && marker.startsWith("line ")) ? h("span", { class: `badge ${missing ? "missing" : "tier"}` }, marker ?? "missing") : null,
+      h("span", { class: "fdisc-id" }, id ?? "serializer"),
+      h("span", { class: "fdisc-short" }, shortMessage(message)));
+    return h("div", { class: `fdisc sev-${severity}${missing ? " is-missing" : ""}`, dataset: { key, checkId: id ?? "" } }, toggle, details);
+  }
+
+  function setDisclosure(toggle, details, key, open) {
+    toggle.setAttribute("aria-expanded", String(open));
+    details.hidden = !open;
+    if (open) expandedFindings.add(key); else expandedFindings.delete(key);
+    updateExpandAll(toggle.closest("details.card"));
+  }
+
+  function setAllIn(card, open) {
+    for (const d of card.querySelectorAll(".fdisc")) {
+      setDisclosure(d.querySelector(".fdisc-summary"), d.querySelector(".fdisc-body"), d.dataset.key, open);
+    }
+  }
+
+  // Refresh the "Expand findings" button of `card` and every enclosing
+  // card (a media card's button reflects disclosures in its attribute cards).
+  function updateExpandAll(card) {
+    for (let c = card; c; c = c.parentElement?.closest("details.card")) {
+      const btn = c.querySelector(":scope > summary .expand-findings");
+      if (!btn) continue;
+      const all = [...c.querySelectorAll(".fdisc-summary")];
+      const anyClosed = all.some((t) => t.getAttribute("aria-expanded") !== "true");
+      btn.setAttribute("aria-expanded", String(!anyClosed && all.length > 0));
+      setText(btn, anyClosed ? "Expand findings" : "Collapse findings");
+    }
+  }
+
+  function clearMarks() {
+    for (const el of body.querySelectorAll(".finding-marks, .field-findings, .expand-findings")) el.remove();
+    for (const el of body.querySelectorAll(".has-finding, .has-error")) el.classList.remove("has-finding", "sev-error", "sev-warn", "has-error");
+  }
+
+  // Applies lastRows + lastSerializeError to the current DOM without
+  // re-rendering fields, so an input being edited keeps focus.
+  function applyMarks() {
+    clearMarks();
     if (!doc) return;
-    const { path } = resolvePath(doc, fieldPath);
+    const { attachments, counts } = attachFindings(doc, lastRows, lastMarkOptions);
+    for (const [pathStr, c] of counts) {
+      const card = body.querySelector(`details.card[data-path="${CSS.escape(pathStr)}"]`);
+      if (!card) continue;
+      const tools = card.querySelector(":scope > summary .card-tools");
+      tools.before(h("span", { class: `finding-marks badge ${c.worst === "error" ? "error" : "warn"}`, title: countsLabel(c) }, countsLabel(c)));
+      tools.prepend(h("button", {
+        type: "button", class: "ghost small expand-findings", "aria-expanded": "false",
+        on: { click: (e) => { e.preventDefault(); e.stopPropagation(); const btn = e.currentTarget; setAllIn(card, btn.getAttribute("aria-expanded") !== "true"); } },
+      }, "Expand findings"));
+    }
+    for (const [pathStr, list] of attachments) {
+      const el = body.querySelector(`[data-path="${CSS.escape(pathStr)}"]`);
+      if (!el) continue;
+      const worst = list.some((a) => a.finding.severity === "error") ? "error" : "warn";
+      el.classList.add("has-finding", `sev-${worst}`);
+      for (const a of list) {
+        insertDisclosure(el, disclosure({
+          key: `${pathStr}|${a.key}`, severity: a.finding.severity, id: a.finding.id ?? a.finding.code,
+          message: a.finding.message, spec_ref: a.finding.spec_ref, location: locationLabel(a.finding),
+          missing: a.missing, fieldPath: a.fieldPath, marker: a.unlocated ? "no location" : a.byLine ? `line ${a.finding.line}` : "missing",
+          control: severityControl(policy, a.finding.id),
+        }));
+      }
+    }
+    if (lastSerializeError) applySerializeError(lastSerializeError);
+    for (const card of body.querySelectorAll("details.card")) updateExpandAll(card);
+    renderSummary(attachments, counts);
+  }
+
+  function applySerializeError(err) {
+    if (!err.field_path) return;
+    const { path, exact } = resolvePath(doc, err.field_path);
     const el = findElement(path);
     if (!el) return;
-    reveal(el);
-    el.classList.add("is-target");
-    setTimeout(() => el.classList.remove("is-target"), 1800);
-    el.querySelector("input, select")?.focus({ preventScroll: true });
+    el.classList.add("has-finding", "sev-error", "has-error");
+    insertDisclosure(el, disclosure({
+      key: `serialize|${err.field_path}`, severity: "error", id: null, message: err.message, spec_ref: err.spec_ref,
+      missing: !exact, fieldPath: err.field_path, marker: "cannot serialize", control: null,
+    }));
+    const card = el.closest("details.card");
+    if (card && !card.querySelector(":scope > summary .finding-marks")) {
+      card.querySelector(":scope > summary .card-tools").before(h("span", { class: "finding-marks badge error" }, "cannot serialize"));
+    }
+  }
+
+  // ── findings summary block (first thing in the section) ─────────────
+  function summaryOpen() {
+    try { return localStorage.getItem(SUMMARY_KEY) !== "collapsed"; } catch { return true; }
+  }
+  function setSummaryOpen(open) {
+    summaryToggle.setAttribute("aria-expanded", String(open));
+    summaryList.hidden = !open;
+    setText(summaryToggle, open ? "Collapse" : "Expand");
+    try { localStorage.setItem(SUMMARY_KEY, open ? "expanded" : "collapsed"); } catch { /* no persistence */ }
+  }
+  summaryToggle.addEventListener("click", () => setSummaryOpen(summaryToggle.getAttribute("aria-expanded") !== "true"));
+
+  function renderSummary(attachments, counts) {
+    if (!doc) {
+      summary.hidden = true;
+      return;
+    }
+    summary.hidden = false;
+    const c = counts.get("") ?? { errors: 0, warnings: 0 };
+    replace(summaryCounts,
+      c.errors || c.warnings
+        ? [c.errors ? h("span", { class: "n-err" }, `${c.errors} error${c.errors === 1 ? "" : "s"}`) : null,
+           c.errors && c.warnings ? " · " : null,
+           c.warnings ? h("span", { class: "n-warn" }, `${c.warnings} warning${c.warnings === 1 ? "" : "s"}`) : null]
+        : "No findings in the document");
+    const entries = summaryEntries(attachments);
+    replace(summaryList, entries.map((a) => {
+      const f = a.finding;
+      const target = a.unlocated ? "" : a.byLine ? a.pathStr : a.fieldPath;
+      const locText = a.unlocated ? "no location" : a.byLine ? `${a.pathStr} (line ${f.line})` : a.missing ? `${a.fieldPath} (missing)` : a.fieldPath;
+      return h("li", { class: `sev-${f.severity}` },
+        h("span", { class: `fdisc-glyph sev-${f.severity}`, "aria-hidden": "true" }, f.severity === "error" ? "✗" : "!"),
+        h("span", {}, h("span", { class: "visually-hidden" }, f.severity === "error" ? "error: " : "warning: "),
+          h("span", { class: "es-id" }, f.id ?? f.code ?? ""), " ", h("span", { class: "es-msg" }, shortMessage(f.message))),
+        h("button", { type: "button", class: "es-loc", title: "Go to this field", on: { click: () => highlightPath(target) } }, locText));
+    }));
+    setSummaryOpen(summaryOpen());
+  }
+
+  // rows: de-duplicated finding rows from the report; options: { lineMap,
+  // skipIds } as field_findings.attachFindings takes them.
+  function markFindings(rows, options = {}) {
+    lastRows = rows ?? [];
+    lastMarkOptions = options;
+    applyMarks();
   }
 
   // err: serialize_error table, or null to clear.
   function showSerializeError(err) {
-    for (const el of body.querySelectorAll(".has-error")) el.classList.remove("has-error");
-    for (const el of body.querySelectorAll(".field-error")) el.remove();
+    lastSerializeError = err ?? null;
     if (!err) {
       banner.hidden = true;
       setText(banner, "");
-      return;
+    } else {
+      banner.hidden = false;
+      setText(banner, `Cannot serialize: ${err.message}${err.field_path ? ` (at ${err.field_path})` : ""}`);
     }
-    banner.hidden = false;
-    setText(banner, `Cannot serialize: ${err.message}${err.field_path ? ` (at ${err.field_path})` : ""}`);
-    if (!doc || !err.field_path) return;
-    const { path } = resolvePath(doc, err.field_path);
-    const el = findElement(path);
-    if (!el) return;
-    el.classList.add("has-error");
-    const note = h("p", { class: "field-error", role: "alert" }, err.message);
-    if (el.tagName === "DETAILS") el.querySelector(".card-body")?.prepend(note);
-    else el.append(note);
-    reveal(el);
+    applyMarks();
+    if (err?.field_path) {
+      const el = findElement(resolvePath(doc, err.field_path).path);
+      if (el) reveal(el);
+    }
   }
 
-  // rows: de-duplicated finding rows; marks cards/rows that carry findings.
-  function markFindings(rows) {
-    for (const el of body.querySelectorAll(".finding-marks")) el.remove();
+  // fieldPath: grammar or serializer field_path string. Opens the enclosing
+  // cards, expands the field's disclosures, scrolls and flashes it.
+  function highlightPath(fieldPath) {
     if (!doc) return;
-    const counts = new Map();
-    for (const { finding } of rows) {
-      if (!finding.field_path) continue;
-      const { path } = resolvePath(doc, finding.field_path);
-      const key = pathToString(path);
-      const c = counts.get(key) ?? { errors: 0, warnings: 0, messages: [] };
-      if (finding.severity === "error") c.errors++;
-      else c.warnings++;
-      c.messages.push(finding.message);
-      counts.set(key, c);
+    const { path } = fieldPath ? resolvePath(doc, fieldPath) : { path: [] };
+    const el = findElement(path);
+    if (!el) return;
+    reveal(el);
+    const { host } = disclosureHost(el);
+    for (const d of host?.querySelectorAll(":scope > .field-findings > .fdisc") ?? []) {
+      setDisclosure(d.querySelector(".fdisc-summary"), d.querySelector(".fdisc-body"), d.dataset.key, true);
     }
-    for (const [key, c] of counts) {
-      const el = body.querySelector(`[data-path="${CSS.escape(key)}"]`);
-      if (!el) continue;
-      const marks = h("span", { class: "finding-marks", title: c.messages.join("\n") },
-        c.errors ? h("span", { class: "badge error" }, `${c.errors} error${c.errors === 1 ? "" : "s"}`) : null,
-        c.warnings ? h("span", { class: "badge warn" }, `${c.warnings} warn`) : null);
-      const target = el.tagName === "DETAILS" ? el.querySelector("summary .card-tools") : el.querySelector("label, .list-label, .params-label") ?? el;
-      if (el.tagName === "DETAILS") target.before(marks);
-      else target.append(" ", marks);
-    }
+    el.classList.add("is-target");
+    setTimeout(() => el.classList.remove("is-target"), 1800);
+    el.querySelector("input, select")?.focus({ preventScroll: true });
   }
 
   render(null);
