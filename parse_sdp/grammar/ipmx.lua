@@ -239,6 +239,35 @@ local function check_ipmx_port_constraints(block, ctx)
   return true
 end
 
+-- ── TR-10-1 §8.7 RTCP port convention (per-block check) ────────────────────
+-- TR-10-1 §8.7 (verbatim): "RTCP Sender Report packets shall be sent to
+-- the UDP destination port that corresponds to +1 from the port used by
+-- their corresponding media payload."
+--   a=rtcp-mux (RFC 5761 §5.1.3) requests RTP and RTCP on one port, which
+--   cannot satisfy the +1 SHALL.
+--   a=rtcp:<port> (RFC 3605 §2.1) declares the RTCP port explicitly; any
+--   value other than media port + 1 contradicts the SHALL. Absence is
+--   accepted (the +1 convention is then implicit).
+local function check_rtcp_port_convention(block, ctx)
+  if not is_rtp_block(block) then return true end
+  local field = string.format("media[%d].attributes", ctx.media_index or 0)
+  for _, attr in ipairs(block.attributes) do
+    if attr.name == "rtcp-mux" then
+      local cont = errors.record(ctx, "tr-10-1.a.rtcp-mux.forbidden",
+        { field_path = field .. "[rtcp-mux]" })
+      if not cont then return false end
+    elseif attr.name == "rtcp" and type(block.port) == "number"
+        and attr.port ~= block.port + 1 then
+      local cont = errors.record(ctx,
+        "tr-10-1.a.rtcp.port-must-be-media-port-plus-1",
+        { field_path = field .. "[rtcp]",
+          context    = { port = attr.port, expected = block.port + 1 } })
+      if not cont then return false end
+    end
+  end
+  return true
+end
+
 -- ── §8 a=infoframe attribute (HDMI InfoFrame signaling) ────────────────────
 -- TR-10-10 §8: "IPMX Senders compliant to this TR shall include the
 -- following session attribute in the SDP object of the associated IPMX
@@ -559,6 +588,53 @@ local a_privacy =
   * Cg(P(";") * Cc(true) + Cc(false), "trailing_semi")
   * Cmt(Cb"params" * Cb"trailing_semi" * Carg(1), check_a_privacy)
 
+-- ── §13 redundancy — DUP legs share privacy parameters (semantic_check) ──
+-- TR-10-13 §13 (verbatim): "When using redundancy, as in ST 2022-7, the
+-- legs shall use the same privacy encryption parameters." A leg's
+-- effective parameters are its media-level a=privacy, else the session-
+-- level one (§17 permits either level). Legs resolve through a=group:DUP
+-- tags as the ST 2110-10 §8.5 coherence check does; an unresolved tag is
+-- that check's finding, not this one's. Parameter order is irrelevant.
+local function privacy_params_equal(a, b)
+  if a == nil or b == nil then return a == b end
+  if #a ~= #b then return false end
+  for i = 1, #a do
+    if base.params_get(b, a[i][1]) ~= a[i][2] then return false end
+  end
+  return true
+end
+
+local function check_group_dup_privacy(doc, ctx)
+  local session_privacy = base.attr_get(doc.session, "privacy")
+  local by_mid = {}
+  for _, m in ipairs(doc.media) do
+    local mid = base.attr_get(m, "mid")
+    if mid then by_mid[mid.tag] = m end
+  end
+  for gi, g in ipairs(doc.session.attributes) do
+    if g.name == "group" and g.semantics == "DUP" then
+      local seen_lead, lead_params = false, nil
+      for _, tag in ipairs(g.tags) do
+        local m = by_mid[tag]
+        if m then
+          local p      = base.attr_get(m, "privacy") or session_privacy
+          local params = p and p.params
+          if not seen_lead then
+            seen_lead, lead_params = true, params
+          elseif not privacy_params_equal(params, lead_params) then
+            local cont = errors.record(ctx,
+              "tr-10-13.a.privacy.dup-legs-must-match",
+              { field_path = string.format("session.attributes[group][%d]", gi - 1),
+                context    = { tag = tag } })
+            if not cont then return false end
+          end
+        end
+      end
+    end
+  end
+  return true
+end
+
 -- ── §20.1 a=extmap PEP IV-Counter direction (semantic_check) ──────────────
 -- TR-10-13 §20.1 (line 751): "The a=extmap attribute shall be used to
 -- declare the RTP Extension Headers in the SDP transport file using
@@ -668,10 +744,12 @@ return st2110.extend(st2110, {
   media_section_checks = {
     check_ipmx_fmtp_marker,
     check_ipmx_port_constraints,
+    check_rtcp_port_convention,
     check_usb_block,
   },
   semantic_checks = {
     check_infoframe_cross_section,
+    check_group_dup_privacy,
     check_pep_extmap_direction,
   },
 })

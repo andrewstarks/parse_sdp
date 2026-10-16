@@ -20,6 +20,21 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
   `Pages` workflow builds and deploys `web/dist/` on every push to `main`
   that touches the library or the site. No change to the library itself.
 
+### Fixed
+
+- **Two IPMX checks documented in GUIDE.md were missing from the grammar
+  tier** (lost in the 1.0 → grammar refactor; `examples/ipmx/invalid/
+  rtcp_mux.sdp` and `dup_privacy_mismatch.sdp` passed). Restored with
+  primary-source citations: `tr-10-1.a.rtcp-mux.forbidden` and
+  `tr-10-1.a.rtcp.port-must-be-media-port-plus-1` (TR-10-1 §8.7: "RTCP
+  Sender Report packets shall be sent to the UDP destination port that
+  corresponds to +1 from the port used by their corresponding media
+  payload"), and `tr-10-13.a.privacy.dup-legs-must-match` (TR-10-13 §13:
+  "When using redundancy, as in ST 2022-7, the legs shall use the same
+  privacy encryption parameters"; a leg without a media-level `a=privacy`
+  inherits the session-level one). The GUIDE's RFC 768 `a=rtcp` port-range
+  row, which no tier enforces, is removed.
+
 ### Changed
 
 - **Examples use CRLF line endings.** Every `.sdp` under `examples/` was

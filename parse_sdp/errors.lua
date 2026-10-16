@@ -2114,6 +2114,31 @@ M.register("tr-10-14.usb.setup-must-be-passive", {
   verified         = true,
 })
 
+M.register("tr-10-1.a.rtcp-mux.forbidden", {
+  kind             = "semantic", default_severity = "error",
+  code = "INVALID_VALUE",
+  message_template =
+    "a=rtcp-mux puts RTCP on the media port; IPMX requires RTCP Sender"
+    .. " Reports on media port + 1",
+  spec_ref = "TR-10-1 §8.7", verified = true,
+})
+
+M.register("tr-10-1.a.rtcp.port-must-be-media-port-plus-1", {
+  kind             = "semantic", default_severity = "error",
+  code = "INVALID_VALUE",
+  message_template =
+    "a=rtcp port must be the media port + 1",
+  spec_ref = "TR-10-1 §8.7", verified = true,
+})
+
+M.register("tr-10-13.a.privacy.dup-legs-must-match", {
+  kind             = "semantic", default_severity = "error",
+  code = "INVALID_VALUE",
+  message_template =
+    "legs of an a=group:DUP must use the same a=privacy parameters",
+  spec_ref = "TR-10-13 §13", verified = true,
+})
+
 M.register("tr-10-14.a.privacy.usb-protocol-must-be-usb_kv", {
   kind             = "semantic",
   default_severity = "error",
