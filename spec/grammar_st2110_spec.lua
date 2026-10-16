@@ -2167,6 +2167,42 @@ end)
 -- or media level), so a session-level ts-refclk DOES cover media
 -- blocks that don't carry one.
 
+describe("ST 2110-10 §8.1 — the SDP must describe an RTP stream", function()
+
+  local SESSION_ONLY = "v=0\r\no=- 1 1 IN IP4 192.0.2.1\r\ns=x\r\nt=0 0\r\n"
+
+  -- SPEC: ST 2110-10:2022 §8.1 — "Devices which contain one or more Senders
+  -- shall construct one SDP session description as specified in IETF RFC
+  -- 4566 for each RTP stream (or redundant pair of streams) that is
+  -- originated by that device." No m= line → no RTP stream described.
+  it("rejects a session-only SDP (no m= line)", function()
+    local doc, ctx = st2110.match(SESSION_ONLY)
+    assert.is_nil(doc)
+    local f = support.finding_for(ctx, "st2110-10.m.media-description-required")
+    assert.is_not_nil(f)
+    assert.equal("media", f.field_path)
+    assert.equal("ST 2110-10:2022 §8.1", f.spec_ref)
+  end)
+
+  -- RFC 8866 §5 requires no media description; base accepts it.
+  it("does not fire at the RFC 8866 tier", function()
+    assert.is_truthy(base.match(SESSION_ONLY))
+  end)
+
+  it("is satisfied by one media description", function()
+    local doc, ctx = st2110.match(SESSION_ONLY
+      .. "m=video 30000 RTP/AVP 96\r\nc=IN IP4 239.0.0.1/64\r\n"
+      .. "a=rtpmap:96 raw/90000\r\n"
+      .. "a=fmtp:96 sampling=YCbCr-4:2:2;width=1920;height=1080;"
+      .. "exactframerate=60000/1001;depth=10;colorimetry=BT709;PM=2110GPM;"
+      .. "SSN=ST2110-20:2022;TP=2110TPN\r\n"
+      .. support.TIMING_TS_REFCLK .. "\r\n" .. support.TIMING_MEDIACLK .. "\r\n")
+    assert.is_truthy(doc, ctx and ctx.findings[1] and ctx.findings[1].id)
+    assert.is_nil(support.finding_for(ctx, "st2110-10.m.media-description-required"))
+  end)
+
+end)
+
 describe("ST 2110-10 — required attribute presence (Phase 6.D.A)", function()
 
   local function sdp_lines(lines)

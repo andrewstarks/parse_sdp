@@ -952,6 +952,19 @@ local function check_audio_fmtp_channel_order(params, ctx, pos, field_path, enco
   return true
 end
 
+-- ST 2110-10:2022 §8.1 (verbatim): "Devices which contain one or more
+-- Senders shall construct one SDP session description as specified in
+-- IETF RFC 4566 for each RTP stream (or redundant pair of streams) that
+-- is originated by that device." The SDP the clause requires is the
+-- description of an RTP stream; a session with no m= line describes
+-- none, so it cannot be that artifact. (How many streams one SDP may
+-- carry beyond that is not enforced here.)
+local function check_media_description_present(doc, ctx)
+  if #doc.media > 0 then return true end
+  return errors.record(ctx, "st2110-10.m.media-description-required",
+                       { field_path = "media" })
+end
+
 -- Phase 6.D.A — ST 2110-10:2022 §8.2 / §8.3 per-media-block presence.
 -- §8.2: "All stream descriptions shall have a ts-refclk attribute as
 --        specified in IETF RFC 7273 section 4."
@@ -1499,6 +1512,7 @@ local overrides = {
   -- group:DUP leg comparison). Per-fmtp / per-rtpmap / per-media-block
   -- checks live in-grammar (Cmts) or in media_section_checks below.
   semantic_checks = {
+    check_media_description_present,
     check_ts_refclk_presence,
     check_group_dup_coherence,
   },

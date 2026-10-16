@@ -1393,6 +1393,14 @@ M.register("st2110-30.a.fmtp.maxudp-forbidden", {
   verified         = true,
 })
 
+M.register("st2110-10.m.media-description-required", {
+  kind             = "semantic", default_severity = "error",
+  code = "MISSING_FIELD",
+  message_template =
+    "an ST 2110 SDP describes an RTP stream; no m= media description is present",
+  spec_ref = "ST 2110-10:2022 §8.1", verified = true,
+})
+
 M.register("st2110.attr.ts-refclk-required", {
   kind             = "semantic",
   default_severity = "error",
