@@ -289,6 +289,48 @@ describe("pos_to_line_col", function()
     assert.equal(0, col)
   end)
 
+  -- NOT-SPEC: library
+  it("line_index lists every LF offset; CRLF, bare LF, and no terminator", function()
+    assert.same({ 5, 11, 16 }, errors.line_index("v=0\r\no=- 1\ns=x\r\nt=0 0"))
+    assert.same({},            errors.line_index("v=0"))
+    assert.same({},            errors.line_index(""))
+  end)
+
+  -- NOT-SPEC: library
+  it("a precomputed index gives the same line/col/text at every position", function()
+    local text = "v=0\r\no=- 1\ns=x\r\n\r\nt=0 0"
+    local index = errors.line_index(text)
+    for pos = 1, #text + 1 do
+      local l1, c1 = errors.pos_to_line_col(text, pos)
+      local l2, c2 = errors.pos_to_line_col(text, pos, index)
+      assert.equal(l1, l2, "line at pos " .. pos)
+      assert.equal(c1, c2, "col at pos " .. pos)
+      assert.equal(errors.pos_to_line_text(text, pos),
+                   errors.pos_to_line_text(text, pos, index),
+                   "line_text at pos " .. pos)
+    end
+    -- Spot-check the absolute values, including the empty line (4) and
+    -- the unterminated last line (5).
+    assert.same({ 4, 1 }, { errors.pos_to_line_col(text, 17, index) })
+    assert.equal("",      errors.pos_to_line_text(text, 17, index))
+    assert.same({ 5, 3 }, { errors.pos_to_line_col(text, 21, index) })
+    assert.equal("t=0 0", errors.pos_to_line_text(text, 21, index))
+  end)
+
+  -- NOT-SPEC: library
+  it("record() builds the index once per ctx and reuses it", function()
+    local ctx = { findings = {}, fail_on_first = false, text = "v=0\no=- 1\n" }
+    errors.record(ctx, "sdp.line.lf-only-line-ending", { pos = 2 })
+    local first = ctx.line_index
+    assert.same({ 4, 10 }, first)
+    errors.record(ctx, "sdp.line.lf-only-line-ending", { pos = 7 })
+    assert.equal(first, ctx.line_index)
+    assert.same({ 1, 2 }, { ctx.findings[1].line, ctx.findings[1].col })
+    assert.equal("v=0",   ctx.findings[1].line_text)
+    assert.same({ 2, 3 }, { ctx.findings[2].line, ctx.findings[2].col })
+    assert.equal("o=- 1", ctx.findings[2].line_text)
+  end)
+
 end)
 
 describe("deepest-failure tracker", function()
