@@ -20,6 +20,16 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
   `Pages` workflow builds and deploys `web/dist/` on every push to `main`
   that touches the library or the site. No change to the library itself.
 
+### Changed
+
+- **Examples use CRLF line endings.** Every `.sdp` under `examples/` was
+  LF-terminated, so each line emitted `sdp.line.lf-only-line-ending`
+  (75 warnings on the pathological example). They now carry the CRLF
+  RFC 8866 §5 requires; the one example whose purpose is to show
+  soft-syntactic findings (`generic/valid/06_soft_syntactic_warnings.sdp`)
+  is unchanged. A `.gitattributes` rule (`*.sdp -text`) stops git from
+  normalizing SDP files on checkout.
+
 ## [1.5.1] — 2026-10-15
 
 ### Fixed

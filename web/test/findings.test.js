@@ -52,3 +52,53 @@ test("real fixture: st2110_invalid dedupes to the expected row set", async () =>
   assert.deepEqual(ts.tiers, ["st2110", "ipmx"]);
   assert.deepEqual(rows.find((r) => r.finding.id === "tr-10-1.a.fmtp.vtotal-required").tiers, ["ipmx"]);
 });
+
+import { groupRows } from "../src/findings.js";
+
+const mk = (id, line, severity = "warn", extra = {}) => ({ key: `${id}|${line}`, finding: { id, severity, line, col: 1, ...extra }, tiers: ["sdp", "st2110", "ipmx"] });
+
+test("groupRows collapses repeated id+severity+tiers line findings into one row with count and lines", () => {
+  const rows = [mk("sdp.line.lf-only-line-ending", 5), mk("sdp.line.lf-only-line-ending", 2), mk("sdp.line.lf-only-line-ending", 3)];
+  const out = groupRows(rows);
+  assert.equal(out.length, 1);
+  assert.equal(out[0].group, true);
+  assert.equal(out[0].count, 3);
+  assert.deepEqual(out[0].lines, [2, 3, 5], "lines sorted ascending");
+  assert.equal(out[0].finding.line, 2, "the representative finding is the earliest member");
+  assert.equal(out[0].members.length, 3);
+});
+
+test("groupRows orders a group by its first line among the other rows", () => {
+  const out = groupRows([mk("b.check", 1, "error"), mk("sdp.line.lf-only-line-ending", 4), mk("c.check", 3, "error"), mk("sdp.line.lf-only-line-ending", 9)]);
+  assert.deepEqual(out.map((r) => (r.group ? `group@${r.lines[0]}` : `${r.finding.id}@${r.finding.line}`)), ["b.check@1", "c.check@3", "group@4"]);
+});
+
+test("groupRows leaves singletons untouched (same object)", () => {
+  const single = mk("x.y", 7, "error");
+  const out = groupRows([single, mk("sdp.line.lf-only-line-ending", 2), mk("sdp.line.lf-only-line-ending", 3)]);
+  assert.equal(out.find((r) => !r.group), single);
+  assert.equal(out.filter((r) => r.group).length, 1);
+});
+
+test("groupRows never merges different severities, tier sets, or rows with a field_path", () => {
+  const a = mk("same.id", 2, "warn");
+  const b = mk("same.id", 3, "error");
+  const c = { ...mk("same.id", 4, "warn"), tiers: ["ipmx"] };
+  const d = mk("same.id", 5, "warn", { field_path: "media[0]" });
+  const e = mk("same.id", 6, "warn", { field_path: "media[0]" });
+  const out = groupRows([a, b, c, d, e]);
+  assert.equal(out.length, 5);
+  assert.ok(out.every((r) => !r.group));
+  const two = groupRows([a, mk("same.id", 9, "warn"), b]);
+  assert.equal(two.length, 2);
+  assert.equal(two.find((r) => r.group).count, 2);
+});
+
+test("groupRows on the pathological fixture collapses the 75 bare-LF warnings into one group", async () => {
+  const rep = await fixtureJson("report_generic_pathological.json");
+  const out = groupRows(dedupeFindings(rep.tiers));
+  const g = out.find((r) => r.group && r.finding.id === "sdp.line.lf-only-line-ending");
+  assert.equal(g.count, 75);
+  assert.equal(g.lines[0], 2);
+  assert.equal(out.filter((r) => r.group).length, 1);
+});
