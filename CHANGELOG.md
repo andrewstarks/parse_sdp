@@ -35,6 +35,11 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
   inherits the session-level one). The GUIDE's RFC 768 `a=rtcp` port-range
   row, which no tier enforces, is removed.
 
+- **`sdp.line.lf-only-line-ending` findings name the right line.** The
+  check recorded its position after consuming the LF, which is the start
+  of the following line, so every bare-LF warning pointed one line too
+  far down (a four-line file reported lines 2–5). The finding now points
+  at the LF byte: the line that ended without CR, at its last column.
 - **A session-only SDP no longer passes ST 2110 / IPMX.**
   `st2110-10.m.media-description-required` (ST 2110-10:2022 §8.1: "Devices
   which contain one or more Senders shall construct one SDP session

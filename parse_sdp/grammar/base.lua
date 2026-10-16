@@ -416,16 +416,20 @@ end
 -- + ctx.fail_on_first. Default severity is "warn" so warn-severity findings
 -- accumulate without halting the parse; policy can promote to "error" or
 -- suppress to "off".
-local function record_soft(check_id)
+-- `offset` shifts the reported position: the bare-LF Cmt fires after
+-- consuming the LF, so it reports pos - 1 (the LF byte) and the finding
+-- names the line that ended without CR rather than the next line.
+local function record_soft(check_id, offset)
+  offset = offset or 0
   return function(_, pos, ctx)
     if not ctx then return pos end
-    local cont = errors.record(ctx, check_id, { pos = pos })
+    local cont = errors.record(ctx, check_id, { pos = pos + offset })
     if not cont then return false end
     return pos
   end
 end
 
-local record_bare_lf          = record_soft("sdp.line.lf-only-line-ending")
+local record_bare_lf          = record_soft("sdp.line.lf-only-line-ending", -1)
 local record_missing_newline  = record_soft("sdp.file.trailing-newline-missing")
 local record_trailing_ws      = record_soft("sdp.line.trailing-whitespace")
 
