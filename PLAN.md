@@ -27,13 +27,13 @@
 ## Test Command
 
 ```sh
-busted spec/                  # hermetic suite (1192 tests)
+busted spec/                  # hermetic suite (1225 tests)
 busted spec_conformance/      # opt-in pinned AMWA fixtures
 ```
 
 ## Current State
 
-1.2.1 shipped on 2026-05-22. 1197 hermetic tests passing. Every
+1.5.1 shipped on 2026-10-15. 1225 hermetic tests passing. Every
 validation check is grounded in explicit spec text; no opinion-based
 checks remain. Public API surface is `parse_sdp/init.lua` (library) +
 `bin/parse_sdp` (CLI). Grammar tier under
@@ -94,6 +94,27 @@ restores one public surface for name lookups.
   GUIDE API reference, and in a dedicated test.
 - [x] **Release slice**: tagged `v1.5.0`, uploaded rockspec, published to
   LuaRocks (2026-05-31).
+
+## 1.5.1 — linear finding positioning
+
+Returning to the project after a break with the impression that LPeg made
+it slow. Profiling said otherwise: module load is ~6 ms, the grammar is
+linear (~29 µs per media block, ~5x a trivial line splitter), and the
+only super-linear cost was in Lua — `errors.record` scanned the subject
+from byte 1 for every finding's line/col and source line. Every fixture
+and example in the repo is LF-terminated, so every line emits
+`sdp.line.lf-only-line-ending` and a parse cost O(lines × bytes).
+
+- [x] `errors.line_index(text)` builds the LF-offset index once per
+  parse; `record()` caches it on ctx and resolves positions by binary
+  search. `pos_to_line_col` / `pos_to_line_text` take the index as an
+  optional third argument so the one-off failure path is unchanged.
+- [x] 2 KB LF-terminated example: 2.3 ms → 0.23 ms. 316 KB synthetic:
+  3.95 s → 32 ms. Clean documents unchanged. No API or output change.
+- [x] Decision recorded: stay on LPeg. A plain-Lua rewrite would not have
+  touched the bottleneck.
+- [x] **Release slice**: tagged `v1.5.1`, uploaded rockspec, published to
+  LuaRocks (2026-10-15).
 
 ## Next pass — GUIDE.md Troubleshooting recipes
 
