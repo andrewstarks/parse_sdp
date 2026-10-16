@@ -2,7 +2,7 @@
 // the numbered source view with line highlighting.
 
 import { h, replace, setText } from "./dom.js";
-import { TIER_ORDER, TIER_LABELS, dedupeFindings, filterRows, tierSummary, locationLabel } from "./findings.js";
+import { TIER_ORDER, TIER_LABELS, dedupeFindings, filterRows, groupRows, tierSummary, locationLabel } from "./findings.js";
 import { splitLines } from "./format.js";
 
 export function initReport(root, { onSelect }) {
@@ -38,36 +38,74 @@ export function initReport(root, { onSelect }) {
     return { tier: filterTier.value, severities };
   }
 
+  let expanded = new Set();
+  let gid = 0;
+
+  function findingBody(f, row, extra) {
+    return [
+      h("span", { class: `badge ${f.severity}` }, f.severity === "warn" ? "warn" : "error"),
+      h("span", { class: "f-main" },
+        h("span", { class: "f-id" }, f.id || f.code || ""),
+        h("span", { class: "f-msg" }, f.message || ""),
+        h("span", { class: "f-sub" },
+          f.spec_ref ? h("span", {}, f.spec_ref) : null,
+          f.code && f.id ? h("span", {}, f.code) : null,
+          row.tiers.map((t) => h("span", { class: "badge tier" }, TIER_LABELS[t])),
+          extra)),
+    ];
+  }
+
+  function renderSingle(row) {
+    const f = row.finding;
+    const btn = h("button", {
+      type: "button",
+      class: `finding${row.key === selectedKey ? " is-selected" : ""}`,
+      on: { click: () => select(row, btn) },
+    }, findingBody(f, row), h("span", { class: "f-loc" }, locationLabel(f)));
+    return h("li", {}, btn);
+  }
+
+  // A collapsed group: the row toggles a list of its line numbers; each
+  // line number behaves like a normal finding click.
+  function renderGroup(row) {
+    const f = row.finding;
+    const id = `fg-${++gid}`;
+    const open = expanded.has(row.key);
+    const list = h("div", { class: "group-lines", id, hidden: !open, role: "group", "aria-label": `Lines with ${f.id}` },
+      row.members.map((m) => {
+        const lb = h("button", { type: "button", class: "line-chip", on: { click: () => select(m, lb) } }, String(m.finding.line));
+        return lb;
+      }));
+    const toggle = h("button", {
+      type: "button", class: "finding finding-toggle", "aria-expanded": String(open), "aria-controls": id,
+      on: { click: () => {
+        const now = toggle.getAttribute("aria-expanded") !== "true";
+        toggle.setAttribute("aria-expanded", String(now));
+        list.hidden = !now;
+        if (now) expanded.add(row.key); else expanded.delete(row.key);
+      } },
+    }, findingBody(f, row, h("span", { class: "badge count" }, `${row.count} lines`)),
+      h("span", { class: "f-loc" }, `${row.lines[0]}–${row.lines[row.lines.length - 1]}`));
+    return h("li", { class: "finding-group" }, toggle, list);
+  }
+
   function renderRows() {
     const visible = filterRows(rows, currentFilter());
-    setText(filterCount, rows.length ? `${visible.length} of ${rows.length} shown` : "");
-    if (visible.length === 0) {
+    const grouped = groupRows(visible);
+    const groups = grouped.filter((r) => r.group).length;
+    setText(filterCount, rows.length
+      ? `${visible.length} of ${rows.length} findings shown${groups ? ` · ${groups} repeated check${groups === 1 ? "" : "s"} collapsed` : ""}`
+      : "");
+    if (grouped.length === 0) {
       replace(list, h("li", { class: "empty" }, rows.length ? "No findings match the current filter." : "No findings."));
       return;
     }
-    replace(list, visible.map((row) => {
-      const f = row.finding;
-      const btn = h("button", {
-        type: "button",
-        class: `finding${row.key === selectedKey ? " is-selected" : ""}`,
-        on: { click: () => select(row, btn) },
-      },
-        h("span", { class: `badge ${f.severity}` }, f.severity === "warn" ? "warn" : "error"),
-        h("span", { class: "f-main" },
-          h("span", { class: "f-id" }, f.id || f.code || ""),
-          h("span", { class: "f-msg" }, f.message || ""),
-          h("span", { class: "f-sub" },
-            f.spec_ref ? h("span", {}, f.spec_ref) : null,
-            f.code && f.id ? h("span", {}, f.code) : null,
-            row.tiers.map((t) => h("span", { class: "badge tier" }, TIER_LABELS[t])))),
-        h("span", { class: "f-loc" }, locationLabel(f)));
-      return h("li", {}, btn);
-    }));
+    replace(list, grouped.map((row) => (row.group ? renderGroup(row) : renderSingle(row))));
   }
 
   function select(row, btn) {
     selectedKey = row.key;
-    for (const el of list.querySelectorAll(".finding.is-selected")) el.classList.remove("is-selected");
+    for (const el of list.querySelectorAll(".is-selected")) el.classList.remove("is-selected");
     btn.classList.add("is-selected");
     const f = row.finding;
     if (f.line > 0) highlightLine(f.line);
@@ -116,6 +154,7 @@ export function initReport(root, { onSelect }) {
       if (f.severity === "error" || !lineMarks.has(f.line)) lineMarks.set(f.line, f.severity);
     }
     selectedKey = null;
+    expanded = new Set();
     renderCards(tiers);
     setText(status, statusLine(tiers));
     renderRows();

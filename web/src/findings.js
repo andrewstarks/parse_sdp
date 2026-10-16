@@ -70,3 +70,43 @@ export function locationLabel(f) {
   if (f.line) return f.col ? `${f.line}:${f.col}` : `${f.line}`;
   return f.field_path || "";
 }
+
+// Collapse repeated line-anchored findings. Rows with the same id, the same
+// severity and the same tier set, each anchored to a line and carrying no
+// field_path, become one group row when there are at least two of them:
+//   { group: true, key, finding (the earliest member's), members, lines,
+//     tiers, count }
+// Every other row is returned unchanged. Output order follows compareRows
+// with a group positioned at its first line, so a group of bare-LF
+// warnings starting on line 2 sits where line 2's finding would.
+export function groupRows(rows) {
+  const groups = new Map();
+  const order = [];
+  for (const row of rows) {
+    const f = row.finding;
+    const groupable = f.line > 0 && !f.field_path && f.id;
+    const key = groupable ? `${f.id}|${f.severity}|${row.tiers.join(",")}` : null;
+    if (key && groups.has(key)) {
+      groups.get(key).members.push(row);
+      continue;
+    }
+    const entry = { key, members: [row] };
+    if (key) groups.set(key, entry);
+    order.push(entry);
+  }
+  return order
+    .map(({ key, members }) => {
+      if (members.length === 1) return members[0];
+      const sorted = [...members].sort(compareRows);
+      return {
+        group: true,
+        key: `group|${key}`,
+        finding: sorted[0].finding,
+        members: sorted,
+        lines: sorted.map((m) => m.finding.line),
+        tiers: sorted[0].tiers,
+        count: sorted.length,
+      };
+    })
+    .sort(compareRows);
+}

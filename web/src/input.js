@@ -13,13 +13,23 @@ export function initInput(root, { onSubmit, fetchText }) {
   const exampleSelect = root.querySelector("#example-select");
   const error = root.querySelector("#input-error");
   let fileName = "session";
+  // A textarea normalises CR LF to LF, which would turn every CRLF file
+  // into a wall of bare-LF warnings. Keep the text as loaded (or pasted)
+  // and submit that while the textarea still shows it unchanged.
+  let raw = null;
+  const lfOnly = (t) => t.replace(/\r\n?/g, "\n");
+
+  function currentText() {
+    return raw !== null && textarea.value === lfOnly(raw) ? raw : textarea.value;
+  }
 
   function submit() {
-    onSubmit(textarea.value, fileName);
+    onSubmit(currentText(), fileName);
   }
 
   function loadText(text, name) {
     fileName = name;
+    raw = text;
     textarea.value = text;
     setText(meta, name === "session" ? "" : name);
     submit();
@@ -37,9 +47,15 @@ export function initInput(root, { onSubmit, fetchText }) {
       submit();
     }
   });
-  textarea.addEventListener("paste", () => {
-    // Let the paste land, then analyze what arrived.
+  textarea.addEventListener("input", () => {
+    if (raw !== null && textarea.value !== lfOnly(raw)) raw = null;
+  });
+  textarea.addEventListener("paste", (e) => {
+    const clip = e.clipboardData?.getData("text/plain") ?? "";
+    // Let the paste land, then analyze what arrived (with its CRs when the
+    // paste replaced the whole content).
     setTimeout(() => {
+      raw = clip && textarea.value === lfOnly(clip) ? clip : null;
       fileName = "session";
       setText(meta, "");
       submit();
