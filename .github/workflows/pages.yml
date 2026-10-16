@@ -44,7 +44,7 @@ jobs:
         run: bash web/wasm/build.sh
       - name: Front-end unit tests
         run: |
-          if [ -d web/test ]; then node --test web/test/; fi
+          node --test web/test/*.test.js
       - uses: actions/upload-pages-artifact@v3
         with:
           path: web/dist
