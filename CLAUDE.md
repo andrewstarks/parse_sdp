@@ -78,6 +78,18 @@ spec/
   fixtures/           sample .sdp files used by tests.
 spec_conformance/    opt-in suite running pinned AMWA-TV / SDPoker
                      upstream fixtures through the parser.
+web/
+  CONTRACT.md        JSON request/response API the browser playground uses.
+  wasm/              Emscripten build: build.sh (pinned Lua 5.5 / LPeg /
+                     dkjson downloads → web/dist/parse_sdp.{js,wasm}),
+                     bridge.c (C shim exporting sdp_request), bridge.lua
+                     (pure-Lua façade over the library; bridge_cli.lua
+                     runs it natively), smoke.mjs (WASM ↔ native parity),
+                     examples_manifest.lua (ships examples/ with their s=
+                     titles as the UI's example picker manifest).
+  src/               static UI (ES modules, no bundler) + engine.js.
+  fixtures/          real bridge responses used by the UI mock.
+  dist/              build output deployed to GitHub Pages (gitignored).
 examples/
   examples.lua       runnable API walkthrough (lua examples/examples.lua)
   generic/           RFC 8866 SDP samples — valid/ and invalid/

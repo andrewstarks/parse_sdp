@@ -103,6 +103,18 @@ docker build -t parse_sdp .
 
 The image includes Lua 5.5, LuaRocks, LPEG, dkjson, busted, and argparse.
 
+### Browser playground
+
+<https://andrewstarks.github.io/parse_sdp/> is the library compiled to
+WebAssembly (Lua 5.5 + LPeg + `parse_sdp`, built with Emscripten) behind a
+static page. It accepts SDP text, the JSON form of a parsed document, or
+a Lua table literal in the same shape; reports every finding at all three
+tiers; lets you edit the document field by field with `doc:validate`
+running on each change; and downloads the serialized SDP or JSON. Nothing
+leaves the browser. The JSON request/response surface it uses is
+documented in [web/CONTRACT.md](web/CONTRACT.md), and `web/wasm/build.sh`
+reproduces the build locally.
+
 ---
 
 ## Quick Start

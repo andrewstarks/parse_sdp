@@ -1,0 +1,10 @@
+{
+  "name": "parse_sdp-web",
+  "private": true,
+  "type": "module",
+  "description": "Static browser playground for parse_sdp (no runtime dependencies).",
+  "scripts": {
+    "test": "node --test test/",
+    "serve": "python3 -m http.server --directory src 8000"
+  }
+}

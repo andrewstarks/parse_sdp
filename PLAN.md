@@ -116,6 +116,27 @@ and example in the repo is LF-terminated, so every line emits
 - [x] **Release slice**: tagged `v1.5.1`, uploaded rockspec, published to
   LuaRocks (2026-10-15).
 
+## Web playground — parse_sdp in the browser
+
+The library is small, pure C + Lua, and parses in well under a
+millisecond, so a hosted front end needs no server: compile Lua 5.5,
+LPeg, dkjson and `parse_sdp` to WebAssembly and run it in the page.
+GitHub Pages serves the static result; SDPs never leave the browser.
+
+- [x] `web/wasm/bridge.lua` — JSON façade over the library (`report`
+  runs every tier with `fail_on_first=false`; `validate` serializes an
+  edited doc and reports; `to_sdp`, `from_lua`, `checks`, `version`).
+  Testable natively via `bridge_cli.lua`. Contract in `web/CONTRACT.md`.
+- [x] `web/wasm/build.sh` + `bridge.c` — Emscripten build of pinned
+  Lua 5.5.1 / LPeg 1.1.0 / dkjson 2.10, embedded Lua sources, ES-module
+  output; `smoke.mjs` asserts WASM and native responses are identical.
+- [x] `web/src/` — static UI: input (SDP / JSON / Lua), tier report with
+  source highlighting, generic editor over the doc table validating on
+  blur, policy panel, downloads. Mock engine over `web/fixtures/`.
+- [x] `.github/workflows/pages.yml` — build + deploy to Pages; Pages
+  enabled on the repo with the Actions build type.
+- [x] Docs: README / GUIDE / CLAUDE.md / CHANGELOG.
+
 ## Next pass — GUIDE.md Troubleshooting recipes
 
 A field engineer with an unfamiliar `err.id` wants "what does this

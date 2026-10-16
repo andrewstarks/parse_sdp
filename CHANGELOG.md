@@ -9,6 +9,17 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 
+### Added
+
+- **Browser playground** at <https://andrewstarks.github.io/parse_sdp/>:
+  Lua 5.5 + LPeg + `parse_sdp` compiled to WebAssembly with Emscripten
+  (`web/wasm/`), a JSON request/response bridge (`web/wasm/bridge.lua`,
+  contract in `web/CONTRACT.md`), and a static UI (`web/src/`) that
+  accepts SDP / JSON / Lua-table input, reports findings at every tier,
+  edits the document with live validation, and downloads the result. A
+  `Pages` workflow builds and deploys `web/dist/` on every push to `main`
+  that touches the library or the site. No change to the library itself.
+
 ## [1.5.1] — 2026-10-15
 
 ### Fixed

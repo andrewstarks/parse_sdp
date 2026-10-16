@@ -57,6 +57,14 @@ No bit-manipulation rock is required on any Lua version: Lua 5.3+ uses
 native bitwise operators, and Lua 5.1/5.2 use a pure-Lua arithmetic
 implementation bundled with the library.
 
+**Browser (nothing to install):**
+
+The playground at <https://andrewstarks.github.io/parse_sdp/> runs the
+same library compiled to WebAssembly. Drop in an SDP file (or its JSON /
+Lua table form), read the three-tier compliance report, edit fields with
+live validation, and download the result. Everything runs in the page;
+nothing is uploaded.
+
 **Docker:**
 
 ```sh
@@ -164,6 +172,8 @@ parse_sdp/
 │   ├── generic/                 # RFC 8866 SDP samples (valid/ and invalid/)
 │   ├── st2110/                  # ST 2110 SDP samples (valid/ and invalid/)
 │   └── ipmx/                    # IPMX SDP samples (valid/ and invalid/)
+├── web/                         # browser playground: WASM build (wasm/),
+│                                # static UI (src/), bridge contract
 ├── audits/                      # SPEC_INVENTORY, SPEC_COVERAGE,
 │                                # PHASE3_FINDINGS — the pre-1.0 audit
 │                                # memos the 2.0 release built on.

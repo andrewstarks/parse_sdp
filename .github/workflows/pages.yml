@@ -1,0 +1,60 @@
+name: Pages
+
+# Builds the browser playground (Lua 5.5 + LPeg + parse_sdp compiled to
+# WebAssembly, plus the static UI under web/src) and publishes web/dist
+# to GitHub Pages. See web/CONTRACT.md for how the pieces fit.
+
+on:
+  push:
+    branches: ["main"]
+    paths:
+      - "parse_sdp/**"
+      - "web/**"
+      - "parse_sdp-*.rockspec"
+      - ".github/workflows/pages.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: mymindstorm/setup-emsdk@v14
+        with:
+          version: latest
+          actions-cache-folder: emsdk-cache
+      - uses: leafo/gh-actions-lua@v10
+        with:
+          luaVersion: "5.4"
+      - uses: leafo/gh-actions-luarocks@v4
+      - name: Native Lua deps for the WASM/native parity smoke test
+        run: |
+          luarocks install lpeg
+          luarocks install dkjson
+      - name: Build WASM + assemble web/dist
+        run: bash web/wasm/build.sh
+      - name: Front-end unit tests
+        run: |
+          if [ -d web/test ]; then node --test web/test/; fi
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: web/dist
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4

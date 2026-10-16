@@ -61,6 +61,17 @@
     "timecode",
     "TROFFSET",
     "unicast",
-    "YCbCr"
+    "YCbCr",
+    "Emscripten",
+    "emcc",
+    "emsdk",
+    "WASM",
+    "wasm",
+    "WebAssembly",
+    "mymindstorm",
+    "luaopen",
+    "KEEPALIVE",
+    "cwrap",
+    "ccall"
   ]
 }
