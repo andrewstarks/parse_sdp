@@ -99,6 +99,6 @@ test("groupRows on the pathological fixture collapses the 75 bare-LF warnings in
   const out = groupRows(dedupeFindings(rep.tiers));
   const g = out.find((r) => r.group && r.finding.id === "sdp.line.lf-only-line-ending");
   assert.equal(g.count, 75);
-  assert.equal(g.lines[0], 2);
+  assert.equal(g.lines[0], 1);  // the LF finding names the line that ended with the LF
   assert.equal(out.filter((r) => r.group).length, 1);
 });

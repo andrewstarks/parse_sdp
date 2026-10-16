@@ -36,6 +36,12 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
   privacy encryption parameters". A leg without a media-level `a=privacy`
   inherits the session-level `a=privacy`. The GUIDE.md row for the RFC 768
   `a=rtcp` port range, which no tier enforces, is removed.
+- `sdp.line.lf-only-line-ending` findings now name the line that ended
+  with the bare LF. The check recorded its position after consuming the
+  LF, which is the first byte of the following line, so every bare-LF
+  warning pointed one line too far down: a four-line file reported lines
+  2 to 5. The finding now points at the LF byte, which is the last column
+  of the line that ended without CR.
 - A session-only SDP no longer passes the ST 2110 tier or the IPMX tier. The
   new check `st2110-10.m.media-description-required` fires when the document
   has no `m=` line. The check cites ST 2110-10:2022 section 8.1: "Devices

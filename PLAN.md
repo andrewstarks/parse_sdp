@@ -32,7 +32,7 @@ validates, and serializes SDP (Session Description Protocol) files.
 ## Test Command
 
 ```sh
-busted spec/                  # hermetic suite (1277 tests on current main)
+busted spec/                  # hermetic suite (1278 tests on current main)
 busted spec_conformance/      # opt-in suite of pinned AMWA fixtures
 ```
 
@@ -50,8 +50,9 @@ command-line interface). The grammar tier is in
 `main` also has unreleased changes since 1.5.1. CHANGELOG.md lists them under
 `[Unreleased]`: the browser playground, two restored IPMX checks, rejection
 of a session-only SDP at the ST 2110 and IPMX tiers, a `field_path` on
-required-parameter findings for streams with no `a=fmtp`, and CRLF line
-endings on the example files.
+required-parameter findings for streams with no `a=fmtp`, CRLF line
+endings on the example files, and bare-LF findings that name the line that
+ended with the LF instead of the line after it.
 
 The 1.2 release added CLI capabilities for diagnostics: `parse_sdp validate`,
 `parse_sdp diagnose`, the `--all-findings` flag on `validate`, `diagnose`,

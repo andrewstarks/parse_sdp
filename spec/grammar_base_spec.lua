@@ -2566,6 +2566,21 @@ describe("base SDP grammar — Phase 5 soft-syntactic findings", function()
       assert.equal(4, lf_findings)
     end)
 
+    -- The finding names the line that ended with the bare LF (the LF is
+    -- that line's last column), not the line that follows it.
+    it("locates each finding on the line that ended with the bare LF", function()
+      local lf_text = "v=0\no=- 1 1 IN IP4 127.0.0.1\ns=X\nt=0 0\n"
+      local _, ctx = match_collect(lf_text)
+      local seen = {}
+      for _, f in ipairs(ctx.findings) do
+        if f.id == "sdp.line.lf-only-line-ending" then
+          seen[#seen + 1] = { f.line, f.col, f.line_text }
+        end
+      end
+      assert.same({ { 1, 4, "v=0" }, { 2, 25, "o=- 1 1 IN IP4 127.0.0.1" },
+                    { 3, 4, "s=X" }, { 4, 6, "t=0 0" } }, seen)
+    end)
+
     it("under fail_on_first with warn severity, parse succeeds (warn doesn't halt)", function()
       local lf_text =
         "v=0\n" ..
