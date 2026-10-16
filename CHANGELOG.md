@@ -36,6 +36,9 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
   privacy encryption parameters". A leg without a media-level `a=privacy`
   inherits the session-level `a=privacy`. The GUIDE.md row for the RFC 768
   `a=rtcp` port range, which no tier enforces, is removed.
+- `parse_sdp to_sdp` prints a formatted error that names the missing
+  field when the JSON input decodes but lacks a required field. The tool
+  previously exited with a Lua traceback from `io.write(nil)`.
 - `sdp.line.lf-only-line-ending` findings now name the line that ended
   with the bare LF. The check recorded its position after consuming the
   LF, which is the first byte of the following line, so every bare-LF

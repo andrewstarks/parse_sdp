@@ -51,8 +51,11 @@ command-line interface). The grammar tier is in
 `[Unreleased]`: the browser playground, two restored IPMX checks, rejection
 of a session-only SDP at the ST 2110 and IPMX tiers, a `field_path` on
 required-parameter findings for streams with no `a=fmtp`, CRLF line
-endings on the example files, and bare-LF findings that name the line that
-ended with the LF instead of the line after it.
+endings on the example files, bare-LF findings that name the line that
+ended with the LF instead of the line after it, a formatted error from
+`parse_sdp to_sdp` when a required field is missing, and a documentation
+pass in the plain technical writing style with a user manual for the
+browser playground.
 
 The 1.2 release added CLI capabilities for diagnostics: `parse_sdp validate`,
 `parse_sdp diagnose`, the `--all-findings` flag on `validate`, `diagnose`,

@@ -1,5 +1,5 @@
 #!/usr/bin/env lua
--- parse_sdp — CLI shell. Loads the parse_sdp library via `require` and
+-- parse_sdp: the CLI shell. Loads the parse_sdp library via `require` and
 -- dispatches subcommands.
 --
 --   parse_sdp validate session.sdp
@@ -12,7 +12,7 @@
 -- runnable as `parse_sdp`.
 --
 -- The library this consumes is `require("parse_sdp")`; it resolves to
--- `parse_sdp/init.lua`. No top-level `parse_sdp.lua` exists — that ensures
+-- `parse_sdp/init.lua`. No top-level `parse_sdp.lua` exists, which ensures
 -- importing the library doesn't drag CLI dependencies (argparse) into the
 -- consumer's runtime.
 
@@ -63,7 +63,7 @@ ap:command_target("command")
 -- ─── validate ──────────────────────────────────────────────────────────────
 --
 -- "Is this SDP valid?" Plain yes/no with a structured error on failure.
--- Companion to to_json for diagnostic use — no JSON in the output path.
+-- Companion to to_json for diagnostic use. No JSON is in the output path.
 
 local cmd_validate = ap:command("validate", [[
 Validate an SDP file and report a pass or fail verdict.
@@ -82,7 +82,7 @@ cmd_validate:flag("--all-findings",
 
 -- ─── diagnose ──────────────────────────────────────────────────────────────
 --
--- Runs every tier and reports a ladder. Always exits 0 — the verdict is
+-- Runs every tier and reports a ladder. Always exits 0; the verdict is
 -- the output, not the exit code. Intended for "what does this SDP claim
 -- compliance with, and where does it fall short?"
 
@@ -212,7 +212,7 @@ local function all_findings_opts()
 end
 
 -- 1-based numbered block for one finding in the --all-findings list. Labels
--- the entry "(error)" / "(warn)" by *default* severity, not effective —
+-- the entry "(error)" / "(warn)" by *default* severity, not effective;
 -- a demoted error still reads as "error" so the user sees what would have
 -- aborted the parse under default settings.
 local function format_finding_numbered(n, f, demotion)
@@ -289,11 +289,9 @@ elseif parsed.command == "to_sdp" then
     die(errors.new("invalid JSON: " .. (jsonerr or "parse error")))
   end
   local doc = sdp.new(tbl)
-  local ok, result = pcall(function() return doc:to_sdp() end)
-  if not ok then
-    die(errors.new("to_sdp error: " .. tostring(result)))
-  end
-  io.write(result)
+  local text, serr = doc:to_sdp()
+  if not text then die(serr) end
+  io.write(text)
   os.exit(0)
 
 elseif parsed.command == "validate" then
@@ -384,7 +382,7 @@ elseif parsed.command == "diagnose" then
                               has_error and "✗" or "✓", r.tier.label))
       if has_error and #new_findings == 0 then
         io.write("      (inherits "
-                  .. results[i - 1].tier.label .. " failure — fix it first)\n")
+                  .. results[i - 1].tier.label .. " failure; fix it first)\n")
       else
         for _, f in ipairs(new_findings) do
           io.write(format_finding_indented(f) .. "\n")
@@ -402,7 +400,7 @@ elseif parsed.command == "diagnose" then
     results[#results + 1] = { tier = tier, err = err }
   end
   -- Render ladder. If a higher tier's finding matches a lower tier's,
-  -- collapse the detail block — fixing the lower tier resolves both.
+  -- collapse the detail block, because fixing the lower tier resolves both.
   for i, r in ipairs(results) do
     if not r.err then
       io.write(string.format("  ✓ %s\n", r.tier.label))
@@ -417,7 +415,7 @@ elseif parsed.command == "diagnose" then
       end
       if prior_match then
         io.write(string.format(
-          "      (inherits %s failure — fix it first)\n", prior_match))
+          "      (inherits %s failure; fix it first)\n", prior_match))
       else
         io.write(format_finding_indented(r.err) .. "\n")
       end

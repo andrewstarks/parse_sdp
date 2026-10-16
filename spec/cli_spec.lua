@@ -512,6 +512,17 @@ describe("CLI: to_sdp subcommand", function()
   end)
 
   -- NOT-SPEC: library
+  -- NOT-SPEC: library
+  it("JSON missing a required field → formatted error naming the field, exit 1", function()
+    local stdout, stderr, code = run("to_sdp", '{"version":"0"}')
+    assert.equal(1, code)
+    assert.equal("", stdout)
+    assert.truthy(stderr:find("missing required field", 1, true))
+    assert.truthy(stderr:find("field: ", 1, true))
+    assert.is_nil(stderr:find("traceback", 1, true))
+  end)
+
+  -- NOT-SPEC: library
   it("invalid JSON → human-readable error on stderr, exit 1", function()
     local stdout, stderr, code = run("to_sdp", "not { valid } json")
     assert.equal(1, code)

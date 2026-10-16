@@ -79,6 +79,10 @@ spec/
                       doc:is_*, doc:to_json / to_sdp, policy + findings,
                       mode dispatch.
   cli_spec.lua        CLI subcommand integration tests.
+  examples_spec.lua   every file under examples/<tier>/<valid|invalid> passes
+                      or fails its tier as the directory says.
+  grammar_bitops_spec.lua  bitwise helper backends (native on 5.3+, arithmetic
+                      on 5.1 and 5.2).
   support.lua         shared test helpers (finding_for, timing fixtures).
   fixtures/           sample .sdp files used by tests.
 spec_conformance/    opt-in suite running pinned AMWA-TV / SDPoker
@@ -138,7 +142,8 @@ doc.media[1].port
 
 ## Validation Strictness Principle
 
-Every validation check in `parse_sdp.lua` must be grounded in explicit
+Every validation check in the grammar modules (`parse_sdp/grammar/base.lua`,
+`st2110.lua`, `ipmx.lua`) must be grounded in explicit
 normative text from the specification. Three kinds of normative text count:
 
 1. Positive requirements, written as "shall", "MUST", or "is required". If
