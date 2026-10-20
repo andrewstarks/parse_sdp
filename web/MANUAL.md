@@ -9,7 +9,7 @@ WebAssembly. Nothing leaves the browser: no file, no text, and no setting
 is sent to a server. The page is short and labeled, so this manual is an
 orientation rather than a complete reference.
 
-The header names the active engine. "Engine: parse_sdp 1.6.0
+The header names the active engine. "Engine: parse_sdp 1.7.0
 (WebAssembly)" means the real library is running. "Engine: mock" means
 the WebAssembly module could not be loaded; the page then answers from
 recorded fixtures, and findings for unknown inputs are illustrative only.
