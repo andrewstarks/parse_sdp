@@ -17,6 +17,7 @@ export function initInput(root, { onSubmit, fetchText }) {
   const urlInput = root.querySelector("#url-input");
   const copyLink = root.querySelector("#copy-link");
   const urlStatus = root.querySelector("#url-status");
+  const urlError = root.querySelector("#url-error");
   let fileName = "session";
   // A textarea normalises CR LF to LF, which would turn every CRLF file
   // into a wall of bare-LF warnings. Keep the text as loaded (or pasted)
@@ -34,10 +35,12 @@ export function initInput(root, { onSubmit, fetchText }) {
 
   // The page address has ?url= only while the input is the text fetched
   // from that URL, so a copied link reproduces the result. Pasted text is
-  // never put in the address (decision parse_sdp-q7s).
+  // never put in the address (decision parse_sdp-q7s). A new input also
+  // removes an earlier URL error.
   function setSourceUrl(url) {
     history.replaceState(history.state, "", shareLink(location.href, url));
     copyLink.hidden = !url;
+    showBanner(urlError, null);
   }
 
   function loadText(text, name, sourceUrl = null) {
@@ -59,6 +62,7 @@ export function initInput(root, { onSubmit, fetchText }) {
   async function loadUrl(input) {
     urlInput.value = input;
     showError(null);
+    showBanner(urlError, null);
     setText(urlStatus, "Loading…");
     try {
       const r = await fetchSdp(input, { pageProtocol: location.protocol });
@@ -67,7 +71,9 @@ export function initInput(root, { onSubmit, fetchText }) {
       loadText(r.text, r.name, r.url);
     } catch (e) {
       setText(urlStatus, "");
-      showError(e.message);
+      // The URL error is shown under the URL box, next to the address
+      // that failed, and not in the input error banner under the text box.
+      showBanner(urlError, e.message);
     }
   }
 
@@ -157,9 +163,13 @@ export function initInput(root, { onSubmit, fetchText }) {
       groups.map((g) => h("optgroup", { label: g.label }, g.items.map((it) => h("option", { value: it.path }, it.label)))));
   }
 
+  function showBanner(el, message) {
+    setText(el, message ?? "");
+    el.hidden = !message;
+  }
+
   function showError(message) {
-    setText(error, message ?? "");
-    error.hidden = !message;
+    showBanner(error, message);
   }
 
   return { showError, setExamples, loadUrl, getText: () => textarea.value, getFileName: () => fileName };

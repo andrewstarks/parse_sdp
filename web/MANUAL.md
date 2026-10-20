@@ -11,7 +11,7 @@ for a URL that the user gives (see
 [Loading an SDP file from a URL](#loading-an-sdp-file-from-a-url)). The page is short and labeled, so this manual is an
 orientation rather than a complete reference.
 
-The header names the active engine. "Engine: parse_sdp 1.8.0
+The header names the active engine. "Engine: parse_sdp 1.8.1
 (WebAssembly)" means the real library is running. "Engine: mock" means
 the WebAssembly module could not be loaded; the page then answers from
 recorded fixtures, and findings for unknown inputs are illustrative only.
@@ -36,7 +36,8 @@ above the text box, or chosen from the "Examples" dropdown. Each of
 those actions runs the analysis at once. Text typed into the box
 is analyzed when the "Analyze" button is pressed or when Ctrl+Enter
 (Cmd+Enter on macOS) is pressed inside the box. An input that cannot be
-read is reported in a banner under the toolbar.
+read is reported in a banner under the toolbar. A URL that cannot be
+loaded is reported in a banner directly under the "From URL" box.
 
 ## Loading an SDP file from a URL
 

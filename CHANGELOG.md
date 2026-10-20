@@ -9,6 +9,16 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 
+## [1.8.1] — 2026-10-20
+
+### Changed
+
+- The playground shows a URL load error in a banner directly under the
+  "From URL" box. In 1.8.0, the error was shown in the input error banner
+  under the text box, away from the address that failed. Any new input
+  (a paste, an edit, a dropped or opened file, an example, or another URL)
+  removes the URL error.
+
 ## [1.8.0] — 2026-10-20
 
 The library is unchanged in this release. The changes are in the browser
