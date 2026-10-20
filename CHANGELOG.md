@@ -9,6 +9,8 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 
+## [1.8.0] — 2026-10-20
+
 The library is unchanged in this release. The changes are in the browser
 playground and in the documentation.
 
