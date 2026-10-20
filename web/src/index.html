@@ -71,7 +71,10 @@
       </div>
       <div id="crlf-note" class="banner warn crlf-note" hidden>
         <p>The report has LF-only line endings, and this text was pasted or typed into the box. Copying and pasting can change CRLF line endings to LF, so these warnings may come from the copy and not from the file. Open the file or load its URL to check the line endings exactly.</p>
-        <button id="crlf-note-dismiss" type="button">Don't show again</button>
+        <div class="crlf-note-actions">
+          <button id="crlf-note-off" type="button">Turn off warning</button>
+          <button id="crlf-note-dismiss" type="button">Don't show again</button>
+        </div>
       </div>
       <div class="toolbar">
         <button id="analyze" type="button" class="primary">Analyze</button>

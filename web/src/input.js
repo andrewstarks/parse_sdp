@@ -7,8 +7,9 @@ import { decodeBytes, fetchSdp, isLocalNetworkRequest, parseSdpUrl, shareLink } 
 
 const CRLF_NOTE_KEY = "parse_sdp.crlfNoteDismissed";
 
-// onSubmit(text, fileName); fetchText(path) → Promise<string> for examples.
-export function initInput(root, { onSubmit, fetchText }) {
+// onSubmit(text, fileName); fetchText(path) → Promise<string> for examples;
+// onLfOnlyOff() turns the LF-only line-ending check off in the policy.
+export function initInput(root, { onSubmit, fetchText, onLfOnlyOff }) {
   const textarea = root.querySelector("#input-text");
   const dropZone = root.querySelector("#drop-zone");
   const fileInput = root.querySelector("#file-input");
@@ -194,6 +195,11 @@ export function initInput(root, { onSubmit, fetchText }) {
   function setLfOnlyReported(reported) {
     crlfNote.hidden = !(reported && fromTextBox && !crlfNoteDismissed());
   }
+
+  root.querySelector("#crlf-note-off").addEventListener("click", () => {
+    crlfNote.hidden = true;
+    onLfOnlyOff?.();
+  });
 
   root.querySelector("#crlf-note-dismiss").addEventListener("click", () => {
     try { localStorage.setItem(CRLF_NOTE_KEY, "1"); } catch { /* hidden for this page only */ }
