@@ -796,7 +796,7 @@ end
 -- §7.2 SSN-conditional (JT-NM Tested — AMWA sdpoker Issue #11): a
 -- :2022-only value (TCS=ST2115LOGS3 or colorimetry=ALPHA) must be paired
 -- with SSN=ST2110-20:2022. Reverse direction ("SSN=:2022 without
--- :2022-only values forbidden") is deferred per PLAN.md known items.
+-- :2022-only values forbidden") is not enforced; decision bead parse_sdp-m0w.
 M.register("st2110-20.a.fmtp.ssn-required-for-2022-only-values", {
   kind             = "semantic",
   default_severity = "error",
@@ -1446,7 +1446,7 @@ M.register("st2110-10.m.proto-must-be-rtp-avp", {
 --
 -- TSDELAY — §8.7: "The time value is represented as a decimal positive
 -- integer number of microseconds." POS-DIGIT *DIGIT (>= 1; TSDELAY=0
--- is forbidden — see PLAN.md Known Deferred Items).
+-- is forbidden — see decision bead parse_sdp-v18).
 --
 -- Out of scope: the §7.9-conditional "TSMODE=SAMP requires TSDELAY"
 -- coupling — §8.7 restricts that pairing to §7.9 time-preserving
@@ -1596,7 +1596,7 @@ M.register("st2110-40.a.fmtp.exactframerate-invalid-value", {
 -- defines TROFFSET / TROFF value form as a positive integer (signaling
 -- absence of which uses the default; TROFF=0 is reserved per the §8.2
 -- "positive integer" SHALL — same form-precedence rationale as §8.7
--- TSDELAY, see PLAN.md Known Deferred Items).
+-- TSDELAY, see decision bead parse_sdp-2or).
 M.register("st2110-40.a.fmtp.troff-invalid-value", {
   kind             = "semantic",
   default_severity = "error",

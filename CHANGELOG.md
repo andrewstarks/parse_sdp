@@ -9,6 +9,13 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 
+### Changed
+
+- Planning moved from PLAN.md to beads (`bd`). Open work is filed as beads;
+  `bd ready` lists it. The Known Deferred Items are closed beads of type
+  `decision`, and the code comments that cited PLAN.md now cite the decision
+  ids. CLAUDE.md describes the workflow. PLAN.md is removed.
+
 ## [1.6.0] — 2026-10-20
 
 ### Added

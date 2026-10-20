@@ -175,7 +175,8 @@ end
 -- fail_on_first emission.
 
 -- §7.2 SSN-conditional. Forward direction only — reverse ("SSN=:2022
--- without :2022-only values forbidden") deferred per PLAN.md known items.
+-- without :2022-only values forbidden") is not enforced; decision bead
+-- parse_sdp-m0w.
 local function check_ssn_conditional(params, ctx, pos, field_path)
   local trigger
   if base.params_get(params, "TCS")         == "ST2115LOGS3" then trigger = "TCS=ST2115LOGS3" end

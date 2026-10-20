@@ -211,7 +211,7 @@ parse_sdp/
 ├── Dockerfile
 ├── docker-compose.yml
 ├── GUIDE.md                     # full documentation
-├── PLAN.md                      # guiding principles and deferred items
+├── .beads/                      # beads (bd) issue tracker: open work and decisions
 └── CHANGELOG.md
 ```
 
@@ -221,7 +221,8 @@ parse_sdp/
 - [web/MANUAL.md](web/MANUAL.md) is the user manual for the browser
   playground.
 - [CHANGELOG.md](CHANGELOG.md) lists the changes in each release.
-- [PLAN.md](PLAN.md) states the guiding principles and the known
-  deferred items.
+- Open work and settled design decisions are tracked as beads with
+  [bd](https://github.com/gastownhall/beads). Run `bd ready` for open work
+  and `bd list --type decision --all` for the decisions.
 - The [audits/](audits/) memos contain the per-clause coverage maps that
   the validation checks are grounded in.

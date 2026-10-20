@@ -1524,7 +1524,7 @@ Cross-parameter checks:
 | `st2110-20.a.fmtp.tcs-bt2100linpq-requires-depth-16f` | `TCS=BT2100LINPQ` with a `depth` other than `16f`. | ST 2110-20:2022 §7.6 |
 | `st2110-20.a.fmtp.tcs-bt2100linhlg-requires-depth-16f` | `TCS=BT2100LINHLG` with a `depth` other than `16f`. | ST 2110-20:2022 §7.6 |
 | `st2110-20.a.fmtp.tcs-st2065-1-requires-depth-16f` | `TCS=ST2065-1` with a `depth` other than `16f`. | ST 2110-20:2022 §7.6 |
-| `st2110-20.a.fmtp.ssn-required-for-2022-only-values` | `TCS=ST2115LOGS3` or `colorimetry=ALPHA` with an `SSN` other than `ST2110-20:2022`. Those two values are not defined in the 2017 revision. The reverse direction (requiring `ST2110-20:2017` when no 2022-only value is used) is not enforced; see "Known Deferred Items" in PLAN.md. | ST 2110-20:2022 §7.2 |
+| `st2110-20.a.fmtp.ssn-required-for-2022-only-values` | `TCS=ST2115LOGS3` or `colorimetry=ALPHA` with an `SSN` other than `ST2110-20:2022`. Those two values are not defined in the 2017 revision. The reverse direction (requiring `ST2110-20:2017` when no 2022-only value is used) is not enforced, because most senders that implement the 2022 revision signal `ST2110-20:2022` unconditionally. | ST 2110-20:2022 §7.2 |
 
 Checks on the `a=rtpmap` line:
 
@@ -1651,7 +1651,7 @@ revision. An `a=fmtp` line is required, because `SSN` and
 | `st2110-40.a.fmtp.exactframerate-required` | A `smpte291` stream with no `exactframerate` parameter. | ST 2110-40:2023 §7 |
 | `st2110-40.a.fmtp.exactframerate-invalid-value` | An `exactframerate` that is not a positive integer or a positive `n/d` ratio in lowest terms (the ST 2110-20 form). | ST 2110-20:2022 §7.2 |
 | `st2110-40.a.fmtp.tm-invalid-value` | A `TM` value other than `LLTM` or `CTM`. | ST 2110-40:2023 §7 |
-| `st2110-40.a.fmtp.troff-invalid-value` | A `TROFF` that is not a positive integer. `TROFF=0` is rejected; see "Known Deferred Items" in PLAN.md. | ST 2110-21:2022 §8.2 |
+| `st2110-40.a.fmtp.troff-invalid-value` | A `TROFF` that is not a positive integer. `TROFF=0` is rejected: section 8.2 says the value is "expressed as a positive integer", although section 6.2 permits a zero offset. | ST 2110-21:2022 §8.2 |
 | `st2110-40.a.fmtp.did-sdid-invalid-value` | A `DID_SDID` value that is not `{0xH[H],0xH[H]}`, where each `H[H]` is one or two hexadecimal digits. | RFC 8331 §4 |
 | `st2110-40.a.fmtp.vpid-code-invalid-value` | A `VPID_Code` that is not a non-negative integer. | RFC 8331 §4 |
 | `st2110-40.a.fmtp.vpid-code-too-many` | More than one `VPID_Code` parameter on one `a=fmtp` line. | RFC 8331 §4 |
