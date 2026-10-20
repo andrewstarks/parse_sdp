@@ -80,7 +80,13 @@ spec/
                       mode dispatch.
   cli_spec.lua        CLI subcommand integration tests.
   examples_spec.lua   every file under examples/<tier>/<valid|invalid> passes
-                      or fails its tier as the directory says.
+                      or fails its tier as the directory says; each invalid
+                      file fails with the id, line, and findings in EXPECTED.
+  mutation_spec.lua   properties over mutated copies of every example: an
+                      unparseable line is the reported error, parse never
+                      raises, fail_on_first keeps the verdict, round-trip.
+  check_coverage.lua  script (`lua spec/check_coverage.lua`): fails when a
+                      registered check is never recorded by any spec.
   grammar_bitops_spec.lua  bitwise helper backends (native on 5.3+, arithmetic
                       on 5.1 and 5.2).
   support.lua         shared test helpers (finding_for, timing fixtures).
@@ -429,6 +435,16 @@ directly on `main`. Anything that touches behavior, the public API
   must enforce the ordering. The parser must reject violations.
 - LPEG failure position: use `lpeg.Cp()` captures and map the byte offset to
   a line and column after the match attempt, not during the match.
+- `Cb"name"` raises a Lua error when no group named `name` is in scope. It
+  does not fail the match, and an ordered choice does not catch it. Every
+  group that a tier reads with `Cb` must exist on every path. The base
+  grammar defines a nil `params` group on the raw fmtp branch and a nil
+  `media` group in the session section for this reason.
+- Findings live in `ctx.findings`, a side table, so backtracking does not
+  remove them. A `Cmt` that records a finding must sit after everything
+  in its alternative that can still fail. Put a closing look-ahead inside
+  the `Cmt` pattern, not after it. Section and document checks run only on
+  a section that parsed to its end.
 - ST 2110 `fmtp` values are semicolon-separated `key=value` pairs. Parse
   them as a sub-grammar, not with string splits.
 - IPMX validation runs ST 2110 validation first. Never skip the lower tier.

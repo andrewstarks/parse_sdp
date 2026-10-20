@@ -91,6 +91,16 @@ local ipv4_mcast_suffix = C(R("09") ^ 1) * (P("/") * C(R("09") ^ 1)) ^ -1 * P(-1
 -- IPv6 multicast suffix: <numaddr> — RFC 8866 §9 IP6-multicast.
 local ipv6_numaddr = C(R("09") ^ 1) * P(-1)
 
+-- RFC 8866 §5.7: "When the <addrtype> is "IP4" or "IP6", the connection
+-- address is defined as follows: If the session is multicast, the
+-- connection address will be an IP multicast group address. If the session
+-- is not multicast, then the connection address contains the unicast IP
+-- address of the expected data source, data relay, or data sink". The §9
+-- ABNF is looser (unicast-address = IP4-address / IP6-address / FQDN /
+-- extn-addr), so a host name matches the grammar. The checks follow §5.7,
+-- and their message says so: the multicast, TTL, and source-filter checks
+-- need an IP literal.
+--
 -- Validate one connection-address. Records findings to ctx; returns true to
 -- continue, false to fail the match (when record() returns false under
 -- fail_on_first=true for an error-severity finding). Called from a trailing
@@ -501,13 +511,18 @@ end
 -- unsafe: it breaks `%` accumulator capture inside leaves because V-rule
 -- indirection interferes with LPeg's compile-time resolution of
 -- `Ct(P("")) * X % fold`.
+--
+-- The body ends with `-1` so the document checks, which run in the Cmt
+-- that wraps it, only see a body that reached end of input. A body cut
+-- short by an unparseable line would otherwise record findings about
+-- lines the grammar never read.
 local function make_document_body()
   return Ct(
         Cg(V"v_line", "version")
       * Cg(V"o_line", "origin")
       * Cg(Ct(V"session_inner"), "session")
       * Cg(Ct(V"media_section" ^ 0), "media")
-    )
+    ) * -1
 end
 
 local rules = {
@@ -515,8 +530,7 @@ local rules = {
   "document",
 
   document = V"bom_opt" * Cmt(make_document_body() * Carg(1),
-                              make_validate_doc(base_semantic_checks))
-           * -1,
+                              make_validate_doc(base_semantic_checks)),
 
   -- Optional UTF-8 BOM (EF BB BF) at the start of the file. RFC 8866 §6
   -- doesn't require it and SDP charset signaling lives in `a=charset:`;
@@ -531,8 +545,13 @@ local rules = {
                 end) ^ -1,
 
   -- Session-level inner section: s= through a=* (RFC 8866 §5).
+  -- The nil `media` group adds no field to the session table. It gives a
+  -- tier's `Cb"media"` (read by session-level a= rules) something to
+  -- resolve to: a back-reference to a missing group raises a Lua error
+  -- instead of failing the match.
   session_inner =
-        Cg(V"s_line", "name")
+        Cg(Cc(nil), "media")
+      * Cg(V"s_line", "name")
       * (Cg(V"i_line", "info")) ^ -1
       * (Cg(V"u_line", "uri")) ^ -1
       * Cg(Ct(V"e_line" ^ 0), "emails")
@@ -562,7 +581,8 @@ local rules = {
   -- Cmts inside (a_rtpmap, a_fmtp dispatch, AM824 channels) can read it
   -- for field_path construction. The trailing Cmt dispatches
   -- ctx.media_section_checks (threaded by make_match per-grammar, so the
-  -- rule itself stays tier-agnostic).
+  -- rule itself stays tier-agnostic). The `#(m= / EOF)` look-ahead keeps
+  -- the checks off a block cut short by an unparseable line.
   media_section =
         Cmt(Carg(1), function(_, pos, ctx)
               if ctx then
@@ -578,7 +598,7 @@ local rules = {
               * Cg(Ct(V"b_line" ^ 0), "bandwidths")
               * V"k_line" ^ -1
               * Cg(Ct(V"a_line" ^ 0), "attributes")
-            ) * Carg(1),
+            ) * #(P("m=") + -1) * Carg(1),
           function(_, pos, block, ctx)
             if not ctx then return pos, block end
             if ctx.media_section_checks then
@@ -657,9 +677,9 @@ local rules = {
     ) / strip_c_value_internals,
 
   -- Text fields. RFC 8866 §5.4, §5.5, §5.6 — each takes a "text" value
-  -- (one or more bytes up to the next CRLF). At the base tier we accept
-  -- the value as a single string; Phase 3 will add a soft-syntactic
-  -- finding for embedded bare CR (forbidden by the §9 ABNF byte-string).
+  -- (one or more bytes up to the next CRLF), captured as a single string.
+  -- A NUL or a bare CR ends the value (see line_end_chars), so the line
+  -- fails to parse: the §9 byte-string excludes both.
   i_value = C((1 - V"value_boundary_chars") ^ 1),
   u_value = C((1 - V"value_boundary_chars") ^ 1),
   e_value = C((1 - V"value_boundary_chars") ^ 1),
@@ -851,8 +871,11 @@ local rules = {
       * V"fmtp_trailing_sep_record" ^ -1
       * #V"line_end_chars",
 
+  -- The `#line_end_chars` look-ahead sits inside the Cmt so the finding is
+  -- recorded only for a ';' that really ends the line. Recorded before the
+  -- look-ahead, it would survive the branch failing over to fmtp_raw_branch.
   fmtp_trailing_sep_record =
-      Cmt(P(";") * V"fmtp_hws" ^ 0 * Carg(1),
+      Cmt(P(";") * V"fmtp_hws" ^ 0 * #V"line_end_chars" * Carg(1),
           function(_, pos, ctx)
             if not ctx then return pos end
             local cont = errors.record(ctx,
@@ -884,8 +907,12 @@ local rules = {
   fmtp_val_chars = 1 - S(";\r\n"),
 
   -- Raw fallback: any non-empty byte-string up to line_end. Captured as
-  -- `raw` because no `params` field is populated.
-  fmtp_raw_branch = Cg(C((1 - V"value_boundary_chars") ^ 1), "raw"),
+  -- `raw`. The nil `params` group adds no field to the attribute table,
+  -- but it gives tier dispatchers' `Cb"params"` something to resolve: a
+  -- back-reference to a group that does not exist raises a Lua error
+  -- instead of failing the match.
+  fmtp_raw_branch = Cg(Cc(nil), "params")
+      * Cg(C((1 - V"value_boundary_chars") ^ 1), "raw"),
 
   -- mid (RFC 5888 §4): identification-tag = RFC 8866 §9 token.
   -- Uniqueness across the SDP is enforced at doc level (check_mid_uniqueness).
@@ -1090,7 +1117,7 @@ local rules = {
   -- accepted as an opaque extension. The same per-tier-of-prefix
   -- discipline used by `known_attr_lookahead` at the a= level.
   tsr_reserved =
-        (P("ntp") + P("ptp")) * #P("=")
+        (P("ntp") + P("ptp")) * #(P("=") + V"line_end_chars")
       + P("private") * #(P(":") + V"line_end_chars")
       + (P("glonass") + P("gps") + P("gal") + P("local"))
         * #(P("=") + V"line_end_chars"),
@@ -1122,6 +1149,15 @@ local rules = {
 
   mediaclk_body = V"mc_sender" + V"mc_direct" + V"mc_ieee1722" + V"mc_ext",
 
+  -- Reserved mediaclock names from RFC 7273 §5.4, used as a negative
+  -- look-ahead in `mc_ext` (the same guard as `tsr_reserved`). The ABNF
+  -- defines "sender", "direct" [ "=" 1*DIGIT ] [SP rate], and "IEEE1722="
+  -- EUI64; a malformed instance (`sender=x`, `direct=x`, a bare
+  -- `IEEE1722`) must not be accepted as an opaque mediaclock-ext.
+  mc_reserved =
+      (P("sender") + P("direct") + P("IEEE1722"))
+    * #(P("=") + SP + V"line_end_chars"),
+
   mc_sender = P("sender") * Cg(Cc("sender"), "mode") * #V"line_end_chars",
 
   -- direct: bare or with =offset and/or " rate=N/N". Offset ABNF is
@@ -1144,7 +1180,8 @@ local rules = {
       * Cg(V"eui64_str", "stream_id")
       * #V"line_end_chars",
 
-  mc_ext = Cg(C(V"rfc8866_token_char" ^ 1), "mode")
+  mc_ext = -V"mc_reserved"
+      * Cg(C(V"rfc8866_token_char" ^ 1), "mode")
       * (P("=") * Cg(C((1 - V"value_boundary_chars") ^ 1), "value")) ^ -1
       * #V"line_end_chars",
 
@@ -1255,8 +1292,8 @@ local rules = {
   --   2. bare LF — soft-syntactic, records sdp.line.lf-only-line-ending.
   --   3. end-of-input lookahead — fires once on the last line if the file
   --      ends without a terminator; records sdp.file.trailing-newline-missing.
-  --      #P(-1) does not consume, so the surrounding `* -1` in `document`
-  --      still matches EOF after the finding lands.
+  --      #P(-1) does not consume, so the `-1` that ends the document
+  --      body still matches EOF after the finding lands.
   -- line_end_chars: pure-structural counterpart used for byte-boundary
   -- lookaheads (`1 - V"line_end_chars"`, `#V"line_end_chars"`). Cmt
   -- callbacks fire during lookahead evaluation in LPeg, so using V"line_end"
@@ -1270,7 +1307,11 @@ local rules = {
   -- chance to fire). Internal whitespace (ws not adjacent to a terminator)
   -- stays inside the value.
   value_boundary_chars = S(" \t") ^ 1 * V"line_end_chars" + V"line_end_chars",
-  line_end_chars       = P("\r\n") + P("\n") + P(-1),
+  -- RFC 8866 §9: byte-string = 1*(%x01-09/%x0B-0C/%x0E-FF) ";any byte
+  -- except NUL, CR, or LF". A NUL or a CR outside CRLF also stops every
+  -- value, so no value can contain one; line_end then fails on that byte
+  -- and the line is the parse error.
+  line_end_chars       = P("\r\n") + P("\n") + P(-1) + S("\0\r"),
 
   line_end =
         ( Cmt(S(" \t") ^ 1 * Carg(1), record_trailing_ws) * V"line_end_core"
@@ -1370,7 +1411,6 @@ function M.extend(parent, overrides)
   child_rules.document = V"bom_opt"
     * Cmt(parent.make_document_body() * Carg(1),
           parent.make_validate_doc(child_checks))
-    * -1
 
   local child_grammar = lpeg.P(child_rules)
   local child = {

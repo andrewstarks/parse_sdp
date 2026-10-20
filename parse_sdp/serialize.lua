@@ -125,6 +125,14 @@ end
 -- shape (also how flag attributes like a=recvonly render).
 local ATTR_RENDERERS = {}
 
+-- Generic carrier: a=<name> or a=<name>:<value>.
+local function render_generic(attr)
+  if attr.value ~= nil then
+    return ln("a", tostring(attr.name) .. ":" .. tostring(attr.value))
+  end
+  return ln("a", tostring(attr.name))
+end
+
 local function render_attribute(attr, field_path)
   if type(attr) ~= "table" then
     return nil, errors.new(
@@ -137,11 +145,7 @@ local function render_attribute(attr, field_path)
   end
   local renderer = ATTR_RENDERERS[name]
   if renderer then return renderer(attr, field_path) end
-  -- Generic carrier: a=<name> or a=<name>:<value>.
-  if attr.value ~= nil then
-    return ln("a", tostring(name) .. ":" .. tostring(attr.value))
-  end
-  return ln("a", tostring(name))
+  return render_generic(attr)
 end
 
 local function render_attributes(attrs, field_prefix)
@@ -511,6 +515,11 @@ end
 
 local function build_tsr_ptp(attr, field_path)
   -- "ptp=" ptp-version ":" (ptp-gmid [":" ptp-domain] / "traceable")
+  -- A body the grammar captured as malformed (sdp.a.ts-refclk.ptp-malformed
+  -- demoted below error) is {source = "ptp", value = <body>}; reproduce it.
+  if attr.version == nil and attr.value ~= nil then
+    return "ptp=" .. tostring(attr.value)
+  end
   local vs, e = require_fields(attr, field_path, { "version" })
   if not vs then return nil, e end
   local head = "ptp=" .. tostring(vs[1]) .. ":"
@@ -651,10 +660,10 @@ end
 
 -- ── IPMX-tier attribute renderers ──────────────────────────────────────────
 -- Each inverts a rule the IPMX tier adds via `a_tier_extensions` (see
--- grammar/ipmx.lua's a_infoframe / a_hkep / a_privacy). Round-trip is
--- only meaningful when the producing doc was parsed by ipmx.match —
--- base.match doesn't know these names and routes them to the generic
--- carrier, which would land on the wrong renderer here.
+-- grammar/ipmx.lua's a_infoframe / a_hkep / a_privacy). The base and
+-- ST 2110 tiers don't know these names and capture them in the generic
+-- {name, value} shape; `below_ipmx_tier` renders that shape as the
+-- generic carrier so a doc parsed at any tier round-trips.
 
 -- infoframe (TR-10-10 §8): "a=infoframe:<port> SSN=<ssn>;DIT=<dit>".
 -- The grammar fixes the literal "SSN=" and ";DIT=" punctuation; the
@@ -708,6 +717,23 @@ ATTR_RENDERERS.privacy = function(attr, field_path)
   if attr.trailing_semi then body = body .. ";" end
   return ln("a", "privacy:" .. body)
 end
+
+-- The generic shape holds only `name` and, for a value attribute, `value`.
+-- Any other key means a decomposed table, which the IPMX renderer checks.
+local GENERIC_KEYS = { name = true, value = true }
+
+local function below_ipmx_tier(render)
+  return function(attr, field_path)
+    for k in pairs(attr) do
+      if not GENERIC_KEYS[k] then return render(attr, field_path) end
+    end
+    return render_generic(attr)
+  end
+end
+
+ATTR_RENDERERS.infoframe = below_ipmx_tier(ATTR_RENDERERS.infoframe)
+ATTR_RENDERERS.hkep      = below_ipmx_tier(ATTR_RENDERERS.hkep)
+ATTR_RENDERERS.privacy   = below_ipmx_tier(ATTR_RENDERERS.privacy)
 
 -- ── Public entry point ─────────────────────────────────────────────────────
 

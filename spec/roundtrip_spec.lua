@@ -1309,6 +1309,24 @@ describe("parse_sdp.serialize — Phase 8.D.3 ts-refclk renderer", function()
     assert.matches("address", e.message)
   end)
 
+  -- NOT-SPEC: library — sdp.a.ts-refclk.ptp-malformed demoted to warn
+  -- keeps the line as {source = "ptp", value = <body>}. The renderer must
+  -- reproduce it so to_sdp and the --all-findings CLI path agree with parse.
+  it("round-trips a malformed ptp= body captured under a demoted policy", function()
+    local text = lines_to_sdp({
+      "v=0", "o=- 1 1 IN IP4 127.0.0.1", "s=X",
+      "c=IN IP4 224.0.0.1/127", "t=0 0",
+      "a=ts-refclk:ptp=IEEE1588-2008",
+    })
+    local opts = { policy = { ["sdp.a.ts-refclk.ptp-malformed"] = "warn" } }
+    local doc1 = base.match(text, opts)
+    assert.is_truthy(doc1)
+    local text2, e = serialize.to_sdp(doc1)
+    assert.is_nil(e)
+    assert.truthy(text2:find("a=ts-refclk:ptp=IEEE1588-2008\r\n", 1, true))
+    assert.same(doc1, base.match(text2, opts))
+  end)
+
   it("returns nil, err when ts-refclk:ptp non-traceable is missing grandmaster", function()
     local out, e = serialize.to_sdp({
       version = "0",
@@ -1856,18 +1874,56 @@ describe("parse_sdp.serialize — Phase 8.E privacy renderer", function()
     assert.matches("params", e.message)
   end)
 
-  it("returns nil, err when privacy params field is absent", function()
+  -- NOT-SPEC: library — {name = "privacy"} is what the base tier captures
+  -- for the property attribute "a=privacy" (RFC 8866 §5.13), so it renders
+  -- as that line. A partly decomposed table still reports its gaps.
+  it("renders {name = 'privacy'} as the property attribute a=privacy", function()
+    local out = serialize.to_sdp({
+      version = "0",
+      origin = { username = "-", sess_id = "1", sess_version = "1",
+                 net_type = "IN", addr_type = "IP4",
+                 unicast_address = "127.0.0.1" },
+      session = { name = "X", time_descriptions = {{ start = 0, stop = 0 }},
+                  attributes = {{ name = "privacy" }} },
+    })
+    assert.truthy(out:find("a=privacy\r\n", 1, true))
+  end)
+
+  it("returns nil, err when a decomposed hkep is missing a field", function()
     local out, e = serialize.to_sdp({
       version = "0",
       origin = { username = "-", sess_id = "1", sess_version = "1",
                  net_type = "IN", addr_type = "IP4",
                  unicast_address = "127.0.0.1" },
       session = { name = "X", time_descriptions = {{ start = 0, stop = 0 }},
-                  attributes = {{ name = "privacy" }} }, -- no params
+                  attributes = {{ name = "hkep", nettype = "IN" }} },
     })
     assert.is_nil(out)
-    assert.matches("params", e.message)
+    assert.matches("port", e.message)
   end)
+end)
+
+-- The base and ST 2110 tiers do not decompose the IPMX attribute names, so
+-- they capture these lines in the generic {name, value} shape. The default
+-- parse mode is the base tier, so that shape must render too.
+describe("parse_sdp.serialize — IPMX attribute names parsed below the IPMX tier", function()
+  for _, line in ipairs({
+    "a=privacy:protocol=RTP;mode=AES-128-CTR",
+    "a=hkep:5000 IN IP4 192.0.2.1 node port",
+    "a=infoframe:5000 SSN=ST2110-40:2023;DIT=0x87",
+    "a=privacy",
+    "a=hkep",
+  }) do
+    it("round-trips " .. line .. " through the base tier", function()
+      local text = lines_to_sdp({
+        "v=0", "o=- 1 1 IN IP4 127.0.0.1", "s=X",
+        "c=IN IP4 224.0.0.1/127", "t=0 0", line,
+      })
+      local doc1, doc2, text2 = round_trip(text)
+      assert.same(doc1, doc2)
+      assert.truthy(text2:find(line .. "\r\n", 1, true))
+    end)
+  end
 end)
 
 -- ── Phase 8.F: fixture-wide round-trip ──────────────────────────────────────

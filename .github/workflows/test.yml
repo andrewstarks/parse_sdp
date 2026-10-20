@@ -12,6 +12,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - run: docker compose run --rm test
+      - run: docker compose run --rm test lua spec/check_coverage.lua
 
   matrix:
     runs-on: ubuntu-latest
@@ -30,7 +31,7 @@ jobs:
           luarocks install dkjson
           luarocks install argparse
           luarocks install busted
-      - run: luarocks make ./parse_sdp-1.5.1-1.rockspec
+      - run: luarocks make ./parse_sdp-1.6.0-1.rockspec
       - run: busted spec/
 
   conformance:

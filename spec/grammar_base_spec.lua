@@ -507,6 +507,49 @@ describe("base SDP grammar — text fields and bandwidth (Phase 2.C)", function(
     assert.is_nil(base.match(text))
   end)
 
+  -- SPEC: RFC 8866 §9: byte-string = 1*(%x01-09/%x0B-0C/%x0E-FF)
+  -- ";any byte except NUL, CR, or LF". §5.13: "Attribute values are octet
+  -- strings, and MAY use any octet value except 0x00 (Nul), 0x0A (LF), and
+  -- 0x0D (CR)." A NUL or a CR that is not part of CRLF ends no valid line,
+  -- so the line that holds it is the parse error.
+  describe("NUL and lone CR are not byte-string octets (RFC 8866 §9)", function()
+    local sdp = require("parse_sdp")
+    local cases = {
+      { "s=", "s=ab\0c" },
+      { "s=", "s=ab\rc" },
+      { "i=", "i=ab\0c" },
+      { "i=", "i=ab\rc" },
+      { "a=", "a=tool:ab\0c" },
+      { "a=", "a=tool:ab\rc" },
+      { "a=", "a=recvonly\r" },
+      { "a=fmtp", "a=fmtp:0 a=b\rc" },
+      { "a=fmtp", "a=fmtp:0 ab\0c" },
+      { "a=ts-refclk", "a=ts-refclk:foo=b\rc" },
+      { "a=mediaclk", "a=mediaclk:foo=b\0c" },
+    }
+    for _, case in ipairs(cases) do
+      it(("rejects %q on its own line"):format(case[2]), function()
+        local lines = { "v=0", "o=- 1 1 IN IP4 127.0.0.1", "s=X",
+                        "c=IN IP4 127.0.0.1", "t=0 0",
+                        "m=audio 49172 RTP/AVP 0" }
+        local at
+        if case[1] == "s=" then lines[3] = case[2]; at = 3
+        elseif case[1] == "i=" then table.insert(lines, 4, case[2]); at = 4
+        else lines[#lines + 1] = case[2]; at = #lines end
+        local doc, err = sdp.parse(lines_to_sdp(lines))
+        assert.is_nil(doc)
+        assert.equal("PARSE_ERROR", err.code)
+        assert.equal(at, err.line)
+      end)
+    end
+
+    -- NOT-SPEC: library
+    it("rejects a file whose last line ends in a lone CR", function()
+      local text = "v=0\r\no=- 1 1 IN IP4 127.0.0.1\r\ns=X\r\nt=0 0\r"
+      assert.is_nil(base.match(text))
+    end)
+  end)
+
 end)
 
 describe("base SDP grammar — media array shape (Phase 2.C)", function()
@@ -2033,6 +2076,18 @@ describe("base SDP grammar — ts-refclk strict body enforcement (RFC 7273 §4.8
       assert.is_nil(doc)
     end)
 
+    -- SPEC: RFC 7273 §4.8: ntp = "ntp=" ntp-server, ptp = "ptp="
+    -- ptp-version ":" ptp-server. A bare "ntp" or "ptp" is a malformed
+    -- instance of a defined form, like "gps=foo" above.
+    for _, src in ipairs({ "ntp", "ptp" }) do
+      it("rejects bare " .. src .. " (clksrc-ext can't rescue it)", function()
+        local doc = base.match(minimal(nil, {
+          { "m=audio 49172 RTP/AVP 0", "a=ts-refclk:" .. src },
+        }))
+        assert.is_nil(doc)
+      end)
+    end
+
     it("rejects ntp= with no address (clksrc-ext can't rescue it)", function()
       local doc = base.match(minimal(nil, {
         { "m=audio 49172 RTP/AVP 0", "a=ts-refclk:ntp=" },
@@ -2144,6 +2199,33 @@ describe("base SDP grammar — Phase 4.C mediaclk decomposition (RFC 7273 §5.4)
     local a = doc.media[1].attributes[1]
     assert.equal("src:base64tag", a.id)
     assert.equal("sender",        a.mode)
+  end)
+
+  -- SPEC: RFC 7273 §5.4: sender = "sender", direct = "direct" [ "=" 1*DIGIT ]
+  -- [SP rate], ieee1722-streamid = "IEEE1722=" EUI64. A malformed instance
+  -- of a defined form must not fall through to mediaclock-ext, the same
+  -- guard ts-refclk applies to its reserved names.
+  describe("reserved-name guard on mediaclock-ext fallback", function()
+    for _, line in ipairs({
+      "a=mediaclk:sender=x",
+      "a=mediaclk:direct=x",
+      "a=mediaclk:direct=",
+      "a=mediaclk:IEEE1722",
+      "a=mediaclk:IEEE1722=zz",
+    }) do
+      it("rejects " .. line, function()
+        assert.is_nil(base.match(minimal(nil, {
+          { "m=audio 49172 RTP/AVP 0", line } })))
+      end)
+    end
+
+    it("still accepts ext tokens that merely share a prefix", function()
+      for _, line in ipairs({ "a=mediaclk:senderx=1", "a=mediaclk:directly" }) do
+        local doc = base.match(minimal(nil, {
+          { "m=audio 49172 RTP/AVP 0", line } }))
+        assert.is_truthy(doc, "expected to accept: " .. line)
+      end
+    end)
   end)
 
 end)
@@ -2710,6 +2792,19 @@ describe("base SDP grammar — Phase 5 soft-syntactic findings", function()
         assert.is_not.equal("sdp.a.fmtp.trailing-semicolon", f.id)
       end
     end)
+
+    -- NOT-SPEC: library — the k=v branch gives up on these lines and the
+    -- raw branch captures them, so no ';' was found to be trailing.
+    for _, body in ipairs({ "a=b;;x y", "a=b;;" }) do
+      it(("emits no finding when %q falls back to the raw form"):format(body), function()
+        local doc, ctx = match_collect(minimal(nil, {
+          { "m=video 49170 RTP/AVP 96", "a=rtpmap:96 H264/90000",
+            "a=fmtp:96 " .. body },
+        }))
+        assert.equal(body, base.attr_get(doc.media[1], "fmtp").raw)
+        assert.same({}, ctx.findings)
+      end)
+    end
   end)
 
   -- ── 5.D: UTF-8 BOM at file start ──────────────────────────────────────

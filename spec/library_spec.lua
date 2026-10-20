@@ -234,6 +234,43 @@ describe("library: sdp.parse() positioned error on grammar failure", function()
   end)
 
   -- NOT-SPEC: library
+  -- RFC 8866 §9: non-zero-real = zero-based-integer "." *DIGIT POS-DIGIT,
+  -- so "a=ptime:1.0" stops the grammar. The checks must not run on the
+  -- media section cut short at that line; the error is the ptime line.
+  it("reports the failing line, not checks on a cut-short media section", function()
+    local text = table.concat({
+      "v=0",
+      "o=- 1 1 IN IP4 172.16.11.20",
+      "s=x",
+      "t=0 0",
+      "m=audio 5004 RTP/AVP 97",
+      "c=IN IP4 239.2.11.20/32",
+      "a=ts-refclk:ptp=IEEE1588-2008:1C-34-DA-FF-FE-80-AE-C8:127",
+      "a=mediaclk:direct=0",
+      "a=ptime:1.0",
+      "a=rtpmap:97 L24/48000/6",
+      "a=fmtp:97 channel-order=SMPTE2110.(U06)",
+      "",
+    }, "\r\n")
+    for _, mode in ipairs({ "sdp", "st2110", "ipmx" }) do
+      local doc, err = sdp.parse(text, mode)
+      assert.is_nil(doc)
+      assert.equals("PARSE_ERROR", err.code)
+      assert.equals(9, err.line)
+      assert.equals("a=ptime:1.0", err.line_text)
+    end
+  end)
+
+  -- NOT-SPEC: library
+  it("reports the failing line, not checks on a cut-short session", function()
+    local text = "v=0\r\no=- 1 1 IN IP4 127.0.0.1\r\ns=x\r\nt=0 0\r\n"
+              .. "a=ptime:1.0\r\nm=audio 5004 RTP/AVP 0\r\n"
+    local _, err = sdp.parse(text, "st2110")
+    assert.equals("PARSE_ERROR", err.code)
+    assert.equals(5, err.line)
+  end)
+
+  -- NOT-SPEC: library
   it("formats with rust-style block including code, line, col, source line", function()
     local errors = sdp._errors
     local _, err = sdp.parse("v=0\r\no=- 1 1 IN IP7 192.168.1.1\r\ns=x\r\nt=0 0\r\n")
