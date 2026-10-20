@@ -42,6 +42,23 @@ The Lua API returns the same error as a table with the fields `id`,
 `message`, `code`, `line`, `col`, `field_path`, and `spec_ref`. The
 command-line output and the library output are the same data.
 
+## How much of a non-conforming file is checked
+
+The parser does not stop at the first problem. By default, the parser
+records every finding that it can reach and continues to the end of the
+file. Only a structural failure ends the parse: lines out of order, an
+unknown line letter, or a malformed `m=` or `o=` line, for example. The
+error then has the code `PARSE_ERROR` and names the line where matching
+stopped. A malformed value of a known attribute, such as `a=ptime:1.0`,
+is recorded as a finding, and the parse continues.
+
+`sdp.parse` and `parse_sdp validate` return only the first error, as a
+pass-or-fail answer. To see every finding from one run, use
+`parse_sdp validate --all-findings`, demote the error-severity checks
+with a policy in Lua, or use the browser playground.
+[GUIDE.md](GUIDE.md#how-much-of-a-non-conforming-file-is-checked) has
+the details.
+
 ## Features
 
 - Parses RFC 8866 SDP files into plain Lua tables. RFC 8866 obsoletes
@@ -77,8 +94,11 @@ The playground at <https://andrewstarks.github.io/parse_sdp/> runs the
 same library compiled to WebAssembly. Nothing is installed. The page
 accepts an SDP file, the JSON form of a parsed document, or a Lua table
 literal; shows the three-tier compliance report; lets the user edit
-fields with validation on each change; and downloads the result.
-Everything runs in the page, and nothing is uploaded. See
+fields with validation on each change; and downloads the result. The
+page can also load an SDP file from a URL, for example the IS-05 `transportfile`
+endpoint of an NMOS (Networked Media Open Specifications) device, so that the line endings are the ones
+that the device sends. Everything runs in the page, and the page does not
+upload the input. See
 [web/MANUAL.md](web/MANUAL.md) for the user manual.
 
 ### Docker
@@ -148,6 +168,9 @@ parse_sdp diagnose customer.sdp
 parse_sdp to_json session.sdp
 parse_sdp to_json --mode ipmx --pretty session.sdp
 cat session.sdp | parse_sdp to_json --mode st2110
+
+# An SDP file that a device serves over HTTP (the tool does not take a URL)
+curl -s http://192.0.2.10/session.sdp | parse_sdp validate -
 
 # JSON to SDP
 parse_sdp to_sdp doc.json > out.sdp

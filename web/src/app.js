@@ -14,6 +14,7 @@ import { initOutput } from "./output.js";
 import { initPolicy } from "./policy.js";
 import { initNav } from "./nav.js";
 import { groupExamples, sessionNameOf, BUNDLED_EXAMPLES } from "./examples.js";
+import { urlFromQuery } from "./url_source.js";
 
 const REPO_URL = "https://github.com/andrewstarks/parse_sdp";
 
@@ -98,6 +99,10 @@ async function main() {
   // Per-line formatting checks stay in the source view; everything else can sit on a field.
   const lineSkipIds = new Set((checks.ok ? checks.checks : []).filter((c) => c.kind === "soft-syntactic").map((c) => c.id));
   input.setExamples(groupExamples(manifest));
+
+  // A shared link (?url=<SDP URL>) loads and analyzes that URL at start.
+  const sharedUrl = urlFromQuery(location.search);
+  if (sharedUrl) input.loadUrl(sharedUrl);
 
   function applyTiers(tiers, sourceText) {
     state.tiers = tiers;

@@ -54,22 +54,58 @@ An SDP file that fails the `"sdp"` tier also fails the `"st2110"` and
 `"ipmx"` tiers.
 
 The library is strict, and the strictness is grounded in specification
-text. The library rejects an SDP file when the relevant standard
+text. An SDP file fails a tier's verdict when the relevant standard
 explicitly requires, forbids, or defines the form of something and the
-file violates that text. The library does not reject an SDP file for a
-configuration that the standard does not address. Every check has a
-stable id and a `spec_ref` field that cites the clause. The section
+file violates that text. A configuration that the standard does not
+address does not make a file fail. In this guide, "the check rejects X"
+means that a file that contains X fails the tier's verdict. Every check
+has a stable id and a `spec_ref` field that cites the clause. The section
 [What this library validates (and what it doesn't)](#what-this-library-validates-and-what-it-doesnt)
 states the rule and lists the RFC 8866 checks; the two sections after it
 list the ST 2110 and IPMX checks. The library has no lenient mode.
 
 At the RFC 8866 tier, the required lines must be present, the lines must
 be in the order that RFC 8866 section 5 defines, and every value must
-match the form the specification defines for it. An SDP file that
-violates one of these rules is rejected with an error that names the
-line and column, or the document field, and the check id. The serializer
-produces SDP text with CRLF (carriage return and line feed) line endings
-in the RFC 8866 field order.
+match the form the specification defines for it. A violation of one of
+these rules produces a finding that names the line and column, or the
+document field, and the check id. The serializer produces SDP text with
+CRLF (carriage return and line feed) line endings in the RFC 8866 field
+order.
+
+### How much of a non-conforming file is checked
+
+A file that fails the verdict is still checked to the end in most
+cases. The parser records each finding and continues:
+
+- By default (`opts.fail_on_first = false`), the parser records every
+  finding that the parser can reach. The parse continues past semantic
+  findings and soft-syntactic findings.
+- The parse also continues past the registered hard-syntactic checks.
+  Since version 1.7.0, these checks include the `.malformed` check of
+  each known attribute (`sdp.a.<name>.malformed`, see
+  [Malformed known attributes](#malformed-known-attributes)). The other
+  registered hard-syntactic checks are `sdp.a.ts-refclk.ptp-malformed`
+  and `st2110-20.a.fmtp.no-whitespace-around-equals`.
+- Only a structural failure ends the parse. A structural failure is a
+  grammar rule that has no check id: lines out of order, an unknown line
+  letter, or a malformed `m=` or `o=` line, for example. The error then
+  has `code = "PARSE_ERROR"` and names the line where matching stopped.
+  The text after that line is not checked.
+
+`sdp.parse` records every finding, but it returns only one of them.
+When at least one finding has severity `error`, `sdp.parse` returns
+`nil, err`, and `err` is the first error-severity finding. The other
+findings are not returned. Three ways show every finding from one parse:
+
+- Demote the error-severity checks to `"warn"` with `opts.policy`, then
+  read `doc:findings()`. See [`sdp.parse`](#sdpparsetext--mode--opts).
+- Run the command-line tool with `--all-findings`. See
+  [All findings](#all-findings).
+- Use the [browser playground](#browser-playground). The playground lists
+  every finding at all three tiers.
+
+`opts.fail_on_first = true` stops the parse at the first error-severity
+finding.
 
 ---
 
@@ -182,10 +218,13 @@ The playground at <https://andrewstarks.github.io/parse_sdp/> is the
 library compiled to WebAssembly (Lua 5.5, LPEG, and `parse_sdp`, built
 with Emscripten) behind a static page. The page accepts SDP text, the
 JSON form of a parsed document, or a Lua table literal in the same
-shape. The page reports every finding at all three tiers, lets the user
+shape. The page also loads an SDP file from a URL, and a link with
+`?url=<address>` loads and checks that file when the page opens. The
+page reports every finding at all three tiers, lets the user
 edit the document field by field with `doc:validate` running on each
-change, and downloads the serialized SDP or JSON. Nothing is sent to a
-server. [web/MANUAL.md](web/MANUAL.md) is the user manual for the page.
+change, and downloads the serialized SDP or JSON. The page does not
+upload the input. The only request that the page sends for an input is
+the request for a URL that the user gives. [web/MANUAL.md](web/MANUAL.md) is the user manual for the page.
 The JSON request and response format between the page and the library
 is documented in [web/CONTRACT.md](web/CONTRACT.md), and
 `web/wasm/build.sh` reproduces the build locally.
@@ -370,7 +409,7 @@ check failing the parse. Demote the check with a policy:
 ```lua
 local doc, err = sdp.parse(sdp_text, "st2110", {
   policy = {
-    ["sdp.a.ts-refclk.ptp-malformed"] = "warn",  -- record the finding; do not reject
+    ["sdp.a.ts-refclk.ptp-malformed"] = "warn",  -- record the finding as a warning
   },
 })
 -- doc is returned; doc:warnings() contains the demoted finding.
@@ -739,6 +778,19 @@ a JSON file, for `to_sdp`). When `file` is `-` or is omitted, the tool
 reads standard input. Run `parse_sdp <subcommand> --help` for the
 options of each subcommand.
 
+The tool does not accept a URL. To check an SDP file that a device
+serves over HTTP, for example an NMOS IS-05 (Networked Media Open
+Specifications, Connection Management) `transportfile` endpoint, fetch
+the file with `curl` and send it to standard input:
+
+```sh
+curl -s http://192.0.2.10/x-nmos/connection/v1.1/single/senders/<id>/transportfile | parse_sdp validate -
+```
+
+`curl -s` writes the bytes as the server sends them, so the CRLF line
+endings reach the parser unchanged. A URL argument would require an
+HTTP library, and the only runtime dependencies are LPEG and dkjson.
+
 | Subcommand | Purpose |
 | --- | --- |
 | [`validate`](#parse_sdp-validate) | Reports whether the file is valid at one tier: `OK` or a formatted error. |
@@ -755,7 +807,7 @@ options of each subcommand.
 | `validate` or `to_json` fails to parse or validate the file (the detail is on standard error) | 1 |
 | `validate` or `to_json` with `--all-findings` finishes and at least one finding has the default severity `error` | 1 |
 | `validate` or `to_json` with `--all-findings` finishes and every finding has the default severity `warn`, or there are no findings | 0 |
-| `validate`, `diagnose`, or `to_json` with `--all-findings` cannot parse the file structurally (a hard-syntactic failure); the formatted error is printed | 1 |
+| `validate`, `diagnose`, or `to_json` with `--all-findings` cannot parse the file structurally (`PARSE_ERROR`, a grammar rule with no check id); the formatted error is printed | 1 |
 | `diagnose` finishes, whatever the verdict | 0 |
 | `to_sdp` cannot decode the input as JSON | 1 |
 | `to_sdp` input decodes but a required field is missing. The tool prints the serializer's error, which names the field in `field_path`. | 1 |
@@ -917,8 +969,10 @@ This subcommand prints the same data that
 
 ### All findings
 
-By default, `validate`, `diagnose`, and `to_json` stop reporting at the
-first error-severity finding. The default gives a pass-or-fail answer.
+By default, `validate`, `diagnose`, and `to_json` report only the first
+error-severity finding, which is the `err` that `sdp.parse` returns. The
+parser records the other findings, but the tool does not print them. The
+default gives a pass-or-fail answer.
 When a file has several problems and the user wants all of them from
 one run, the `--all-findings` option collects every finding (errors and
 warnings) and lists them in the order they were recorded.
@@ -935,8 +989,8 @@ subcommand:
 | `to_json` | The JSON on standard output; the numbered list on standard error | 1 when any finding's default severity is `error`; 0 otherwise |
 | `diagnose` | Each tier shows only the findings that the tier introduced; a tier with no new findings shows the inherits note | Always 0 |
 
-A structural (hard-syntactic) failure cannot be demoted. In that case
-the tool prints the formatted error and exits 1 even with
+A structural failure (`PARSE_ERROR`, a grammar rule with no check id)
+cannot be demoted. In that case the tool prints the formatted error and exits 1 even with
 `--all-findings`.
 
 ```sh
@@ -957,7 +1011,7 @@ $ echo $?
 
 The header is `N findings:` (or `1 finding:` for one). The `(error)` or
 `(warn)` label after each id is the check's default severity, which is
-the severity that would have stopped the parse without `--all-findings`.
+the severity that would have made the file fail without `--all-findings`.
 A check whose default severity is `warn` is labeled `(warn)`.
 
 ### Examples
@@ -974,6 +1028,9 @@ parse_sdp to_json --mode ipmx --pretty session.sdp
 
 # Standard input
 cat session.sdp | parse_sdp to_json --mode ipmx
+
+# An SDP file that a device serves over HTTP
+curl -s http://192.0.2.10/session.sdp | parse_sdp validate --mode st2110 -
 
 # Round trip: SDP to JSON to SDP
 parse_sdp to_json session.sdp | parse_sdp to_sdp > out.sdp
@@ -1230,14 +1287,14 @@ Every registered check has one of three `kind` values, which
 
 | Kind | Definition | Default severity |
 | --- | --- | --- |
-| hard-syntactic | The input shape is wrong and parsing cannot continue past the violation. Most of these rules are grammar rules with no check id (a line with no `=`, an unknown line letter, lines out of order, a malformed `m=` or `o=` line). The registered ones are `st2110-20.a.fmtp.no-whitespace-around-equals`, `sdp.a.ts-refclk.ptp-malformed`, and the `.malformed` check of each known attribute (see [Malformed known attributes](#malformed-known-attributes)). | `error` |
+| hard-syntactic | The input shape is wrong. Most of these rules are grammar rules with no check id (a line with no `=`, an unknown line letter, lines out of order, a malformed `m=` or `o=` line); a violation of one of these rules ends the parse with `PARSE_ERROR`. The registered ones record a finding, and the parse continues to the next line. The registered ones are `st2110-20.a.fmtp.no-whitespace-around-equals`, `sdp.a.ts-refclk.ptp-malformed`, and the `.malformed` check of each known attribute (see [Malformed known attributes](#malformed-known-attributes)). | `error` |
 | soft-syntactic | The specification requires a strict form, but a lax form has only one possible meaning. The parser accepts the lax form and records a finding. There are five: the four line and file checks (`sdp.line.*`, `sdp.file.*`) and `sdp.a.fmtp.trailing-semicolon`. | `warn` |
 | semantic | A captured value violates a value set, a presence requirement, or a cross-section rule. | `error` |
 
 A policy (`opts.policy`, or the Policy panel in the browser playground)
 sets the severity of any registered id to `"error"`, `"warn"`, or
 `"off"`. A policy can promote a soft-syntactic warning to an error, so
-that a file with bare LF line endings is rejected. A policy can demote a
+that a file with bare LF line endings fails the verdict. A policy can demote a
 semantic error to a warning, so that `sdp.parse` returns the document
 with the finding in `doc:warnings()`. A policy cannot change the grammar
 rules that have no id; those rules fail the parse with

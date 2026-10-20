@@ -70,12 +70,32 @@ emcc -O2 \
 # Complete the static site.
 if [ -d "$ROOT/web/src" ]; then cp -R "$ROOT/web/src/." "$DIST/"; fi
 
+# GitHub Pages lets a browser cache each file for 10 minutes, so after a
+# deploy a normal reload can run the old engine and the old modules. Add
+# ?v=<version> to the page's script and style URLs, to every relative
+# module import, and (through CACHE_KEY in engine.js) to the wasm URL, so
+# each release loads new files. Every import of a module gets the same
+# query, so the browser still loads each module once.
+stamp="?v=$version"
+sed -i.bak -E "s#(src|href)=\"(app\.js|styles\.css)\"#\1=\"\2$stamp\"#g" "$DIST/index.html"
+for f in "$DIST"/*.js; do
+  [ "$(basename "$f")" = parse_sdp.js ] && continue
+  sed -i.bak -E "s#([\"']\./[A-Za-z0-9_]+\.js)([\"'])#\1$stamp\2#g" "$f"
+done
+sed -i.bak -E "s#^const CACHE_KEY = \"\";#const CACHE_KEY = \"$stamp\";#" "$DIST/engine.js"
+rm -f "$DIST"/*.bak
+grep -q "^const CACHE_KEY = \"$stamp\";" "$DIST/engine.js" || { echo "build.sh: CACHE_KEY not stamped in engine.js" >&2; exit 1; }
+
 # Ship every example in the repo with a manifest the UI's example picker
 # reads: examples/index.json = [{ "tier", "status", "name", "title", "path" },
 # ...] in repo order (generic → st2110 → ipmx, valid before invalid).
 # "title" is the file's own s= session name (RFC 8866 §5.3), so the
 # display name lives in the SDP itself; empty when the file has no s=.
 rm -rf "$DIST/examples"
+# The mock engine (engine_mock.js) reads its three bundled fixtures from
+# examples/*.sdp. Copy them back after the directory is cleared.
+mkdir -p "$DIST/examples"
+cp "$ROOT/web/src/examples/"*.sdp "$DIST/examples/"
 example_paths=()
 for tier in generic st2110 ipmx; do
   for status in valid invalid; do

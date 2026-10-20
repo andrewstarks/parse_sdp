@@ -9,6 +9,57 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 
+The library is unchanged in this release. The changes are in the browser
+playground and in the documentation.
+
+### Added
+
+- The browser playground loads an SDP file from a URL. The "From URL" box
+  is above the text box. The page fetches the response as bytes, so CRLF
+  line endings and a byte order mark reach the parser unchanged. Text
+  copied from a log or a device web page often has different line
+  endings, and the line-ending check then reports findings that are not
+  in the file. The page stops a request after 10 seconds and does not
+  load a response larger than 1 MB. Downloads are named after the last
+  part of the URL path.
+- The playground has a share link. After a file is loaded from a URL, the
+  page address includes `?url=<SDP address>`, and a "Copy link" button
+  copies the address. Opening the link loads and analyzes the same SDP
+  address. Pasted text is never put in the page address.
+- The playground explains a failed URL request. A request that the
+  browser blocks or that fails is reported as "blocked or failed", with
+  CORS (Cross-Origin Resource Sharing) named as a common reason. An
+  `http:` address from the HTTPS page is detected before the request as
+  mixed content. Both messages give the workaround: download the file and
+  drop it on the page, or run `curl -s <url> | parse_sdp validate -`.
+- GUIDE.md and README.md document the `curl` pipe for an SDP file that a
+  device serves over HTTP. The command-line tool does not take a URL.
+
+### Changed
+
+- GUIDE.md and README.md state how much of a non-conforming file is
+  checked. The parser records every finding that it can reach and
+  continues past semantic, soft-syntactic, and registered hard-syntactic
+  findings. Only a structural failure (`PARSE_ERROR`) ends the parse.
+  `sdp.parse` returns only the first error-severity finding. In GUIDE.md,
+  "the check rejects X" now has a definition: a file that contains X
+  fails the tier's verdict.
+- The playground reads a dropped or opened file as bytes, in the same way
+  as the URL loader. A byte order mark in the file is now kept, so
+  `sdp.file.bom-present` is reported. Before this change, the browser
+  removed the byte order mark when the file was read.
+- `web/wasm/build.sh` adds `?v=<version>` to the module, style, and
+  WebAssembly URLs in `web/dist/`. GitHub Pages lets a browser cache each
+  file for 10 minutes, so after a deploy a normal reload could run the
+  previous engine.
+
+### Fixed
+
+- The playground's mock engine works on the built site. `web/wasm/build.sh`
+  deleted the three bundled fixtures that the mock reads, so with
+  `?mock=1`, or when the WebAssembly module failed to load, every analysis
+  failed with "mock fixture examples/ipmx_typical.sdp: HTTP 404".
+
 ## [1.7.0] — 2026-10-20
 
 ### Added
