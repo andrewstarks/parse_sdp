@@ -1327,6 +1327,30 @@ describe("parse_sdp.serialize — Phase 8.D.3 ts-refclk renderer", function()
     assert.same(doc1, base.match(text2, opts))
   end)
 
+  -- NOT-SPEC: library — a known attribute captured as malformed under a
+  -- demoted policy ({name, malformed = true, value}) renders as written,
+  -- including the bare form with no value.
+  it("round-trips malformed known attributes captured under a demoted policy", function()
+    local lines = { "a=ptime:1.0", "a=rtpmap:0 PCMU/8000/0", "a=ptime",
+                    "a=rtcp-mux:1" }
+    local text = lines_to_sdp({
+      "v=0", "o=- 1 1 IN IP4 127.0.0.1", "s=X",
+      "c=IN IP4 224.0.0.1/127", "t=0 0", "m=audio 5004 RTP/AVP 0",
+      lines[1], lines[2], lines[3], lines[4],
+    })
+    local opts = { policy = {
+      ["sdp.a.ptime.malformed"]    = "warn",
+      ["sdp.a.rtpmap.malformed"]   = "warn",
+      ["sdp.a.rtcp-mux.malformed"] = "warn",
+    } }
+    local doc1 = base.match(text, opts)
+    assert.is_truthy(doc1)
+    local text2, e = serialize.to_sdp(doc1)
+    assert.is_nil(e)
+    assert.equal(text, text2)
+    assert.same(doc1, base.match(text2, opts))
+  end)
+
   it("returns nil, err when ts-refclk:ptp non-traceable is missing grandmaster", function()
     local out, e = serialize.to_sdp({
       version = "0",

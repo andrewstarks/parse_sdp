@@ -74,20 +74,23 @@ local function report(failures)
 end
 
 -- ── Error location ─────────────────────────────────────────────────────────
--- A line the grammar cannot parse is the reported error, wherever it sits.
--- Each line below fails on its own: an unknown line letter, an RFC 8866 §9
--- non-zero-real ending in "0", channels = 0 (RFC 8866 §6.6 integer), and a
--- NUL octet (RFC 8866 §9 byte-string).
+-- A bad line is the reported error, wherever it sits. Each line below
+-- fails on its own: an unknown line letter, an RFC 8866 §9 non-zero-real
+-- ending in "0", channels = 0 (RFC 8866 §6.6 integer), and a NUL octet
+-- (RFC 8866 §9 byte-string). The unknown letter and the NUL are pure
+-- structural failures (PARSE_ERROR). The two malformed known attributes
+-- report their own check id where an a= line may appear, and PARSE_ERROR
+-- where it may not; either way the error is on the inserted line.
 
 local UNPARSEABLE = {
-  "x=bad",
-  "a=ptime:1.0",
-  "a=rtpmap:97 L24/48000/0",
-  "a=tool:a\0b",
+  { "x=bad",                   "PARSE_ERROR" },
+  { "a=ptime:1.0" },
+  { "a=rtpmap:97 L24/48000/0" },
+  { "a=tool:a\0b",             "PARSE_ERROR" },
 }
 
 for _, tier in ipairs(TIERS) do
-  describe("mutation: an unparseable line is the reported error ("
+  describe("mutation: a bad line is the reported error ("
            .. tier.dir .. ")", function()
     for _, path in ipairs(list("examples/" .. tier.dir .. "/valid/*.sdp")) do
       -- NOT-SPEC: library
@@ -95,10 +98,12 @@ for _, tier in ipairs(TIERS) do
         local lines = split_lines(slurp(path))
         local failures = {}
         for i = 1, #lines do
-          for _, bad in ipairs(UNPARSEABLE) do
+          for _, case in ipairs(UNPARSEABLE) do
+            local bad, code = case[1], case[2]
             local text = with(lines, function(t) table.insert(t, i + 1, bad) end)
             local ok, doc, err = pcall(sdp.parse, text, tier.mode)
-            if not ok or doc or err.code ~= "PARSE_ERROR" or err.line ~= i + 1 then
+            if not ok or doc or err.line ~= i + 1
+               or (code and err.code ~= code) then
               failures[#failures + 1] = ("%q after line %d: %s"):format(bad, i,
                 not ok and ("threw " .. tostring(doc))
                 or doc and "accepted"

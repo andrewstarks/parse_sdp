@@ -234,9 +234,9 @@ describe("library: sdp.parse() positioned error on grammar failure", function()
   end)
 
   -- NOT-SPEC: library
-  -- RFC 8866 §9: non-zero-real = zero-based-integer "." *DIGIT POS-DIGIT,
-  -- so "a=ptime:1.0" stops the grammar. The checks must not run on the
-  -- media section cut short at that line; the error is the ptime line.
+  -- RFC 8866 §5: "x" is not a line type, so "x=bad" stops the grammar.
+  -- The checks must not run on the media section cut short at that line;
+  -- the error is the x= line.
   it("reports the failing line, not checks on a cut-short media section", function()
     local text = table.concat({
       "v=0",
@@ -247,7 +247,7 @@ describe("library: sdp.parse() positioned error on grammar failure", function()
       "c=IN IP4 239.2.11.20/32",
       "a=ts-refclk:ptp=IEEE1588-2008:1C-34-DA-FF-FE-80-AE-C8:127",
       "a=mediaclk:direct=0",
-      "a=ptime:1.0",
+      "x=bad",
       "a=rtpmap:97 L24/48000/6",
       "a=fmtp:97 channel-order=SMPTE2110.(U06)",
       "",
@@ -257,17 +257,37 @@ describe("library: sdp.parse() positioned error on grammar failure", function()
       assert.is_nil(doc)
       assert.equals("PARSE_ERROR", err.code)
       assert.equals(9, err.line)
-      assert.equals("a=ptime:1.0", err.line_text)
+      assert.equals("x=bad", err.line_text)
     end
   end)
 
   -- NOT-SPEC: library
   it("reports the failing line, not checks on a cut-short session", function()
     local text = "v=0\r\no=- 1 1 IN IP4 127.0.0.1\r\ns=x\r\nt=0 0\r\n"
-              .. "a=ptime:1.0\r\nm=audio 5004 RTP/AVP 0\r\n"
+              .. "x=bad\r\nm=audio 5004 RTP/AVP 0\r\n"
     local _, err = sdp.parse(text, "st2110")
     assert.equals("PARSE_ERROR", err.code)
     assert.equals(5, err.line)
+  end)
+
+  -- RFC 8866 §9: "non-zero-real = zero-based-integer "." *DIGIT POS-DIGIT",
+  -- so a decimal ptime cannot end in 0. The error names the rule and the
+  -- column of the value, not just the line.
+  it("reports a malformed known attribute by id at the value", function()
+    local f = assert(io.open("examples/st2110/invalid/09_bad_ptime.sdp", "rb"))
+    local text = f:read("*a")
+    f:close()
+    -- At the IPMX tier the line-8 fmtp lacks IPMX parameters, which is
+    -- reported first.
+    for _, mode in ipairs({ "sdp", "st2110" }) do
+      local doc, err = sdp.parse(text, mode)
+      assert.is_nil(doc)
+      assert.equals("sdp.a.ptime.malformed", err.id)
+      assert.equals(10, err.line)
+      assert.equals(9, err.col)
+      assert.equals("a=ptime:1.0", err.line_text)
+      assert.matches("does not end in 0", err.message)
+    end
   end)
 
   -- NOT-SPEC: library

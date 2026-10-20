@@ -37,7 +37,8 @@ local function check_a_group_fid(_, pos, semantics, ctx)
 end
 
 local a_group_with_fid_check =
-  base.rules.a_group * Cmt(Cb"semantics" * Carg(1), check_a_group_fid)
+  base.rules.a_group * #V"value_boundary_chars"
+  * Cmt(Cb"semantics" * Carg(1), check_a_group_fid)
 
 -- ── §10.1 IPMX fmtp marker ─────────────────────────────────────────────────
 -- TR-10-1 §10.1 (verbatim): "IPMX Senders shall include the ' IPMX'
@@ -47,16 +48,13 @@ local a_group_with_fid_check =
 -- tier's rtpmap-requires-fmtp checks for raw/jxsv encodings).
 local function check_ipmx_fmtp_marker(block, ctx)
   if not is_rtp_block(block) then return true end
-  local fmtp_count, marked = 0, false
-  for _, attr in ipairs(block.attributes) do
-    if attr.name == "fmtp" then
-      fmtp_count = fmtp_count + 1
-      if base.params_get(attr.params, "IPMX") then
-        marked = true
-      end
+  local fmtps, marked = base.attrs_get(block, "fmtp"), false
+  for _, attr in ipairs(fmtps) do
+    if base.params_get(attr.params, "IPMX") then
+      marked = true
     end
   end
-  if fmtp_count > 0 and not marked then
+  if #fmtps > 0 and not marked then
     local cont = errors.record(ctx, "tr-10-1.a.fmtp.marker-required",
       { field_path = string.format(
           "media[%d].attributes[fmtp]", ctx.media_index or 0) })
@@ -242,7 +240,7 @@ end
 -- TR-10-1 §8.7 (verbatim): "RTCP Sender Report packets shall be sent to
 -- the UDP destination port that corresponds to +1 from the port used by
 -- their corresponding media payload."
---   a=rtcp-mux (RFC 5761 §5.1.3) requests RTP and RTCP on one port, which
+--   a=rtcp-mux (RFC 5761 §5.1.1) requests RTP and RTCP on one port, which
 --   cannot satisfy the +1 SHALL.
 --   a=rtcp:<port> (RFC 3605 §2.1) declares the RTCP port explicitly; any
 --   value other than media port + 1 contradicts the SHALL. Absence is
@@ -250,13 +248,13 @@ end
 local function check_rtcp_port_convention(block, ctx)
   if not is_rtp_block(block) then return true end
   local field = string.format("media[%d].attributes", ctx.media_index or 0)
-  for _, attr in ipairs(block.attributes) do
-    if attr.name == "rtcp-mux" then
-      local cont = errors.record(ctx, "tr-10-1.a.rtcp-mux.forbidden",
-        { field_path = field .. "[rtcp-mux]" })
-      if not cont then return false end
-    elseif attr.name == "rtcp" and type(block.port) == "number"
-        and attr.port ~= block.port + 1 then
+  for _ in ipairs(base.attrs_get(block, "rtcp-mux")) do
+    local cont = errors.record(ctx, "tr-10-1.a.rtcp-mux.forbidden",
+      { field_path = field .. "[rtcp-mux]" })
+    if not cont then return false end
+  end
+  for _, attr in ipairs(base.attrs_get(block, "rtcp")) do
+    if type(block.port) == "number" and attr.port ~= block.port + 1 then
       local cont = errors.record(ctx,
         "tr-10-1.a.rtcp.port-must-be-media-port-plus-1",
         { field_path = field .. "[rtcp]",
@@ -337,6 +335,7 @@ local a_infoframe =
   * P(";")
   * P("DIT=")
   * Cg(C(R("09")^1), "dit")
+  * #V"value_boundary_chars"
   * Cmt(Cb"ssn" * Cb"dit" * Carg(1), check_a_infoframe)
 
 -- Cross-section semantic_check (d) + (e): one walk over the session-
@@ -459,6 +458,7 @@ local a_hkep =
   * Cg(hkep_token, "addr")     * SP
   * Cg(hkep_token, "node_id")  * SP
   * Cg(hkep_token, "port_id")
+  * #V"value_boundary_chars"
   * Cmt(Cb"nettype" * Cb"addrtype" * Cb"node_id" * Cb"port_id" * Carg(1),
         check_a_hkep)
 
@@ -585,6 +585,7 @@ local a_privacy =
   * Cg(lpeg.Ct(privacy_entry * (privacy_sep * privacy_entry)^0),
        "params")
   * Cg(P(";") * Cc(true) + Cc(false), "trailing_semi")
+  * #V"value_boundary_chars"
   * Cmt(Cb"params" * Cb"trailing_semi" * Carg(1), check_a_privacy)
 
 -- ── §13 redundancy — DUP legs share privacy parameters (semantic_check) ──
@@ -739,6 +740,10 @@ return st2110.extend(st2110, {
     a_fmtp            = a_fmtp_with_ipmx_dispatch,
     a_tier_extensions = a_infoframe + a_hkep + a_privacy,
     tier_attr_names   = P("infoframe") + P("hkep") + P("privacy"),
+    tier_malformed    =
+        base.malformed_attr("infoframe", "tr-10-10.a.infoframe.malformed")
+      + base.malformed_attr("hkep",      "tr-10-5.a.hkep.malformed")
+      + base.malformed_attr("privacy",   "tr-10-13.a.privacy.malformed"),
   },
   media_section_checks = {
     check_ipmx_fmtp_marker,

@@ -55,11 +55,14 @@ end
 -- attribute list: attr_get returns the first decomposed attribute whose
 -- `name` matches (or nil); attrs_get returns all matches in document
 -- order (empty table when none). nil-safe on the block / its attributes.
+-- A malformed attribute (`malformed = true`, see malformed_attr) is not
+-- decomposed, so neither accessor returns it.
 local function attr_get(block, name)
   local attrs = block and block.attributes
   if attrs == nil then return nil end
   for i = 1, #attrs do
-    if attrs[i].name == name then return attrs[i] end
+    local a = attrs[i]
+    if a.name == name and not a.malformed then return a end
   end
   return nil
 end
@@ -69,7 +72,8 @@ local function attrs_get(block, name)
   local attrs = block and block.attributes
   if attrs == nil then return out end
   for i = 1, #attrs do
-    if attrs[i].name == name then out[#out + 1] = attrs[i] end
+    local a = attrs[i]
+    if a.name == name and not a.malformed then out[#out + 1] = a end
   end
   return out
 end
@@ -214,10 +218,8 @@ end
 local function check_dynamic_pt_rtpmap(block, ctx)
   if not is_rtp_block(block) then return true end
   local rtpmap_pts = {}
-  for _, attr in ipairs(block.attributes) do
-    if attr.name == "rtpmap" then
-      rtpmap_pts[attr.payload_type] = true
-    end
+  for _, attr in ipairs(attrs_get(block, "rtpmap")) do
+    rtpmap_pts[attr.payload_type] = true
   end
   for _, fmt in ipairs(block.fmts) do
     local pt_n = tonumber(fmt)
@@ -250,7 +252,7 @@ end
 local function check_tsrefclk_level(attrs, ctx, path)
   local saw_traceable, saw_non = false, false
   for _, attr in ipairs(attrs) do
-    if attr.name == "ts-refclk" then
+    if attr.name == "ts-refclk" and not attr.malformed then
       if tsrefclk_is_traceable(attr) then
         saw_traceable = true
       else
@@ -281,16 +283,14 @@ end
 local function check_mid_uniqueness(doc, ctx)
   local seen = {}
   for i, m in ipairs(doc.media) do
-    for _, attr in ipairs(m.attributes) do
-      if attr.name == "mid" then
-        if seen[attr.tag] then
-          local cont = errors.record(ctx, "sdp.a.mid.duplicate-tag", {
-            field_path = string.format("media[%d].attributes[mid]", i),
-          })
-          if not cont then return false end
-        else
-          seen[attr.tag] = true
-        end
+    for _, attr in ipairs(attrs_get(m, "mid")) do
+      if seen[attr.tag] then
+        local cont = errors.record(ctx, "sdp.a.mid.duplicate-tag", {
+          field_path = string.format("media[%d].attributes[mid]", i),
+        })
+        if not cont then return false end
+      else
+        seen[attr.tag] = true
       end
     end
   end
@@ -307,19 +307,12 @@ end
 -- §9.2: "'a=group' lines MUST NOT contain identification-tags that
 --        correspond to 'm' lines with the port set to zero."
 local function check_group_attribute_invariants(doc, ctx)
-  local groups = {}
-  for _, attr in ipairs(doc.session.attributes) do
-    if attr.name == "group" then groups[#groups + 1] = attr end
-  end
+  local groups = attrs_get(doc.session, "group")
   if #groups == 0 then return true end
 
   -- §6: every m= must have an a=mid (semantics-independent).
   for i, m in ipairs(doc.media) do
-    local has_mid = false
-    for _, attr in ipairs(m.attributes) do
-      if attr.name == "mid" then has_mid = true; break end
-    end
-    if not has_mid then
+    if not attr_get(m, "mid") then
       local cont = errors.record(ctx,
         "sdp.a.group.requires-mid-on-all-media",
         { field_path = string.format("media[%d]", i - 1) })
@@ -331,8 +324,8 @@ local function check_group_attribute_invariants(doc, ctx)
   -- resolves to a port-0 media block.
   local mid_to_port = {}
   for _, m in ipairs(doc.media) do
-    for _, attr in ipairs(m.attributes) do
-      if attr.name == "mid" then mid_to_port[attr.tag] = m.port end
+    for _, attr in ipairs(attrs_get(m, "mid")) do
+      mid_to_port[attr.tag] = m.port
     end
   end
   for gi, g in ipairs(groups) do
@@ -392,7 +385,8 @@ local function check_source_filter_dests(doc, ctx)
 
   local function check_attrs(attrs, path)
     for ai, attr in ipairs(attrs) do
-      if attr.name == "source-filter" and attr.addr_type ~= "*" then
+      if attr.name == "source-filter" and not attr.malformed
+         and attr.addr_type ~= "*" then
         local dest = addresses.canonicalize(attr.addr_type, attr.dest_address or "")
         local set  = sets[attr.addr_type]
         if not (set and set[dest]) then
@@ -455,6 +449,39 @@ local function record_tracker_progress(_, pos, ctx)
   end
   return pos
 end
+-- Malformed branch for the known attribute `name`. a_value tries it after
+-- the attribute's own rule has failed to reach the end of the value. It
+-- records `check_id` at the start of the value (just after the name when
+-- there is no ':') and captures {name, malformed = true, value = <raw
+-- value>}; the serializer renders that shape as written, so a demoted
+-- parse round-trips. The attribute accessors skip it, so cross-line
+-- checks see only decomposed attributes. `valid_shape`, when given, is a
+-- value prefix the base ABNF accepts: a value that starts with it is not
+-- this attribute's malformed case, and the branch declines.
+--
+-- Each Cmt sits after everything in the branch that can fail, and its
+-- look-ahead stops at a real line end, so a value cut by a NUL or a bare
+-- CR leaves the line unparseable with no finding.
+local function malformed_attr(name, check_id, valid_shape)
+  local function record(ctx, pos)
+    if not ctx then return true end
+    return errors.record(ctx, check_id, { pos = pos })
+  end
+  local value_start = valid_shape and -valid_shape or P(true)
+  return P(name)
+      * Cg(Cc(name), "name")
+      * Cg(Cc(true), "malformed")
+      * ( P(":") * value_start
+          * Cg(Cmt(lpeg.Cp() * C((1 - V"value_boundary_chars") ^ 0)
+                     * #V"value_end" * Carg(1),
+                   function(_, pos, vpos, value, ctx)
+                     if not record(ctx, vpos) then return false end
+                     return pos, value
+                   end), "value")
+        + Cmt(#V"value_end" * Carg(1),
+              function(_, pos, ctx) return record(ctx, pos) and pos end) )
+end
+
 -- a=fmtp trailing-';' uses an inline Cmt body inside fmtp_trailing_sep_record
 -- because that Cmt has to *consume* the ';' (+ optional whitespace) — a
 -- zero-width Cmt(Carg(1), ...) trips LPeg's "no previous value for
@@ -753,32 +780,64 @@ local rules = {
   --   a=<attribute>:<value>    -- key-value form
   -- Per-attribute decomposition (Phase 4.A: rtpmap, mid, ptime, maxptime,
   -- framerate, quality). Unknown attributes fall back to the generic
-  -- {name, value=string?} shape. Known names with malformed values do NOT
-  -- fall through — a_generic refuses to start on a known-name lookahead, so
-  -- a malformed known-attr fails the whole grammar match instead of being
-  -- silently downgraded to a generic carrier.
+  -- {name, value=string?} shape. A known attribute counts only when its
+  -- rule reaches the end of the value. Otherwise a_malformed records the
+  -- attribute's malformed finding and captures the raw value. a_generic
+  -- refuses to start on a known name, so a malformed known attribute is
+  -- never silently downgraded to a generic carrier.
   a_value = Ct(
-        V"a_rtpmap"
-      + V"a_fmtp"
-      + V"a_ts_refclk"
-      + V"a_mediaclk"
-      + V"a_source_filter"
-      + V"a_group"
-      + V"a_ssrc_group"
-      + V"a_ssrc"
-      + V"a_msid"
-      + V"a_mid"
-      + V"a_extmap"
-      + V"a_rtcp_fb"
-      + V"a_rtcp_mux"
-      + V"a_rtcp"
-      + V"a_ptime"
-      + V"a_maxptime"
-      + V"a_framerate"
-      + V"a_quality"
-      + V"a_tier_extensions"
+        ( V"a_rtpmap"
+        + V"a_fmtp"
+        + V"a_ts_refclk"
+        + V"a_mediaclk"
+        + V"a_source_filter"
+        + V"a_group"
+        + V"a_ssrc_group"
+        + V"a_ssrc"
+        + V"a_msid"
+        + V"a_mid"
+        + V"a_extmap"
+        + V"a_rtcp_fb"
+        + V"a_rtcp_mux"
+        + V"a_rtcp"
+        + V"a_ptime"
+        + V"a_maxptime"
+        + V"a_framerate"
+        + V"a_quality"
+        + V"a_tier_extensions"
+        ) * #V"value_boundary_chars"
+      + V"a_malformed"
       + V"a_generic"
     ),
+
+  -- One malformed branch per known attribute (see malformed_attr). Each
+  -- check id's registry entry quotes the ABNF the value failed. Tier
+  -- names join through the tier_malformed hook. fmtp is malformed only
+  -- when the payload type or the separating SP is wrong: any non-empty
+  -- byte-string is a valid body (fmtp_raw_branch).
+  a_malformed =
+        malformed_attr("source-filter", "sdp.a.source-filter.malformed")
+      + malformed_attr("ssrc-group",    "sdp.a.ssrc-group.malformed")
+      + malformed_attr("ts-refclk",     "sdp.a.ts-refclk.malformed")
+      + malformed_attr("maxptime",      "sdp.a.maxptime.malformed")
+      + malformed_attr("framerate",     "sdp.a.framerate.malformed")
+      + malformed_attr("mediaclk",      "sdp.a.mediaclk.malformed")
+      + malformed_attr("rtcp-mux",      "sdp.a.rtcp-mux.malformed")
+      + malformed_attr("rtcp-fb",       "sdp.a.rtcp-fb.malformed")
+      + malformed_attr("extmap",        "sdp.a.extmap.malformed")
+      + malformed_attr("rtpmap",        "sdp.a.rtpmap.malformed")
+      + malformed_attr("quality",       "sdp.a.quality.malformed")
+      + malformed_attr("group",         "sdp.a.group.malformed")
+      + malformed_attr("ptime",         "sdp.a.ptime.malformed")
+      + malformed_attr("msid",          "sdp.a.msid.malformed")
+      + malformed_attr("ssrc",          "sdp.a.ssrc.malformed")
+      + malformed_attr("rtcp",          "sdp.a.rtcp.malformed")
+      + malformed_attr("fmtp",          "sdp.a.fmtp.malformed",
+                       V"payload_type" * SP * (1 - V"value_boundary_chars"))
+      + malformed_attr("mid",           "sdp.a.mid.malformed")
+      + V"tier_malformed",
+
+  tier_malformed = P(false),
 
   -- Tier-extension hook for new compound attributes added by IPMX or
   -- future tiers (a=infoframe, a=hkep, a=privacy, ...). Default is
@@ -790,7 +849,7 @@ local rules = {
 
   -- Look-ahead: a known compound-attribute name followed by ":" or
   -- end-of-line. Used as a negative lookahead in a_generic so malformed
-  -- instances of a known attribute fail the match instead of degrading
+  -- instances of a known attribute reach a_malformed instead of degrading
   -- to the generic shape. Order: longer-prefix patterns before their
   -- shorter siblings (matters for "ssrc-group" vs "ssrc", "rtcp-mux" /
   -- "rtcp-fb" vs "rtcp", and the "maxptime" vs "ptime" group). The
@@ -1038,9 +1097,9 @@ local rules = {
             * SP * Cg(V"addrtype", "addr_type")
             * SP * Cg(V"token",    "address")) ^ -1,
 
-  -- rtcp-mux (RFC 5761 §5.1.3): flag attribute, no value. The `#line_end`
-  -- guard makes the rule reject "a=rtcp-mux:<anything>" — known_attr_lookahead
-  -- then blocks a_generic from claiming it.
+  -- rtcp-mux (RFC 5761 §8): "It is a property attribute, which does not
+  -- take a value." The `#line_end` guard makes the rule reject
+  -- "a=rtcp-mux:<anything>", which a_malformed then records.
   a_rtcp_mux = P("rtcp-mux")
       * Cg(Cc("rtcp-mux"), "name")
       * #V"line_end_chars",
@@ -1123,9 +1182,9 @@ local rules = {
         * #(P("=") + V"line_end_chars"),
 
   -- Generic clksrc-ext fallback: <token>[=<byte-string>]. Refuses the
-  -- reserved literals (see `tsr_reserved`); malformed instances of those
-  -- forms must be either captured by an explicit malformed branch
-  -- (tsr_ptp_body_malformed) or fail the grammar match entirely.
+  -- reserved literals (see `tsr_reserved`); a malformed instance of one
+  -- of those forms is recorded by tsr_ptp_body_malformed (ptp=) or, for
+  -- the others, by a_malformed (sdp.a.ts-refclk.malformed).
   tsr_ext = -V"tsr_reserved"
       * Cg(C(V"rfc8866_token_char" ^ 1), "source")
       * (P("=") * Cg(C((1 - V"value_boundary_chars") ^ 1), "value")) ^ -1
@@ -1312,6 +1371,10 @@ local rules = {
   -- value, so no value can contain one; line_end then fails on that byte
   -- and the line is the parse error.
   line_end_chars       = P("\r\n") + P("\n") + P(-1) + S("\0\r"),
+  -- The end of a value at a real line terminator: optional trailing
+  -- whitespace, then CRLF, LF, or end of input. Unlike line_end_chars, a
+  -- NUL or a bare CR does not end a value here.
+  value_end            = S(" \t") ^ 0 * (P("\r\n") + P("\n") + P(-1)),
 
   line_end =
         ( Cmt(S(" \t") ^ 1 * Carg(1), record_trailing_ws) * V"line_end_core"
@@ -1355,6 +1418,7 @@ M.attr_get                = attr_get
 M.attrs_get               = attrs_get
 M.is_rtp_block            = is_rtp_block
 M.is_usb_block            = is_usb_block
+M.malformed_attr          = malformed_attr
 
 --- Compose a child tier from a parent.
 --

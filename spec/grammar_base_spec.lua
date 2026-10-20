@@ -2517,9 +2517,9 @@ describe("base SDP grammar — Phase 4.E rtcp (RFC 3605 §2.1)", function()
 
 end)
 
-describe("base SDP grammar — Phase 4.E rtcp-mux (RFC 5761 §5.1.3)", function()
+describe("base SDP grammar — Phase 4.E rtcp-mux (RFC 5761 §8)", function()
 
-  -- SPEC: RFC 5761 §5.1.3 — flag attribute, no value
+  -- SPEC: RFC 5761 §8 — "It is a property attribute, which does not take a value."
   it("captures rtcp-mux as a flag attribute (no value)", function()
     local doc = base.match(minimal(nil, {
       { "m=audio 49172 RTP/AVP 0", "a=rtcp-mux" },
@@ -2529,12 +2529,128 @@ describe("base SDP grammar — Phase 4.E rtcp-mux (RFC 5761 §5.1.3)", function(
     assert.is_nil(a.value)
   end)
 
-  -- SPEC: RFC 5761 §5.1.3 — rtcp-mux is flag-only (no ':<value>' form)
-  it("rejects rtcp-mux with a value (RFC 5761 §5.1.3 is flag-only)", function()
+  -- SPEC: RFC 5761 §8 — rtcp-mux is flag-only (no ':<value>' form)
+  it("rejects rtcp-mux with a value (RFC 5761 §8 is flag-only)", function()
     local doc = base.match(minimal(nil, {
       { "m=audio 49172 RTP/AVP 0", "a=rtcp-mux:foo" },
     }))
     assert.is_nil(doc)
+  end)
+
+end)
+
+describe("base SDP grammar — malformed known attributes", function()
+
+  local finding_for = support.finding_for
+
+  -- One value per known attribute that its rule cannot parse to the end of
+  -- the line. The attribute sits on line 7 of minimal()'s SDP; `col` is the
+  -- first byte of the value. Each id's registry entry quotes the ABNF.
+  local CASES = {
+    -- SPEC: RFC 8866 §9 "non-zero-real = zero-based-integer "." *DIGIT POS-DIGIT"
+    { "a=ptime:1.0",                 "sdp.a.ptime.malformed",         9 },
+    -- SPEC: RFC 8866 §9 "integer = POS-DIGIT *DIGIT" (no leading zero)
+    { "a=maxptime:040",              "sdp.a.maxptime.malformed",     12 },
+    -- SPEC: RFC 8866 §6.13 "framerate-value = non-zero-int-or-real"
+    { "a=framerate:29.970",          "sdp.a.framerate.malformed",    13 },
+    -- SPEC: RFC 8866 §6.14 "quality-value = zero-based-integer"
+    { "a=quality:-1",                "sdp.a.quality.malformed",      11 },
+    -- SPEC: RFC 8866 §6.6 "channels = integer"
+    { "a=rtpmap:97 L24/48000/0",     "sdp.a.rtpmap.malformed",       10 },
+    -- SPEC: RFC 8866 §6.6 payload type "inclusively between 0 and 127"
+    { "a=fmtp:128 x=1",              "sdp.a.fmtp.malformed",          8 },
+    -- SPEC: RFC 5888 §4 "identification-tag = token"
+    { "a=mid:a b",                   "sdp.a.mid.malformed",           7 },
+    -- SPEC: RFC 5888 §5 "group-attribute = "a=group:" semantics *(SP identification-tag)"
+    { "a=group:DUP a,b",             "sdp.a.group.malformed",         9 },
+    -- SPEC: RFC 5576 §10 "ssrc-attr = "ssrc:" ssrc-id SP attribute"
+    { "a=ssrc:abc cname:x",          "sdp.a.ssrc.malformed",          8 },
+    -- SPEC: RFC 5576 §10 "ssrc-group-attr = "ssrc-group:" semantics *(SP ssrc-id)"
+    { "a=ssrc-group:FID 1 x",        "sdp.a.ssrc-group.malformed",   14 },
+    -- SPEC: RFC 8830 §2 "msid-value = msid-id [ SP msid-appdata ]"
+    { "a=msid:a b c",                "sdp.a.msid.malformed",          8 },
+    -- SPEC: RFC 8285 §8 "direction = "sendonly" / "recvonly" / "sendrecv" / "inactive""
+    { "a=extmap:1/both urn:x",       "sdp.a.extmap.malformed",       10 },
+    -- SPEC: RFC 4585 §4.2 "rtcp-fb-syntax = "a=rtcp-fb:" rtcp-fb-pt SP rtcp-fb-val CRLF"
+    { "a=rtcp-fb:96",                "sdp.a.rtcp-fb.malformed",      11 },
+    -- SPEC: RFC 3605 §2.1 "rtcp-attribute = "a=rtcp:" port [...]"
+    { "a=rtcp:x",                    "sdp.a.rtcp.malformed",          8 },
+    -- SPEC: RFC 5761 §8 "It is a property attribute, which does not take a value."
+    { "a=rtcp-mux:1",                "sdp.a.rtcp-mux.malformed",     12 },
+    -- SPEC: RFC 4570 Appendix A "source-filter = "source-filter" ":" SP filter-mode ..."
+    { "a=source-filter:incl IN IP4 224.0.0.1 192.0.2.1",
+                                     "sdp.a.source-filter.malformed", 17 },
+    -- SPEC: RFC 7273 §4.8 "gps = "gps""
+    { "a=ts-refclk:gps=1",           "sdp.a.ts-refclk.malformed",    13 },
+    -- SPEC: RFC 7273 §5.4 "direct = "direct" [ "=" 1*DIGIT ] [SP rate]"
+    { "a=mediaclk:direct=x",         "sdp.a.mediaclk.malformed",     12 },
+  }
+
+  for _, c in ipairs(CASES) do
+    local line, id, col = c[1], c[2], c[3]
+
+    it(id .. " names the value of " .. line, function()
+      local doc, ctx = base.match(minimal(nil, {
+        { "m=audio 49172 RTP/AVP 0", line },
+      }))
+      assert.is_nil(doc)
+      local f = finding_for(ctx, id)
+      assert.is_not_nil(f)
+      assert.equal("error", f.severity)
+      assert.equal(7, f.line)
+      assert.equal(col, f.col)
+      assert.equal(line, f.line_text)
+    end)
+
+    it(id .. " keeps the raw value when demoted", function()
+      local doc, ctx = base.match(minimal(nil, {
+        { "m=audio 49172 RTP/AVP 0", line },
+      }), { policy = { [id] = "warn" } })
+      assert.is_table(doc)
+      local a = doc.media[1].attributes[1]
+      assert.is_true(a.malformed)
+      assert.equal(line:sub(3, col - 2), a.name)
+      assert.equal(line:sub(col), a.value)
+      assert.equal(1, #ctx.findings)
+    end)
+  end
+
+  -- SPEC: RFC 8866 §6.4 "ptime-value = non-zero-int-or-real" (a value is required)
+  it("records a known name with no value at the end of the name", function()
+    local doc, ctx = base.match(minimal(nil, {
+      { "m=audio 49172 RTP/AVP 0", "a=ptime" },
+    }), { fail_on_first = false })
+    local f = finding_for(ctx, "sdp.a.ptime.malformed")
+    assert.equal(8, f.col)
+    assert.is_nil(doc.media[1].attributes[1].value)
+  end)
+
+  -- SPEC: RFC 8866 §9 "byte-string = 1*(%x01-09/%x0B-0C/%x0E-FF)"
+  it("records nothing for a value cut by a NUL; the line does not parse", function()
+    local doc, ctx = base.match(minimal(nil, {
+      { "m=audio 49172 RTP/AVP 0", "a=ptime:1.0\0" },
+    }), { fail_on_first = false })
+    assert.is_nil(doc)
+    assert.is_nil(finding_for(ctx, "sdp.a.ptime.malformed"))
+  end)
+
+  -- SPEC: RFC 8866 §6.15 "format-specific-params = byte-string"
+  it("leaves an fmtp with a valid payload type to its raw body", function()
+    local doc, ctx = base.match(minimal(nil, {
+      { "m=audio 49172 RTP/AVP 0", "a=fmtp:0 a b;;c" },
+    }), { fail_on_first = false })
+    assert.equal("a b;;c", doc.media[1].attributes[1].raw)
+    assert.is_nil(finding_for(ctx, "sdp.a.fmtp.malformed"))
+  end)
+
+  -- SPEC: RFC 8866 §6.6 "rtpmap-value = payload-type SP encoding-name ..."
+  it("keeps a malformed attribute out of the accessors and doc checks", function()
+    local doc, ctx = base.match(minimal(nil, {
+      { "m=audio 49172 RTP/AVP 0", "a=rtpmap:0 PCMU/8000/0" },
+    }), { fail_on_first = false })
+    assert.is_nil(base.attr_get(doc.media[1], "rtpmap"))
+    assert.equal(0, #base.attrs_get(doc.media[1], "rtpmap"))
+    assert.equal(1, #ctx.findings)
   end)
 
 end)

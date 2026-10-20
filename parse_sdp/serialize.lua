@@ -143,7 +143,9 @@ local function render_attribute(attr, field_path)
   if name == nil then
     return nil, err_missing(field_path .. ".name", field_path .. ".name")
   end
-  local renderer = ATTR_RENDERERS[name]
+  -- A known attribute the grammar captured as malformed (a demoted
+  -- sdp.a.<name>.malformed finding) keeps its raw value; reproduce it.
+  local renderer = not attr.malformed and ATTR_RENDERERS[name]
   if renderer then return renderer(attr, field_path) end
   return render_generic(attr)
 end
@@ -375,7 +377,7 @@ ATTR_RENDERERS.ssrc = function(attr, field_path)
   return ln("a", "ssrc:" .. body)
 end
 
--- rtcp-mux (RFC 5761 §5.1.3): flag attribute, no value.
+-- rtcp-mux (RFC 5761 §8): flag attribute, no value.
 ATTR_RENDERERS["rtcp-mux"] = function(_, _)
   return ln("a", "rtcp-mux")
 end

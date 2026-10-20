@@ -285,7 +285,7 @@ describe("CLI: --all-findings flag", function()
   it("diagnose: --all-findings marks a tier ✗ when the grammar cannot match", function()
     local sdp_text = "v=0\r\no=- 1 1 IN IP4 127.0.0.1\r\ns=x\r\nt=0 0\r\n"
                   .. "m=audio 5004 RTP/AVP 0\r\nc=IN IP4 127.0.0.1\r\n"
-                  .. "a=ptime:1.0\r\n"
+                  .. "x=bad\r\n"
     local stdout, _, code = run("diagnose --all-findings -", sdp_text)
     assert.equal(0, code)
     assert.falsy(stdout:find("✓", 1, true))

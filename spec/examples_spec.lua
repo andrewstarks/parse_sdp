@@ -73,6 +73,9 @@ local EXPECTED = {
   ["examples/st2110/invalid/08_missing_ssn.sdp"] =
     { error = "st2110-41.a.fmtp.SSN-required", line = 8,
       findings = { "st2110-41.a.fmtp.SSN-required@8" } },
+  ["examples/st2110/invalid/09_bad_ptime.sdp"] =
+    { error = "sdp.a.ptime.malformed", line = 10,
+      findings = { "sdp.a.ptime.malformed@10" } },
   ["examples/st2110/invalid/dup_group_type_mismatch.sdp"] =
     { error = "st2110-10.a.group-dup.media-type-same", line = 0,
       findings = {
