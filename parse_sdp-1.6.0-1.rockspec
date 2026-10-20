@@ -1,9 +1,9 @@
 package = "parse_sdp"
-version = "1.5.1-1"
+version = "1.6.0-1"
 
 source = {
   url  = "git+https://github.com/andrewstarks/parse_sdp.git",
-  tag  = "v1.5.1",
+  tag  = "v1.6.0",
 }
 
 description = {

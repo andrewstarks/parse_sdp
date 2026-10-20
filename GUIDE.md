@@ -481,7 +481,7 @@ unknown key. The registry is available through `sdp.checks()` and
 `sdp.default_policy()`, described below. A policy entry applies to every
 registered check id, including the two registered hard-syntactic checks
 (`sdp.a.ts-refclk.ptp-malformed` and
-`st2110-20.a.fmtp.no-whitespace-around-equals`). In version 1.5.1,
+`st2110-20.a.fmtp.no-whitespace-around-equals`). In version 1.6.0,
 demoting `sdp.a.ts-refclk.ptp-malformed` to `"warn"` returns a document
 in which the malformed `ptp=` text is kept in the attribute's `value`
 field. A policy cannot change the structural grammar rules that have no
@@ -549,7 +549,7 @@ These two functions expose the registry of checks.
   id. Each entry has the fields `id`, `kind`, `default_severity`,
   `code`, `spec_ref`, `message_template`, and `verified`. An entry whose
   `verified` field is `false` also has a `verification_note` string. As
-  of version 1.5.1, every registered check has `verified = true`.
+  of version 1.6.0, every registered check has `verified = true`.
 - `sdp.default_policy()` returns a table of the form
   `{[id] = default_severity}` over every registered check. A caller can
   edit the table and pass it back as `opts.policy`.
@@ -886,7 +886,7 @@ parse_sdp checks [--filter SUBSTR] [--format table|json] [--unverified]
 | --- | --- |
 | `--filter SUBSTR` | Keeps only the checks whose id contains the text. The match is a plain substring match, not a Lua pattern, so a `-` in an id (`ts-refclk`, `tr-10-1`) matches literally. |
 | `--format MODE` | `table` (the default; column-aligned id, severity, and `spec_ref`) or `json` (an array of the full registry entries). |
-| `--unverified` | Keeps only the checks with `verified = false`. As of version 1.5.1, no check has `verified = false`, so the list is empty. |
+| `--unverified` | Keeps only the checks with `verified = false`. As of version 1.6.0, no check has `verified = false`, so the list is empty. |
 
 ```sh
 $ parse_sdp checks --filter ts-refclk
@@ -1141,7 +1141,14 @@ tables also appear:
   the `line`, `col`, and `line_text` of the line where matching stopped,
   and no `id`. Lines out of order, an unknown line letter, `v=1`, an
   empty `o=` username, and a malformed `m=` or `o=` line produce this
-  error.
+  error. So does a value that holds a NUL byte or a CR that is not part
+  of CRLF: RFC 8866 section 9 defines `byte-string` as "any byte except
+  NUL, CR, or LF". So does a malformed instance of a defined
+  `a=ts-refclk` or `a=mediaclk` form, such as a bare `ptp`, `ntp`, or
+  `IEEE1722`, or `sender=x`. RFC 7273 defines those names, so they are
+  not accepted as extension tokens. The checks for a media description
+  or a document run only when that part parsed to its end, so a line
+  after the failure never causes a different error to be reported.
 - A policy failure. When `opts.policy` names an unknown check id, `err`
   has `err.policy_key` set to that id.
 
@@ -1226,8 +1233,8 @@ registry stores it.
 
 | Id | The check rejects | `spec_ref` |
 | --- | --- | --- |
-| `sdp.v.must-be-zero` | A `v=` value other than `0`. In version 1.5.1 the grammar rejects this structurally with `PARSE_ERROR`; the id is registered but is not emitted. | RFC 8866 §5.1 |
-| `sdp.o.username-required` | An `o=` line with an empty username. In version 1.5.1 the grammar rejects this structurally with `PARSE_ERROR`; the id is registered but is not emitted. | RFC 8866 §5.2 |
+| `sdp.v.must-be-zero` | A `v=` value other than `0`. In version 1.6.0 the grammar rejects this structurally with `PARSE_ERROR`; the id is registered but is not emitted. | RFC 8866 §5.1 |
+| `sdp.o.username-required` | An `o=` line with an empty username. In version 1.6.0 the grammar rejects this structurally with `PARSE_ERROR`; the id is registered but is not emitted. | RFC 8866 §5.2 |
 | `sdp.session.connection-required` | A media description with no `c=` line when the session level has no `c=` line either. A session with no media descriptions and no `c=` line is accepted. | RFC 8866 §5.7 |
 | `sdp.m.rtpmap-required-for-dynamic-pt` | An RTP media description whose `m=` line lists a payload type from 96 to 127 with no `a=rtpmap` for that payload type. | RFC 8866 §8.2.3 |
 | `sdp.file.bom-present` | A file that starts with a UTF-8 byte order mark (warning). | RFC 8866 §6 |
@@ -1248,10 +1255,19 @@ to 239.255.255.255 is multicast; an IPv6 address that starts with `ff`
 is multicast. The layered multicast form `<address>/<ttl>/<numaddr>` is
 accepted, as in the RFC 8866 example `c=IN IP4 233.252.0.1/127/3`.
 
+The two address-form checks reject a host name. RFC 8866 section 5.7
+defines the `IP4` and `IP6` connection address as an IP address: *"If
+the session is multicast, the connection address will be an IP multicast
+group address. If the session is not multicast, then the connection
+address contains the unicast IP address"*. The section 9 grammar is
+looser and also allows an `FQDN`. The checks follow section 5.7, and the
+finding message states the difference. A host name is still accepted in
+`o=`, where section 5.2 allows it explicitly.
+
 | Id | The check rejects | `spec_ref` |
 | --- | --- | --- |
-| `sdp.c.address.invalid-ipv4` | An `IP4` address that is not four decimal octets from 0 to 255 separated by dots (for example `1.2.3` or `999.0.0.0`). A host name is rejected. | RFC 8866 §9 (IP4-address ABNF) |
-| `sdp.c.address.invalid-ipv6` | An `IP6` address that is not a valid IPv6 address. | RFC 8866 §9 (IP6-address ABNF) |
+| `sdp.c.address.invalid-ipv4` | An `IP4` address that is not four decimal octets from 0 to 255 separated by dots (for example `1.2.3` or `999.0.0.0`). A host name is rejected. | RFC 8866 §5.7 / §9 (IP4-address ABNF) |
+| `sdp.c.address.invalid-ipv6` | An `IP6` address that is not a valid IPv6 address. A host name is rejected. | RFC 8866 §5.7 / §9 (IP6-address ABNF) |
 | `sdp.c.ipv4-multicast.ttl-required` | An IPv4 multicast address with no `/<ttl>` suffix, or with a suffix that is not decimal digits. | RFC 8866 §9 (IP4-multicast ABNF) |
 | `sdp.c.ipv4-multicast.ttl-out-of-range` | An IPv4 multicast TTL greater than 255. A TTL of 0 is accepted. | RFC 8866 §5.7 |
 | `sdp.c.ipv4-multicast.numaddr-invalid` | An IPv4 multicast `<numaddr>` (the second suffix) that is not a positive integer. | RFC 8866 §9 (IP4-multicast ABNF) |
@@ -1299,6 +1315,13 @@ accepted, as in the RFC 8866 example `c=IN IP4 233.252.0.1/127/3`.
 - Sender and receiver capability sets. An SDP file describes one
   stream. Whether a device supports other formats is signaled through
   NMOS Sender Capabilities, not through SDP.
+- An attribute at a level other than the one its registration names,
+  such as a session-level `a=rtpmap` or `a=fmtp`. RFC 8866 section 5.13
+  says attributes "may be defined to be used as session-level
+  attributes, media-level attributes, or both", but it does not forbid
+  other use. At the ST 2110 tier a session-level `a=rtpmap` still gets
+  the clock-rate checks. It gets no media-type check, because it has no
+  `m=` line to compare with.
 - A session with no media description, at the RFC 8866 tier. RFC 8866
   does not require one. ST 2110 and IPMX reject it
   (`st2110-10.m.media-description-required`).
@@ -1896,6 +1919,10 @@ Parsing valid text, serializing the doc, and parsing the result again
 yields a doc that is deep-equal to the first, and the second
 serialization is byte-identical to the first. `spec/roundtrip_spec.lua`
 checks this for every fixture in `examples/{generic,st2110,ipmx}/valid/`.
+`spec/mutation_spec.lua` checks it for every mutated copy of every
+example that still parses. Each copy is checked under the default policy
+and with every error-severity check demoted to a warning, because a
+demoted parse keeps shapes that a default parse rejects.
 
 ### Doc-shape contracts the serializer relies on
 
@@ -1914,14 +1941,21 @@ the `{name, value}` shape and render as `a=<name>` or `a=<name>:<value>`.
 
 The three IPMX attributes (`infoframe`, `hkep`, `privacy`) have
 renderers for their decomposed shapes. A document parsed in `"sdp"` or
-`"st2110"` mode has those attributes in the generic shape, and the
-generic renderer reproduces them unchanged.
+`"st2110"` mode has those attributes in the generic shape, which holds
+only `name` and, for a value attribute, `value`. That shape renders
+unchanged, as `a=<name>` or `a=<name>:<value>`. A table with any other
+field is treated as decomposed, and a missing required field makes
+`to_sdp()` return `nil, err`.
+
+An `a=ts-refclk:ptp=` body that fails the strict form, parsed with
+`sdp.a.ts-refclk.ptp-malformed` demoted below error, is
+`{source = "ptp", value = <body>}`. It renders as `ptp=<body>`.
 
 ---
 
 ## Test suite organization
 
-The hermetic test suite (`busted spec/`) has 1278 tests at the time of
+The hermetic test suite (`busted spec/`) has 1389 tests at the time of
 writing. The files are organized by what each test exercises: a
 standard's clauses, the public library and command-line surface, or an
 internal helper.
@@ -1932,7 +1966,8 @@ internal helper.
 | `spec/grammar_st2110_spec.lua` | standards | SMPTE ST 2110 overrides and per-block and cross-section checks (parts -10, -20, -21, -22, -30, -31, -40, -41). |
 | `spec/grammar_ipmx_spec.lua` | standards | VSF TR-10 / IPMX overrides and per-block and cross-section checks (TR-10-1 through TR-10-14). |
 | `spec/roundtrip_spec.lua` | standards | Every base and IPMX attribute renderer, and the parse, serialize, and re-parse round trip over `examples/{generic,st2110,ipmx}/valid/*.sdp`. |
-| `spec/examples_spec.lua` | standards | Every file under `examples/<tier>/valid/` passes its tier, and every file under `examples/<tier>/invalid/` fails its tier. |
+| `spec/examples_spec.lua` | standards | Every file under `examples/<tier>/valid/` passes its tier. Every file under `examples/<tier>/invalid/` fails its tier with the check id, line, and full findings list that the spec's `EXPECTED` table records. |
+| `spec/mutation_spec.lua` | library API | Properties over mutated copies of every example and fixture. An inserted unparseable line is the reported error. `sdp.parse` never raises. `fail_on_first` does not change the verdict. Every mutant that parses round-trips, under the default policy and with errors demoted. |
 | `spec/library_spec.lua` | library API | The public surface: `sdp.parse(text, mode, opts)`, `sdp.new`, `sdp.checks`, `sdp.default_policy`, the accessors, and the doc methods. Policy validation, mode dispatch, and finding access. |
 | `spec/cli_spec.lua` | library API | The command-line tool: `validate`, `diagnose`, `to_json`, `to_sdp`, and `checks`; `--mode`, `--pretty`, `--all-findings`, `--help`; exit codes. |
 | `spec/grammar_compose_spec.lua` | internal helpers | The composition mechanism: `base.extend` parent and child rule merging, semantic-check inheritance, and distinct grammars per tier. |
@@ -1953,7 +1988,13 @@ files exercise the public surface without asserting against a clause.
 busted spec/                            # the full hermetic suite
 busted spec/grammar_base_spec.lua       # one file
 busted spec/library_spec.lua            # the library API tests only
+lua spec/check_coverage.lua             # every registered check fires in some spec
 ```
+
+`spec/check_coverage.lua` runs `busted spec/` with a hook on the
+finding recorder and fails when a registered check is never recorded.
+Checks that are registered but never emitted are listed in the script.
+CI runs it on every push.
 
 ### Conformance suite (`spec_conformance/`)
 

@@ -9,6 +9,8 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 
+## [1.6.0] — 2026-10-20
+
 ### Added
 
 - Added a browser playground at <https://andrewstarks.github.io/parse_sdp/>.
@@ -20,8 +22,70 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
   downloads the result. A `Pages` workflow builds and deploys `web/dist/` on
   every push to `main` that touches the library or the site. The library
   itself is unchanged.
+- Added `spec/mutation_spec.lua`. It checks four properties over mutated
+  copies of every example and fixture. An inserted unparseable line is the
+  reported error. `sdp.parse` never raises. `fail_on_first` does not change
+  the verdict. Every mutant that parses round-trips, under the default
+  policy and with every error demoted to a warning. Against the 1.5.1
+  library, 51 of its 61 tests fail.
+- Added `spec/check_coverage.lua`, which fails when a registered check is
+  never recorded by any spec. CI runs it. Tests now cover
+  `st2110-22.a.fmtp.packetmode-invalid-value` and
+  `tr-10-6.a.fmtp.fec-add-latency-audio-invalid-value`, which no spec
+  triggered before.
+- `spec/examples_spec.lua` now asserts why each invalid example fails: the
+  check id, the line, and the full findings list.
+
+### Changed
+
+- **A NUL byte, or a CR that is not part of CRLF, makes its line a parse
+  error.** RFC 8866 §9 defines `byte-string` as "any byte except NUL, CR,
+  or LF". Before this change, both were accepted inside any value.
+- **A malformed instance of a defined `a=ts-refclk` or `a=mediaclk` form is
+  a parse error.** A bare `ntp` or `ptp`, `sender=x`, `direct=x`, and a bare
+  `IEEE1722` or `IEEE1722=<not an EUI-64>` were accepted as extension
+  tokens, and some of them could not be serialized. RFC 7273 §4.8 and §5.4
+  define those names. The ts-refclk grammar already refused `gps=foo` and
+  `ptp=<bad>` this way.
+- `sdp.c.address.invalid-ipv4` and `sdp.c.address.invalid-ipv6` now cite
+  RFC 8866 §5.7, which defines the `IP4` and `IP6` connection address as an
+  IP address. They still reject a host name. Their message now says that
+  the §9 ABNF also allows an `FQDN`, so a reader sees why a host name that
+  matches the grammar is rejected.
 
 ### Fixed
+
+- **`sdp.parse` no longer throws on an opaque fmtp at the ST 2110 and IPMX
+  tiers.** An `a=fmtp` that is not a `key=value` list, such as the RFC 4733
+  event list `a=fmtp:101 0-15,66`, raised the Lua error "back reference
+  'params' not found". A session-level `a=rtpmap` for `raw`, `jxsv`,
+  `smpte291`, or `AM824` raised "back reference 'media' not found". Both
+  groups are now always defined.
+- **A session-level `a=rtpmap` is accepted at the ST 2110 tier.** RFC 8866
+  §5.13 does not forbid an attribute at another level. The clock-rate
+  narrowing still applies; the media-type comparison does not, because
+  there is no `m=` line.
+- **Documents parsed below the IPMX tier serialize their IPMX attributes.**
+  `a=privacy`, `a=hkep`, and `a=infoframe` parsed in `"sdp"` or `"st2110"`
+  mode made `to_sdp()` return a missing-field error. GUIDE.md already said
+  they rendered unchanged; now they do. A malformed `ptp=` body kept under
+  a demoted policy also renders.
+- **`sdp.a.fmtp.trailing-semicolon` no longer fires on an fmtp captured in
+  the raw form.** The finding was recorded before the `key=value` branch
+  failed, and backtracking did not remove it.
+
+- **A line the grammar cannot parse is reported as the error.** Before this
+  fix, the checks ran on a media section or document that the bad line had
+  cut short. Their findings then took the place of the real error. For
+  example, `a=ptime:1.0` is not a valid RFC 8866 §9 `non-zero-real` because
+  it ends in `0`. An audio SDP with that line before its `a=rtpmap` reported
+  `sdp.m.rtpmap-required-for-dynamic-pt` on line 0 at every tier. It now
+  reports "could not parse from this line" on the `a=ptime` line. The checks
+  now run only on a media section that ends at the next `m=` line or at end
+  of input, and on a document that reaches end of input.
+- **`diagnose --all-findings` no longer passes an SDP that does not parse.**
+  When the grammar could not match, the findings list was empty and every
+  tier showed ✓. A tier whose parse fails now shows ✗ with the parse error.
 
 - Restored two IPMX checks that GUIDE.md documented but the grammar tier did
   not run. The checks were lost in the refactor from the 1.0 parser to the

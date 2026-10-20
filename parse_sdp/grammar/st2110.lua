@@ -1104,10 +1104,11 @@ end
 -- match rather than backtracking into the generic-encoding form.
 --
 -- Cb"media" reads the most recent complete group capture named "media" — the
--- one m_value emits inside every media_section Ct. Session-level a=rtpmap is
--- non-conformant per RFC 8866 §6.6 (rtpmap is media-only) and the surrounding
--- grammar never establishes a session-level "media" capture; ST 2110 inherits
--- that scope rule from base.
+-- one m_value emits inside every media_section Ct. In the session section,
+-- base defines a nil "media" group. RFC 8866 §5.13 says "Attributes may be
+-- defined to be used as session-level attributes, media-level attributes,
+-- or both" and does not forbid a session-level a=rtpmap, so the media-type
+-- comparison is skipped there and only the clock-rate narrowing applies.
 
 local function record_rate_and_media(rate_check_id, expected_media, media_check_id)
   return function(_, pos, rate, media, ctx)
@@ -1115,7 +1116,7 @@ local function record_rate_and_media(rate_check_id, expected_media, media_check_
     if rate_check_id and not rate_check_id.set[rate] then
       ok = ok and errors.record(ctx, rate_check_id.id, { pos = pos })
     end
-    if media ~= expected_media then
+    if media ~= nil and media ~= expected_media then
       ok = ok and errors.record(ctx, media_check_id, { pos = pos })
     end
     if not ok then return false end
@@ -1438,9 +1439,10 @@ local overrides = {
     -- Cg is no longer in scope at fmtp time. ctx.rtpmap_encodings is the
     -- cross-line carrier (populated in a_rtpmap above).
     -- Per-fmtp-line validators dispatch via a trailing Cmt after the
-    -- params branch completes. `Cb"params" + Cc(nil)` resolves to the
-    -- captured params table OR nil when the fmtp fell into the raw
-    -- fallback branch (no structured params); fmtp_dispatch returns
+    -- params branch completes. `Cb"params"` resolves to the captured
+    -- params table, or to nil when the fmtp fell into the raw fallback
+    -- branch (base's fmtp_raw_branch defines a nil params group, because
+    -- `Cb` on a missing group throws rather than fails); fmtp_dispatch returns
     -- pos when params is nil so the check is silently skipped, but
     -- propagates `false` (failing the match) when a check records an
     -- error with fail_on_first=true.
@@ -1449,8 +1451,7 @@ local overrides = {
         * Cg(V"payload_type", "payload_type") * SP
         * ( V"fmtp_st2110_raw_payload"
           + V"fmtp_payload_non_raw" )
-        * Cmt(Cb"payload_type" * (Cb"params" + Cc(nil)) * Carg(1),
-              fmtp_dispatch),
+        * Cmt(Cb"payload_type" * Cb"params" * Carg(1), fmtp_dispatch),
 
     fmtp_st2110_raw_payload =
         Cmt(Cb"payload_type" * Carg(1), function(_, pos, pt, ctx)

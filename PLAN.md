@@ -32,30 +32,21 @@ validates, and serializes SDP (Session Description Protocol) files.
 ## Test Command
 
 ```sh
-busted spec/                  # hermetic suite (1278 tests on current main)
+busted spec/                  # hermetic suite (1389 tests)
+lua spec/check_coverage.lua   # every registered check fires in some spec
 busted spec_conformance/      # opt-in suite of pinned AMWA fixtures
 ```
 
 ## Current State
 
-Version 1.5.1 was tagged on 2026-10-15 with 1225 hermetic tests. The current
-`main` has 1277 hermetic tests, and all of them pass. Every validation check
+Version 1.6.0 was tagged on 2026-10-20 with 1389 hermetic tests, and all of
+them pass on Lua 5.1 through 5.5. Every validation check
 is grounded in explicit specification text; no opinion-based checks remain.
 The public API (application programming interface) surface is
 `parse_sdp/init.lua` (the library) and `bin/parse_sdp` (the CLI,
 command-line interface). The grammar tier is in
 `parse_sdp/grammar/{base,st2110,ipmx}.lua`. The serializer is in
 `parse_sdp/serialize.lua`. The error registry is in `parse_sdp/errors.lua`.
-
-`main` also has unreleased changes since 1.5.1. CHANGELOG.md lists them under
-`[Unreleased]`: the browser playground, two restored IPMX checks, rejection
-of a session-only SDP at the ST 2110 and IPMX tiers, a `field_path` on
-required-parameter findings for streams with no `a=fmtp`, CRLF line
-endings on the example files, bare-LF findings that name the line that
-ended with the LF instead of the line after it, a formatted error from
-`parse_sdp to_sdp` when a required field is missing, and a documentation
-pass in the plain technical writing style with a user manual for the
-browser playground.
 
 The 1.2 release added CLI capabilities for diagnostics: `parse_sdp validate`,
 `parse_sdp diagnose`, the `--all-findings` flag on `validate`, `diagnose`,
@@ -165,6 +156,44 @@ browser.
 - [x] `.github/workflows/pages.yml` builds the site and deploys it to Pages.
   Pages is enabled on the repository with the Actions build type.
 - [x] Documentation: README, GUIDE, CLAUDE.md, and CHANGELOG.
+
+## 1.6.0: error location, crash fixes, and property tests
+
+A colleague's ME10 encoder SDP had `a=ptime:1.0`, which RFC 8866 §9 does not
+allow, because a `non-zero-real` cannot end in `0`. The parser blamed a
+missing `a=rtpmap` on line 0 instead of the ptime line. The checks for a
+media section had run on the section that the bad line cut short. A
+mutation sweep showed the same fault behind 13 different check ids, and it
+found two crashes and several round-trip failures. Hand-written tests had
+missed all of them, because each test placed one defect with nothing after
+it that depended on the defect.
+
+- [x] Section and document checks run only on a section that parsed to its
+  end, so a bad line is the reported error. `diagnose --all-findings` marks
+  a tier that does not parse as failed.
+- [x] Crashes: `Cb"params"` and `Cb"media"` raised a Lua error when the
+  group was absent (an opaque fmtp, or a session-level `a=rtpmap`). Base
+  now defines both groups on every path. CLAUDE.md records the hazard.
+- [x] Grammar: NUL and a lone CR are rejected (RFC 8866 §9 byte-string).
+  Malformed instances of defined `a=ts-refclk` and `a=mediaclk` forms are
+  not accepted as extension tokens (RFC 7273 §4.8, §5.4).
+- [x] Serializer: IPMX attributes parsed below the IPMX tier, and a
+  malformed `ptp=` kept under a demoted policy, render and round-trip.
+- [x] A stale `sdp.a.fmtp.trailing-semicolon` finding on a raw fmtp is
+  gone. An audit of every recording `Cmt` found no other
+  record-then-backtrack site.
+- [x] `c=` address checks: decided to keep rejecting host names. They cite
+  RFC 8866 §5.7, and the message notes that the §9 ABNF also allows an
+  FQDN.
+- [x] Tests: `spec/mutation_spec.lua` (location, no-throw, verdict
+  agreement, round-trip under default and demoted policy),
+  `spec/check_coverage.lua` in CI, and an `EXPECTED` reason for every
+  invalid example. The test count went from 1278 to 1389.
+- [x] Version: 1.6.0 rather than 1.5.2. The browser playground shipped
+  without a version bump, and the stricter grammar can reject input that
+  1.5.1 accepted.
+- [x] Release: tagged `v1.6.0`, uploaded the rockspec, and published to
+  LuaRocks (2026-10-20).
 
 ## Next pass: GUIDE.md troubleshooting recipes
 

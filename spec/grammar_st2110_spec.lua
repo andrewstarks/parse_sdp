@@ -314,6 +314,52 @@ describe("ST 2110 rtpmap narrowings — non-ST-2110 encodings pass through", fun
     assert.is_truthy(st2110.match(build("m=audio 30000 RTP/AVP 96",
                                         "a=rtpmap:96 L16/48000/2")))
   end)
+
+  -- NOT-SPEC: library — RFC 8866 §6.15 format-specific-params is an opaque
+  -- byte-string. An fmtp that is not a k=v list falls into the raw branch,
+  -- which has no params; the ST 2110 dispatch must skip it, not throw.
+  it("accepts an opaque fmtp (RFC 4733 event list) without throwing", function()
+    local text = build_with_fmtp("m=audio 30000 RTP/AVP 101",
+                                 "a=rtpmap:101 telephone-event/48000",
+                                 "a=fmtp:101 0-15,66")
+    local ok, doc = pcall(st2110.match, text)
+    assert.is_true(ok, doc)
+    assert.equal("0-15,66", base.attr_get(doc.media[1], "fmtp").raw)
+  end)
+
+  -- NOT-SPEC: library — RFC 8866 §5.13: "Attributes may be defined to be
+  -- used as session-level attributes, media-level attributes, or both."
+  -- Nothing forbids a session-level a=rtpmap. It has no m= media type to
+  -- compare against, so only the clock-rate narrowing applies.
+  for _, rtpmap in ipairs({ "raw/90000", "jxsv/90000", "smpte291/90000",
+                            "AM824/48000/2" }) do
+    it("accepts a session-level a=rtpmap:96 " .. rtpmap .. " without throwing", function()
+      local text = build("m=audio 30000 RTP/AVP 97", "a=rtpmap:97 L24/48000/2")
+        :gsub("t=0 0\r\n", "t=0 0\r\na=rtpmap:96 " .. rtpmap .. "\r\n")
+      local ok, doc, ctx = pcall(st2110.match, text, { fail_on_first = false })
+      assert.is_true(ok, doc)
+      assert.is_truthy(doc)
+      assert.same({}, ctx.findings)
+    end)
+  end
+
+  -- NOT-SPEC: library
+  it("still applies the clock-rate narrowing to a session-level a=rtpmap", function()
+    local text = build("m=audio 30000 RTP/AVP 97", "a=rtpmap:97 L24/48000/2")
+      :gsub("t=0 0\r\n", "t=0 0\r\na=rtpmap:96 raw/48000\r\n")
+    local ok, doc = pcall(st2110.match, text)
+    assert.is_true(ok, doc)
+    assert.is_nil(doc)
+  end)
+
+  -- NOT-SPEC: library
+  it("accepts a session-level opaque fmtp without throwing", function()
+    local text = build("m=audio 30000 RTP/AVP 96", "a=rtpmap:96 L16/48000/2")
+      :gsub("t=0 0\r\n", "t=0 0\r\na=fmtp:96 ;\r\n")
+    local ok, doc = pcall(st2110.match, text)
+    assert.is_true(ok, doc)
+    assert.is_truthy(doc)
+  end)
 end)
 
 -- ───────────────────────────────────────────────────────────────────────────
@@ -1476,6 +1522,7 @@ describe("ST 2110-22 jxsv fmtp — enum value sets", function()
     RANGE     = { "NARROW", "FULLPROTECT", "FULL" },
     TP        = { "2110TPN", "2110TPNL", "2110TPW" },
     transmode = { "0", "1" },
+    packetmode = { "0", "1" },
     profile   = {
       "Unrestricted", "Light422.10", "Light444.12",
       "LightSubline422.10", "LightSubline444.12",
@@ -1502,6 +1549,7 @@ describe("ST 2110-22 jxsv fmtp — enum value sets", function()
     RANGE       = "RFC 9134 §7.1",
     TP          = "ST 2110-22:2022 §5.3",
     transmode   = "RFC 9134 §7.1",
+    packetmode  = "RFC 9134 §7.1",
     profile     = "RFC 9134 §7.1",
     level       = "RFC 9134 §7.1",
     sublevel    = "RFC 9134 §7.1",
@@ -1509,7 +1557,7 @@ describe("ST 2110-22 jxsv fmtp — enum value sets", function()
 
   local KEY_ORDER = {
     "TP", "sampling", "colorimetry", "TCS", "RANGE",
-    "transmode", "profile", "level", "sublevel",
+    "transmode", "packetmode", "profile", "level", "sublevel",
   }
 
   for _, key in ipairs(KEY_ORDER) do

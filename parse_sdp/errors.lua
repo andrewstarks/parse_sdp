@@ -435,8 +435,11 @@ M.register("sdp.c.address.invalid-ipv4", {
   kind             = "semantic",
   default_severity = "error",
   code             = "INVALID_VALUE",
-  message_template = "c= IP4 address is not a valid dotted-quad",
-  spec_ref         = "RFC 8866 §9 (IP4-address ABNF)",
+  message_template =
+    "c= IP4 address is not an IPv4 dotted-quad. Host names are rejected: RFC 8866 "
+ .. "§5.7 defines the IP4 connection address as an IP address, although "
+ .. "the §9 ABNF also allows an FQDN",
+  spec_ref         = "RFC 8866 §5.7 / §9 (IP4-address ABNF)",
   verified         = true,
 })
 
@@ -444,8 +447,11 @@ M.register("sdp.c.address.invalid-ipv6", {
   kind             = "semantic",
   default_severity = "error",
   code             = "INVALID_VALUE",
-  message_template = "c= IP6 address is not a valid IPv6 form",
-  spec_ref         = "RFC 8866 §9 (IP6-address ABNF)",
+  message_template =
+    "c= IP6 address is not an IPv6 address. Host names are rejected: RFC 8866 "
+ .. "§5.7 defines the IP6 connection address as an IP address, although "
+ .. "the §9 ABNF also allows an FQDN",
+  spec_ref         = "RFC 8866 §5.7 / §9 (IP6-address ABNF)",
   verified         = true,
 })
 

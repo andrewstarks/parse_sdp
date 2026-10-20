@@ -210,8 +210,7 @@ end
 -- in scope inside the surrounding a_value Ct.
 local a_fmtp_with_ipmx_dispatch =
     st2110.rules.a_fmtp
-  * Cmt(Cb"payload_type" * (Cb"params" + Cc(nil)) * Carg(1),
-        ipmx_fmtp_dispatch)
+  * Cmt(Cb"payload_type" * Cb"params" * Carg(1), ipmx_fmtp_dispatch)
 
 -- ── §7 RTP port must be even AND > 1024 (per-block check) ──────────────────
 -- TR-10-2 §7 (verbatim, replicated in TR-10-3/-4/-11/-12 §7): "All IPMX

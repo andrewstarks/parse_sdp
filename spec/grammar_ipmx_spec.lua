@@ -419,6 +419,21 @@ describe("IPMX TR-10-1 §10.2 — does not fire on non-video encodings", functio
   end)
 end)
 
+describe("IPMX fmtp dispatch — opaque fmtp bodies", function()
+
+  -- NOT-SPEC: library — RFC 8866 §6.15 format-specific-params is an
+  -- opaque byte-string. The IPMX dispatch must skip an fmtp with no
+  -- params, not throw. TR-10-1 §10.1 still requires the 'IPMX' flag,
+  -- so the result is a finding, not an exception.
+  it("records the IPMX-marker finding instead of throwing", function()
+    local text = build_audio_sdp({ fmtp_line = "a=fmtp:97 0-15,66" })
+    local ok, doc, ctx = pcall(ipmx.match, text, { fail_on_first = false })
+    assert.is_true(ok, doc)
+    assert.is_truthy(doc)
+    assert.is_table(finding_for(ctx, "tr-10-1.a.fmtp.marker-required"))
+  end)
+end)
+
 -- ── TR-10-1 §10.3 + TR-10-9 §10 — audio IPMX fmtp measuredsamplerate ──────
 
 describe("IPMX TR-10-1 §10.3 — audio fmtp measuredsamplerate (L16/L24)", function()
@@ -970,14 +985,16 @@ describe("IPMX TR-10-6 §7.6 — FEC parameters in a=fmtp", function()
     { value = "abc",    label = "non-numeric"       },
     { value = "0100",   label = "leading-zero"      },
   }) do
-    it(string.format("rejects FEC_ADD_LATENCY_VIDEO=%s (%s)",
-                     case.value, case.label), function()
-      local doc, ctx = ipmx.match(video_with_fmtp_extras(
-        "FECPROFILE=profile-a;FEC_ADD_LATENCY_VIDEO=" .. case.value))
-      assert.is_nil(doc)
-      assert.is_not_nil(finding_for(ctx,
-        "tr-10-6.a.fmtp.fec-add-latency-video-invalid-value"))
-    end)
+    for _, kind in ipairs({ "VIDEO", "AUDIO" }) do
+      it(string.format("rejects FEC_ADD_LATENCY_%s=%s (%s)",
+                       kind, case.value, case.label), function()
+        local doc, ctx = ipmx.match(video_with_fmtp_extras(
+          "FECPROFILE=profile-a;FEC_ADD_LATENCY_" .. kind .. "=" .. case.value))
+        assert.is_nil(doc)
+        assert.is_not_nil(finding_for(ctx,
+          "tr-10-6.a.fmtp.fec-add-latency-" .. kind:lower() .. "-invalid-value"))
+      end)
+    end
   end
 
   -- NOT-SPEC: library — FEC param SHALLs are IPMX-specific (TR-10-6
