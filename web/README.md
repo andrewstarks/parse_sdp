@@ -147,6 +147,30 @@ npx http-server examples --cors -p 8081
 # From URL: http://localhost:8081/st2110/valid/01_simple_video.sdp
 ```
 
+## Manual screenshots
+
+The images in `manual/img/` are the screenshots in [MANUAL.md](MANUAL.md).
+`manual/capture.mjs` takes all of them again. The script needs Google
+Chrome and the `playwright-core` package, and it reads the page from
+`dist/`, so build first:
+
+```sh
+web/wasm/build.sh
+cd web && npm install --no-save playwright-core && node manual/capture.mjs
+```
+
+The script serves `dist/` at the deployed address,
+`https://andrewstarks.github.io/parse_sdp/`, so the page runs over HTTPS
+and shows the same messages as the deployed page. Request routes answer
+the two device addresses in the URL screenshots, so the script sends
+nothing to the network. Every image is taken in the light color scheme,
+in a window 1200 pixels wide, at 2x pixel density, and is cropped to the
+part of the page that the manual text describes. The browser's own
+interface, such as the local network access prompt and the native list
+of a `<select>`, is not part of the page and is not captured. Take the
+screenshots again after a change to the user interface, and check the
+alt text in MANUAL.md against the new images.
+
 ## Tests
 
 ```sh

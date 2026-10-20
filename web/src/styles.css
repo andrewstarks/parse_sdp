@@ -209,7 +209,7 @@ label.check { display: inline-flex; align-items: center; gap: 6px; }
 .crlf-note { display: flex; gap: 12px; align-items: flex-start; justify-content: space-between; }
 .crlf-note[hidden] { display: none; }
 .crlf-note p { margin: 0; }
-.crlf-note button { flex: none; }
+.crlf-note-actions { flex: none; display: flex; gap: 8px; flex-wrap: wrap; justify-content: flex-end; }
 
 /* Input */
 .drop-zone { position: relative; min-width: 0; }

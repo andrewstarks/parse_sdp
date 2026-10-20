@@ -122,7 +122,7 @@ The array is sorted by `id`. A check with `verified: false` also has a
 
 ```json
 { "op": "version" }
-→ { "ok": true, "lua": "Lua 5.5", "lpeg": "LPeg 1.1.0", "parse_sdp": "1.9.0" }
+→ { "ok": true, "lua": "Lua 5.5", "lpeg": "LPeg 1.1.0", "parse_sdp": "1.9.1" }
 ```
 
 `parse_sdp` is read from the module `parse_sdp_version`. `build.sh`

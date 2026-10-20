@@ -17,6 +17,7 @@ import { groupExamples, sessionNameOf, BUNDLED_EXAMPLES } from "./examples.js";
 import { urlFromQuery } from "./url_source.js";
 
 const REPO_URL = "https://github.com/andrewstarks/parse_sdp";
+const LF_ONLY_ID = "sdp.line.lf-only-line-ending";
 
 // The real engine is an ES module produced by the WASM build; when it is
 // missing (serving web/src directly) or fails to instantiate, or when the
@@ -92,7 +93,10 @@ async function main() {
   });
   const editor = initEditor(document.querySelector("#editor"), { onChange: () => revalidate(), policy });
   const output = initOutput({ section: document.querySelector("#output"), bar: document.querySelector(".site-header") });
-  const input = initInput(document.querySelector("#input"), { onSubmit: analyze, fetchText });
+  const input = initInput(document.querySelector("#input"), {
+    onSubmit: analyze, fetchText,
+    onLfOnlyOff: () => policy.setSeverity(LF_ONLY_ID, "off"),
+  });
 
   const [checks, manifest] = await Promise.all([engine.request({ op: "checks" }), loadExampleManifest()]);
   policy.setChecks(checks.ok ? checks.checks : []);
@@ -126,7 +130,7 @@ async function main() {
     editor.render(state.doc);
     editor.showSerializeError(null);
     applyTiers(res.tiers, text);
-    input.setLfOnlyReported(dedupeFindings(res.tiers).some((row) => row.finding.id === "sdp.line.lf-only-line-ending"));
+    input.setLfOnlyReported(dedupeFindings(res.tiers).some((row) => row.finding.id === LF_ONLY_ID));
     state.currentText = "";
     if (state.doc) {
       const ser = await engine.request({ op: "to_sdp", doc: state.doc });

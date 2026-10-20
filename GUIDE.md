@@ -597,7 +597,7 @@ These two functions expose the registry of checks.
   id. Each entry has the fields `id`, `kind`, `default_severity`,
   `code`, `spec_ref`, `message_template`, and `verified`. An entry whose
   `verified` field is `false` also has a `verification_note` string. As
-  of version 1.9.0, every registered check has `verified = true`.
+  of version 1.9.1, every registered check has `verified = true`.
 - `sdp.default_policy()` returns a table of the form
   `{[id] = default_severity}` over every registered check. A caller can
   edit the table and pass it back as `opts.policy`.
@@ -949,7 +949,7 @@ parse_sdp checks [--filter SUBSTR] [--format table|json] [--unverified]
 | --- | --- |
 | `--filter SUBSTR` | Keeps only the checks whose id contains the text. The match is a plain substring match, not a Lua pattern, so a `-` in an id (`ts-refclk`, `tr-10-1`) matches literally. |
 | `--format MODE` | `table` (the default; column-aligned id, severity, and `spec_ref`) or `json` (an array of the full registry entries). |
-| `--unverified` | Keeps only the checks with `verified = false`. As of version 1.9.0, no check has `verified = false`, so the list is empty. |
+| `--unverified` | Keeps only the checks with `verified = false`. As of version 1.9.1, no check has `verified = false`, so the list is empty. |
 
 ```sh
 $ parse_sdp checks --filter ts-refclk
@@ -1311,8 +1311,8 @@ registry stores it.
 
 | Id | The check rejects | `spec_ref` |
 | --- | --- | --- |
-| `sdp.v.must-be-zero` | A `v=` value other than `0`. In version 1.9.0 the grammar rejects this structurally with `PARSE_ERROR`; the id is registered but is not emitted. | RFC 8866 §5.1 |
-| `sdp.o.username-required` | An `o=` line with an empty username. In version 1.9.0 the grammar rejects this structurally with `PARSE_ERROR`; the id is registered but is not emitted. | RFC 8866 §5.2 |
+| `sdp.v.must-be-zero` | A `v=` value other than `0`. In version 1.9.1 the grammar rejects this structurally with `PARSE_ERROR`; the id is registered but is not emitted. | RFC 8866 §5.1 |
+| `sdp.o.username-required` | An `o=` line with an empty username. In version 1.9.1 the grammar rejects this structurally with `PARSE_ERROR`; the id is registered but is not emitted. | RFC 8866 §5.2 |
 | `sdp.session.connection-required` | A media description with no `c=` line when the session level has no `c=` line either. A session with no media descriptions and no `c=` line is accepted. | RFC 8866 §5.7 |
 | `sdp.m.rtpmap-required-for-dynamic-pt` | An RTP media description whose `m=` line lists a payload type from 96 to 127 with no `a=rtpmap` for that payload type. | RFC 8866 §8.2.3 |
 | `sdp.file.bom-present` | A file that starts with a UTF-8 byte order mark (warning). | RFC 8866 §6 |

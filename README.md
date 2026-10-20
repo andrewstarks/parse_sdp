@@ -227,6 +227,7 @@ parse_sdp/
 ├── web/                         # browser playground: WebAssembly build (wasm/),
 │   │                            # static page (src/), bridge contract, user manual
 │   ├── MANUAL.md                # user manual for the playground
+│   ├── manual/                  # manual screenshots (img/) and capture.mjs
 │   ├── README.md                # developer notes for the playground
 │   └── CONTRACT.md              # JSON request/response contract of the bridge
 ├── audits/                      # SPEC_INVENTORY, SPEC_COVERAGE, PHASE3_FINDINGS:

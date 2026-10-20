@@ -105,6 +105,8 @@ web/
   src/               static UI (ES modules, no bundler) + engine.js.
   fixtures/          real bridge responses used by the UI mock.
   dist/              build output deployed to GitHub Pages (gitignored).
+  MANUAL.md          playground user manual, with screenshots from
+                     manual/img/; manual/capture.mjs retakes them.
 examples/
   examples.lua       runnable API walkthrough (lua examples/examples.lua)
   generic/           RFC 8866 SDP samples in valid/ and invalid/
