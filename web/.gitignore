@@ -1,3 +1,4 @@
 wasm/.cache/
 wasm/build/
 dist/
+node_modules/

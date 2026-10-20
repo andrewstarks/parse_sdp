@@ -9,6 +9,23 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 
+## [1.9.1] — 2026-10-20
+
+### Added
+
+- The playground's note about LF-only line endings in pasted or typed
+  text has a "Turn off warning" button. The button sets the check
+  `sdp.line.lf-only-line-ending` to `off` in the policy, so the user can
+  silence the warnings where they read the note. "Don't show again"
+  still hides only the note.
+- The playground manual (`web/MANUAL.md`) has 21 screenshots, one next
+  to each passage that describes something on the page. Examples are
+  the tier cards, a collapsed multi-line finding, the Policy panel, the
+  editor's "missing" and "line N" badges, the "Cannot serialize" state,
+  and the output diff. Each screenshot has a thin gray border and a
+  faint shadow. `web/manual/capture.mjs` takes the screenshots again
+  from a local build; `web/README.md` describes how.
+
 ## [1.9.0] — 2026-10-20
 
 ### Fixed
