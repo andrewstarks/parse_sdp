@@ -181,7 +181,7 @@ parse_sdp/
 │       ├── base.lua             # RFC 8866 base grammar and checks
 │       ├── st2110.lua           # SMPTE ST 2110 overrides
 │       └── ipmx.lua             # VSF TR-10 / IPMX overrides
-├── spec/                        # busted test suite (hermetic; 1389 tests as of this commit)
+├── spec/                        # busted test suite (hermetic; 1438 tests as of this commit)
 │   ├── grammar_base_spec.lua    # RFC 8866 base SDP; every test cites a clause
 │   ├── grammar_st2110_spec.lua  # SMPTE ST 2110; every test cites a clause
 │   ├── grammar_ipmx_spec.lua    # VSF TR-10 / IPMX; every test cites a clause

@@ -84,7 +84,7 @@ describe("IPMX TR-10-1 §8.7 — RTCP on media port + 1", function()
 
   -- SPEC: TR-10-1 §8.7 — "RTCP Sender Report packets shall be sent to the
   -- UDP destination port that corresponds to +1 from the port used by
-  -- their corresponding media payload." a=rtcp-mux (RFC 5761 §5.1.3)
+  -- their corresponding media payload." a=rtcp-mux (RFC 5761 §5.1.1)
   -- puts RTCP on the media port itself.
   it("rejects a=rtcp-mux on an RTP block", function()
     local doc, ctx = ipmx.match(video_sdp_with({ "a=rtcp-mux" }))
@@ -626,6 +626,20 @@ describe("IPMX TR-10-10 §8 — a=infoframe attribute", function()
     return lines_to_sdp(lines)
   end
 
+  -- SPEC: TR-10-10 §8 "a=infoframe:<port> SSN=ST2110-41:2024;DIT=100100"
+  it("records tr-10-10.a.infoframe.malformed at the value", function()
+    local line = "a=infoframe:30003 SSN=ST2110-41:2024"
+    local doc, ctx = ipmx.match(build_video_with_infoframe({
+      session_lines = { line },
+    }), { fail_on_first = false })
+    local f = finding_for(ctx, "tr-10-10.a.infoframe.malformed")
+    assert.equal(5, f.line)
+    assert.equal(13, f.col)
+    local a = doc.session.attributes[1]
+    assert.is_true(a.malformed)
+    assert.equal("30003 SSN=ST2110-41:2024", a.value)
+  end)
+
   it("accepts SDP with no a=infoframe (presence is conditional on HDMI)", function()
     assert.is_truthy(ipmx.match(build_video_with_infoframe()))
   end)
@@ -772,6 +786,19 @@ describe("IPMX TR-10-5 §10 — a=hkep attribute", function()
     lines[#lines + 1] = TIMING_MEDIACLK
     return lines_to_sdp(lines)
   end
+
+  -- SPEC: TR-10-5 §10 "a=hkep:<port> <nettype> <addrtype> <unicast-address>
+  -- <node-id> <port-id>": a seventh field is not part of the format, and
+  -- the per-field checks do not run on it.
+  it("records tr-10-5.a.hkep.malformed, and only that, for a seventh field", function()
+    local _, ctx = ipmx.match(build_with_hkep({
+      session_lines = { WELL_FORMED_HKEP .. " extra" },
+    }), { fail_on_first = false })
+    local f = finding_for(ctx, "tr-10-5.a.hkep.malformed")
+    assert.equal(5, f.line)
+    assert.equal(8, f.col)
+    assert.equal(1, #ctx.findings)
+  end)
 
   it("accepts a well-formed session-level a=hkep", function()
     assert.is_truthy(ipmx.match(build_with_hkep({
@@ -1040,6 +1067,17 @@ describe("IPMX TR-10-13 §13 — a=privacy attribute", function()
     lines[#lines + 1] = TIMING_MEDIACLK
     return lines_to_sdp(lines)
   end
+
+  -- SPEC: TR-10-13 §13 "shall be formatted as a follow with a semicolon and
+  -- an optional space separating the parameters"
+  it("records tr-10-13.a.privacy.malformed for a parameter with no '='", function()
+    local _, ctx = ipmx.match(build_with_privacy({
+      session_lines = { "a=privacy:protocol" },
+    }), { fail_on_first = false })
+    local f = finding_for(ctx, "tr-10-13.a.privacy.malformed")
+    assert.equal(5, f.line)
+    assert.equal(11, f.col)
+  end)
 
   it("accepts a well-formed session-level a=privacy", function()
     assert.is_truthy(ipmx.match(build_with_privacy({

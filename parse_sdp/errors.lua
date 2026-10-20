@@ -429,6 +429,158 @@ M.register("sdp.a.ts-refclk.ptp-malformed", {
   verified         = true,
 })
 
+-- ── Malformed known attributes ─────────────────────────────────────────────
+-- A known attribute whose value its rule cannot parse to the end of the
+-- line (malformed_attr in grammar/base.lua). Each id quotes the syntax the
+-- value failed. Same kind and severity as ts-refclk.ptp-malformed: error
+-- by default, demotable, and a demoted parse keeps the raw value.
+local function register_malformed(id, message, spec_ref)
+  M.register(id, {
+    kind             = "hard-syntactic",
+    default_severity = "error",
+    code             = "INVALID_VALUE",
+    message_template = message,
+    spec_ref         = spec_ref,
+    verified         = true,
+  })
+end
+
+-- RFC 8866 §6.4 / §6.5 / §6.13: "ptime-value = non-zero-int-or-real",
+-- "maxptime-value = non-zero-int-or-real", "framerate-value =
+-- non-zero-int-or-real". §9: "non-zero-int-or-real = integer /
+-- non-zero-real", "non-zero-real = zero-based-integer "." *DIGIT
+-- POS-DIGIT", "integer = POS-DIGIT *DIGIT", "zero-based-integer = "0" /
+-- integer". A decimal therefore cannot end in 0 (`1.0`), and an integer
+-- cannot start with 0.
+for _, name in ipairs({ "ptime", "maxptime", "framerate" }) do
+  local section = ({ ptime = "6.4", maxptime = "6.5", framerate = "6.13" })[name]
+  register_malformed("sdp.a." .. name .. ".malformed",
+    "a=" .. name .. " value must be a non-zero integer or a decimal that does "
+ .. "not end in 0, with no leading zero (for example 20 or 0.125)",
+    "RFC 8866 §" .. section .. " / §9 (" .. name
+ .. "-value = non-zero-int-or-real)")
+end
+
+-- RFC 8866 §6.14: "quality-value = zero-based-integer"; §9:
+-- "zero-based-integer = "0" / integer".
+register_malformed("sdp.a.quality.malformed",
+  "a=quality value must be 0 or an integer with no leading zero",
+  "RFC 8866 §6.14 / §9 (quality-value = zero-based-integer)")
+
+-- RFC 8866 §6.6: "rtpmap-value = payload-type SP encoding-name "/"
+-- clock-rate [ "/" encoding-params ]", "payload-type =
+-- zero-based-integer", "encoding-name = token", "clock-rate = integer",
+-- "channels = integer"; and "the payload type number is indicated in a
+-- 7-bit field, limiting the values to inclusively between 0 and 127."
+register_malformed("sdp.a.rtpmap.malformed",
+  "a=rtpmap value must be '<payload type> <encoding>/<clock rate>[/<channels>]':"
+ .. " a payload type from 0 to 127, a token encoding name, and a clock rate"
+ .. " and channel count that are integers with no leading zero",
+  "RFC 8866 §6.6 (rtpmap-value ABNF)")
+
+-- RFC 8866 §6.15: "fmtp-value = fmt SP format-specific-params",
+-- "format-specific-params = byte-string". The body is any byte-string,
+-- so only the format and the separating SP can be malformed. The parser
+-- reads the format as an RTP payload type (0-127, §6.6).
+register_malformed("sdp.a.fmtp.malformed",
+  "a=fmtp value must be '<format> <format-specific parameters>', with the"
+ .. " format an RTP payload type from 0 to 127",
+  "RFC 8866 §6.15 (fmtp-value = fmt SP format-specific-params)")
+
+-- RFC 5888 §4: "mid-attribute = "a=mid:" identification-tag",
+-- "identification-tag = token".
+register_malformed("sdp.a.mid.malformed",
+  "a=mid value must be an identification-tag: one token, with no spaces",
+  "RFC 5888 §4 (mid-attribute ABNF)")
+
+-- RFC 5888 §5: "group-attribute = "a=group:" semantics *(SP
+-- identification-tag)", "semantics-extension = token".
+register_malformed("sdp.a.group.malformed",
+  "a=group value must be '<semantics>' followed by zero or more"
+ .. " identification-tags, each a token after a single space",
+  "RFC 5888 §5 (group-attribute ABNF)")
+
+-- RFC 5576 §10: "ssrc-attr = "ssrc:" ssrc-id SP attribute",
+-- "ssrc-id = integer ; 0 .. 2**32 - 1".
+register_malformed("sdp.a.ssrc.malformed",
+  "a=ssrc value must be '<ssrc-id> <attribute>[:<value>]', with a decimal"
+ .. " ssrc-id",
+  "RFC 5576 §10 (ssrc-attr ABNF)")
+
+-- RFC 5576 §10: "ssrc-group-attr = "ssrc-group:" semantics *(SP
+-- ssrc-id)", "semantics = "FEC" / "FID" / token".
+register_malformed("sdp.a.ssrc-group.malformed",
+  "a=ssrc-group value must be '<semantics>' followed by zero or more"
+ .. " decimal ssrc-ids, each after a single space",
+  "RFC 5576 §10 (ssrc-group-attr ABNF)")
+
+-- RFC 8830 §2: "msid-value = msid-id [ SP msid-appdata ]".
+register_malformed("sdp.a.msid.malformed",
+  "a=msid value must be '<msid-id>[ <msid-appdata>]', two fields at most",
+  "RFC 8830 §2 (msid-value ABNF)")
+
+-- RFC 8285 §8: "extmap-value = mapentry SP extensionname [SP
+-- extensionattributes]", "mapentry = "extmap:" 1*5DIGIT ["/"
+-- direction]", "direction = "sendonly" / "recvonly" / "sendrecv" /
+-- "inactive"".
+register_malformed("sdp.a.extmap.malformed",
+  "a=extmap value must be '<id>[/<direction>] <extension URI>[ <attributes>]':"
+ .. " a decimal id, and a direction of sendonly, recvonly, sendrecv, or"
+ .. " inactive",
+  "RFC 8285 §8 (extmap-value ABNF)")
+
+-- RFC 4585 §4.2: "rtcp-fb-syntax = "a=rtcp-fb:" rtcp-fb-pt SP
+-- rtcp-fb-val CRLF", "rtcp-fb-pt = "*" / fmt".
+register_malformed("sdp.a.rtcp-fb.malformed",
+  "a=rtcp-fb value must be '<payload type or *> <feedback type>[ <parameters>]',"
+ .. " with the payload type from 0 to 127",
+  "RFC 4585 §4.2 (rtcp-fb-syntax ABNF)")
+
+-- RFC 3605 §2.1: "rtcp-attribute = "a=rtcp:" port [nettype space
+-- addrtype space connection-address] CRLF".
+register_malformed("sdp.a.rtcp.malformed",
+  "a=rtcp value must be '<port>[ IN <IP4|IP6> <connection-address>]'",
+  "RFC 3605 §2.1 (rtcp-attribute ABNF)")
+
+-- RFC 5761 §8: "It is a property attribute, which does not take a value."
+register_malformed("sdp.a.rtcp-mux.malformed",
+  "a=rtcp-mux takes no value",
+  "RFC 5761 §8")
+
+-- RFC 4570 Appendix A: "source-filter = "source-filter" ":" SP
+-- filter-mode SP filter-spec", "filter-mode = "excl" / "incl"",
+-- "filter-spec = nettype SP address-types SP dest-address SP src-list",
+-- "address-types = "*" / addrtype", "src-list = *(unicast-address SP)
+-- unicast-address".
+register_malformed("sdp.a.source-filter.malformed",
+  "a=source-filter value must be ' <incl|excl> IN <IP4|IP6|*>"
+ .. " <dest-address> <source-address>...', starting with a space and"
+ .. " naming at least one source address",
+  "RFC 4570 Appendix A (source-filter ABNF)")
+
+-- RFC 7273 §4.8: "clksrc = ntp / ptp / gps / gal / glonass / local /
+-- private / clksrc-ext", "ntp = "ntp=" ntp-server-addr",
+-- "ntp-server-addr = hostport / "/traceable/"", "gps = "gps"",
+-- "private = "private" [ ":traceable" ]", "clksrc-ext =
+-- clksrc-param-name clksrc-param-value", "clksrc-param-value = ["="
+-- byte-string ]". A bad ptp= body has its own id (ptp-malformed).
+register_malformed("sdp.a.ts-refclk.malformed",
+  "a=ts-refclk value must be ntp=<server>, ntp=/traceable/, ptp=..., gps,"
+ .. " gal, glonass, local, private[:traceable], or an extension"
+ .. " <name>[=<value>] whose name is not one of these",
+  "RFC 7273 §4.8 (clksrc ABNF)")
+
+-- RFC 7273 §5.4: "media-clksrc = "mediaclk:" [media-clkid SP]
+-- mediaclock", "mediaclock = sender / direct / ieee1722-streamid /
+-- mediaclock-ext", "direct = "direct" [ "=" 1*DIGIT ] [SP rate]",
+-- "rate = "rate=" integer "/" integer", "ieee1722-streamid =
+-- "IEEE1722=" avb-stream-id", "avb-stream-id = EUI64".
+register_malformed("sdp.a.mediaclk.malformed",
+  "a=mediaclk value must be [id=<tag> ] followed by sender,"
+ .. " direct[=<offset>][ rate=<n>/<d>], IEEE1722=<EUI-64>, or an extension"
+ .. " <name>[=<value>] whose name is not one of these",
+  "RFC 7273 §5.4 (media-clksrc ABNF)")
+
 -- ── c= connection-address checks (RFC 8866 §5.7 / §9) ──────────────────────
 
 M.register("sdp.c.address.invalid-ipv4", {
@@ -1801,6 +1953,12 @@ M.register("st2110-22.b.as-invalid-value", {
 --       (a single device can carry multiple infoframe streams; one per
 --        associated media stream).
 
+-- TR-10-10 §8: "The format of this attribute is as follows:
+-- a=infoframe:<port> SSN=ST2110-41:2024;DIT=100100".
+register_malformed("tr-10-10.a.infoframe.malformed",
+  "a=infoframe value must be '<port> SSN=<ssn>;DIT=<dit>'",
+  "TR-10-10 §8")
+
 M.register("tr-10-10.a.infoframe.must-be-session-level", {
   kind             = "semantic",
   default_severity = "error",
@@ -1864,6 +2022,13 @@ M.register("tr-10-10.a.infoframe.duplicate-port", {
 -- a number without range-bounding (consistent with base's m= port
 -- handling — port-range narrowing is uniformly out of scope at the
 -- grammar tier today).
+
+-- TR-10-5 §10: "The format is as follows: a=hkep:<port> <nettype>
+-- <addrtype> <unicast-address> <node-id> <port-id>".
+register_malformed("tr-10-5.a.hkep.malformed",
+  "a=hkep value must be '<port> <nettype> <addrtype> <unicast-address>"
+ .. " <node-id> <port-id>': six fields separated by single spaces",
+  "TR-10-5 §10")
 
 M.register("tr-10-5.a.hkep.nettype-invalid-value", {
   kind             = "semantic",
@@ -1988,6 +2153,15 @@ M.register("tr-10-6.a.fmtp.fec-add-latency-audio-requires-fecprofile", {
 -- a=privacy may appear at session level or media level (§13 line 324).
 -- USB-context narrowings (protocol = USB_KV, AAD-only modes) live in
 -- TR-10-14 §12 and are handled by a separate Phase 7.L slice.
+
+-- TR-10-13 §13: "The privacy attribute of an SDP transport file shall be
+-- formatted as a follow with a semicolon and an optional space separating
+-- the parameters and a CRLF to terminate the attribute line."
+-- Format line: "a=privacy: protocol =<protocol>; mode =<mode>; ..."
+register_malformed("tr-10-13.a.privacy.malformed",
+  "a=privacy value must be <key>=<value> parameters separated by a"
+ .. " semicolon and an optional space",
+  "TR-10-13 §13")
 
 M.register("tr-10-13.a.privacy.protocol-required", {
   kind             = "semantic", default_severity = "error",

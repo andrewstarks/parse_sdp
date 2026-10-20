@@ -3107,6 +3107,26 @@ describe("ST 2110-31 — AM824 rtpmap channels-required (Phase 6.D.C)",
       "st2110-31.a.rtpmap.am824-channels-required"))
   end)
 
+  -- SPEC: RFC 8866 §6.6 "channels = integer". The AM824 checks wait for
+  -- the end of the value, so a channel count of 0 is base's malformed
+  -- rtpmap and not a missing channel count.
+  it("reports AM824/48000/0 as a malformed rtpmap, not missing channels", function()
+    local _, ctx = st2110.match(audio_sdp("a=rtpmap:96 AM824/48000/0"),
+                                { fail_on_first = false })
+    assert.is_not_nil(finding_for(ctx, "sdp.a.rtpmap.malformed"))
+    assert.is_nil(finding_for(ctx,
+      "st2110-31.a.rtpmap.am824-channels-required"))
+  end)
+
+  -- SPEC: RFC 8866 §6.6 "channels = integer"; the raw clock-rate check
+  -- (ST 2110-20 §7.1) does not run on a value that fails the base ABNF.
+  it("reports raw/48000/0 as a malformed rtpmap only", function()
+    local _, ctx = st2110.match(audio_sdp("a=rtpmap:96 raw/48000/0"),
+                                { fail_on_first = false })
+    assert.is_not_nil(finding_for(ctx, "sdp.a.rtpmap.malformed"))
+    assert.is_nil(finding_for(ctx, "st2110-20.a.rtpmap.raw-clock-rate"))
+  end)
+
   -- ── INTENTIONAL non-parity with 1.0 ──────────────────────────────────
   -- ST 2110-30 / AES67-2013 / RFC 3551 §6 do NOT require channels on
   -- L16 / L24 rtpmaps. The 1.0 parser enforces it citing a "ST 2110-30

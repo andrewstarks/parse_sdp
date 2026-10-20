@@ -799,17 +799,10 @@ local function params_equal(a, b)
   return true
 end
 
-local function first_attr(block, name)
-  for _, attr in ipairs(block.attributes) do
-    if attr.name == name then return attr end
-  end
-  return nil
-end
-
 local function leg_src_dst(block, doc)
   local conn = block.connection or doc.session.connection
   local dst  = conn and conn.address or ""
-  local sf   = first_attr(block, "source-filter")
+  local sf   = base.attr_get(block, "source-filter")
   local src  = (sf and sf.src_addresses and sf.src_addresses[1]) or ""
   return src, dst
 end
@@ -817,10 +810,8 @@ end
 local function check_group_dup_coherence(doc, ctx)
   local mid_index = {}
   for i, m in ipairs(doc.media) do
-    for _, attr in ipairs(m.attributes) do
-      if attr.name == "mid" then
-        mid_index[attr.tag] = { index = i, block = m }
-      end
+    for _, attr in ipairs(base.attrs_get(m, "mid")) do
+      mid_index[attr.tag] = { index = i, block = m }
     end
   end
 
@@ -849,8 +840,8 @@ local function check_group_dup_coherence(doc, ctx)
         if not cont then return false end
       else
         local lead       = legs[1].block
-        local base_rm    = first_attr(lead, "rtpmap")
-        local base_fm    = first_attr(lead, "fmtp")
+        local base_rm    = base.attr_get(lead, "rtpmap")
+        local base_fm    = base.attr_get(lead, "fmtp")
         local base_src, base_dst = leg_src_dst(lead, doc)
 
         for j = 2, #legs do
@@ -861,7 +852,7 @@ local function check_group_dup_coherence(doc, ctx)
               { field_path = path })
             if not cont then return false end
           end
-          local rm = first_attr(leg, "rtpmap")
+          local rm = base.attr_get(leg, "rtpmap")
           if (rm and rm.encoding) ~= (base_rm and base_rm.encoding)
               or (rm and rm.clock_rate) ~= (base_rm and base_rm.clock_rate) then
             local cont = errors.record(ctx,
@@ -875,7 +866,7 @@ local function check_group_dup_coherence(doc, ctx)
               { field_path = path })
             if not cont then return false end
           end
-          local fm = first_attr(leg, "fmtp")
+          local fm = base.attr_get(leg, "fmtp")
           if not params_equal(fm and fm.params, base_fm and base_fm.params) then
             local cont = errors.record(ctx,
               "st2110-10.a.group-dup.fmtp-same",
@@ -911,14 +902,13 @@ local AUDIO_PACKET_PAYLOAD_LIMIT = 1448  -- 1460 (UDP) - 12 (RTP header)
 
 local function check_audio_packet_payload_fit(block, ctx)
   local ptime
-  for _, attr in ipairs(block.attributes) do
-    if attr.name == "ptime" then ptime = attr.value end
+  for _, attr in ipairs(base.attrs_get(block, "ptime")) do
+    ptime = attr.value
   end
   if not ptime then return true end
-  for _, attr in ipairs(block.attributes) do
-    local bps = attr.name == "rtpmap"
-        and PCM_BYTES_PER_SAMPLE[attr.encoding] or nil
-    if bps and attr.clock_rate then
+  for _, attr in ipairs(base.attrs_get(block, "rtpmap")) do
+    local bps = PCM_BYTES_PER_SAMPLE[attr.encoding]
+    if bps then
       local channels = attr.channels or 1
       local samples = math.floor(attr.clock_rate * ptime / 1000 + 0.5)
       local needed  = channels * bps * samples
@@ -978,7 +968,7 @@ end
 -- level mediaclk does NOT satisfy a per-stream block lacking its own.
 local function has_attr(attrs, name)
   for _, attr in ipairs(attrs) do
-    if attr.name == name then return true end
+    if attr.name == name and not attr.malformed then return true end
   end
   return false
 end
@@ -1131,12 +1121,15 @@ end
 --   Cg("channels")?  ← optional, when present in the input
 -- followed by a trailing Cmt that reads Cb"clock_rate" + Cb"media" + ctx and
 -- emits findings via errors.record. The Cmt returns `pos` (no value) so it
--- doesn't add to the surrounding a_value Ct.
+-- doesn't add to the surrounding a_value Ct. The look-ahead before it
+-- keeps the Cmt off a value with more after it (`raw/90000/0`), which
+-- a_value hands to base's malformed branch instead.
 
 local function make_rtpmap_branch(encoding_name, rate_id, expected_media, media_id)
   return P(encoding_name) * Cg(Cc(encoding_name), "encoding") * P("/")
     * Cg(V"rfc8866_pos_int_num", "clock_rate")
     * (P("/") * Cg(V"rfc8866_pos_int_num", "channels")) ^ -1
+    * #V"value_boundary_chars"
     * Cmt(Cb"clock_rate" * Cb"media" * Carg(1),
           record_rate_and_media(rate_id, expected_media, media_id))
 end
@@ -1255,13 +1248,13 @@ local FMTP_REQUIRED_BY_ENCODING = {
 
 local function check_rtpmap_requires_fmtp(block, ctx)
   local needs, has = {}, {}
-  for _, attr in ipairs(block.attributes) do
-    if attr.name == "rtpmap"
-       and FMTP_REQUIRED_BY_ENCODING[attr.encoding] then
+  for _, attr in ipairs(base.attrs_get(block, "rtpmap")) do
+    if FMTP_REQUIRED_BY_ENCODING[attr.encoding] then
       needs[attr.payload_type] = attr.encoding
-    elseif attr.name == "fmtp" then
-      has[attr.payload_type] = true
     end
+  end
+  for _, attr in ipairs(base.attrs_get(block, "fmtp")) do
+    has[attr.payload_type] = true
   end
   for pt, enc in pairs(needs) do
     if not has[pt] then
@@ -1285,8 +1278,8 @@ end
 -- §7.3 SHALL on presence is unchanged and inherited via composition.)
 local function check_jxsv_bandwidth(block, ctx)
   local has_jxsv = false
-  for _, attr in ipairs(block.attributes) do
-    if attr.name == "rtpmap" and attr.encoding == "jxsv" then
+  for _, attr in ipairs(base.attrs_get(block, "rtpmap")) do
+    if attr.encoding == "jxsv" then
       has_jxsv = true
       break
     end
@@ -1364,11 +1357,14 @@ local overrides = {
     -- (parity of <nchan>). Ordered choice on the optional `/<channels>`
     -- suffix: present → Cmt verifies even; absent → Cmt records the
     -- required SHALL. Both Cmts return `pos` to continue matching so
-    -- the trailing rate+media Cmt still fires.
+    -- the trailing rate+media Cmt still fires. Each alternative checks
+    -- for the end of the value before its Cmt, so `AM824/48000/0` records
+    -- no channels finding and goes to base's malformed branch.
     st2110_rtpmap_am824 =
         P("AM824") * Cg(Cc("AM824"), "encoding") * P("/")
         * Cg(V"rfc8866_pos_int_num", "clock_rate")
         * ( P("/") * Cg(V"rfc8866_pos_int_num", "channels")
+            * #V"value_boundary_chars"
             * Cmt(Cb"payload_type" * Cb"channels" * Carg(1),
                   function(_, pos, pt, channels, ctx)
                     if (channels % 2) ~= 0 then
@@ -1383,7 +1379,8 @@ local overrides = {
                     end
                     return pos
                   end)
-          + Cmt(Cb"payload_type" * Carg(1),
+          + #V"value_boundary_chars"
+          * Cmt(Cb"payload_type" * Carg(1),
                 function(_, pos, pt, ctx)
                   local cont = errors.record(ctx,
                     "st2110-31.a.rtpmap.am824-channels-required",
@@ -1412,7 +1409,8 @@ local overrides = {
         -V"st2110_known_rtpmap_encoding"
         * Cg(V"rfc8866_token", "encoding") * P("/")
         * Cg(V"rfc8866_pos_int_num", "clock_rate")
-        * (P("/") * Cg(V"rfc8866_pos_int_num", "channels")) ^ -1,
+        * (P("/") * Cg(V"rfc8866_pos_int_num", "channels")) ^ -1
+        * #V"value_boundary_chars",
 
     st2110_known_rtpmap_encoding =
         (P("raw") + P("jxsv") + P("smpte291") + P("AM824")) * P("/"),

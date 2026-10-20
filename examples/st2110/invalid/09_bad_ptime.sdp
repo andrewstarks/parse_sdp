@@ -1,0 +1,11 @@
+v=0
+o=- 1009 1 IN IP4 192.168.1.1
+s=ST2110 Audio, a=ptime:1.0 (a decimal ptime cannot end in 0)
+t=0 0
+m=audio 5004 RTP/AVP 97
+c=IN IP4 239.100.0.2/64
+a=rtpmap:97 L24/48000/2
+a=fmtp:97 channel-order=SMPTE2110.(ST)
+a=mediaclk:direct=0
+a=ptime:1.0
+a=ts-refclk:ptp=IEEE1588-2008:AA-BB-CC-DD-EE-FF-00-11:0

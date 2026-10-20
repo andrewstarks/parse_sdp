@@ -9,8 +9,53 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 
+### Added
+
+- **Every known attribute has its own check id for a malformed value.**
+  Before this change, a known attribute whose value did not match its
+  syntax, such as `a=ptime:1.0`, produced only `PARSE_ERROR` "could not
+  parse from this line" at column 1. The parser now records
+  `sdp.a.<name>.malformed` at the first column of the value, with a
+  message that states the rule and a `spec_ref` that names the ABNF. The
+  new ids are `sdp.a.ptime.malformed`, `sdp.a.maxptime.malformed`,
+  `sdp.a.framerate.malformed`, `sdp.a.quality.malformed`,
+  `sdp.a.rtpmap.malformed`, `sdp.a.fmtp.malformed`, `sdp.a.mid.malformed`,
+  `sdp.a.group.malformed`, `sdp.a.ssrc.malformed`,
+  `sdp.a.ssrc-group.malformed`, `sdp.a.msid.malformed`,
+  `sdp.a.extmap.malformed`, `sdp.a.rtcp-fb.malformed`,
+  `sdp.a.rtcp.malformed`, `sdp.a.rtcp-mux.malformed`,
+  `sdp.a.source-filter.malformed`, `sdp.a.ts-refclk.malformed` (forms
+  other than `ptp=`, which keeps `sdp.a.ts-refclk.ptp-malformed`), and
+  `sdp.a.mediaclk.malformed`. The IPMX tier adds
+  `tr-10-10.a.infoframe.malformed`, `tr-10-5.a.hkep.malformed`, and
+  `tr-10-13.a.privacy.malformed`. Each check is hard-syntactic with
+  default severity `error`.
+- When a policy demotes one of these checks, the attribute is kept in the
+  document as `{name, malformed = true, value = <text after the colon>}`.
+  `doc:to_sdp()` renders that table as written, so the document
+  round-trips. `sdp.attr_get`, `sdp.attrs_get`, and the document checks
+  skip a malformed attribute.
+- Added the example `examples/st2110/invalid/09_bad_ptime.sdp`
+  (`a=ptime:1.0`, reported as `sdp.a.ptime.malformed` at line 10,
+  column 9).
+
 ### Changed
 
+- The `a=fmtp` malformed check covers only the payload type and the space
+  after the payload type. RFC 8866 §6.15 allows any byte string as the
+  format-specific parameters.
+- An ST 2110 `a=rtpmap` check (clock rate, media type, AM824 channels) and
+  an IPMX `a=group`, `a=infoframe`, `a=hkep`, or `a=privacy` check now runs
+  only on a value that reaches the end of the line. `a=rtpmap:96
+  AM824/48000/0` was reported as a missing channel count. The line is now
+  reported as `sdp.a.rtpmap.malformed`, because RFC 8866 §6.6 defines
+  `channels` as an integer with no leading zero.
+- `spec/mutation_spec.lua` accepts any error on an inserted malformed
+  attribute line. An inserted `x=bad` line and a line with a NUL byte
+  must still report `PARSE_ERROR`.
+- Comments and tests that cited RFC 5761 §5.1.3 for `a=rtcp-mux` now cite
+  §8 ("It is a property attribute, which does not take a value.") or
+  §5.1.1, which define the attribute. §5.1.3 is about ICE.
 - Planning moved from PLAN.md to beads (`bd`). Open work is filed as beads;
   `bd ready` lists it. The Known Deferred Items are closed beads of type
   `decision`, and the code comments that cited PLAN.md now cite the decision

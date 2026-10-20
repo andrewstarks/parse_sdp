@@ -370,8 +370,9 @@ under `opts.fail_on_first` and policy demotion:
 | **semantic** | Captured value violates a value-set / presence / cross-section rule | `Cmt` that records a finding and either continues (`warn` / `off`) or fails the match (`error` under `fail_on_first=true`) | Yes; default severity per rule |
 
 Hard-syntactic examples: a field with no `=`, an unrecognized line letter, a
-malformed `m=` value form, a malformed `o=` value form, and a malformed `ptp=`
-body (`sdp.a.ts-refclk.ptp-malformed`).
+malformed `m=` value form, a malformed `o=` value form, a malformed `ptp=`
+body (`sdp.a.ts-refclk.ptp-malformed`), and a known attribute whose value
+its rule cannot parse to the end of the line (`sdp.a.<name>.malformed`).
 
 Soft-syntactic examples: `sdp.line.lf-only-line-ending`,
 `sdp.line.trailing-whitespace`, `sdp.file.trailing-newline-missing`,
@@ -468,6 +469,19 @@ directly on `main`. Anything that touches behavior, the public API
   in its alternative that can still fail. Put a closing look-ahead inside
   the `Cmt` pattern, not after it. Section and document checks run only on
   a section that parsed to its end.
+- A known attribute has three parts in the grammar: its rule in `a_value`,
+  its name in `known_attr_lookahead` (or a tier's `tier_attr_names`), and
+  a `malformed_attr(name, id)` entry in `a_malformed` (or a tier's
+  `tier_malformed`) with a registered id. `a_value` accepts a known rule
+  only when the rule ends at the end of the value; otherwise the line goes
+  to `a_malformed`. A recording `Cmt` inside a known rule must therefore
+  follow a `#V"value_boundary_chars"` look-ahead. Without the look-ahead,
+  a value with more text after it (`raw/90000/0`) records the rule's
+  finding and then the malformed finding.
+- A demoted malformed attribute stays in `block.attributes` with
+  `malformed = true` and no decomposed fields. Checks read attributes
+  through `base.attr_get` / `base.attrs_get`, which skip it, or test
+  `attr.malformed` before reading a decomposed field.
 - ST 2110 `fmtp` values are semicolon-separated `key=value` pairs. Parse
   them as a sub-grammar, not with string splits.
 - IPMX validation runs ST 2110 validation first. Never skip the lower tier.
@@ -493,7 +507,9 @@ directly on `main`. Anything that touches behavior, the public API
   doc constructed with `sdp.new(t)` must use the same decomposed shape. The
   legacy `{name, value=string}` shape for known attribute names is no longer
   a supported producer surface. Generic or unknown attributes keep the legacy
-  shape as the forward-compatible representation.
+  shape as the forward-compatible representation. The one exception is a
+  table with `malformed = true`, which the parser produces for a demoted
+  `.malformed` check; the serializer renders its `value` as written.
 
 
 <!-- BEGIN BEADS INTEGRATION v:1 profile:minimal hash:1105d646 -->

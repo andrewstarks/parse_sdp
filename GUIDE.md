@@ -382,6 +382,13 @@ The same accessors are documented under
 The pattern is useful both for debugging a document the producer built
 and for prototyping against an incomplete environment.
 
+Every known attribute has a check of the same kind for a value that does
+not match the attribute's syntax, for example `sdp.a.ptime.malformed`
+for `a=ptime:1.0`. When one of these checks is demoted, the attribute is
+kept with `malformed = true` and its text in `value`. The section
+[Malformed known attributes](#malformed-known-attributes) lists the
+checks.
+
 ### Required-attribute checklists
 
 The validator drives the loop. A static reference for the attributes a
@@ -479,12 +486,14 @@ Every key is validated against the registry when `sdp.parse` is called;
 an unknown id returns `nil, err` with `err.policy_key` set to the
 unknown key. The registry is available through `sdp.checks()` and
 `sdp.default_policy()`, described below. A policy entry applies to every
-registered check id, including the two registered hard-syntactic checks
-(`sdp.a.ts-refclk.ptp-malformed` and
-`st2110-20.a.fmtp.no-whitespace-around-equals`). In version 1.6.0,
-demoting `sdp.a.ts-refclk.ptp-malformed` to `"warn"` returns a document
-in which the malformed `ptp=` text is kept in the attribute's `value`
-field. A policy cannot change the structural grammar rules that have no
+registered check id, including the registered hard-syntactic checks:
+`st2110-20.a.fmtp.no-whitespace-around-equals`,
+`sdp.a.ts-refclk.ptp-malformed`, and the `.malformed` check of each
+known attribute. Demoting `sdp.a.ts-refclk.ptp-malformed` to `"warn"`
+returns a document in which the malformed `ptp=` text is kept in the
+attribute's `value` field. Demoting a `.malformed` check returns a
+document in which the attribute has `malformed = true` and its text in
+`value`. A policy cannot change the structural grammar rules that have no
 check id; those rules fail the parse with `code = "PARSE_ERROR"`.
 
 The returned `doc` is a plain Lua table with the
@@ -549,7 +558,7 @@ These two functions expose the registry of checks.
   id. Each entry has the fields `id`, `kind`, `default_severity`,
   `code`, `spec_ref`, `message_template`, and `verified`. An entry whose
   `verified` field is `false` also has a `verification_note` string. As
-  of version 1.6.0, every registered check has `verified = true`.
+  of version 1.7.0, every registered check has `verified = true`.
 - `sdp.default_policy()` returns a table of the form
   `{[id] = default_severity}` over every registered check. A caller can
   edit the table and pass it back as `opts.policy`.
@@ -582,7 +591,9 @@ the ordered `attributes` array by hand.
 
 Both functions accept `nil`: a `nil` block, or a block with no
 `attributes` field, returns `nil` from `attr_get` and `{}` from
-`attrs_get`. The returned tables have the decomposed shapes described in
+`attrs_get`. Neither function returns an attribute that a demoted
+`.malformed` check kept in the document (`malformed = true`), because
+that attribute has no decomposed fields. The returned tables have the decomposed shapes described in
 [Parsed Table Structure](#parsed-table-structure). For example, an
 `rtpmap` result has `payload_type`, `encoding`, and `clock_rate`, and an
 `rtcp-fb` result has `payload_type`, `feedback_type`, and an optional
@@ -886,7 +897,7 @@ parse_sdp checks [--filter SUBSTR] [--format table|json] [--unverified]
 | --- | --- |
 | `--filter SUBSTR` | Keeps only the checks whose id contains the text. The match is a plain substring match, not a Lua pattern, so a `-` in an id (`ts-refclk`, `tr-10-1`) matches literally. |
 | `--format MODE` | `table` (the default; column-aligned id, severity, and `spec_ref`) or `json` (an array of the full registry entries). |
-| `--unverified` | Keeps only the checks with `verified = false`. As of version 1.6.0, no check has `verified = false`, so the list is empty. |
+| `--unverified` | Keeps only the checks with `verified = false`. As of version 1.7.0, no check has `verified = false`, so the list is empty. |
 
 ```sh
 $ parse_sdp checks --filter ts-refclk
@@ -1091,9 +1102,18 @@ decomposed only when the document is parsed in `"ipmx"` mode. In
 `"sdp"` and `"st2110"` mode they are returned in the generic
 `{name, value}` shape.
 
+A known attribute whose value does not match the attribute's syntax is
+reported with the attribute's `.malformed` check (see
+[Malformed known attributes](#malformed-known-attributes)). When that
+check is demoted below error, the attribute is kept in the document as
+`{name = <name>, malformed = true, value = <the text after the colon>}`.
+`value` is absent when the line has no colon, as in `a=ptime`. The
+document checks do not read a malformed attribute.
+
 The flag attributes `recvonly`, `sendonly`, `sendrecv`, and `inactive`
 are generic attributes with a `name` and no `value`. `rtcp-mux` is
-recognized by name, so `a=rtcp-mux:<anything>` fails the parse. Any
+recognized by name, so `a=rtcp-mux:<anything>` is reported as
+`sdp.a.rtcp-mux.malformed`. Any
 other attribute name keeps the generic `{name, value}` shape, where
 `value` is absent for a flag form such as `a=foo` and is the whole text
 after the colon for `a=foo:bar`.
@@ -1143,10 +1163,10 @@ tables also appear:
   empty `o=` username, and a malformed `m=` or `o=` line produce this
   error. So does a value that holds a NUL byte or a CR that is not part
   of CRLF: RFC 8866 section 9 defines `byte-string` as "any byte except
-  NUL, CR, or LF". So does a malformed instance of a defined
-  `a=ts-refclk` or `a=mediaclk` form, such as a bare `ptp`, `ntp`, or
-  `IEEE1722`, or `sender=x`. RFC 7273 defines those names, so they are
-  not accepted as extension tokens. The checks for a media description
+  NUL, CR, or LF". A known attribute with a malformed value does not
+  produce this error. That attribute produces its `.malformed` check
+  instead, with the column of the value (see
+  [Malformed known attributes](#malformed-known-attributes)). The checks for a media description
   or a document run only when that part parsed to its end, so a line
   after the failure never causes a different error to be reported.
 - A policy failure. When `opts.policy` names an unknown check id, `err`
@@ -1210,7 +1230,7 @@ Every registered check has one of three `kind` values, which
 
 | Kind | Definition | Default severity |
 | --- | --- | --- |
-| hard-syntactic | The input shape is wrong and parsing cannot continue past the violation. Most of these rules are grammar rules with no check id (a line with no `=`, an unknown line letter, lines out of order, a malformed `m=` or `o=` line). Two of them are registered with ids: `sdp.a.ts-refclk.ptp-malformed` and `st2110-20.a.fmtp.no-whitespace-around-equals`. | `error` |
+| hard-syntactic | The input shape is wrong and parsing cannot continue past the violation. Most of these rules are grammar rules with no check id (a line with no `=`, an unknown line letter, lines out of order, a malformed `m=` or `o=` line). The registered ones are `st2110-20.a.fmtp.no-whitespace-around-equals`, `sdp.a.ts-refclk.ptp-malformed`, and the `.malformed` check of each known attribute (see [Malformed known attributes](#malformed-known-attributes)). | `error` |
 | soft-syntactic | The specification requires a strict form, but a lax form has only one possible meaning. The parser accepts the lax form and records a finding. There are five: the four line and file checks (`sdp.line.*`, `sdp.file.*`) and `sdp.a.fmtp.trailing-semicolon`. | `warn` |
 | semantic | A captured value violates a value set, a presence requirement, or a cross-section rule. | `error` |
 
@@ -1233,8 +1253,8 @@ registry stores it.
 
 | Id | The check rejects | `spec_ref` |
 | --- | --- | --- |
-| `sdp.v.must-be-zero` | A `v=` value other than `0`. In version 1.6.0 the grammar rejects this structurally with `PARSE_ERROR`; the id is registered but is not emitted. | RFC 8866 §5.1 |
-| `sdp.o.username-required` | An `o=` line with an empty username. In version 1.6.0 the grammar rejects this structurally with `PARSE_ERROR`; the id is registered but is not emitted. | RFC 8866 §5.2 |
+| `sdp.v.must-be-zero` | A `v=` value other than `0`. In version 1.7.0 the grammar rejects this structurally with `PARSE_ERROR`; the id is registered but is not emitted. | RFC 8866 §5.1 |
+| `sdp.o.username-required` | An `o=` line with an empty username. In version 1.7.0 the grammar rejects this structurally with `PARSE_ERROR`; the id is registered but is not emitted. | RFC 8866 §5.2 |
 | `sdp.session.connection-required` | A media description with no `c=` line when the session level has no `c=` line either. A session with no media descriptions and no `c=` line is accepted. | RFC 8866 §5.7 |
 | `sdp.m.rtpmap-required-for-dynamic-pt` | An RTP media description whose `m=` line lists a payload type from 96 to 127 with no `a=rtpmap` for that payload type. | RFC 8866 §8.2.3 |
 | `sdp.file.bom-present` | A file that starts with a UTF-8 byte order mark (warning). | RFC 8866 §6 |
@@ -1286,6 +1306,45 @@ finding message states the difference. A host name is still accepted in
 | `sdp.a.source-filter.dest-not-in-connections` | An `a=source-filter` whose destination address does not equal any `c=` address in the SDP file, after expansion of layered multicast ranges. A filter with address type `*` is not checked. The source addresses are not checked. | RFC 4570 §3.1 |
 | `sdp.a.ts-refclk.ptp-malformed` | An `a=ts-refclk:ptp=` value that is not `<version>:<EUI-64>[:<domain>]` or `<version>:traceable`, where the EUI-64 is eight hexadecimal octets separated by dashes. The version token and the domain are not checked. | RFC 7273 §4.8 (ptp / ptp-server / EUI64 ABNF) |
 | `sdp.a.ts-refclk.traceable-mix` | A traceable `a=ts-refclk` source (`gps`, `gal`, `glonass`, or a `traceable` form of `ntp`, `ptp`, or `private`) and a non-traceable source at the same level: the session level, or one media description. Mixing across levels is accepted. | RFC 7273 §4.8 |
+
+#### Malformed known attributes
+
+The parser recognizes the attributes in the table below by name. When
+the value of one of these attributes does not match the attribute's
+syntax to the end of the line, the parser records the attribute's
+`.malformed` check at the first column of the value. The check is
+hard-syntactic with default severity `error`. Under a policy that
+demotes the check, the parse continues and the attribute is kept as
+`{name, malformed = true, value}`. A value cut short by a NUL byte or by
+a CR that is not part of CRLF is a structural `PARSE_ERROR` instead.
+
+The `a=fmtp` check covers only the payload type and the space after the
+payload type. RFC 8866 section 6.15 allows any byte string as the
+format-specific parameters, so an `a=fmtp` body is never malformed at
+the RFC 8866 tier. A `ptp=` value of `a=ts-refclk` has its own check,
+`sdp.a.ts-refclk.ptp-malformed`. The IPMX attributes `a=infoframe`,
+`a=hkep`, and `a=privacy` have their checks in the IPMX tables.
+
+| Id | The check rejects | `spec_ref` |
+| --- | --- | --- |
+| `sdp.a.ptime.malformed` | An `a=ptime` value that is not a non-zero integer or a non-zero decimal. A decimal cannot end in `0` (`1.0`), and an integer cannot start with `0`. | RFC 8866 §6.4 / §9 (ptime-value = non-zero-int-or-real) |
+| `sdp.a.maxptime.malformed` | An `a=maxptime` value of the same wrong forms as `a=ptime`. | RFC 8866 §6.5 / §9 (maxptime-value = non-zero-int-or-real) |
+| `sdp.a.framerate.malformed` | An `a=framerate` value of the same wrong forms as `a=ptime`. | RFC 8866 §6.13 / §9 (framerate-value = non-zero-int-or-real) |
+| `sdp.a.quality.malformed` | An `a=quality` value that is not `0` or an integer with no leading zero. | RFC 8866 §6.14 / §9 (quality-value = zero-based-integer) |
+| `sdp.a.rtpmap.malformed` | An `a=rtpmap` value that is not `<payload type> <encoding>/<clock rate>[/<channels>]`, with a payload type from 0 to 127, a token encoding name, and a clock rate and channel count that are integers with no leading zero. `a=rtpmap:97 L24/48000/0` is an example. | RFC 8866 §6.6 (rtpmap-value ABNF) |
+| `sdp.a.fmtp.malformed` | An `a=fmtp` value that does not start with a payload type from 0 to 127 followed by a space and at least one byte. | RFC 8866 §6.15 (fmtp-value = fmt SP format-specific-params) |
+| `sdp.a.mid.malformed` | An `a=mid` value that is not one token. | RFC 5888 §4 (mid-attribute ABNF) |
+| `sdp.a.group.malformed` | An `a=group` value that is not a semantics token followed by zero or more tokens, each after one space. | RFC 5888 §5 (group-attribute ABNF) |
+| `sdp.a.ssrc.malformed` | An `a=ssrc` value that is not `<ssrc-id> <attribute>[:<value>]` with a decimal ssrc-id. | RFC 5576 §10 (ssrc-attr ABNF) |
+| `sdp.a.ssrc-group.malformed` | An `a=ssrc-group` value that is not a semantics token followed by zero or more decimal ssrc-ids, each after one space. | RFC 5576 §10 (ssrc-group-attr ABNF) |
+| `sdp.a.msid.malformed` | An `a=msid` value with more than two space-separated fields. | RFC 8830 §2 (msid-value ABNF) |
+| `sdp.a.extmap.malformed` | An `a=extmap` value that is not `<id>[/<direction>] <URI>[ <attributes>]`, with a decimal id and a direction of `sendonly`, `recvonly`, `sendrecv`, or `inactive`. | RFC 8285 §8 (extmap-value ABNF) |
+| `sdp.a.rtcp-fb.malformed` | An `a=rtcp-fb` value that is not `<payload type or *> <feedback type>[ <parameters>]`. | RFC 4585 §4.2 (rtcp-fb-syntax ABNF) |
+| `sdp.a.rtcp.malformed` | An `a=rtcp` value that is not `<port>[ IN <IP4 or IP6> <address>]`. | RFC 3605 §2.1 (rtcp-attribute ABNF) |
+| `sdp.a.rtcp-mux.malformed` | An `a=rtcp-mux` line with a value. RFC 5761 section 8 says the attribute "does not take a value". | RFC 5761 §8 |
+| `sdp.a.source-filter.malformed` | An `a=source-filter` value that is not a space, `incl` or `excl`, `IN`, `IP4`, `IP6`, or `*`, a destination address, and at least one source address, each separated by one space. | RFC 4570 Appendix A (source-filter ABNF) |
+| `sdp.a.ts-refclk.malformed` | An `a=ts-refclk` value, other than a `ptp=` value, that is not one of the RFC 7273 clock sources or an extension. A defined name used in a different form, for example `gps=1`, a bare `ntp`, or `private:x`, is not accepted as an extension. | RFC 7273 §4.8 (clksrc ABNF) |
+| `sdp.a.mediaclk.malformed` | An `a=mediaclk` value that is not an optional `id=<tag> ` followed by `sender`, `direct[=<offset>][ rate=<n>/<d>]`, `IEEE1722=<EUI-64>`, or an extension. A defined name used in a different form, for example `direct=x` or `sender=1`, is not accepted as an extension. | RFC 7273 §5.4 (media-clksrc ABNF) |
 
 ### What the library does not reject
 
@@ -1755,12 +1814,13 @@ a=hkep:<port> IN <IP4|IP6> <unicast-address> <node-id> <port-id>
 ```
 
 The port must be a positive integer in the RFC 8866 integer form; a
-port of `0` or with a leading zero does not match the attribute
-grammar, and the parse fails. Several `a=hkep` lines are accepted.
+port of `0` or with a leading zero is reported as
+`tr-10-5.a.hkep.malformed`. Several `a=hkep` lines are accepted.
 `a=hkep` and `a=privacy` may both be present.
 
 | Id | The check rejects | `spec_ref` |
 | --- | --- | --- |
+| `tr-10-5.a.hkep.malformed` | An `a=hkep` value that is not six fields separated by single spaces, or whose port is not a positive integer with no leading zero. | TR-10-5 §10 |
 | `tr-10-5.a.hkep.nettype-invalid-value` | A network type other than `IN`. | TR-10-5 §10 |
 | `tr-10-5.a.hkep.addrtype-invalid-value` | An address type other than `IP4` or `IP6`. | TR-10-5 §10 |
 | `tr-10-5.a.hkep.node-id-invalid-form` | A node id that is not 32 hexadecimal digits in the form `xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx`. | TR-10-5 §10 |
@@ -1797,6 +1857,7 @@ its level and its value. The port must be a positive integer. The
 
 | Id | The check rejects | `spec_ref` |
 | --- | --- | --- |
+| `tr-10-10.a.infoframe.malformed` | An `a=infoframe` value that is not `<port> SSN=<ssn>;DIT=<digits>`, or whose port is not a positive integer with no leading zero. | TR-10-10 §8 |
 | `tr-10-10.a.infoframe.must-be-session-level` | An `a=infoframe` line inside a media description. | TR-10-10 §8 |
 | `tr-10-10.a.infoframe.ssn-invalid-form` | An `SSN` that is not `ST2110-41:` followed by digits. | TR-10-10 §8 |
 | `tr-10-10.a.infoframe.dit-invalid-value` | A `DIT` other than `100100`. | TR-10-10 §8 |
@@ -1830,6 +1891,7 @@ The `protocol` value is not restricted on an RTP block, except that
 
 | Id | The check rejects | `spec_ref` |
 | --- | --- | --- |
+| `tr-10-13.a.privacy.malformed` | An `a=privacy` value that is not a list of `key=value` parameters separated by a semicolon and an optional space. | TR-10-13 §13 |
 | `tr-10-13.a.privacy.protocol-required` | An `a=privacy` with no `protocol` parameter. | TR-10-13 §13 |
 | `tr-10-13.a.privacy.mode-required` | An `a=privacy` with no `mode` parameter. | TR-10-13 §13 |
 | `tr-10-13.a.privacy.iv-required` | An `a=privacy` with no `iv` parameter. | TR-10-13 §13 |
@@ -1951,11 +2013,16 @@ An `a=ts-refclk:ptp=` body that fails the strict form, parsed with
 `sdp.a.ts-refclk.ptp-malformed` demoted below error, is
 `{source = "ptp", value = <body>}`. It renders as `ptp=<body>`.
 
+A known attribute kept as `{name, malformed = true, value}` (a demoted
+`.malformed` check) renders as `a=<name>:<value>`, or as `a=<name>`
+when it has no `value`. The renderer does not read any other field of
+that table.
+
 ---
 
 ## Test suite organization
 
-The hermetic test suite (`busted spec/`) has 1389 tests at the time of
+The hermetic test suite (`busted spec/`) has 1438 tests at the time of
 writing. The files are organized by what each test exercises: a
 standard's clauses, the public library and command-line surface, or an
 internal helper.
