@@ -1,4 +1,30 @@
 {
+  "hooks": {
+    "PreToolUse": [
+      {
+        "hooks": [
+          {
+            "command": ".claude/hooks/commit-gate.sh",
+            "if": "Bash(git commit*)",
+            "statusMessage": "Checking commit gates...",
+            "type": "command"
+          }
+        ],
+        "matcher": "Bash"
+      }
+    ],
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "command": "bd prime --hook-json",
+            "type": "command"
+          }
+        ],
+        "matcher": ""
+      }
+    ]
+  },
   "permissions": {
     "allow": [
       "Bash(busted *)",
@@ -8,21 +34,6 @@
       "Bash(git add *)",
       "Bash(git commit *)",
       "Bash(git push *)"
-    ]
-  },
-  "hooks": {
-    "PreToolUse": [
-      {
-        "matcher": "Bash",
-        "hooks": [
-          {
-            "type": "command",
-            "if": "Bash(git commit*)",
-            "command": ".claude/hooks/commit-gate.sh",
-            "statusMessage": "Checking commit gates..."
-          }
-        ]
-      }
     ]
   }
 }
