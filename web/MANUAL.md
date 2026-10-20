@@ -5,11 +5,13 @@ Session Description Protocol (SDP) file against RFC 8866, SMPTE ST 2110
 (Society of Motion Picture and Television Engineers), and IPMX (Internet
 Protocol Media Experience), and cites the specification clause behind
 every finding. The page runs the `parse_sdp` library compiled to
-WebAssembly. Nothing leaves the browser: no file, no text, and no setting
-is sent to a server. The page is short and labeled, so this manual is an
+WebAssembly. The page does not upload a file, text, or setting to a
+server. The only request that the page sends for an input is the request
+for a URL that the user gives (see
+[Loading an SDP file from a URL](#loading-an-sdp-file-from-a-url)). The page is short and labeled, so this manual is an
 orientation rather than a complete reference.
 
-The header names the active engine. "Engine: parse_sdp 1.7.0
+The header names the active engine. "Engine: parse_sdp 1.8.0
 (WebAssembly)" means the real library is running. "Engine: mock" means
 the WebAssembly module could not be loaded; the page then answers from
 recorded fixtures, and findings for unknown inputs are illustrative only.
@@ -29,11 +31,66 @@ first characters of the text.
   valid JSON, is read as Lua.
 
 Text can be pasted into the box, dropped onto the box as a file, opened
-with the "Open file…" button, or chosen from the "Examples" dropdown.
-Each of those actions runs the analysis at once. Text typed into the box
+with the "Open file…" button, loaded from a URL with the "From URL" box
+above the text box, or chosen from the "Examples" dropdown. Each of
+those actions runs the analysis at once. Text typed into the box
 is analyzed when the "Analyze" button is pressed or when Ctrl+Enter
 (Cmd+Enter on macOS) is pressed inside the box. An input that cannot be
 read is reported in a banner under the toolbar.
+
+## Loading an SDP file from a URL
+
+Text that is copied from a log or from a device's web page often has
+different line endings from the file itself, and the RFC 8866 line-ending
+check then reports findings that are not in the file. To check the file
+as the server sends it, enter the address of the SDP file in the
+"From URL" box and press "Load URL". An example is the IS-05
+`transportfile` endpoint of an NMOS (Networked Media Open
+Specifications) sender:
+`http://192.0.2.10/x-nmos/connection/v1.1/single/senders/<id>/transportfile`.
+
+The page reads the response as bytes, so CRLF line endings and a byte
+order mark reach the parser unchanged. The address must start with
+`http://` or `https://`. Downloads are named after the last part of the
+address path: `.../transportfile` gives `transportfile.sdp`.
+
+The page applies two limits. The page stops a request that has no
+complete response after 10 seconds. The page does not load a response
+that is larger than 1 MB (1,000,000 bytes); an SDP file is typically a
+few kilobytes.
+
+### Share link
+
+After a file is loaded from a URL, the page address includes
+`?url=<the SDP address>`, and a "Copy link" button copies that address.
+Opening the link loads the same SDP address and analyzes the file again,
+so another person sees the same report if the server sends the same
+file. The link has only the SDP address. Pasted or dropped text is never
+put in the page address. When the text in the box is edited, or another
+input is loaded, the page removes `?url=` from the address.
+
+### When the browser cannot load the URL
+
+A browser can block the request for two reasons. In both cases the
+workaround is the same: download the file with the browser and drop it
+on the page, or check the file with the command-line tool:
+
+```sh
+curl -s '<SDP address>' | parse_sdp validate -
+```
+
+- The first reason is cross-origin access control (CORS, Cross-Origin
+  Resource Sharing). The browser gives the response to the page only when the server sends an
+  `Access-Control-Allow-Origin` header that allows the page's origin.
+  Many devices do not send that header. The browser does not tell the
+  page why a request failed, so the page reports that "the request was
+  blocked or failed" and names CORS as a common reason. A wrong address
+  and a server that cannot be reached give the same message.
+- The second reason is mixed content. The playground at github.io is an
+  HTTPS page, and browsers block a request from an HTTPS page to an `http://` address.
+  The page detects this case before the request and shows the workaround
+  without sending the request. Addresses on the local machine
+  (`localhost`, `127.0.0.1`, `[::1]`) are not blocked.
 
 ## Compliance report
 
@@ -110,7 +167,8 @@ stale until the field is restored.
 
 The sticky bar at the top of the page has a format selector (SDP, JSON,
 Lua table literal), a "Download" button, and a "Copy" button. The
-download is named after the input file, with the extension `.sdp`,
+download is named after the input file or the last part of the URL
+path, with the extension `.sdp`,
 `.json`, or `.lua`. The Output section at the bottom of the page has the
 same selector and a Copy button, and shows the rendered text with line
 numbers.
@@ -140,7 +198,10 @@ session name line; a file without an `s=` line is titled by its file name.
   until the text in the box is edited. After an edit, the browser's text
   box supplies LF line endings, and the RFC 8866 check for CRLF then
   reports every line. To keep CRLF, edit the document in the editor
-  instead of the input box, or paste the file again.
+  instead of the input box, or load the file again. Text that a browser
+  or another program changed before it was pasted cannot be recovered.
+  To check those line endings, load the file from its URL or drop the
+  file on the page.
 - Everything is client-side. Overrides and the summary block's collapsed
   state are stored in the browser's `localStorage` and are not shared
   between browsers or devices.

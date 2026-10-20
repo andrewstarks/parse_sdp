@@ -52,8 +52,16 @@
     <section id="input" class="panel" aria-labelledby="input-title">
       <div class="panel-head">
         <h2 id="input-title">Input</h2>
-        <p class="hint">SDP text, a JSON document table, or a Lua table literal. The format is detected automatically; press <kbd>Ctrl</kbd>+<kbd>Enter</kbd> to analyze.</p>
+        <p class="hint">SDP text, a JSON document table, or a Lua table literal. The format is detected automatically; press <kbd>Ctrl</kbd>+<kbd>Enter</kbd> to analyze. Load an SDP file from a URL to check the file with the line endings the server sends.</p>
       </div>
+      <form id="url-form" class="toolbar url-form" novalidate>
+        <label for="url-input">From URL</label>
+        <input id="url-input" type="url" class="mono" autocomplete="off" spellcheck="false"
+               placeholder="https://device.example/x-nmos/connection/v1.1/single/senders/…/transportfile">
+        <button type="submit">Load URL</button>
+        <button id="copy-link" type="button" hidden>Copy link</button>
+        <span id="url-status" class="meta" role="status"></span>
+      </form>
       <div id="drop-zone" class="drop-zone">
         <label for="input-text" class="visually-hidden">Input text</label>
         <textarea id="input-text" class="mono" spellcheck="false" autocomplete="off" rows="12"

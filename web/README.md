@@ -61,6 +61,14 @@ each one has unit tests under `test/`.
 - `examples.js` turns the build's `examples/index.json` manifest into
   labeled option groups for the examples dropdown. Without a build, the
   module falls back to the three bundled fixtures.
+- `url_source.js` loads an SDP file from a URL. The module validates
+  the address, detects mixed content (an `http:` address from an
+  `https:` page), fetches the response as bytes with a 10-second timeout
+  and a 1 MB limit, decodes the bytes without changing the line endings
+  or removing a byte order mark, and maps each failure to the message
+  that the page shows. The module also derives the download name from
+  the URL path and builds the `?url=` share link. The fetch function is
+  a parameter, so the tests run under node with no network.
 - `mock_serialize.js` converts a document to SDP text in the same way as
   `parse_sdp/serialize.lua`. The mock engine is the only user.
 
@@ -68,8 +76,10 @@ The following modules touch the DOM.
 
 - `app.js` starts the engine, stores the only mutable state, and
   connects the other modules.
-- `input.js` manages the paste area, the drop zone, the file picker, and
-  the examples dropdown.
+- `input.js` manages the paste area, the drop zone, the file picker, the
+  "From URL" box and its "Copy link" button, and the examples dropdown.
+  The module keeps `?url=` in the page address only while the input is
+  the text fetched from that URL.
 - `nav.js` manages the sticky bar's section navigation: a hamburger menu
   on narrow screens, the `--bar-h` custom property for scroll offsets,
   and the current-section marking through an `IntersectionObserver`.
@@ -119,6 +129,21 @@ The `?mock=1` parameter is optional in the second case. When no
 `parse_sdp.js` file exists next to `engine.js`, the import fails and the
 app falls back to the mock on its own. The status line in the header
 names the active engine.
+
+GitHub Pages lets a browser cache each file for 10 minutes. So that a
+normal reload after a deploy loads the new release, `build.sh` adds
+`?v=<version>` to the URLs in `web/dist/`: the script and style URLs in
+`index.html`, every relative module import, and (through `CACHE_KEY` in
+`engine.js`) the URL of `parse_sdp.wasm`. `web/src/` has no version
+query.
+
+To test the URL loader locally, serve an SDP file from a server that
+sends CORS headers, then load its address in the "From URL" box:
+
+```sh
+npx http-server examples --cors -p 8081
+# From URL: http://localhost:8081/st2110/valid/01_simple_video.sdp
+```
 
 ## Tests
 

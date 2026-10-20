@@ -184,7 +184,7 @@ button.danger:hover { color: var(--error); border-color: var(--error); }
 .file-button input { position: absolute; width: 1px; height: 1px; opacity: 0; }
 .file-button:focus-within { outline: 2px solid var(--focus); outline-offset: 2px; }
 
-input[type="text"], input[type="search"], input[type="number"], select, textarea {
+input[type="text"], input[type="search"], input[type="number"], input[type="url"], select, textarea {
   font: inherit; font-size: 0.9rem; color: var(--text); background: var(--surface);
   border: 1px solid var(--border); border-radius: var(--radius); padding: 5px 8px;
 }
@@ -192,6 +192,8 @@ textarea { width: 100%; resize: vertical; min-height: 160px; line-height: 1.4; }
 label { font-size: 0.9rem; }
 label.check { display: inline-flex; align-items: center; gap: 6px; }
 
+.url-form { margin-bottom: 8px; }
+.url-form input { flex: 1 1 24em; }
 .toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; min-width: 0; max-width: 100%; }
 .toolbar > * { min-width: 0; max-width: 100%; }
 .toolbar > label { display: inline-flex; align-items: center; gap: 6px; max-width: 100%; min-width: 0; }

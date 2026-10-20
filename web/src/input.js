@@ -1,8 +1,9 @@
-// input.js — paste area, drop zone, file picker and example buttons.
-// Hands raw text (plus a file name for downloads) to the app; it never
-// interprets the content itself.
+// input.js: paste area, drop zone, file picker, URL loader and example
+// buttons. Hands raw text (plus a file name for downloads) to the app; it
+// never interprets the content itself.
 
 import { h, replace, setText } from "./dom.js";
+import { decodeBytes, fetchSdp, shareLink } from "./url_source.js";
 
 // onSubmit(text, fileName); fetchText(path) → Promise<string> for examples.
 export function initInput(root, { onSubmit, fetchText }) {
@@ -12,6 +13,10 @@ export function initInput(root, { onSubmit, fetchText }) {
   const meta = root.querySelector("#input-meta");
   const exampleSelect = root.querySelector("#example-select");
   const error = root.querySelector("#input-error");
+  const urlForm = root.querySelector("#url-form");
+  const urlInput = root.querySelector("#url-input");
+  const copyLink = root.querySelector("#copy-link");
+  const urlStatus = root.querySelector("#url-status");
   let fileName = "session";
   // A textarea normalises CR LF to LF, which would turn every CRLF file
   // into a wall of bare-LF warnings. Keep the text as loaded (or pasted)
@@ -27,7 +32,16 @@ export function initInput(root, { onSubmit, fetchText }) {
     onSubmit(currentText(), fileName);
   }
 
-  function loadText(text, name) {
+  // The page address has ?url= only while the input is the text fetched
+  // from that URL, so a copied link reproduces the result. Pasted text is
+  // never put in the address (decision parse_sdp-q7s).
+  function setSourceUrl(url) {
+    history.replaceState(history.state, "", shareLink(location.href, url));
+    copyLink.hidden = !url;
+  }
+
+  function loadText(text, name, sourceUrl = null) {
+    setSourceUrl(sourceUrl);
     fileName = name;
     raw = text;
     textarea.value = text;
@@ -35,9 +49,26 @@ export function initInput(root, { onSubmit, fetchText }) {
     submit();
   }
 
+  // file.text() would drop a byte order mark; decodeBytes keeps it, as
+  // the URL loader does.
   async function loadFile(file) {
     if (!file) return;
-    loadText(await file.text(), file.name);
+    loadText(decodeBytes(await file.arrayBuffer()), file.name);
+  }
+
+  async function loadUrl(input) {
+    urlInput.value = input;
+    showError(null);
+    setText(urlStatus, "Loading…");
+    try {
+      const r = await fetchSdp(input, { pageProtocol: location.protocol });
+      urlInput.value = r.url;
+      setText(urlStatus, "");
+      loadText(r.text, r.name, r.url);
+    } catch (e) {
+      setText(urlStatus, "");
+      showError(e.message);
+    }
   }
 
   root.querySelector("#analyze").addEventListener("click", submit);
@@ -48,7 +79,10 @@ export function initInput(root, { onSubmit, fetchText }) {
     }
   });
   textarea.addEventListener("input", () => {
-    if (raw !== null && textarea.value !== lfOnly(raw)) raw = null;
+    if (raw !== null && textarea.value !== lfOnly(raw)) {
+      raw = null;
+      setSourceUrl(null);
+    }
   });
   textarea.addEventListener("paste", (e) => {
     const clip = e.clipboardData?.getData("text/plain") ?? "";
@@ -56,6 +90,7 @@ export function initInput(root, { onSubmit, fetchText }) {
     // paste replaced the whole content).
     setTimeout(() => {
       raw = clip && textarea.value === lfOnly(clip) ? clip : null;
+      setSourceUrl(null);
       fileName = "session";
       setText(meta, "");
       submit();
@@ -91,6 +126,20 @@ export function initInput(root, { onSubmit, fetchText }) {
     }
   });
 
+  urlForm.addEventListener("submit", (e) => {
+    e.preventDefault();
+    loadUrl(urlInput.value);
+  });
+  copyLink.addEventListener("click", async () => {
+    try {
+      await navigator.clipboard.writeText(location.href);
+      setText(urlStatus, "Link copied.");
+    } catch {
+      setText(urlStatus, "Clipboard unavailable. Copy the address from the address bar.");
+    }
+    setTimeout(() => setText(urlStatus, ""), 2500);
+  });
+
   exampleSelect.addEventListener("change", async () => {
     const path = exampleSelect.value;
     if (!path) return;
@@ -113,5 +162,5 @@ export function initInput(root, { onSubmit, fetchText }) {
     error.hidden = !message;
   }
 
-  return { showError, setExamples, getText: () => textarea.value, getFileName: () => fileName };
+  return { showError, setExamples, loadUrl, getText: () => textarea.value, getFileName: () => fileName };
 }
