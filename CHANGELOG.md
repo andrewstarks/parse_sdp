@@ -9,6 +9,8 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 
+## [1.8.1] — 2026-10-20
+
 ### Changed
 
 - The playground shows a URL load error in a banner directly under the
