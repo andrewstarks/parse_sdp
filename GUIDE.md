@@ -597,7 +597,7 @@ These two functions expose the registry of checks.
   id. Each entry has the fields `id`, `kind`, `default_severity`,
   `code`, `spec_ref`, `message_template`, and `verified`. An entry whose
   `verified` field is `false` also has a `verification_note` string. As
-  of version 1.8.1, every registered check has `verified = true`.
+  of version 1.9.0, every registered check has `verified = true`.
 - `sdp.default_policy()` returns a table of the form
   `{[id] = default_severity}` over every registered check. A caller can
   edit the table and pass it back as `opts.policy`.
@@ -656,8 +656,8 @@ local grp = sdp.attr_get(doc.session, "group")  -- session-level lookup
 
 Looks up a value in an ordered parameter list by key. `a=fmtp` and
 `a=privacy` keep their key and value pairs in an ordered `params` list
-(input order is preserved so that serialization reproduces the input
-bytes). `params_get` returns the value for `key`, or `nil` when the key
+(input order is preserved so that serialization reproduces the
+parameter order). `params_get` returns the value for `key`, or `nil` when the key
 is absent. A bare flag (a key with no `=value`) has the value `true`.
 
 The argument shape differs from `attr_get`: `attr_get` takes a block,
@@ -949,7 +949,7 @@ parse_sdp checks [--filter SUBSTR] [--format table|json] [--unverified]
 | --- | --- |
 | `--filter SUBSTR` | Keeps only the checks whose id contains the text. The match is a plain substring match, not a Lua pattern, so a `-` in an id (`ts-refclk`, `tr-10-1`) matches literally. |
 | `--format MODE` | `table` (the default; column-aligned id, severity, and `spec_ref`) or `json` (an array of the full registry entries). |
-| `--unverified` | Keeps only the checks with `verified = false`. As of version 1.8.1, no check has `verified = false`, so the list is empty. |
+| `--unverified` | Keeps only the checks with `verified = false`. As of version 1.9.0, no check has `verified = false`, so the list is empty. |
 
 ```sh
 $ parse_sdp checks --filter ts-refclk
@@ -1220,7 +1220,8 @@ tables also appear:
   empty `o=` username, and a malformed `m=` or `o=` line produce this
   error. So does a value that holds a NUL byte or a CR that is not part
   of CRLF: RFC 8866 section 9 defines `byte-string` as "any byte except
-  NUL, CR, or LF". A known attribute with a malformed value does not
+  NUL, CR, or LF". The exception is an `a=fmtp` value that holds a NUL
+  byte, which is `sdp.a.fmtp.malformed`. A known attribute with a malformed value does not
   produce this error. That attribute produces its `.malformed` check
   instead, with the column of the value (see
   [Malformed known attributes](#malformed-known-attributes)). The checks for a media description
@@ -1287,8 +1288,8 @@ Every registered check has one of three `kind` values, which
 
 | Kind | Definition | Default severity |
 | --- | --- | --- |
-| hard-syntactic | The input shape is wrong. Most of these rules are grammar rules with no check id (a line with no `=`, an unknown line letter, lines out of order, a malformed `m=` or `o=` line); a violation of one of these rules ends the parse with `PARSE_ERROR`. The registered ones record a finding, and the parse continues to the next line. The registered ones are `st2110-20.a.fmtp.no-whitespace-around-equals`, `sdp.a.ts-refclk.ptp-malformed`, and the `.malformed` check of each known attribute (see [Malformed known attributes](#malformed-known-attributes)). | `error` |
-| soft-syntactic | The specification requires a strict form, but a lax form has only one possible meaning. The parser accepts the lax form and records a finding. There are five: the four line and file checks (`sdp.line.*`, `sdp.file.*`) and `sdp.a.fmtp.trailing-semicolon`. | `warn` |
+| hard-syntactic | The input shape is wrong. Most of these rules are grammar rules with no check id (a line with no `=`, an unknown line letter, lines out of order, a malformed `m=` or `o=` line); a violation of one of these rules ends the parse with `PARSE_ERROR`. The registered ones record a finding, and the parse continues to the next line. The registered ones are `st2110-20.a.fmtp.no-whitespace-around-equals`, `sdp.a.ts-refclk.ptp-malformed`, and the `.malformed` check of each known attribute (see [Malformed known attributes](#malformed-known-attributes)). | `error` (`warn` for `sdp.a.msid.malformed`) |
+| soft-syntactic | The specification requires a strict form, but a lax form has only one possible meaning. The parser accepts the lax form and records a finding. There are six: the four line and file checks (`sdp.line.*`, `sdp.file.*`), `sdp.a.fmtp.trailing-semicolon`, and `st2110-20.a.fmtp.semicolon-without-whitespace`. | `warn` |
 | semantic | A captured value violates a value set, a presence requirement, or a cross-section rule. | `error` |
 
 A policy (`opts.policy`, or the Policy panel in the browser playground)
@@ -1310,8 +1311,8 @@ registry stores it.
 
 | Id | The check rejects | `spec_ref` |
 | --- | --- | --- |
-| `sdp.v.must-be-zero` | A `v=` value other than `0`. In version 1.8.1 the grammar rejects this structurally with `PARSE_ERROR`; the id is registered but is not emitted. | RFC 8866 §5.1 |
-| `sdp.o.username-required` | An `o=` line with an empty username. In version 1.8.1 the grammar rejects this structurally with `PARSE_ERROR`; the id is registered but is not emitted. | RFC 8866 §5.2 |
+| `sdp.v.must-be-zero` | A `v=` value other than `0`. In version 1.9.0 the grammar rejects this structurally with `PARSE_ERROR`; the id is registered but is not emitted. | RFC 8866 §5.1 |
+| `sdp.o.username-required` | An `o=` line with an empty username. In version 1.9.0 the grammar rejects this structurally with `PARSE_ERROR`; the id is registered but is not emitted. | RFC 8866 §5.2 |
 | `sdp.session.connection-required` | A media description with no `c=` line when the session level has no `c=` line either. A session with no media descriptions and no `c=` line is accepted. | RFC 8866 §5.7 |
 | `sdp.m.rtpmap-required-for-dynamic-pt` | An RTP media description whose `m=` line lists a payload type from 96 to 127 with no `a=rtpmap` for that payload type. | RFC 8866 §8.2.3 |
 | `sdp.file.bom-present` | A file that starts with a UTF-8 byte order mark (warning). | RFC 8866 §6 |
@@ -1373,14 +1374,28 @@ syntax to the end of the line, the parser records the attribute's
 hard-syntactic with default severity `error`. Under a policy that
 demotes the check, the parse continues and the attribute is kept as
 `{name, malformed = true, value}`. A value cut short by a NUL byte or by
-a CR that is not part of CRLF is a structural `PARSE_ERROR` instead.
+a CR that is not part of CRLF is a structural `PARSE_ERROR` instead,
+except for a NUL byte in an `a=fmtp` value.
 
-The `a=fmtp` check covers only the payload type and the space after the
-payload type. RFC 8866 section 6.15 allows any byte string as the
-format-specific parameters, so an `a=fmtp` body is never malformed at
-the RFC 8866 tier. A `ptp=` value of `a=ts-refclk` has its own check,
+The `a=fmtp` check covers the payload type, the space after the payload
+type, and a NUL byte in the body. RFC 8866 section 6.15 allows any byte
+string as the format-specific parameters, and section 9 defines
+`byte-string` as `1*(%x01-09/%x0B-0C/%x0E-FF)`, which excludes NUL. So
+at the RFC 8866 tier an `a=fmtp` body is malformed only when it holds a
+NUL byte, and the check is recorded at the first column of the value. At
+the ST 2110 tier, the same NUL byte is reported by this check alone. At the ST 2110 tier, a `raw` video `a=fmtp` body has
+its own check, `st2110-20.a.fmtp.malformed`, in the ST 2110-20 table. A
+`ptp=` value of `a=ts-refclk` has its own check,
 `sdp.a.ts-refclk.ptp-malformed`. The IPMX attributes `a=infoframe`,
 `a=hkep`, and `a=privacy` have their checks in the IPMX tables.
+
+A value that matches the attribute's syntax but fails a value check of a
+higher tier is reported on that check's id only, not also on the
+`.malformed` check. For example, at the ST 2110 tier `a=rtpmap:96
+raw/48000` is reported as `st2110-20.a.rtpmap.raw-clock-rate` and not as
+`sdp.a.rtpmap.malformed`, and at the IPMX tier `a=group:FID 1` is
+reported as `tr-10-1.a.group.fid-forbidden` and not as
+`sdp.a.group.malformed`.
 
 | Id | The check rejects | `spec_ref` |
 | --- | --- | --- |
@@ -1389,12 +1404,12 @@ the RFC 8866 tier. A `ptp=` value of `a=ts-refclk` has its own check,
 | `sdp.a.framerate.malformed` | An `a=framerate` value of the same wrong forms as `a=ptime`. | RFC 8866 §6.13 / §9 (framerate-value = non-zero-int-or-real) |
 | `sdp.a.quality.malformed` | An `a=quality` value that is not `0` or an integer with no leading zero. | RFC 8866 §6.14 / §9 (quality-value = zero-based-integer) |
 | `sdp.a.rtpmap.malformed` | An `a=rtpmap` value that is not `<payload type> <encoding>/<clock rate>[/<channels>]`, with a payload type from 0 to 127, a token encoding name, and a clock rate and channel count that are integers with no leading zero. `a=rtpmap:97 L24/48000/0` is an example. | RFC 8866 §6.6 (rtpmap-value ABNF) |
-| `sdp.a.fmtp.malformed` | An `a=fmtp` value that does not start with a payload type from 0 to 127 followed by a space and at least one byte. | RFC 8866 §6.15 (fmtp-value = fmt SP format-specific-params) |
+| `sdp.a.fmtp.malformed` | An `a=fmtp` value that does not start with a payload type from 0 to 127 followed by a space and at least one byte, or a value that holds a NUL byte. | RFC 8866 §6.15 (fmtp-value = fmt SP format-specific-params) |
 | `sdp.a.mid.malformed` | An `a=mid` value that is not one token. | RFC 5888 §4 (mid-attribute ABNF) |
 | `sdp.a.group.malformed` | An `a=group` value that is not a semantics token followed by zero or more tokens, each after one space. | RFC 5888 §5 (group-attribute ABNF) |
 | `sdp.a.ssrc.malformed` | An `a=ssrc` value that is not `<ssrc-id> <attribute>[:<value>]` with a decimal ssrc-id. | RFC 5576 §10 (ssrc-attr ABNF) |
 | `sdp.a.ssrc-group.malformed` | An `a=ssrc-group` value that is not a semantics token followed by zero or more decimal ssrc-ids, each after one space. | RFC 5576 §10 (ssrc-group-attr ABNF) |
-| `sdp.a.msid.malformed` | An `a=msid` value with more than two space-separated fields. | RFC 8830 §2 (msid-value ABNF) |
+| `sdp.a.msid.malformed` | An `a=msid` value that is not `<msid-id>[ <msid-appdata>]`, where each field is 1 to 64 token characters. A third field, a 65-character field, or a character such as `/`, `:`, or `"` is an example. The default severity is `warn`, because RFC 8830 §3 says that a receiver "SHOULD" ignore a non-conforming `a=msid`; the attribute is kept with `malformed = true`. | RFC 8830 §2 (msid-value ABNF) |
 | `sdp.a.extmap.malformed` | An `a=extmap` value that is not `<id>[/<direction>] <URI>[ <attributes>]`, with a decimal id and a direction of `sendonly`, `recvonly`, `sendrecv`, or `inactive`. | RFC 8285 §8 (extmap-value ABNF) |
 | `sdp.a.rtcp-fb.malformed` | An `a=rtcp-fb` value that is not `<payload type or *> <feedback type>[ <parameters>]`. | RFC 4585 §4.2 (rtcp-fb-syntax ABNF) |
 | `sdp.a.rtcp.malformed` | An `a=rtcp` value that is not `<port>[ IN <IP4 or IP6> <address>]`. | RFC 3605 §2.1 (rtcp-attribute ABNF) |
@@ -1620,7 +1635,9 @@ Value-form checks, which run when the parameter is present:
 | `st2110-20.a.fmtp.PAR-invalid-value` | A `PAR` that is not `W:H` with both parts positive integers in lowest terms. `12:11` is accepted; `2:2` is rejected. | ST 2110-20:2022 §7.3 |
 | `st2110-20.a.fmtp.interlace-invalid-value` | An `interlace` parameter with an `=value`. The parameter is a bare flag. | ST 2110-20:2022 §7.3 |
 | `st2110-20.a.fmtp.segmented-invalid-value` | A `segmented` parameter with an `=value`. The parameter is a bare flag. | ST 2110-20:2022 §7.3 |
-| `st2110-20.a.fmtp.no-whitespace-around-equals` | A space or tab before or after the `=` of any parameter on a `raw` video `a=fmtp` line. This check is hard-syntactic. | ST 2110-20:2022 §7.1 |
+| `st2110-20.a.fmtp.no-whitespace-around-equals` | A space or tab before or after the `=` of any parameter on a `raw` video `a=fmtp` line. The check is hard-syntactic and is recorded once per line, at the first such space or tab. A line with this defect is reported by this check only, even when the body has other entry defects (`sampling = a b`). Demoted, a body that otherwise has the entry form keeps its `params`; any other body is kept as `{name, malformed = true, value}`. | ST 2110-20:2022 §7.1 |
+| `st2110-20.a.fmtp.semicolon-without-whitespace` | A `;` between two parameters on a `raw` video `a=fmtp` line that is not followed by whitespace (`sampling=YCbCr-4:2:2;width=1920`), a warning. Section 7.1 says the entries are *"separated by the semicolon (";") character followed by whitespace"* and states no amount, so one space or tab is enough. The check is soft-syntactic, is recorded once per line at the first such `;`, and the parameters are decomposed as usual. A `;` at the end of the value is `sdp.a.fmtp.trailing-semicolon` instead. | ST 2110-20:2022 §7.1 |
+| `st2110-20.a.fmtp.malformed` | A `raw` video `a=fmtp` body with a parameter entry that is empty (`;;`, or a `;` at the start), has no name (`=x`), or has whitespace within the name or within the value (`colorimetry=BT 709`). Whitespace before a `;` or before the first entry is also rejected. A body with whitespace around an `=` is `st2110-20.a.fmtp.no-whitespace-around-equals` instead. Whitespace before the line end is the `sdp.line.trailing-whitespace` warning instead. A name can contain any character other than whitespace, `;`, and `=` (`x.vendor=1` is accepted), because the clause limits a name only by "no whitespace within the name". The check is hard-syntactic and is recorded at the first column of the value. Demoted, the line is kept as `{name, malformed = true, value}`. | ST 2110-20:2022 §7.1 |
 
 Parameters that ST 2110-20 does not define, for example a vendor
 parameter, pass through without a finding.
@@ -2017,6 +2034,17 @@ omits every optional field that is `nil`. The `k=` line (RFC 4566
 section 5.12) is obsolete in RFC 8866 section 5 and is never emitted.
 The parser accepts a `k=` line in its RFC 8866 position and discards
 it, so an input with a `k=` line does not round-trip byte for byte.
+
+A decomposed `a=fmtp` parameter list is rendered in its stored order,
+with the parameters joined by a semicolon and a space (`; `). ST 2110-20
+section 7.1 requires the parameters of a `raw` video `a=fmtp` line to be
+*"separated by the semicolon (";") character followed by whitespace"*,
+and RFC 8866 section 6.15 says only *"semicolon separated"*, so `; `
+conforms at every tier. An input written as `a=1;b=2` is rendered as
+`a=1; b=2`. Both forms parse to the same document, so the round-trip
+holds, but such an input does not round-trip byte for byte. An `a=fmtp`
+body that was not decomposed (kept in the `raw` field) is rendered as
+written.
 
 ### Serializer and validator separation
 

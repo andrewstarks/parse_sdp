@@ -3,7 +3,9 @@
 // never interprets the content itself.
 
 import { h, replace, setText } from "./dom.js";
-import { decodeBytes, fetchSdp, shareLink } from "./url_source.js";
+import { decodeBytes, fetchSdp, isLocalNetworkRequest, parseSdpUrl, shareLink } from "./url_source.js";
+
+const CRLF_NOTE_KEY = "parse_sdp.crlfNoteDismissed";
 
 // onSubmit(text, fileName); fetchText(path) → Promise<string> for examples.
 export function initInput(root, { onSubmit, fetchText }) {
@@ -18,7 +20,12 @@ export function initInput(root, { onSubmit, fetchText }) {
   const copyLink = root.querySelector("#copy-link");
   const urlStatus = root.querySelector("#url-status");
   const urlError = root.querySelector("#url-error");
+  const crlfNote = root.querySelector("#crlf-note");
   let fileName = "session";
+  // True while the input came from the text box (a paste or typing)
+  // rather than from a file, a URL, or an example. A copy, a paste, and
+  // the textarea itself can turn CR LF into LF.
+  let fromTextBox = false;
   // A textarea normalises CR LF to LF, which would turn every CRLF file
   // into a wall of bare-LF warnings. Keep the text as loaded (or pasted)
   // and submit that while the textarea still shows it unchanged.
@@ -46,6 +53,7 @@ export function initInput(root, { onSubmit, fetchText }) {
   function loadText(text, name, sourceUrl = null) {
     setSourceUrl(sourceUrl);
     fileName = name;
+    fromTextBox = false;
     raw = text;
     textarea.value = text;
     setText(meta, name === "session" ? "" : name);
@@ -63,7 +71,10 @@ export function initInput(root, { onSubmit, fetchText }) {
     urlInput.value = input;
     showError(null);
     showBanner(urlError, null);
-    setText(urlStatus, "Loading…");
+    const url = parseSdpUrl(input);
+    setText(urlStatus, url && isLocalNetworkRequest(url, location.protocol)
+      ? "Loading… If the browser asks, allow access to the local network."
+      : "Loading…");
     try {
       const r = await fetchSdp(input, { pageProtocol: location.protocol });
       urlInput.value = r.url;
@@ -85,6 +96,7 @@ export function initInput(root, { onSubmit, fetchText }) {
     }
   });
   textarea.addEventListener("input", () => {
+    fromTextBox = true;
     if (raw !== null && textarea.value !== lfOnly(raw)) {
       raw = null;
       setSourceUrl(null);
@@ -96,6 +108,7 @@ export function initInput(root, { onSubmit, fetchText }) {
     // paste replaced the whole content).
     setTimeout(() => {
       raw = clip && textarea.value === lfOnly(clip) ? clip : null;
+      fromTextBox = true;
       setSourceUrl(null);
       fileName = "session";
       setText(meta, "");
@@ -172,5 +185,20 @@ export function initInput(root, { onSubmit, fetchText }) {
     showBanner(error, message);
   }
 
-  return { showError, setExamples, loadUrl, getText: () => textarea.value, getFileName: () => fileName };
+  function crlfNoteDismissed() {
+    try { return localStorage.getItem(CRLF_NOTE_KEY) === "1"; } catch { return false; }
+  }
+
+  // Show the note when the report has an LF-only finding for text from
+  // the text box, unless the viewer dismissed the note.
+  function setLfOnlyReported(reported) {
+    crlfNote.hidden = !(reported && fromTextBox && !crlfNoteDismissed());
+  }
+
+  root.querySelector("#crlf-note-dismiss").addEventListener("click", () => {
+    try { localStorage.setItem(CRLF_NOTE_KEY, "1"); } catch { /* hidden for this page only */ }
+    crlfNote.hidden = true;
+  });
+
+  return { showError, setExamples, loadUrl, setLfOnlyReported, getText: () => textarea.value, getFileName: () => fileName };
 }

@@ -1,8 +1,8 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
-  parseSdpUrl, isMixedContent, downloadName, decodeBytes, loadErrorMessage,
-  fetchSdp, shareLink, urlFromQuery, LoadError, MAX_BYTES,
+  parseSdpUrl, isLocalNetworkRequest, downloadName, decodeBytes, loadErrorMessage,
+  fetchSdp, shareLink, urlFromQuery, LoadError, MAX_BYTES, LOCAL_TIMEOUT_MS,
 } from "../src/url_source.js";
 
 const CRLF_SDP = "v=0\r\no=- 1 1 IN IP4 192.0.2.1\r\ns=x\r\nt=0 0\r\n";
@@ -25,14 +25,15 @@ test("parseSdpUrl accepts only absolute http and https URLs", () => {
   assert.equal(parseSdpUrl(undefined), null);
 });
 
-test("isMixedContent: an HTTP URL from an HTTPS page, except loopback", () => {
+test("isLocalNetworkRequest: an HTTP URL from an HTTPS page, except loopback", () => {
   const u = (s) => new URL(s);
-  assert.equal(isMixedContent(u("http://192.0.2.10/x.sdp"), "https:"), true);
-  assert.equal(isMixedContent(u("https://192.0.2.10/x.sdp"), "https:"), false);
-  assert.equal(isMixedContent(u("http://192.0.2.10/x.sdp"), "http:"), false);
-  assert.equal(isMixedContent(u("http://localhost:8080/x.sdp"), "https:"), false);
-  assert.equal(isMixedContent(u("http://127.0.0.1/x.sdp"), "https:"), false);
-  assert.equal(isMixedContent(u("http://[::1]/x.sdp"), "https:"), false);
+  assert.equal(isLocalNetworkRequest(u("http://192.0.2.10/x.sdp"), "https:"), true);
+  assert.equal(isLocalNetworkRequest(u("http://cam1.local/x.sdp"), "https:"), true);
+  assert.equal(isLocalNetworkRequest(u("https://192.0.2.10/x.sdp"), "https:"), false);
+  assert.equal(isLocalNetworkRequest(u("http://192.0.2.10/x.sdp"), "http:"), false);
+  assert.equal(isLocalNetworkRequest(u("http://localhost:8080/x.sdp"), "https:"), false);
+  assert.equal(isLocalNetworkRequest(u("http://127.0.0.1/x.sdp"), "https:"), false);
+  assert.equal(isLocalNetworkRequest(u("http://[::1]/x.sdp"), "https:"), false);
 });
 
 test("downloadName is the last non-empty path segment", () => {
@@ -60,10 +61,13 @@ test("loadErrorMessage: a blocked fetch names CORS as a possible reason, not as 
   assert.match(m, /curl -s 'https:\/\/d\.example\/x\.sdp' \| parse_sdp validate -/);
 });
 
-test("loadErrorMessage: mixed content gives the workaround", () => {
-  const m = loadErrorMessage("mixed-content", { url: "http://192.0.2.10/x.sdp" });
-  assert.match(m, /HTTPS/);
-  assert.match(m, /did not send the request/);
+test("loadErrorMessage: a failed local-network request names the reasons and the workaround", () => {
+  const m = loadErrorMessage("local-network", { url: "http://192.0.2.10/x.sdp" });
+  assert.match(m, /was blocked or failed/);
+  assert.match(m, /Chrome and Edge \(version 142 and later\)/);
+  assert.match(m, /local network access is allowed/);
+  assert.match(m, /mixed content/);
+  assert.match(m, /Access-Control-Allow-Origin/);
   assert.match(m, /curl -s 'http:\/\/192\.0\.2\.10\/x\.sdp' \| parse_sdp validate -/);
 });
 
@@ -75,6 +79,7 @@ test("loadErrorMessage: the curl command quotes a ' in the URL for the shell", (
 test("loadErrorMessage: other kinds name the URL and the value seen", () => {
   assert.match(loadErrorMessage("invalid-url", { input: "dev/x" }), /"dev\/x" is not an http or https URL/);
   assert.match(loadErrorMessage("timeout", { url: "https://d/x" }), /within 10 seconds/);
+  assert.match(loadErrorMessage("timeout", { url: "http://d/x", timeoutMs: 60000 }), /within 60 seconds/);
   assert.match(loadErrorMessage("http-status", { url: "https://d/x", status: 404, statusText: "Not Found" }), /HTTP 404 Not Found for https:\/\/d\/x/);
   assert.match(loadErrorMessage("too-large", { url: "https://d/x" }), /larger than 1 MB \(1,000,000 bytes\)/);
 });
@@ -90,12 +95,44 @@ test("fetchSdp returns the bytes as served, with CR LF kept", async () => {
   assert.ok(seen[0].init.signal instanceof AbortSignal);
 });
 
-test("fetchSdp refuses an invalid URL and mixed content without fetching", async () => {
+test("fetchSdp refuses an invalid URL without fetching", async () => {
   let called = false;
   const fetch = async () => { called = true; return new Response(""); };
   await rejectsWith(fetchSdp("not a url", { fetch }), "invalid-url");
-  await rejectsWith(fetchSdp("http://192.0.2.10/x.sdp", { fetch, pageProtocol: "https:" }), "mixed-content");
   assert.equal(called, false);
+});
+
+test("fetchSdp sends an HTTP URL from an HTTPS page as a local-network request", async () => {
+  const seen = [];
+  const fetch = async (url, init) => {
+    seen.push(init);
+    return new Response(enc(CRLF_SDP));
+  };
+  const r = await fetchSdp("http://172.16.11.20:3212/x-nmos/connection/v1.1/single/senders/s1/transportfile/", { fetch, pageProtocol: "https:" });
+  assert.equal(r.text, CRLF_SDP);
+  assert.equal(r.name, "transportfile");
+  assert.equal(seen[0].targetAddressSpace, "local");
+  await fetchSdp("https://d.example/x.sdp", { fetch, pageProtocol: "https:" });
+  await fetchSdp("http://d.example/x.sdp", { fetch, pageProtocol: "http:" });
+  assert.equal("targetAddressSpace" in seen[1], false);
+  assert.equal("targetAddressSpace" in seen[2], false);
+});
+
+test("fetchSdp maps a failed local-network request to the local-network kind", async () => {
+  const fetch = async () => { throw new TypeError("Failed to fetch"); };
+  await rejectsWith(fetchSdp("http://192.0.2.10/x.sdp", { fetch, pageProtocol: "https:" }), "local-network");
+});
+
+test("fetchSdp waits longer for a local-network request", async () => {
+  let timeout;
+  const realSetTimeout = globalThis.setTimeout;
+  globalThis.setTimeout = (fn, ms) => { timeout ??= ms; return realSetTimeout(fn, ms); };
+  try {
+    await fetchSdp("http://192.0.2.10/x.sdp", { fetch: answer(new Response("v=0\r\n")), pageProtocol: "https:" });
+  } finally {
+    globalThis.setTimeout = realSetTimeout;
+  }
+  assert.equal(timeout, LOCAL_TIMEOUT_MS);
 });
 
 test("fetchSdp maps a TypeError from fetch to the network kind", async () => {

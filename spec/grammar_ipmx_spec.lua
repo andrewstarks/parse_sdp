@@ -25,17 +25,17 @@ local TIMING_MEDIACLK  = support.TIMING_MEDIACLK
 -- fixtures use this so they don't trip ST 2110 / IPMX required-param
 -- checks orthogonal to what they're testing.
 local RAW_FMTP_IPMX_PT96 =
-    "a=fmtp:96 sampling=YCbCr-4:2:2;width=1920;height=1080;"
- .. "exactframerate=60000/1001;depth=10;colorimetry=BT709;"
- .. "PM=2110GPM;SSN=ST2110-20:2022;TP=2110TPN;IPMX;"
- .. "measuredpixclk=148500000;vtotal=1125;htotal=2200"
+    "a=fmtp:96 sampling=YCbCr-4:2:2; width=1920; height=1080; "
+ .. "exactframerate=60000/1001; depth=10; colorimetry=BT709; "
+ .. "PM=2110GPM; SSN=ST2110-20:2022; TP=2110TPN; IPMX; "
+ .. "measuredpixclk=148500000; vtotal=1125; htotal=2200"
 
 -- Same fmtp without the IPMX flag — used by the §10.1 reject test.
 local RAW_FMTP_NO_IPMX_PT96 =
-    "a=fmtp:96 sampling=YCbCr-4:2:2;width=1920;height=1080;"
- .. "exactframerate=60000/1001;depth=10;colorimetry=BT709;"
- .. "PM=2110GPM;SSN=ST2110-20:2022;TP=2110TPN;"
- .. "measuredpixclk=148500000;vtotal=1125;htotal=2200"
+    "a=fmtp:96 sampling=YCbCr-4:2:2; width=1920; height=1080; "
+ .. "exactframerate=60000/1001; depth=10; colorimetry=BT709; "
+ .. "PM=2110GPM; SSN=ST2110-20:2022; TP=2110TPN; "
+ .. "measuredpixclk=148500000; vtotal=1125; htotal=2200"
 
 local function lines_to_sdp(lines)
   return table.concat(lines, "\r\n") .. "\r\n"
@@ -151,6 +151,14 @@ describe("IPMX TR-10-1 §10 — a=group:FID forbidden", function()
     }))
     assert.is_nil(doc)
     assert.is_not_nil(finding_for(ctx, "tr-10-1.a.group.fid-forbidden"))
+  end)
+
+  -- SPEC: TR-10-1 §10 "shall not be used under this TR". The value matches
+  -- the RFC 5888 §5 group ABNF, so it is not also sdp.a.group.malformed.
+  it("reports a=group:FID once under default fail_on_first (TR-10-1 §10)", function()
+    local _, ctx = ipmx.match(build_video_sdp({ group_line = "a=group:FID 1" }))
+    assert.equal(1, #ctx.findings)
+    assert.equal("tr-10-1.a.group.fid-forbidden", ctx.findings[1].id)
   end)
 
   -- NOT-SPEC: library — base / st2110 tiers MUST still accept a=group:FID,
@@ -277,7 +285,7 @@ local function raw_fmtp_with_overrides(overrides)
     end
   end
   parts[#parts + 1] = "IPMX"
-  return "a=fmtp:96 " .. table.concat(parts, ";")
+  return "a=fmtp:96 " .. table.concat(parts, "; ")
 end
 
 describe("IPMX TR-10-1 §10.2 — video fmtp required params (raw)", function()
@@ -431,6 +439,29 @@ describe("IPMX fmtp dispatch — opaque fmtp bodies", function()
     assert.is_true(ok, doc)
     assert.is_truthy(doc)
     assert.is_table(finding_for(ctx, "tr-10-1.a.fmtp.marker-required"))
+  end)
+
+  -- SPEC: ST 2110-20:2022 §7.1 "Each media type parameter entry shall be
+  -- constructed as either - a <name>=<value> pair ... - a <name>
+  -- standalone declaration" (inherited from the ST 2110 tier)
+  it("reports st2110-20.a.fmtp.malformed for an empty raw-video entry (ST 2110-20:2022 §7.1)", function()
+    local line = "a=fmtp:96 sampling=YCbCr-4:2:2;;IPMX"
+    local doc, ctx = ipmx.match(build_video_sdp({ fmtp_line = line }))
+    assert.is_nil(doc)
+    local f = finding_for(ctx, "st2110-20.a.fmtp.malformed")
+    assert.equal(9, f.line)
+    assert.equal(8, f.col)
+    assert.equal(1, #ctx.findings)
+  end)
+
+  -- SPEC: TR-10-1 §10.2 (measuredpixclk required). An IPMX check that
+  -- fails a well-formed body does not also report the body malformed.
+  it("does not report st2110-20.a.fmtp.malformed when an IPMX check fails (TR-10-1 §10.2)", function()
+    local _, ctx = ipmx.match(build_video_sdp({
+      fmtp_line = raw_fmtp_with_overrides({ measuredpixclk = false }),
+    }))
+    assert.is_not_nil(finding_for(ctx, "tr-10-1.a.fmtp.measuredpixclk-required"))
+    assert.is_nil(finding_for(ctx, "st2110-20.a.fmtp.malformed"))
   end)
 end)
 
@@ -700,6 +731,17 @@ describe("IPMX TR-10-10 §8 — a=infoframe attribute", function()
     assert.is_not_nil(finding_for(ctx, "tr-10-10.a.infoframe.dit-invalid-value"))
   end)
 
+  -- SPEC: TR-10-10 §8 "a=infoframe:<port> SSN=ST2110-41:2024;DIT=100100".
+  -- A value of that shape is reported on the failing field's id alone,
+  -- not also on tr-10-10.a.infoframe.malformed.
+  it("reports DIT=100101 once under default fail_on_first (TR-10-10 §8)", function()
+    local _, ctx = ipmx.match(build_video_with_infoframe({
+      session_lines = { "a=infoframe:30003 SSN=ST2110-41:2024;DIT=100101" },
+    }))
+    assert.equal(1, #ctx.findings)
+    assert.equal("tr-10-10.a.infoframe.dit-invalid-value", ctx.findings[1].id)
+  end)
+
   it("rejects a=infoframe whose port doesn't match any media port + 3", function()
     -- media port = 30000 → +3 = 30003; 40000 is unrelated
     local doc, ctx = ipmx.match(build_video_with_infoframe({
@@ -855,6 +897,17 @@ describe("IPMX TR-10-5 §10 — a=hkep attribute", function()
     }))
     assert.is_nil(doc)
     assert.is_not_nil(finding_for(ctx, "tr-10-5.a.hkep.nettype-invalid-value"))
+  end)
+
+  -- SPEC: TR-10-5 §10 "a=hkep:<port> <nettype> <addrtype> <unicast-address>
+  -- <node-id> <port-id>". A value of six fields is reported on the failing
+  -- field's id alone, not also on tr-10-5.a.hkep.malformed.
+  it("reports nettype OUT once under default fail_on_first (TR-10-5 §10)", function()
+    local _, ctx = ipmx.match(build_with_hkep({
+      session_lines = { (WELL_FORMED_HKEP:gsub(" IN ", " OUT ")) },
+    }))
+    assert.equal(1, #ctx.findings)
+    assert.equal("tr-10-5.a.hkep.nettype-invalid-value", ctx.findings[1].id)
   end)
 
   it("rejects addrtype other than IP4 / IP6", function()
@@ -1038,7 +1091,7 @@ describe("IPMX TR-10-13 §13 — a=privacy attribute", function()
   -- A well-formed example carrying all 6 required params with valid
   -- hex lengths (16/32/8/16 chars) and a known mode value.
   local WELL_FORMED_PRIVACY =
-      "a=privacy: protocol=RTP; mode=AES-128-CTR;"
+      "a=privacy:protocol=RTP; mode=AES-128-CTR;"
    .. " iv=0123456789abcdef;"
    .. " key_generator=0123456789abcdef0123456789abcdef;"
    .. " key_version=00112233;"
@@ -1079,6 +1132,25 @@ describe("IPMX TR-10-13 §13 — a=privacy attribute", function()
     assert.equal(11, f.col)
   end)
 
+  -- SPEC: TR-10-13 §13 format line "a=privacy:protocol=<protocol>;
+  -- mode=<mode>; ..." — the only optional space is the one that separates
+  -- the parameters.
+  for _, case in ipairs({
+    { label = "a space after 'privacy:'",  line = "a=privacy: protocol=RTP",  col = 11 },
+    { label = "a space before '='",        line = "a=privacy:protocol =RTP",  col = 11 },
+    { label = "a space after '='",         line = "a=privacy:protocol= RTP",  col = 11 },
+  }) do
+    it("records tr-10-13.a.privacy.malformed for " .. case.label, function()
+      local _, ctx = ipmx.match(build_with_privacy({
+        session_lines = { case.line },
+      }), { fail_on_first = false })
+      local f = finding_for(ctx, "tr-10-13.a.privacy.malformed")
+      assert.is_not_nil(f)
+      assert.equal(5, f.line)
+      assert.equal(case.col, f.col)
+    end)
+  end
+
   it("accepts a well-formed session-level a=privacy", function()
     assert.is_truthy(ipmx.match(build_with_privacy({
       session_lines = { WELL_FORMED_PRIVACY },
@@ -1115,7 +1187,7 @@ describe("IPMX TR-10-13 §13 — a=privacy attribute", function()
 
   it("rejects trailing semicolon after the last parameter", function()
     local bad =
-        "a=privacy: protocol=RTP; mode=AES-128-CTR;"
+        "a=privacy:protocol=RTP; mode=AES-128-CTR;"
      .. " iv=0123456789abcdef;"
      .. " key_generator=0123456789abcdef0123456789abcdef;"
      .. " key_version=00112233;"
@@ -1144,7 +1216,7 @@ describe("IPMX TR-10-13 §13 — a=privacy attribute", function()
           kept[#kept + 1] = p[1] .. "=" .. p[2]
         end
       end
-      local line = "a=privacy: " .. table.concat(kept, "; ")
+      local line = "a=privacy:" .. table.concat(kept, "; ")
       local doc, ctx = ipmx.match(build_with_privacy({
         session_lines = { line },
       }))
@@ -1156,7 +1228,7 @@ describe("IPMX TR-10-13 §13 — a=privacy attribute", function()
 
   it("rejects protocol=NULL", function()
     local line =
-        "a=privacy: protocol=NULL; mode=AES-128-CTR;"
+        "a=privacy:protocol=NULL; mode=AES-128-CTR;"
      .. " iv=0123456789abcdef;"
      .. " key_generator=0123456789abcdef0123456789abcdef;"
      .. " key_version=00112233;"
@@ -1168,7 +1240,7 @@ describe("IPMX TR-10-13 §13 — a=privacy attribute", function()
 
   it("rejects mode=NULL (subsumed by enum check)", function()
     local line =
-        "a=privacy: protocol=RTP; mode=NULL;"
+        "a=privacy:protocol=RTP; mode=NULL;"
      .. " iv=0123456789abcdef;"
      .. " key_generator=0123456789abcdef0123456789abcdef;"
      .. " key_version=00112233;"
@@ -1180,7 +1252,7 @@ describe("IPMX TR-10-13 §13 — a=privacy attribute", function()
 
   it("rejects mode not in the §20.1 enum", function()
     local line =
-        "a=privacy: protocol=RTP; mode=NOT-A-MODE;"
+        "a=privacy:protocol=RTP; mode=NOT-A-MODE;"
      .. " iv=0123456789abcdef;"
      .. " key_generator=0123456789abcdef0123456789abcdef;"
      .. " key_version=00112233;"
@@ -1188,6 +1260,18 @@ describe("IPMX TR-10-13 §13 — a=privacy attribute", function()
     local doc, ctx = ipmx.match(build_with_privacy({ session_lines = { line } }))
     assert.is_nil(doc)
     assert.is_not_nil(finding_for(ctx, "tr-10-13.a.privacy.mode-invalid-value"))
+  end)
+
+  -- SPEC: TR-10-13 §13 "shall be formatted as a follow with a semicolon and
+  -- an optional space separating the parameters". A value of that form is
+  -- reported on the failing parameter's id alone, not also on
+  -- tr-10-13.a.privacy.malformed.
+  it("reports mode=NOT-A-MODE once under default fail_on_first (TR-10-13 §13)", function()
+    local _, ctx = ipmx.match(build_with_privacy({
+      session_lines = { (WELL_FORMED_PRIVACY:gsub("AES%-128%-CTR", "NOT-A-MODE")) },
+    }))
+    assert.equal(1, #ctx.findings)
+    assert.equal("tr-10-13.a.privacy.mode-invalid-value", ctx.findings[1].id)
   end)
 
   -- Accept all 12 enumerated modes from §20.1 line 679.
@@ -1201,7 +1285,7 @@ describe("IPMX TR-10-13 §13 — a=privacy attribute", function()
   }) do
     it("accepts mode=" .. mode, function()
       local line =
-          "a=privacy: protocol=RTP; mode=" .. mode .. ";"
+          "a=privacy:protocol=RTP; mode=" .. mode .. ";"
        .. " iv=0123456789abcdef;"
        .. " key_generator=0123456789abcdef0123456789abcdef;"
        .. " key_version=00112233;"
@@ -1231,7 +1315,7 @@ describe("IPMX TR-10-13 §13 — a=privacy attribute", function()
       }
       parts[case.key] = case.wrong
       local line = string.format(
-        "a=privacy: protocol=%s; mode=%s; iv=%s; key_generator=%s;"
+        "a=privacy:protocol=%s; mode=%s; iv=%s; key_generator=%s;"
         .. " key_version=%s; key_id=%s",
         parts.protocol, parts.mode, parts.iv, parts.key_generator,
         parts.key_version, parts.key_id)
@@ -1248,7 +1332,7 @@ describe("IPMX TR-10-13 §13 — a=privacy attribute", function()
   -- it as a generic attribute regardless of form.
   it("base / ST 2110 tiers accept a=privacy as a generic attribute", function()
     local sdp = build_with_privacy({
-      session_lines = { "a=privacy: bogus=value" },
+      session_lines = { "a=privacy:bogus=value" },
     })
     assert.is_truthy(base.match(sdp))
     assert.is_truthy(st2110.match(sdp))
@@ -1259,12 +1343,12 @@ end)
 
 -- ── TR-10-13 §13 — DUP legs share privacy parameters ────────────────────────
 
-local PRIVACY_A = "a=privacy: protocol=RTP; mode=AES-128-CTR;"
+local PRIVACY_A = "a=privacy:protocol=RTP; mode=AES-128-CTR;"
   .. " iv=0123456789abcdef; key_generator=0123456789abcdef0123456789abcdef;"
   .. " key_version=00112233; key_id=fedcba9876543210"
 local PRIVACY_B = PRIVACY_A:gsub("AES%-128%-CTR", "AES-256-CTR")
 -- Same parameters as PRIVACY_A in a different order.
-local PRIVACY_A_REORDERED = "a=privacy: mode=AES-128-CTR; protocol=RTP;"
+local PRIVACY_A_REORDERED = "a=privacy:mode=AES-128-CTR; protocol=RTP;"
   .. " key_id=fedcba9876543210; key_version=00112233;"
   .. " key_generator=0123456789abcdef0123456789abcdef; iv=0123456789abcdef"
 
@@ -1484,7 +1568,7 @@ describe("IPMX TR-10-14 §14 — USB block constraints", function()
   it("accepts a USB block with a=privacy using protocol=USB_KV", function()
     assert.is_truthy(ipmx.match(build_usb_sdp({
       "a=setup:passive",
-      "a=privacy: protocol=USB_KV; mode=AES-128-CTR_CMAC-64-AAD;"
+      "a=privacy:protocol=USB_KV; mode=AES-128-CTR_CMAC-64-AAD;"
         .. " iv=0123456789abcdef;"
         .. " key_generator=0123456789abcdef0123456789abcdef;"
         .. " key_version=00112233;"
@@ -1495,7 +1579,7 @@ describe("IPMX TR-10-14 §14 — USB block constraints", function()
   it("rejects a USB block whose a=privacy uses protocol=RTP", function()
     local doc, ctx = ipmx.match(build_usb_sdp({
       "a=setup:passive",
-      "a=privacy: protocol=RTP; mode=AES-128-CTR;"
+      "a=privacy:protocol=RTP; mode=AES-128-CTR;"
         .. " iv=0123456789abcdef;"
         .. " key_generator=0123456789abcdef0123456789abcdef;"
         .. " key_version=00112233;"

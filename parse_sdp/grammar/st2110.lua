@@ -8,8 +8,9 @@ local lpeg   = require("lpeg")
 local base   = require("parse_sdp.grammar.base")
 local errors = require("parse_sdp.errors")
 
-local P, R, V, C, Cc, Cg, Cb, Ct, Cmt, Carg =
-  lpeg.P, lpeg.R, lpeg.V, lpeg.C, lpeg.Cc, lpeg.Cg, lpeg.Cb, lpeg.Ct, lpeg.Cmt, lpeg.Carg
+local P, R, S, V, C, Cc, Cg, Cb, Ct, Cmt, Carg =
+  lpeg.P, lpeg.R, lpeg.S, lpeg.V, lpeg.C, lpeg.Cc, lpeg.Cg, lpeg.Cb, lpeg.Ct,
+  lpeg.Cmt, lpeg.Carg
 
 local patterns = require("parse_sdp.grammar.patterns")
 
@@ -1204,6 +1205,18 @@ local FMTP_CHECKS_BY_ENCODING = {
   smpte291 = { check_smpte291_fmtp },
 }
 
+-- Records `id` at the position `at` captures, when `at` matches here, and
+-- fails the match when the record says to stop (fail_on_first). Zero-width:
+-- `at` is a look-ahead, so the caller sits it after a look-ahead that
+-- proves the rest of its alternative cannot fail.
+local function record_first(id, at)
+  return #Cmt(at * Carg(1), function(_, pos, at_pos, ctx)
+           if not ctx then return pos end
+           return errors.record(ctx, id, { pos = at_pos }) and pos
+         end)
+       + -at
+end
+
 -- Dispatch contract: each check is invoked as
 --   check(params, ctx, pos, field_path[, encoding]) → bool
 -- pos:        LPeg byte position after the matched fmtp line (loc.pos for
@@ -1426,12 +1439,13 @@ local overrides = {
     --
     -- Encoding-gated alternation: the first branch matches only when this
     -- fmtp's payload_type was previously recorded (via a_rtpmap's trailing
-    -- Cmt) as carrying encoding="raw" AND the input has no whitespace
-    -- around `=`; the second branch matches when the recorded encoding is
-    -- anything else (including absent — static PT with no rtpmap) and uses
-    -- base's loose `fmtp_params_branch`. A `raw` fmtp with whitespace fails
-    -- both branches → a_fmtp fails → match returns nil with the finding in
-    -- ctx.findings (under fail_on_first=true).
+    -- Cmt) as carrying encoding="raw" AND the body has the §7.1 form
+    -- (fmtp_st2110_raw_params); the second branch matches when the
+    -- recorded encoding is anything else (including absent — static PT
+    -- with no rtpmap) and uses base's loose `fmtp_params_branch`. A `raw`
+    -- fmtp of any other form fails both branches → a_fmtp fails →
+    -- tier_malformed reports it. A body with a NUL fails before either
+    -- branch (fmtp_no_nul) and is base's sdp.a.fmtp.malformed.
     --
     -- The lookup is ctx-based rather than Cb-based because the rtpmap and
     -- fmtp lines each close their own a_value Ct, so the rtpmap's encoding
@@ -1447,7 +1461,7 @@ local overrides = {
     -- error with fail_on_first=true.
     a_fmtp = P("fmtp:")
         * Cg(Cc("fmtp"), "name")
-        * Cg(V"payload_type", "payload_type") * SP
+        * Cg(V"payload_type", "payload_type") * SP * V"fmtp_no_nul"
         * ( V"fmtp_st2110_raw_payload"
           + V"fmtp_payload_non_raw" )
         * Cmt(Cb"payload_type" * Cb"params" * Carg(1), fmtp_dispatch),
@@ -1468,43 +1482,121 @@ local overrides = {
         end)
         * ( V"fmtp_params_branch" + V"fmtp_raw_branch" ),
 
-    -- Strict params branch for `raw`: each kv-pair captures the
-    -- (key, ws_before_eq, ws_after_eq, value) tuple; a Cmt examines the
-    -- whitespace captures, records sdp st2110-20.a.fmtp.no-whitespace-
-    -- around-equals when either side is non-empty, and otherwise yields
-    -- the {key, value} pair the outer transform expects.
+    -- ST 2110-20:2022 §7.1: "The <format specific parameters> section
+    -- shall consist of a sequence of media type parameter entries,
+    -- separated by the semicolon (";") character followed by whitespace."
+    -- "Each media type parameter entry shall be constructed as either
+    -- - a <name>=<value> pair, with no whitespace within the name or value
+    -- or between the name, equal sign, and value - a <name> standalone
+    -- declaration, with no whitespace within the name."
+    -- A raw-video fmtp fails a_fmtp when its body is not such a sequence,
+    -- and these branches then report it at the value, once:
+    --   * a body with whitespace around an '=' is
+    --     st2110-20.a.fmtp.no-whitespace-around-equals, at that whitespace;
+    --   * any other body is st2110-20.a.fmtp.malformed: an entry that is
+    --     empty (";;"), has no name ("=x"), has whitespace within the name
+    --     or the value, or has whitespace before the next ';' or before the
+    --     first entry.
+    -- Both decline a body that is fmtp_st2110_raw_shape: those bodies
+    -- decompose, so a value check, a strict-branch finding, or an IPMX
+    -- check that fails the line is not also reported here. A value whose
+    -- format is not a payload type followed by SP, or whose body holds a
+    -- NUL, is base's sdp.a.fmtp.malformed, so both decline it too.
+    tier_malformed =
+        base.malformed_attr("fmtp",
+          "st2110-20.a.fmtp.no-whitespace-around-equals",
+          -( V"fmtp_st2110_raw_pt" * SP * V"fmtp_no_nul"
+           * -V"fmtp_st2110_raw_shape" * V"fmtp_st2110_ws_equals_at" ),
+          { at = V"payload_type" / 0 * SP * V"fmtp_st2110_ws_equals_at" })
+      + base.malformed_attr("fmtp", "st2110-20.a.fmtp.malformed",
+          -( V"fmtp_st2110_raw_pt" * SP * V"fmtp_no_nul"
+           * -V"fmtp_st2110_raw_shape" * -V"fmtp_st2110_ws_equals_at" )),
+
+    fmtp_st2110_raw_pt =
+        Cmt(V"payload_type" * Carg(1), function(_, pos, pt, ctx)
+          local enc = ctx and ctx.rtpmap_encodings
+                            and ctx.rtpmap_encodings[pt]
+          return enc == "raw" and pos
+        end),
+
+    fmtp_st2110_raw_shape =
+          V"fmtp_st2110_shape_entry"
+        * (V"fmtp_sep" * V"fmtp_st2110_shape_entry") ^ 0
+        * (P(";") * V"fmtp_hws" ^ 0) ^ -1
+        * #V"value_boundary_chars",
+
+    fmtp_st2110_shape_entry =
+          V"fmtp_st2110_name_chars" ^ 1
+        * (V"fmtp_hws" ^ 0 * P("=") * V"fmtp_hws" ^ 0
+           * V"fmtp_st2110_value_chars" ^ 0) ^ -1,
+
+    -- §7.1 constrains a name only by "with no whitespace within the name"
+    -- and a value by "no whitespace within the ... value"; RFC 8866 §6.15
+    -- leaves the body a byte-string. So a name is any run of bytes other
+    -- than whitespace, the ';' separator, the '=' that ends it, and a line
+    -- end; a value is the same run with '=' allowed.
+    fmtp_st2110_name_chars  = 1 - S(" \t;=\r\n\0"),
+    fmtp_st2110_value_chars = 1 - S(" \t;\r\n\0"),
+
+    -- The first name with whitespace before or after its '=', capturing
+    -- the position of that whitespace. Whitespace after '=' that runs to
+    -- the line end is sdp.line.trailing-whitespace, not this.
+    fmtp_st2110_ws_equals_at =
+          (1 - V"fmtp_st2110_ws_equals" - V"value_boundary_chars") ^ 0
+        * V"fmtp_st2110_ws_equals",
+    fmtp_st2110_ws_equals =
+          V"fmtp_st2110_name_chars" ^ 1
+        * ( lpeg.Cp() * V"fmtp_hws" ^ 1 * P("=")
+          + P("=") * lpeg.Cp() * V"fmtp_hws" ^ 1 * -V"line_end_chars" ),
+
+    -- The first ';' that is followed by an entry with no whitespace
+    -- between them, capturing the position of the ';'. A ';' that ends the
+    -- body is sdp.a.fmtp.trailing-semicolon, not this.
+    fmtp_st2110_bare_sep_at =
+          (1 - V"fmtp_st2110_bare_sep" - V"value_boundary_chars") ^ 0
+        * V"fmtp_st2110_bare_sep",
+    fmtp_st2110_bare_sep =
+        lpeg.Cp() * P(";") * #V"fmtp_st2110_name_chars",
+
+    -- Strict params branch for `raw`. The look-ahead admits only a body
+    -- that is fmtp_st2110_raw_shape up to a real line end, so nothing
+    -- after it can fail; the two §7.1 findings below are then recorded,
+    -- once per line, at the first offending position:
+    --   * st2110-20.a.fmtp.no-whitespace-around-equals (error) for
+    --     whitespace between a name, '=', and its value;
+    --   * st2110-20.a.fmtp.semicolon-without-whitespace (soft-syntactic,
+    --     warn) for a separating ';' with no whitespace after it ("the
+    --     semicolon (";") character followed by whitespace"; the clause
+    --     states no amount, so one SP or HTAB is enough; decision
+    --     parse_sdp-ajh).
+    -- Each entry then yields the {key, value} / {name, true} pair. The body
+    -- ends at value_boundary_chars, so whitespace before the line end is
+    -- left to line_end (sdp.line.trailing-whitespace), not read into a
+    -- value.
     fmtp_st2110_raw_params =
-        Cg(
+          #(V"fmtp_st2110_raw_shape" * V"value_end")
+        * record_first("st2110-20.a.fmtp.no-whitespace-around-equals",
+                       V"fmtp_st2110_ws_equals_at")
+        * record_first("st2110-20.a.fmtp.semicolon-without-whitespace",
+                       V"fmtp_st2110_bare_sep_at")
+        * Cg(
             Ct(V"fmtp_st2110_raw_entry"
               * (V"fmtp_sep" * V"fmtp_st2110_raw_entry") ^ 0),
             "params"
           )
         * V"fmtp_trailing_sep_record" ^ -1
-        * #V"line_end_chars",
+        * #V"value_boundary_chars",
 
     fmtp_st2110_raw_entry =
-        V"fmtp_st2110_raw_kv_pair" + V"fmtp_flag",
+        V"fmtp_st2110_raw_kv_pair" + V"fmtp_st2110_raw_flag",
+
+    fmtp_st2110_raw_flag =
+        Ct(C(V"fmtp_st2110_name_chars" ^ 1) * Cc(true)),
 
     fmtp_st2110_raw_kv_pair =
-        Cmt(
-          Ct(
-            C(V"fmtp_key_chars" ^ 1)
-            * C(V"fmtp_hws" ^ 0)
-            * P("=")
-            * C(V"fmtp_hws" ^ 0)
-            * C(V"fmtp_val_chars" ^ 0)
-          ) * Carg(1),
-          function(_, pos, captured, ctx)
-            local key, ws_l, ws_r, val =
-              captured[1], captured[2], captured[3], captured[4]
-            if #ws_l > 0 or #ws_r > 0 then
-              local cont = errors.record(
-                ctx, "st2110-20.a.fmtp.no-whitespace-around-equals",
-                { pos = pos })
-              if not cont then return false end
-            end
-            return pos, { key, val }
-          end),
+        Ct(C(V"fmtp_st2110_name_chars" ^ 1)
+           * V"fmtp_hws" ^ 0 * P("=") * V"fmtp_hws" ^ 0
+           * C(V"fmtp_st2110_value_chars" ^ 0)),
   },
 
   -- Doc-level only: cross-section invariants that need the full doc

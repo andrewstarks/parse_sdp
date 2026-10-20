@@ -206,6 +206,10 @@ label.check { display: inline-flex; align-items: center; gap: 6px; }
 .banner { padding: 8px 12px; border-radius: var(--radius); font-size: 0.9rem; }
 .banner.error { background: var(--error-bg); color: var(--error); border: 1px solid color-mix(in srgb, var(--error) 35%, transparent); }
 .banner.warn { background: var(--warn-bg); color: var(--warn); }
+.crlf-note { display: flex; gap: 12px; align-items: flex-start; justify-content: space-between; }
+.crlf-note[hidden] { display: none; }
+.crlf-note p { margin: 0; }
+.crlf-note button { flex: none; }
 
 /* Input */
 .drop-zone { position: relative; min-width: 0; }
