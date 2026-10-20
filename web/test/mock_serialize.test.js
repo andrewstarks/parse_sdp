@@ -4,12 +4,12 @@ import { mockSerialize } from "../src/mock_serialize.js";
 import { fixtureJson, fixtureText } from "./helpers.js";
 
 // The real serializer's output for each fixture doc is the fixture text with
-// CRLF endings and fmtp params joined by ";" (verified against
+// CRLF endings and fmtp params joined by "; " (verified against
 // web/wasm/bridge_cli.lua when the fixtures were recorded).
 async function expectedText(name) {
   const lines = (await fixtureText(`${name}.sdp`)).split("\n");
   if (lines[lines.length - 1] === "") lines.pop();
-  return lines.map((l) => (l.startsWith("a=fmtp:") ? l.replace(/;\s+/g, ";") : l) + "\r\n").join("");
+  return lines.map((l) => (l.startsWith("a=fmtp:") ? l.replace(/;\s*/g, "; ") : l) + "\r\n").join("");
 }
 
 for (const name of ["ipmx_typical", "st2110_invalid", "generic_pathological"]) {

@@ -391,7 +391,10 @@ end
 -- The renderer walks `params` positionally to preserve input order (Phase
 -- 8.C landed this contract so 8.D.2 could round-trip text-identical). A
 -- `true` value renders as a bare flag; a string/number renders as `k=v`.
--- Joined with `;`, no trailing separator.
+-- Joined with "; ", no trailing separator. ST 2110-20:2022 §7.1: "separated
+-- by the semicolon (";") character followed by whitespace"; RFC 8866 §6.15
+-- says only "semicolon separated", so "; " suits every fmtp and the base
+-- grammar reads it back to the same params (decision parse_sdp-ajh).
 -- Required: payload_type, and one of {params, raw}.
 ATTR_RENDERERS.fmtp = function(attr, field_path)
   local pt, e = require_field(attr, "payload_type",
@@ -410,7 +413,7 @@ ATTR_RENDERERS.fmtp = function(attr, field_path)
         toks[i] = tostring(k) .. "=" .. tostring(v)
       end
     end
-    return ln("a", "fmtp:" .. tostring(pt) .. " " .. table.concat(toks, ";"))
+    return ln("a", "fmtp:" .. tostring(pt) .. " " .. table.concat(toks, "; "))
   end
   return nil, err_missing(field_path .. ".params",
     field_path .. ".params or " .. field_path .. ".raw")

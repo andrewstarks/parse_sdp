@@ -76,6 +76,22 @@ local EXPECTED = {
   ["examples/st2110/invalid/09_bad_ptime.sdp"] =
     { error = "sdp.a.ptime.malformed", line = 10,
       findings = { "sdp.a.ptime.malformed@10" } },
+  -- Demoted, the malformed fmtp is skipped, so the §7.2 parameters are
+  -- reported missing.
+  ["examples/st2110/invalid/10_fmtp_empty_entry.sdp"] =
+    { error = "st2110-20.a.fmtp.malformed", line = 8,
+      findings = {
+        "st2110-20.a.fmtp.malformed@8",
+        "st2110-20.a.fmtp.sampling-required@0",
+        "st2110-20.a.fmtp.width-required@0",
+        "st2110-20.a.fmtp.height-required@0",
+        "st2110-20.a.fmtp.exactframerate-required@0",
+        "st2110-20.a.fmtp.depth-required@0",
+        "st2110-20.a.fmtp.colorimetry-required@0",
+        "st2110-20.a.fmtp.PM-required@0",
+        "st2110-20.a.fmtp.SSN-required@0",
+        "st2110-20.a.fmtp.TP-required@0",
+      } },
   ["examples/st2110/invalid/dup_group_type_mismatch.sdp"] =
     { error = "st2110-10.a.group-dup.media-type-same", line = 0,
       findings = {

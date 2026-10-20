@@ -859,7 +859,7 @@ describe("parse_sdp.serialize — Phase 8.D.2 fmtp renderer", function()
     local doc1, doc2, text2 = round_trip(text)
     assert.same(doc1, doc2)
     assert.truthy(text2:find(
-      "a=fmtp:96 profile-level-id=42801f;max-mbps=108000;max-fs=3600\r\n",
+      "a=fmtp:96 profile-level-id=42801f; max-mbps=108000; max-fs=3600\r\n",
       1, true))
   end)
 
@@ -875,8 +875,28 @@ describe("parse_sdp.serialize — Phase 8.D.2 fmtp renderer", function()
     local doc1, doc2, text2 = round_trip(text)
     assert.same(doc1, doc2)
     assert.truthy(text2:find(
-      "a=fmtp:96 sampling=YCbCr-4:2:2;width=1920;interlace;segmented\r\n",
+      "a=fmtp:96 sampling=YCbCr-4:2:2; width=1920; interlace; segmented\r\n",
       1, true))
+  end)
+
+  -- SPEC: ST 2110-20:2022 §7.1 "separated by the semicolon (";") character
+  -- followed by whitespace"; RFC 8866 §6.15 is silent on the whitespace, so
+  -- every decomposed fmtp renders with "; " (decision parse_sdp-ajh).
+  it("joins decomposed fmtp params with '; ' (ST 2110-20:2022 §7.1)", function()
+    local text = lines_to_sdp({
+      "v=0", "o=- 1 1 IN IP4 192.0.2.1", "s=X", "t=0 0",
+      "m=video 5000 RTP/AVP 96", "c=IN IP4 239.0.0.1/64",
+      "a=rtpmap:96 raw/90000",
+      "a=fmtp:96 sampling=YCbCr-4:2:2;width=1920;interlace",
+    })
+    local doc1 = st2110.match(text, { fail_on_first = false })
+    local text2 = assert(serialize.to_sdp(doc1))
+    assert.truthy(text2:find(
+      "a=fmtp:96 sampling=YCbCr-4:2:2; width=1920; interlace\r\n", 1, true))
+    local _, ctx = st2110.match(text2, { fail_on_first = false })
+    for _, f in ipairs(ctx.findings) do
+      assert.is_not.equal("st2110-20.a.fmtp.semicolon-without-whitespace", f.id)
+    end
   end)
 
   it("round-trips a raw byte-string fmtp body (DTMF telephone-event form)", function()
@@ -1343,6 +1363,42 @@ describe("parse_sdp.serialize — Phase 8.D.3 ts-refclk renderer", function()
       ["sdp.a.rtpmap.malformed"]   = "warn",
       ["sdp.a.rtcp-mux.malformed"] = "warn",
     } }
+    local doc1 = base.match(text, opts)
+    assert.is_truthy(doc1)
+    local text2, e = serialize.to_sdp(doc1)
+    assert.is_nil(e)
+    assert.equal(text, text2)
+    assert.same(doc1, base.match(text2, opts))
+  end)
+
+  -- NOT-SPEC: library — an ST 2110 raw-video fmtp captured as malformed
+  -- (st2110-20.a.fmtp.malformed, ST 2110-20:2022 §7.1) renders as written.
+  it("round-trips a malformed ST 2110 raw-video fmtp captured under a demoted policy", function()
+    local text = lines_to_sdp({
+      "v=0", "o=- 1 1 IN IP4 192.0.2.1", "s=X", "t=0 0",
+      "m=video 5000 RTP/AVP 96", "c=IN IP4 239.0.0.1/64",
+      "a=rtpmap:96 raw/90000",
+      "a=fmtp:96 sampling=YCbCr-4:2:2;;x",
+    })
+    local opts = { policy = { ["st2110-20.a.fmtp.malformed"] = "warn" },
+                   fail_on_first = false }
+    local doc1 = st2110.match(text, opts)
+    assert.is_truthy(doc1)
+    local text2, e = serialize.to_sdp(doc1)
+    assert.is_nil(e)
+    assert.equal(text, text2)
+    assert.same(doc1, st2110.match(text2, opts))
+  end)
+
+  -- NOT-SPEC: library — an fmtp value holding a NUL (sdp.a.fmtp.malformed,
+  -- RFC 8866 §9 byte-string) renders as written.
+  it("round-trips an fmtp with a NUL captured under a demoted policy", function()
+    local text = lines_to_sdp({
+      "v=0", "o=- 1 1 IN IP4 192.0.2.1", "s=X", "t=0 0",
+      "m=audio 5000 RTP/AVP 0", "c=IN IP4 239.0.0.1/64",
+      "a=fmtp:0 x=a\0b",
+    })
+    local opts = { policy = { ["sdp.a.fmtp.malformed"] = "warn" } }
     local doc1 = base.match(text, opts)
     assert.is_truthy(doc1)
     local text2, e = serialize.to_sdp(doc1)
@@ -1856,7 +1912,7 @@ describe("parse_sdp.serialize — Phase 8.E privacy renderer", function()
       "v=0", "o=- 1 1 IN IP4 127.0.0.1", "s=X",
       "c=IN IP4 224.0.0.1/127",
       "t=0 0",
-      "a=privacy: protocol=RTP; mode=AES-128-CTR; iv=0123456789abcdef;"
+      "a=privacy:protocol=RTP; mode=AES-128-CTR; iv=0123456789abcdef;"
         .. " key_generator=0123456789abcdef0123456789abcdef;"
         .. " key_version=00112233; key_id=fedcba9876543210",
     })

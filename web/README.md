@@ -62,9 +62,11 @@ each one has unit tests under `test/`.
   labeled option groups for the examples dropdown. Without a build, the
   module falls back to the three bundled fixtures.
 - `url_source.js` loads an SDP file from a URL. The module validates
-  the address, detects mixed content (an `http:` address from an
-  `https:` page), fetches the response as bytes with a 10-second timeout
-  and a 1 MB limit, decodes the bytes without changing the line endings
+  the address, sends an `http:` address from an `https:` page as a
+  local-network request (`targetAddressSpace: "local"`, which Chrome and
+  Edge 142 and later allow after a permission prompt), fetches the
+  response as bytes with a 10-second timeout (60 seconds for a
+  local-network request) and a 1 MB limit, decodes the bytes without changing the line endings
   or removing a byte order mark, and maps each failure to the message
   that the page shows. The module also derives the download name from
   the URL path and builds the `?url=` share link. The fetch function is

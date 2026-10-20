@@ -11,7 +11,7 @@ for a URL that the user gives (see
 [Loading an SDP file from a URL](#loading-an-sdp-file-from-a-url)). The page is short and labeled, so this manual is an
 orientation rather than a complete reference.
 
-The header names the active engine. "Engine: parse_sdp 1.8.1
+The header names the active engine. "Engine: parse_sdp 1.9.0
 (WebAssembly)" means the real library is running. "Engine: mock" means
 the WebAssembly module could not be loaded; the page then answers from
 recorded fixtures, and findings for unknown inputs are illustrative only.
@@ -56,9 +56,31 @@ order mark reach the parser unchanged. The address must start with
 address path: `.../transportfile` gives `transportfile.sdp`.
 
 The page applies two limits. The page stops a request that has no
-complete response after 10 seconds. The page does not load a response
-that is larger than 1 MB (1,000,000 bytes); an SDP file is typically a
-few kilobytes.
+complete response after 10 seconds, or after 60 seconds for a
+local-network request (see below), because that time includes the
+browser's permission prompt. The page does not load a response that is
+larger than 1 MB (1,000,000 bytes); an SDP file is typically a few
+kilobytes.
+
+### Devices that serve SDP over HTTP
+
+The playground at github.io is an HTTPS page, and most devices serve
+their SDP files over `http://`. Browsers block a request from an HTTPS
+page to an `http://` address (mixed content), with one exception.
+Chrome and Edge 142 and later send the request to a device on the local
+network after you allow local network access for the page. The first
+time, the browser asks; choose "Allow". The page sends every `http://`
+request as a local-network request, so this works for a private IP
+address (for example `http://172.16.11.20:3212/...`), a `.local` name,
+and a host name that resolves to a local address. Firefox and Safari do
+not have this exception and block the request.
+
+If you denied the permission, allow it again in the site settings: click
+the icon to the left of the address bar.
+
+The device must also send CORS headers (see the next section). Addresses
+on the local machine (`localhost`, `127.0.0.1`, `[::1]`) are not mixed
+content in any browser.
 
 ### Share link
 
@@ -72,7 +94,7 @@ input is loaded, the page removes `?url=` from the address.
 
 ### When the browser cannot load the URL
 
-A browser can block the request for two reasons. In both cases the
+A browser can block the request for two main reasons. In both cases the
 workaround is the same: download the file with the browser and drop it
 on the page, or check the file with the command-line tool:
 
@@ -87,11 +109,12 @@ curl -s '<SDP address>' | parse_sdp validate -
   page why a request failed, so the page reports that "the request was
   blocked or failed" and names CORS as a common reason. A wrong address
   and a server that cannot be reached give the same message.
-- The second reason is mixed content. The playground at github.io is an
-  HTTPS page, and browsers block a request from an HTTPS page to an `http://` address.
-  The page detects this case before the request and shows the workaround
-  without sending the request. Addresses on the local machine
-  (`localhost`, `127.0.0.1`, `[::1]`) are not blocked.
+- The second reason is mixed content: an `http://` address from the
+  HTTPS page. A browser other than Chrome or Edge 142 and later blocks
+  the request, and Chrome and Edge block it when local network access is
+  not allowed or the address is not on the local network. For a failed
+  `http://` request, the message lists these reasons together with CORS,
+  because the browser does not tell the page which one applies.
 
 ## Compliance report
 
@@ -202,9 +225,11 @@ session name line; a file without an `s=` line is titled by its file name.
   instead of the input box, or load the file again. Text that a browser
   or another program changed before it was pasted cannot be recovered.
   To check those line endings, load the file from its URL or drop the
-  file on the page.
-- Everything is client-side. Overrides and the summary block's collapsed
-  state are stored in the browser's `localStorage` and are not shared
+  file on the page. When the report has an LF-only line-ending finding
+  for pasted or typed text, a note under the box says so. "Don't show
+  again" hides the note in this browser.
+- Everything is client-side. Overrides, the summary block's collapsed
+  state, and a dismissed line-ending note are stored in the browser's `localStorage` and are not shared
   between browsers or devices.
 - Speed. Measured natively, parsing the largest example file (2835
   bytes) at the IPMX tier takes 0.30 ms on Lua 5.5.0 on the author's

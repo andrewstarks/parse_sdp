@@ -326,16 +326,23 @@ end
 -- number). SSN value is everything up to ";" (line terminator excluded
 -- to keep the rule's failure modes clean). DIT value is the digit run
 -- to end-of-line.
-local a_infoframe =
-    P("infoframe:")
-  * Cg(Cc("infoframe"), "name")
-  * Cg(V"rfc8866_pos_int_num", "port") * SP
+--
+-- infoframe_value is the value's shape alone; the malformed branch
+-- declines a value of that shape, so a field check that fails the match
+-- under fail_on_first is not reported again as malformed.
+local infoframe_value =
+    Cg(V"rfc8866_pos_int_num", "port") * SP
   * P("SSN=")
   * Cg(C((P(1) - P(";") - V"line_end_chars")^1), "ssn")
   * P(";")
   * P("DIT=")
   * Cg(C(R("09")^1), "dit")
   * #V"value_boundary_chars"
+
+local a_infoframe =
+    P("infoframe:")
+  * Cg(Cc("infoframe"), "name")
+  * infoframe_value
   * Cmt(Cb"ssn" * Cb"dit" * Carg(1), check_a_infoframe)
 
 -- Cross-section semantic_check (d) + (e): one walk over the session-
@@ -449,16 +456,19 @@ end
 -- generic parse failure.
 local hkep_token = C((P(1) - SP - V"line_end_chars")^1)
 
-local a_hkep =
-    P("hkep:")
-  * Cg(Cc("hkep"), "name")
-  * Cg(V"rfc8866_pos_int_num", "port") * SP
+local hkep_value =
+    Cg(V"rfc8866_pos_int_num", "port") * SP
   * Cg(hkep_token, "nettype")  * SP
   * Cg(hkep_token, "addrtype") * SP
   * Cg(hkep_token, "addr")     * SP
   * Cg(hkep_token, "node_id")  * SP
   * Cg(hkep_token, "port_id")
   * #V"value_boundary_chars"
+
+local a_hkep =
+    P("hkep:")
+  * Cg(Cc("hkep"), "name")
+  * hkep_value
   * Cmt(Cb"nettype" * Cb"addrtype" * Cb"node_id" * Cb"port_id" * Carg(1),
         check_a_hkep)
 
@@ -466,9 +476,14 @@ local a_hkep =
 -- TR-10-13 §13 (audits rows 246–257):
 --   Required parameters: protocol, mode, iv, key_generator, key_version,
 --                        key_id.
---   Format: "<key> = <value>; <key> = <value>; ..." — semicolon plus
---           optional space between parameters, no trailing semicolon
---           (§13 line 338).
+--   "The privacy attribute of an SDP transport file shall be formatted as
+--   a follow with a semicolon and an optional space separating the
+--   parameters and a CRLF to terminate the attribute line. There shall be
+--   no semicolon after the last parameter." (§13 line 338)
+--   Format line (§13 lines 340-342): "a=privacy:protocol=<protocol>;
+--   mode=<mode>; iv=<iv>; key_generator=<key_generator>;
+--   key_version=<key_version>; key_id=<key_id> CRLF". No space follows
+--   "privacy:" or surrounds "="; the only optional space follows ";".
 --   Octet-string values are hex (no spaces) with bit-lengths defined per
 --   parameter (§13 lines 366, 372, 376, 386).
 --   protocol = "NULL" is forbidden in SDP (§13 line 352); the
@@ -575,17 +590,19 @@ end
 local privacy_key   = C((P(1) - P("=") - P(";") - SP - V"line_end_chars")^1)
 local privacy_value = C((P(1) - P(";") - V"line_end_chars")^0)
 local privacy_entry =
-    lpeg.Ct(privacy_key * SP^-1 * P("=") * SP^-1 * privacy_value)
+    lpeg.Ct(privacy_key * P("=") * -SP * privacy_value)
 local privacy_sep = P(";") * SP^-1
 
-local a_privacy =
-    P("privacy:")
-  * SP^-1
-  * Cg(Cc("privacy"), "name")
-  * Cg(lpeg.Ct(privacy_entry * (privacy_sep * privacy_entry)^0),
+local privacy_body =
+    Cg(lpeg.Ct(privacy_entry * (privacy_sep * privacy_entry)^0),
        "params")
   * Cg(P(";") * Cc(true) + Cc(false), "trailing_semi")
   * #V"value_boundary_chars"
+
+local a_privacy =
+    P("privacy:")
+  * Cg(Cc("privacy"), "name")
+  * privacy_body
   * Cmt(Cb"params" * Cb"trailing_semi" * Carg(1), check_a_privacy)
 
 -- ── §13 redundancy — DUP legs share privacy parameters (semantic_check) ──
@@ -741,9 +758,13 @@ return st2110.extend(st2110, {
     a_tier_extensions = a_infoframe + a_hkep + a_privacy,
     tier_attr_names   = P("infoframe") + P("hkep") + P("privacy"),
     tier_malformed    =
-        base.malformed_attr("infoframe", "tr-10-10.a.infoframe.malformed")
-      + base.malformed_attr("hkep",      "tr-10-5.a.hkep.malformed")
-      + base.malformed_attr("privacy",   "tr-10-13.a.privacy.malformed"),
+        st2110.rules.tier_malformed
+      + base.malformed_attr("infoframe", "tr-10-10.a.infoframe.malformed",
+                            infoframe_value)
+      + base.malformed_attr("hkep",      "tr-10-5.a.hkep.malformed",
+                            hkep_value)
+      + base.malformed_attr("privacy",   "tr-10-13.a.privacy.malformed",
+                            privacy_body),
   },
   media_section_checks = {
     check_ipmx_fmtp_marker,

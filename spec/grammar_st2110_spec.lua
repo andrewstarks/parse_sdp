@@ -76,9 +76,9 @@ local finding_for = support.finding_for
 -- aren't *about* required-param presence append this so they don't trip
 -- the §7.2 semantic check (Phase 6.C.C).
 local RAW_FMTP_COMPLETE_PT96 =
-    "a=fmtp:96 sampling=YCbCr-4:2:2;width=1920;height=1080;"
- .. "exactframerate=60000/1001;depth=10;colorimetry=BT709;"
- .. "PM=2110GPM;SSN=ST2110-20:2022;TP=2110TPN"
+    "a=fmtp:96 sampling=YCbCr-4:2:2; width=1920; height=1080; "
+ .. "exactframerate=60000/1001; depth=10; colorimetry=BT709; "
+ .. "PM=2110GPM; SSN=ST2110-20:2022; TP=2110TPN"
 
 -- A complete jxsv fmtp line containing every ST 2110-22:2022 §7.2 +
 -- RFC 9134 §7.1 required parameter (width, height, TP, packetmode).
@@ -299,6 +299,43 @@ describe("ST 2110-31 AM824 — rtpmap narrowings (ST 2110-31:2022 §6.1)", funct
   end)
 end)
 
+-- A value that matches the RFC 8866 §6.6 rtpmap-value ABNF and fails only
+-- an ST 2110 narrowing is reported on the narrowing's id alone, under the
+-- default fail_on_first. sdp.a.rtpmap.malformed is for a value outside
+-- the ABNF.
+describe("ST 2110 rtpmap narrowings — one finding per failure (RFC 8866 §6.6)", function()
+
+  for _, c in ipairs({
+    -- SPEC: ST 2110-20:2022 §7.1 "The rtpmap clause of the SDP shall indicate the 90 kHz RTP Clock rate."
+    { "m=video", "raw/48000",       "st2110-20.a.rtpmap.raw-clock-rate" },
+    { "m=audio", "raw/90000",       "st2110-20.a.rtpmap.raw-media-type" },
+    { "m=video", "jxsv/48000",      "st2110-22.a.rtpmap.jxsv-clock-rate" },
+    { "m=video", "smpte291/48000",  "st2110-40.a.rtpmap.smpte291-clock-rate" },
+    -- SPEC: ST 2110-31:2022 §6.1 "The <clock-rate> parameter shall take one of the values 44100, 48000, or 96000."
+    { "m=audio", "AM824/192000/2",  "st2110-31.a.rtpmap.am824-clock-rate-set" },
+    { "m=audio", "AM824/48000",     "st2110-31.a.rtpmap.am824-channels-required" },
+    { "m=audio", "AM824/48000/1",   "st2110-31.a.rtpmap.am824-channels-must-be-even" },
+  }) do
+    it("reports a=rtpmap:96 " .. c[2] .. " under " .. c[1] .. " only as " .. c[3]
+       .. " (RFC 8866 §6.6 rtpmap-value)", function()
+      local doc, ctx = st2110.match(build(c[1] .. " 30000 RTP/AVP 96",
+                                          "a=rtpmap:96 " .. c[2]))
+      assert.is_nil(doc)
+      assert.equal(1, #ctx.findings)
+      assert.equal(c[3], ctx.findings[1].id)
+    end)
+  end
+
+  -- SPEC: RFC 8866 §6.6 "encoding-params = channels", "channels = integer"
+  it("reports a=rtpmap:96 raw/90000/0 as sdp.a.rtpmap.malformed (RFC 8866 §6.6)", function()
+    local doc, ctx = st2110.match(build("m=video 30000 RTP/AVP 96",
+                                        "a=rtpmap:96 raw/90000/0"))
+    assert.is_nil(doc)
+    assert.equal(1, #ctx.findings)
+    assert.equal("sdp.a.rtpmap.malformed", ctx.findings[1].id)
+  end)
+end)
+
 describe("ST 2110 rtpmap narrowings — non-ST-2110 encodings pass through", function()
 
   -- NOT-SPEC: library — H264 has no ST 2110 rtpmap narrowing in 6.B; the
@@ -420,6 +457,64 @@ describe("ST 2110-20 raw fmtp — no whitespace around '=' (ST 2110-20:2022 §7.
       "st2110-20.a.fmtp.no-whitespace-around-equals"))
   end)
 
+  -- SPEC: ST 2110-20:2022 §7.1 "with no whitespace ... between the name,
+  -- equal sign, and value". The finding names the first such whitespace.
+  for _, c in ipairs({
+    { "a=fmtp:96 sampling =YCbCr-4:2:2", 19, "before" },
+    { "a=fmtp:96 sampling= YCbCr-4:2:2", 20, "after" },
+  }) do
+    it("records no-whitespace-around-equals at the whitespace " .. c[3]
+       .. " '=' (ST 2110-20:2022 §7.1)", function()
+      local _, ctx = st2110.match(build_with_fmtp(RAW_MEDIA, RAW_RTPMAP, c[1]))
+      assert.equal(1, #ctx.findings)
+      local f = ctx.findings[1]
+      assert.equal("st2110-20.a.fmtp.no-whitespace-around-equals", f.id)
+      assert.equal(8, f.line)
+      assert.equal(c[2], f.col)
+    end)
+  end
+
+  -- SPEC: ST 2110-20:2022 §7.1 "with no whitespace within the name or value
+  -- or between the name, equal sign, and value". A body with whitespace
+  -- around '=' and within a value is reported once, by the around-'=' id.
+  for _, fof in ipairs({ true, false }) do
+    it("reports 'sampling = a b' once, as no-whitespace-around-equals"
+       .. " (ST 2110-20:2022 §7.1; fail_on_first=" .. tostring(fof) .. ")",
+       function()
+      local _, ctx = st2110.match(build_with_fmtp(RAW_MEDIA, RAW_RTPMAP,
+        "a=fmtp:96 sampling = a b"), { fail_on_first = fof })
+      local on_line = {}
+      for _, f in ipairs(ctx.findings) do
+        if f.line == 8 then on_line[#on_line + 1] = f end
+      end
+      assert.equal(1, #on_line)
+      assert.equal("st2110-20.a.fmtp.no-whitespace-around-equals",
+                   on_line[1].id)
+      assert.equal(19, on_line[1].col)
+    end)
+  end
+
+  -- SPEC: ST 2110-20:2022 §7.1. Demoted, a body that otherwise decomposes
+  -- keeps its params; one that does not is kept as written.
+  it("keeps the params when no-whitespace-around-equals is demoted (ST 2110-20:2022 §7.1)", function()
+    local doc = st2110.match(build_with_fmtp(RAW_MEDIA, RAW_RTPMAP,
+      "a=fmtp:96 sampling = YCbCr-4:2:2"),
+      { policy = { ["st2110-20.a.fmtp.no-whitespace-around-equals"] = "warn" },
+        fail_on_first = false })
+    local params = base.attr_get(doc.media[1], "fmtp").params
+    assert.equal("YCbCr-4:2:2", base.params_get(params, "sampling"))
+  end)
+
+  it("keeps the raw value when no-whitespace-around-equals is demoted on a body that does not decompose (ST 2110-20:2022 §7.1)", function()
+    local doc = st2110.match(build_with_fmtp(RAW_MEDIA, RAW_RTPMAP,
+      "a=fmtp:96 sampling = a b"),
+      { policy = { ["st2110-20.a.fmtp.no-whitespace-around-equals"] = "warn" },
+        fail_on_first = false })
+    local a = doc.media[1].attributes[2]
+    assert.is_true(a.malformed)
+    assert.equal("96 sampling = a b", a.value)
+  end)
+
   -- NOT-SPEC: library — narrowing is scoped to raw via Cb"encoding". Other
   -- ST 2110 essence specs do not carry the no-whitespace SHALL; they keep
   -- base's loose form (CLAUDE.md strictness: silence ≠ rejection).
@@ -450,6 +545,246 @@ describe("ST 2110-20 raw fmtp — no whitespace around '=' (ST 2110-20:2022 §7.
     assert.is_truthy(base.match(build_with_fmtp(
       RAW_MEDIA, RAW_RTPMAP,
       "a=fmtp:96 sampling = YCbCr-4:2:2")))
+  end)
+end)
+
+-- ST 2110-20:2022 §7.1: "The <format specific parameters> section shall
+-- consist of a sequence of media type parameter entries, separated by the
+-- semicolon (";") character followed by whitespace." and "Each media type
+-- parameter entry shall be constructed as either - a <name>=<value> pair
+-- ... - a <name> standalone declaration, with no whitespace within the
+-- name." A raw-video body with an entry of neither form is
+-- st2110-20.a.fmtp.malformed, at the first column of the value.
+
+describe("ST 2110-20 raw fmtp — entry form (ST 2110-20:2022 §7.1)", function()
+
+  local RAW_MEDIA  = "m=video 30000 RTP/AVP 96"
+  local RAW_RTPMAP = "a=rtpmap:96 raw/90000"
+  local ID         = "st2110-20.a.fmtp.malformed"
+
+  local function raw(fmtp_line, opts)
+    return st2110.match(build_with_fmtp(RAW_MEDIA, RAW_RTPMAP, fmtp_line),
+                        opts)
+  end
+
+  -- SPEC: ST 2110-20:2022 §7.1 "Each media type parameter entry shall be
+  -- constructed as either - a <name>=<value> pair ... - a <name>
+  -- standalone declaration"
+  for _, c in ipairs({
+    { "a=fmtp:96 sampling=YCbCr-4:2:2;;x",  "an empty entry between ';;'" },
+    { "a=fmtp:96 ;sampling=YCbCr-4:2:2",    "an empty first entry" },
+    { "a=fmtp:96 sampling=YCbCr-4:2:2; ; x", "a whitespace-only entry" },
+    { "a=fmtp:96 =YCbCr-4:2:2",              "an entry with no name" },
+    { "a=fmtp:96 samp ling=YCbCr-4:2:2",     "whitespace within a name" },
+    -- SPEC: ST 2110-20:2022 §7.1 "with no whitespace within the name or value"
+    { "a=fmtp:96 colorimetry=BT 709",        "a space within a value" },
+    { "a=fmtp:96 x-vendor=a\tb",             "a tab within a value" },
+    { "a=fmtp:96 sampling=YCbCr-4:2:2 ;width=1920",
+                                             "whitespace between a value and ';'" },
+    { "a=fmtp:96 interlace ;width=1920",     "whitespace between a standalone name and ';'" },
+    { "a=fmtp:96  sampling=YCbCr-4:2:2",     "whitespace before the first entry" },
+  }) do
+    it("reports " .. c[2] .. " as " .. ID .. " (ST 2110-20:2022 §7.1)", function()
+      local doc, ctx = raw(c[1])
+      assert.is_nil(doc)
+      local f = finding_for(ctx, ID)
+      assert.is_not_nil(f)
+      assert.equal("error", f.severity)
+      assert.equal(8, f.line)
+      assert.equal(8, f.col)
+      assert.equal(c[1], f.line_text)
+      assert.equal(1, #ctx.findings)
+    end)
+  end
+
+  -- SPEC: ST 2110-20:2022 §7.1 (entry form). Demoted, the value is kept
+  -- as written; the doc has no usable fmtp, so the §7.2 checks report.
+  it("keeps the raw value when " .. ID .. " is demoted (ST 2110-20:2022 §7.1)", function()
+    local doc, ctx = raw("a=fmtp:96 sampling=YCbCr-4:2:2;;x",
+                         { policy = { [ID] = "warn" }, fail_on_first = false })
+    local a = doc.media[1].attributes[2]
+    assert.equal("fmtp", a.name)
+    assert.is_true(a.malformed)
+    assert.equal("96 sampling=YCbCr-4:2:2;;x", a.value)
+    assert.equal("warn", finding_for(ctx, ID).severity)
+  end)
+
+  -- SPEC: ST 2110-20:2022 §7.4.1 sampling value set. A body of valid
+  -- entries that fails a value check is not malformed.
+  it("does not report " .. ID .. " when an entry value fails its own check (ST 2110-20:2022 §7.4.1)", function()
+    local _, ctx = raw((RAW_FMTP_COMPLETE_PT96:gsub("YCbCr%-4:2:2", "bad")))
+    assert.is_not_nil(finding_for(ctx, "st2110-20.a.fmtp.sampling-invalid-value"))
+    assert.is_nil(finding_for(ctx, ID))
+  end)
+
+  -- SPEC: ST 2110-20:2022 §7.1 "with no whitespace ... between the name,
+  -- equal sign, and value" has its own id.
+  it("does not report " .. ID .. " for whitespace around '=' (ST 2110-20:2022 §7.1)", function()
+    local _, ctx = raw("a=fmtp:96 sampling = YCbCr-4:2:2")
+    assert.is_not_nil(finding_for(ctx,
+      "st2110-20.a.fmtp.no-whitespace-around-equals"))
+    assert.is_nil(finding_for(ctx, ID))
+  end)
+
+  -- SPEC: ST 2110-20:2022 §7.1 constrains a name only by "with no
+  -- whitespace within the name"; RFC 8866 §6.15 "format-specific-params =
+  -- byte-string". A name with other characters is decomposed.
+  it("decomposes a parameter name with '.' in it (ST 2110-20:2022 §7.1)", function()
+    local doc, ctx = raw(RAW_FMTP_COMPLETE_PT96 .. "; x.vendor=1; x.flag")
+    assert.is_truthy(doc)
+    assert.same({}, ctx.findings)
+    local params = base.attr_get(doc.media[1], "fmtp").params
+    assert.equal("1", base.params_get(params, "x.vendor"))
+    assert.is_true(base.params_get(params, "x.flag"))
+  end)
+
+  -- SPEC: RFC 8866 §9 trailing whitespace before the line terminator is
+  -- sdp.line.trailing-whitespace; it is not within the last value.
+  it("does not report " .. ID .. " for whitespace before the line end (RFC 8866 §9)", function()
+    local doc, ctx = raw(RAW_FMTP_COMPLETE_PT96 .. " ")
+    assert.is_truthy(doc)
+    assert.equal(1, #ctx.findings)
+    assert.equal("sdp.line.trailing-whitespace", ctx.findings[1].id)
+    local params = base.attr_get(doc.media[1], "fmtp").params
+    assert.equal("2110TPN", base.params_get(params, "TP"))
+  end)
+
+  -- SPEC: RFC 8866 §6.15 "fmtp-value = fmt SP format-specific-params". A
+  -- format that is not a payload type is the base tier's failure.
+  it("reports a=fmtp:usb only as sdp.a.fmtp.malformed (RFC 8866 §6.15)", function()
+    local doc, ctx = raw("a=fmtp:usb x")
+    assert.is_nil(doc)
+    assert.equal(1, #ctx.findings)
+    assert.equal("sdp.a.fmtp.malformed", ctx.findings[1].id)
+  end)
+
+  -- NOT-SPEC: library — §7.1 applies to raw video only; the other essence
+  -- documents keep RFC 8866 §6.15 "format-specific-params = byte-string".
+  it("does not report " .. ID .. " for a non-raw payload type (RFC 8866 §6.15)", function()
+    local doc = st2110.match(build_with_fmtp(
+      "m=video 30000 RTP/AVP 96", "a=rtpmap:96 smpte291/90000",
+      "a=fmtp:96 SSN=ST2110-40:2018;;exactframerate=30000/1001"))
+    assert.is_truthy(doc)
+    assert.equal("SSN=ST2110-40:2018;;exactframerate=30000/1001",
+                 base.attr_get(doc.media[1], "fmtp").raw)
+  end)
+
+  -- NOT-SPEC: library — base tier MUST still accept what ST 2110 rejects.
+  it("base tier accepts an empty raw-video fmtp entry (RFC 8866 §6.15 byte-string)", function()
+    assert.is_truthy(base.match(build_with_fmtp(
+      RAW_MEDIA, RAW_RTPMAP, "a=fmtp:96 sampling=YCbCr-4:2:2;;x")))
+  end)
+
+  -- SPEC: RFC 8866 §9 "byte-string = 1*(%x01-09/%x0B-0C/%x0E-FF)" excludes
+  -- NUL, so the value is the base tier's sdp.a.fmtp.malformed, not a §7.2
+  -- required-parameter finding.
+  it("reports a NUL within a raw-video value only as sdp.a.fmtp.malformed (RFC 8866 §9)", function()
+    local doc, ctx = raw("a=fmtp:96 sampling=a\0b")
+    assert.is_nil(doc)
+    assert.equal(1, #ctx.findings)
+    local f = ctx.findings[1]
+    assert.equal("sdp.a.fmtp.malformed", f.id)
+    assert.equal(8, f.line)
+    assert.equal(8, f.col)
+  end)
+
+  -- SPEC: RFC 8866 §9 byte-string (no NUL)
+  it("returns sdp.a.fmtp.malformed for a NUL within a raw-video value from sdp.parse (RFC 8866 §9)", function()
+    local _, err = require("parse_sdp").parse(build_with_fmtp(
+      RAW_MEDIA, RAW_RTPMAP, "a=fmtp:96 sampling=a\0b"), "st2110")
+    assert.equal("sdp.a.fmtp.malformed", err.id)
+    assert.equal(8, err.line)
+  end)
+end)
+
+-- ST 2110-20:2022 §7.1: "The <format specific parameters> section shall
+-- consist of a sequence of media type parameter entries, separated by the
+-- semicolon (";") character followed by whitespace." A raw-video ';' with
+-- no whitespace after it is st2110-20.a.fmtp.semicolon-without-whitespace,
+-- soft-syntactic (warn), once per line at the first such ';' (decision
+-- parse_sdp-ajh).
+
+describe("ST 2110-20 raw fmtp — ';' followed by whitespace (ST 2110-20:2022 §7.1)", function()
+
+  local RAW_MEDIA  = "m=video 30000 RTP/AVP 96"
+  local RAW_RTPMAP = "a=rtpmap:96 raw/90000"
+  local ID         = "st2110-20.a.fmtp.semicolon-without-whitespace"
+  local BARE       = (RAW_FMTP_COMPLETE_PT96:gsub("; ", ";"))
+
+  local function raw(fmtp_line, opts)
+    return st2110.match(build_with_fmtp(RAW_MEDIA, RAW_RTPMAP, fmtp_line),
+                        opts)
+  end
+
+  -- SPEC: ST 2110-20:2022 §7.1 "separated by the semicolon (";") character
+  -- followed by whitespace"
+  it("warns once, at the first ';' with no whitespace after it (ST 2110-20:2022 §7.1)", function()
+    local doc, ctx = raw(BARE)
+    assert.is_truthy(doc)
+    assert.equal(1, #ctx.findings)
+    local f = ctx.findings[1]
+    assert.equal(ID, f.id)
+    assert.equal("warn", f.severity)
+    assert.equal(8, f.line)
+    assert.equal(BARE:find(";", 1, true), f.col)
+    local params = base.attr_get(doc.media[1], "fmtp").params
+    assert.equal(9, #params)
+    assert.equal("2110TPN", base.params_get(params, "TP"))
+  end)
+
+  -- SPEC: ST 2110-20:2022 §7.1 "followed by whitespace"
+  it("names the first bare ';' after spaced ones (ST 2110-20:2022 §7.1)", function()
+    local line = "a=fmtp:96 sampling=YCbCr-4:2:2; width=1920;height=1080"
+    local _, ctx = raw(line, { fail_on_first = false })
+    local f = finding_for(ctx, ID)
+    assert.equal(line:find(";h", 1, true), f.col)
+  end)
+
+  -- SPEC: ST 2110-20:2022 §7.1 "followed by whitespace" (no amount stated)
+  for _, sep in ipairs({ "; ", ";\t", ";  " }) do
+    it(("accepts %q as a separator (ST 2110-20:2022 §7.1)"):format(sep), function()
+      local doc, ctx = raw((BARE:gsub(";", sep)))
+      assert.is_truthy(doc)
+      assert.same({}, ctx.findings)
+    end)
+  end
+
+  -- SPEC: RFC 8866 §6.15; a ';' that ends the value is
+  -- sdp.a.fmtp.trailing-semicolon, not a separator.
+  it("does not report " .. ID .. " for a trailing ';' (RFC 8866 §6.15)", function()
+    local _, ctx = raw(RAW_FMTP_COMPLETE_PT96 .. ";")
+    assert.equal(1, #ctx.findings)
+    assert.equal("sdp.a.fmtp.trailing-semicolon", ctx.findings[1].id)
+  end)
+
+  -- SPEC: ST 2110-20:2022 §7.1 entry form; an empty entry is malformed.
+  it("does not report " .. ID .. " for an empty entry (ST 2110-20:2022 §7.1)", function()
+    local _, ctx = raw("a=fmtp:96 sampling=YCbCr-4:2:2;;x", { fail_on_first = false })
+    assert.is_nil(finding_for(ctx, ID))
+    assert.is_not_nil(finding_for(ctx, "st2110-20.a.fmtp.malformed"))
+  end)
+
+  -- SPEC: ST 2110-20:2022 §7.1. Raised to error, the line fails on this id.
+  it("fails the line on " .. ID .. " when raised to error (ST 2110-20:2022 §7.1)", function()
+    local doc, ctx = raw(BARE, { policy = { [ID] = "error" } })
+    assert.is_nil(doc)
+    assert.equal(1, #ctx.findings)
+    assert.equal(ID, ctx.findings[1].id)
+  end)
+
+  -- NOT-SPEC: library — §7.1 applies to raw video only.
+  it("does not report " .. ID .. " for a non-raw payload type (RFC 8866 §6.15)", function()
+    local _, ctx = st2110.match(build_with_fmtp(
+      "m=video 30000 RTP/AVP 96", "a=rtpmap:96 jxsv/90000",
+      JXSV_FMTP_COMPLETE_PT96))
+    assert.is_nil(finding_for(ctx, ID))
+  end)
+
+  -- NOT-SPEC: library — base tier MUST still accept what ST 2110 rejects.
+  it("does not report " .. ID .. " at the base tier (RFC 8866 §6.15)", function()
+    local doc, ctx = base.match(build_with_fmtp(RAW_MEDIA, RAW_RTPMAP, BARE))
+    assert.is_truthy(doc)
+    assert.is_nil(finding_for(ctx, ID))
   end)
 end)
 
@@ -492,7 +827,7 @@ describe("ST 2110-20 raw video fmtp — required parameters", function()
         parts[#parts + 1] = k .. "=" .. REQUIRED[k]
       end
     end
-    return "a=fmtp:96 " .. table.concat(parts, ";")
+    return "a=fmtp:96 " .. table.concat(parts, "; ")
   end
 
   local function fmtp_complete()

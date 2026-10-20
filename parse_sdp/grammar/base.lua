@@ -461,22 +461,29 @@ end
 --
 -- Each Cmt sits after everything in the branch that can fail, and its
 -- look-ahead stops at a real line end, so a value cut by a NUL or a bare
--- CR leaves the line unparseable with no finding.
-local function malformed_attr(name, check_id, valid_shape)
+-- CR leaves the line unparseable with no finding. Two options change that:
+-- `opts.chars` is the pattern for one byte of the value (default: any
+-- byte but a value boundary), so a branch can take a NUL into its value;
+-- `opts.at` is a pattern matched at the start of the value that consumes
+-- a prefix of it and captures the position to record instead of the
+-- start of the value.
+local function malformed_attr(name, check_id, valid_shape, opts)
+  opts = opts or {}
   local function record(ctx, pos)
     if not ctx then return true end
     return errors.record(ctx, check_id, { pos = pos })
   end
   local value_start = valid_shape and -valid_shape or P(true)
+  local chars = opts.chars or (1 - V"value_boundary_chars")
+  local value = opts.at and C(opts.at * chars ^ 0) or C(chars ^ 0)
   return P(name)
       * Cg(Cc(name), "name")
       * Cg(Cc(true), "malformed")
       * ( P(":") * value_start
-          * Cg(Cmt(lpeg.Cp() * C((1 - V"value_boundary_chars") ^ 0)
-                     * #V"value_end" * Carg(1),
-                   function(_, pos, vpos, value, ctx)
-                     if not record(ctx, vpos) then return false end
-                     return pos, value
+          * Cg(Cmt(Carg(1) * lpeg.Cp() * value * #V"value_end",
+                   function(_, pos, ctx, vpos, raw, at)
+                     if not record(ctx, at or vpos) then return false end
+                     return pos, raw
                    end), "value")
         + Cmt(#V"value_end" * Carg(1),
               function(_, pos, ctx) return record(ctx, pos) and pos end) )
@@ -812,28 +819,41 @@ local rules = {
 
   -- One malformed branch per known attribute (see malformed_attr). Each
   -- check id's registry entry quotes the ABNF the value failed. Tier
-  -- names join through the tier_malformed hook. fmtp is malformed only
-  -- when the payload type or the separating SP is wrong: any non-empty
-  -- byte-string is a valid body (fmtp_raw_branch).
+  -- names join through the tier_malformed hook. fmtp is malformed when
+  -- the payload type or the separating SP is wrong, or when the body
+  -- holds a NUL (fmtp_no_nul): any other non-empty byte-string is a valid
+  -- body (fmtp_raw_branch).
+  --
+  -- A rule whose Cmt records a finding and fails the match (under
+  -- fail_on_first) leaves a value its ABNF accepts. The branches for
+  -- those rules decline such a value, so the failure is reported once,
+  -- on the rule's own id: rtpmap and group (tier narrowings) by their
+  -- ABNF, ts-refclk by "ptp=", whose every body tsr_ptp accepts or
+  -- reports as sdp.a.ts-refclk.ptp-malformed.
   a_malformed =
         malformed_attr("source-filter", "sdp.a.source-filter.malformed")
       + malformed_attr("ssrc-group",    "sdp.a.ssrc-group.malformed")
-      + malformed_attr("ts-refclk",     "sdp.a.ts-refclk.malformed")
+      + malformed_attr("ts-refclk",     "sdp.a.ts-refclk.malformed",
+                       P("ptp="))
       + malformed_attr("maxptime",      "sdp.a.maxptime.malformed")
       + malformed_attr("framerate",     "sdp.a.framerate.malformed")
       + malformed_attr("mediaclk",      "sdp.a.mediaclk.malformed")
       + malformed_attr("rtcp-mux",      "sdp.a.rtcp-mux.malformed")
       + malformed_attr("rtcp-fb",       "sdp.a.rtcp-fb.malformed")
       + malformed_attr("extmap",        "sdp.a.extmap.malformed")
-      + malformed_attr("rtpmap",        "sdp.a.rtpmap.malformed")
+      + malformed_attr("rtpmap",        "sdp.a.rtpmap.malformed",
+                       V"rtpmap_value" * #V"value_boundary_chars")
       + malformed_attr("quality",       "sdp.a.quality.malformed")
-      + malformed_attr("group",         "sdp.a.group.malformed")
+      + malformed_attr("group",         "sdp.a.group.malformed",
+                       V"group_value" * #V"value_boundary_chars")
       + malformed_attr("ptime",         "sdp.a.ptime.malformed")
       + malformed_attr("msid",          "sdp.a.msid.malformed")
       + malformed_attr("ssrc",          "sdp.a.ssrc.malformed")
       + malformed_attr("rtcp",          "sdp.a.rtcp.malformed")
       + malformed_attr("fmtp",          "sdp.a.fmtp.malformed",
-                       V"payload_type" * SP * (1 - V"value_boundary_chars"))
+                       V"payload_type" * SP * (1 - V"value_boundary_chars")
+                         * V"fmtp_no_nul",
+                       { chars = 1 - V"value_boundary_chars" + P("\0") })
       + malformed_attr("mid",           "sdp.a.mid.malformed")
       + V"tier_malformed",
 
@@ -874,9 +894,14 @@ local rules = {
   -- ("a 7-bit field, limiting the values to inclusively between 0 and 127").
   -- encoding-name: RFC 8866 §9 token. clock-rate: integer (POS-DIGIT *DIGIT).
   -- encoding-params = channels = integer (POS-DIGIT *DIGIT).
+  -- rtpmap_value is the ABNF alone; a tier that overrides a_rtpmap keeps
+  -- it as the shape its malformed branch declines (see a_malformed).
   a_rtpmap = P("rtpmap:")
       * Cg(Cc("rtpmap"), "name")
-      * Cg(V"payload_type",          "payload_type") * SP
+      * V"rtpmap_value",
+
+  rtpmap_value =
+        Cg(V"payload_type",          "payload_type") * SP
       * Cg(V"rfc8866_token",         "encoding")     * P("/")
       * Cg(V"rfc8866_pos_int_num",   "clock_rate")
       * (P("/") * Cg(V"rfc8866_pos_int_num", "channels")) ^ -1,
@@ -898,8 +923,15 @@ local rules = {
   -- per the 1.0 convention.
   a_fmtp = P("fmtp:")
       * Cg(Cc("fmtp"), "name")
-      * Cg(V"payload_type", "payload_type") * SP
+      * Cg(V"payload_type", "payload_type") * SP * V"fmtp_no_nul"
       * ( V"fmtp_params_branch" + V"fmtp_raw_branch" ),
+
+  -- RFC 8866 §9: "byte-string = 1*(%x01-09/%x0B-0C/%x0E-FF)" ";any byte
+  -- except NUL, CR, or LF". A body with a NUL before the line end is not
+  -- format-specific-params, so a_fmtp declines it and a_malformed reports
+  -- sdp.a.fmtp.malformed. A bare CR still ends the value (line_end_chars),
+  -- so that line stays unparseable, as for every other attribute.
+  fmtp_no_nul = -((1 - V"value_end" - P("\0")) ^ 0 * P("\0")),
 
   -- Kv-list branch: only commits if the remaining bytes fully decompose
   -- into a non-empty sequence of k=v / flag entries (separated by `;` and
@@ -963,7 +995,7 @@ local rules = {
   -- value char set: any byte except ';' and CR/LF (RFC 8866 §9 byte-string
   -- forbids NUL/CR/LF; the ';' is the convention separator). Whitespace
   -- inside a value is allowed at the base tier (ST 2110-20 §7.1 narrows).
-  fmtp_val_chars = 1 - S(";\r\n"),
+  fmtp_val_chars = 1 - S(";\r\n\0"),
 
   -- Raw fallback: any non-empty byte-string up to line_end. Captured as
   -- `raw`. The nil `params` group adds no field to the attribute table,
@@ -1005,7 +1037,10 @@ local rules = {
   -- per the ABNF, however nonsensical.
   a_group = P("group:")
       * Cg(Cc("group"), "name")
-      * Cg(V"rfc8866_token", "semantics")
+      * V"group_value",
+
+  group_value =
+        Cg(V"rfc8866_token", "semantics")
       * Cg(Ct((SP * V"rfc8866_token") ^ 0), "tags"),
 
   -- ssrc-group (RFC 5576 §10 Figure 5):
@@ -1034,13 +1069,17 @@ local rules = {
       * (P(":") * Cg(V"attr_value", "value")) ^ -1,
 
   -- msid (RFC 8830 §2):
-  --   msid-value = msid-id [SP msid-appdata]
-  -- Both msid-id and msid-appdata are tokens (the WebRTC use case forbids
-  -- whitespace inside either; we use the non-ws-token form).
+  --   "msid-value = msid-id [ SP msid-appdata ]"
+  --   "msid-id = 1*64token-char ; see RFC 4566"
+  --   "msid-appdata = 1*64token-char  ; see RFC 4566"
+  -- RFC 4566 §9 token-char is rfc8866_token_char (RFC 8866 §9 has the same
+  -- set). A longer field or a non-token-char leaves the rule short of the
+  -- end of the value, so a_value sends the line to sdp.a.msid.malformed.
   a_msid = P("msid:")
       * Cg(Cc("msid"), "name")
-      * Cg(V"non_ws_token", "msid_id")
-      * (SP * Cg(V"non_ws_token", "appdata")) ^ -1,
+      * Cg(V"msid_field", "msid_id")
+      * (SP * Cg(V"msid_field", "appdata")) ^ -1,
+  msid_field = C(V"rfc8866_token_char" * V"rfc8866_token_char" ^ -63),
 
   -- extmap (RFC 8285 §8):
   --   extmap-value        = mapentry SP extensionname [SP extensionattributes]

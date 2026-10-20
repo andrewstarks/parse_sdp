@@ -126,6 +126,7 @@ async function main() {
     editor.render(state.doc);
     editor.showSerializeError(null);
     applyTiers(res.tiers, text);
+    input.setLfOnlyReported(dedupeFindings(res.tiers).some((row) => row.finding.id === "sdp.line.lf-only-line-ending"));
     state.currentText = "";
     if (state.doc) {
       const ser = await engine.request({ op: "to_sdp", doc: state.doc });
@@ -160,6 +161,7 @@ async function main() {
 
   async function analyze(text, fileName) {
     input.showError(null);
+    input.setLfOnlyReported(false);
     state.stem = fileStem(fileName);
     state.inputText = text;
     if (text.trim() === "") {

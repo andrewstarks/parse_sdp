@@ -59,7 +59,7 @@ function attribute(a, path) {
       if (a.raw !== undefined) return `a=fmtp:${pt} ${a.raw}`;
       if (!Array.isArray(a.params)) throw new Missing(`${path}.params`);
       const toks = a.params.map(([k, v]) => (v === true ? String(k) : `${k}=${v}`));
-      return `a=fmtp:${pt} ${toks.join(";")}`;
+      return `a=fmtp:${pt} ${toks.join("; ")}`;
     }
     case "mediaclk": {
       const mode = need(a, "mode", `${path}.mode`);

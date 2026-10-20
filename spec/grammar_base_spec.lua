@@ -523,7 +523,6 @@ describe("base SDP grammar — text fields and bandwidth (Phase 2.C)", function(
       { "a=", "a=tool:ab\rc" },
       { "a=", "a=recvonly\r" },
       { "a=fmtp", "a=fmtp:0 a=b\rc" },
-      { "a=fmtp", "a=fmtp:0 ab\0c" },
       { "a=ts-refclk", "a=ts-refclk:foo=b\rc" },
       { "a=mediaclk", "a=mediaclk:foo=b\0c" },
     }
@@ -540,6 +539,20 @@ describe("base SDP grammar — text fields and bandwidth (Phase 2.C)", function(
         assert.is_nil(doc)
         assert.equal("PARSE_ERROR", err.code)
         assert.equal(at, err.line)
+      end)
+    end
+
+    -- SPEC: RFC 8866 §6.15 "format-specific-params = byte-string". An fmtp
+    -- value holding a NUL is not a byte-string, so it is sdp.a.fmtp.malformed.
+    for _, line in ipairs({ "a=fmtp:0 ab\0c", "a=fmtp:0 x=a\0b" }) do
+      it(("reports %q as sdp.a.fmtp.malformed (RFC 8866 §6.15)"):format(line), function()
+        local lines = { "v=0", "o=- 1 1 IN IP4 127.0.0.1", "s=X",
+                        "c=IN IP4 127.0.0.1", "t=0 0",
+                        "m=audio 49172 RTP/AVP 0", line }
+        local doc, err = sdp.parse(lines_to_sdp(lines))
+        assert.is_nil(doc)
+        assert.equal("sdp.a.fmtp.malformed", err.id)
+        assert.equal(7, err.line)
       end)
     end
 
@@ -2007,6 +2020,18 @@ describe("base SDP grammar — ts-refclk strict body enforcement (RFC 7273 §4.8
       assert.equal("RFC 7273 §4.8 (ptp / ptp-server / EUI64 ABNF)", f.spec_ref)
     end)
 
+    -- SPEC: RFC 7273 §4.8 "ptp = "ptp=" ptp-version ":" ptp-server". A
+    -- ptp= value is reported on ptp-malformed alone, not also on
+    -- sdp.a.ts-refclk.malformed.
+    it("reports a malformed ptp= body once under default fail_on_first (RFC 7273 §4.8)", function()
+      local _, ctx = base.match(minimal(nil, {
+        { "m=audio 49172 RTP/AVP 0",
+          "a=ts-refclk:ptp=IEEE1588-2008:AA-BB-CC-DD-EE:0" },
+      }))
+      assert.equal(1, #ctx.findings)
+      assert.equal("sdp.a.ts-refclk.ptp-malformed", ctx.findings[1].id)
+    end)
+
     it("captures the malformed body verbatim under fail_on_first=false", function()
       local doc, ctx = base.match(minimal(nil, {
         { "m=audio 49172 RTP/AVP 0",
@@ -2397,6 +2422,54 @@ describe("base SDP grammar — Phase 4.D msid (RFC 8830 §2)", function()
     assert.is_nil(a.appdata)
   end)
 
+  local finding_for = support.finding_for
+  local ID64 = string.rep("a", 64)
+
+  local function msid_line(value)
+    return base.match(minimal(nil, {
+      { "m=video 49170 RTP/AVP 0", "a=msid:" .. value },
+    }))
+  end
+
+  -- SPEC: RFC 8830 §2 "msid-id = 1*64token-char"
+  it("accepts a 64-character msid-id and msid-appdata (RFC 8830 §2 1*64token-char)", function()
+    local a = msid_line(ID64 .. " " .. ID64).media[1].attributes[1]
+    assert.equal(ID64, a.msid_id)
+    assert.equal(ID64, a.appdata)
+  end)
+
+  -- SPEC: RFC 8830 §2 "msid-id = 1*64token-char"; RFC 4566 §9 "token-char
+  -- = %x21 / %x23-27 / %x2A-2B / %x2D-2E / %x30-39 / %x41-5A / %x5E-7E"
+  it("accepts every token-char in an msid-id (RFC 8830 §2, RFC 4566 §9 token-char)", function()
+    local id = "!#$%&'*+-.09AZ^_`az{|}~"
+    assert.equal(id, msid_line(id).media[1].attributes[1].msid_id)
+  end)
+
+  -- SPEC: RFC 8830 §2 "msid-id = 1*64token-char" / "msid-appdata = 1*64token-char"
+  for _, c in ipairs({
+    { "a" .. ID64,              "65-character msid-id" },
+    { "a " .. "b" .. ID64,      "65-character msid-appdata" },
+    { "a/b",                    "'/' in msid-id (not a token-char)" },
+    { "{a:b}",                  "':' in msid-id (not a token-char)" },
+    { "a b\"c",                 "'\"' in msid-appdata (not a token-char)" },
+    { "a b c",                  "third field (msid-value = msid-id [ SP msid-appdata ])" },
+  }) do
+    -- SPEC: RFC 8830 §3 "If the "msid" attribute does not conform to the
+    -- ABNF given here, it SHOULD be ignored." The finding is a warning.
+    it("warns sdp.a.msid.malformed for a " .. c[2] .. " (RFC 8830 §2 1*64token-char, §3 SHOULD be ignored)", function()
+      local doc, ctx = msid_line(c[1])
+      assert.is_not_nil(doc)
+      local f = finding_for(ctx, "sdp.a.msid.malformed")
+      assert.is_not_nil(f)
+      assert.equal("warn", f.severity)
+      assert.equal(7, f.line)
+      assert.equal(8, f.col)
+      local a = doc.media[1].attributes[1]
+      assert.is_true(a.malformed)
+      assert.equal(c[1], a.value)
+    end)
+  end
+
 end)
 
 describe("base SDP grammar — Phase 4.E extmap (RFC 8285 §8)", function()
@@ -2559,6 +2632,9 @@ describe("base SDP grammar — malformed known attributes", function()
     { "a=rtpmap:97 L24/48000/0",     "sdp.a.rtpmap.malformed",       10 },
     -- SPEC: RFC 8866 §6.6 payload type "inclusively between 0 and 127"
     { "a=fmtp:128 x=1",              "sdp.a.fmtp.malformed",          8 },
+    -- SPEC: RFC 8866 §9 "byte-string = 1*(%x01-09/%x0B-0C/%x0E-FF)" (no NUL)
+    { "a=fmtp:0 x=a\0b",            "sdp.a.fmtp.malformed",          8 },
+    { "a=fmtp:0 a\0b",              "sdp.a.fmtp.malformed",          8 },
     -- SPEC: RFC 5888 §4 "identification-tag = token"
     { "a=mid:a b",                   "sdp.a.mid.malformed",           7 },
     -- SPEC: RFC 5888 §5 "group-attribute = "a=group:" semantics *(SP identification-tag)"
@@ -2567,8 +2643,6 @@ describe("base SDP grammar — malformed known attributes", function()
     { "a=ssrc:abc cname:x",          "sdp.a.ssrc.malformed",          8 },
     -- SPEC: RFC 5576 §10 "ssrc-group-attr = "ssrc-group:" semantics *(SP ssrc-id)"
     { "a=ssrc-group:FID 1 x",        "sdp.a.ssrc-group.malformed",   14 },
-    -- SPEC: RFC 8830 §2 "msid-value = msid-id [ SP msid-appdata ]"
-    { "a=msid:a b c",                "sdp.a.msid.malformed",          8 },
     -- SPEC: RFC 8285 §8 "direction = "sendonly" / "recvonly" / "sendrecv" / "inactive""
     { "a=extmap:1/both urn:x",       "sdp.a.extmap.malformed",       10 },
     -- SPEC: RFC 4585 §4.2 "rtcp-fb-syntax = "a=rtcp-fb:" rtcp-fb-pt SP rtcp-fb-val CRLF"

@@ -5,11 +5,13 @@
 // sends, so the line-ending checks see the real file. The fetch function
 // is passed in, so the tests run under node without a network.
 
-// The limits are decision parse_sdp-2w4.
+// The limits are decision parse_sdp-2w4. A local-network request waits
+// longer, because the time includes the browser's permission prompt.
 export const TIMEOUT_MS = 10000;
+export const LOCAL_TIMEOUT_MS = 60000;
 export const MAX_BYTES = 1000000;
 
-// A failure to load. `kind` is one of: invalid-url, mixed-content,
+// A failure to load. `kind` is one of: invalid-url, local-network,
 // network, timeout, http-status, too-large.
 export class LoadError extends Error {
   constructor(kind, message) {
@@ -36,10 +38,12 @@ export function parseSdpUrl(input) {
 // http://localhost without a mixed-content block.
 const LOOPBACK = new Set(["localhost", "127.0.0.1", "[::1]"]);
 
-// True when the browser blocks the request before sending it: an HTTPS
-// page that requests an HTTP URL (mixed content). The page checks first
-// and does not send the request (decision parse_sdp-bc3).
-export function isMixedContent(url, pageProtocol) {
+// True for an HTTP URL from an HTTPS page (mixed content). Chrome and Edge
+// 142 and later send such a request to a device on the local network
+// after the user allows local network access; the fetch option
+// targetAddressSpace: "local" asks for that. Other browsers block the
+// request (decision parse_sdp-2hr, which replaces parse_sdp-bc3).
+export function isLocalNetworkRequest(url, pageProtocol) {
   return pageProtocol === "https:" && url.protocol === "http:" && !LOOPBACK.has(url.hostname);
 }
 
@@ -83,12 +87,12 @@ export function loadErrorMessage(kind, info = {}) {
   switch (kind) {
     case "invalid-url":
       return `"${info.input ?? ""}" is not an http or https URL. Enter a full address that starts with http:// or https://.`;
-    case "mixed-content":
-      return `This page was loaded over HTTPS, and ${url} uses HTTP. Browsers block an HTTP request from an HTTPS page (mixed content), so the page did not send the request. ${workaround(url)}`;
+    case "local-network":
+      return `The request for ${url} was blocked or failed. This page was loaded over HTTPS, and the address uses HTTP. Chrome and Edge (version 142 and later) send this request to a device on the local network after you allow local network access for this page. Other browsers block it (mixed content). The browser does not report the reason. Check that you use Chrome or Edge, that local network access is allowed for this page (in the site settings, from the icon to the left of the address bar), that the device sends the Access-Control-Allow-Origin header (CORS, Cross-Origin Resource Sharing), and that the device can be reached. ${workaround(url)}`;
     case "network":
       return `The request for ${url} was blocked or failed. The browser does not report the reason. A common reason is that the server does not send the Access-Control-Allow-Origin header (CORS, Cross-Origin Resource Sharing), so the browser does not give the response to this page. Other reasons are a wrong address or a server that cannot be reached. ${workaround(url)}`;
     case "timeout":
-      return `The server did not send the complete response for ${url} within ${TIMEOUT_MS / 1000} seconds, so the page stopped the request.`;
+      return `The server did not send the complete response for ${url} within ${(info.timeoutMs ?? TIMEOUT_MS) / 1000} seconds, so the page stopped the request.`;
     case "http-status":
       return `The server returned HTTP ${info.status}${info.statusText ? ` ${info.statusText}` : ""} for ${url}.`;
     case "too-large":
@@ -129,21 +133,26 @@ async function readCapped(res, maxBytes, info) {
 
 // Fetch an SDP file. Returns { url, name, text }, or throws a LoadError.
 // options: pageProtocol (location.protocol), fetch, timeoutMs, maxBytes.
+// The default timeout is LOCAL_TIMEOUT_MS for a local-network request.
 export async function fetchSdp(input, options = {}) {
-  const { pageProtocol = "https:", fetch = globalThis.fetch, timeoutMs = TIMEOUT_MS, maxBytes = MAX_BYTES } = options;
+  const { pageProtocol = "https:", fetch = globalThis.fetch, maxBytes = MAX_BYTES } = options;
   const url = parseSdpUrl(input);
   if (!url) throw fail("invalid-url", { input });
-  const info = { url: url.href };
-  if (isMixedContent(url, pageProtocol)) throw fail("mixed-content", info);
+  const local = isLocalNetworkRequest(url, pageProtocol);
+  const timeoutMs = options.timeoutMs ?? (local ? LOCAL_TIMEOUT_MS : TIMEOUT_MS);
+  const info = { url: url.href, timeoutMs };
 
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
+  const init = { signal: controller.signal, cache: "no-store" };
+  if (local) init.targetAddressSpace = "local";
   try {
     let res;
     try {
-      res = await fetch(url.href, { signal: controller.signal, cache: "no-store" });
+      res = await fetch(url.href, init);
     } catch (e) {
-      throw controller.signal.aborted ? fail("timeout", info) : fail("network", info);
+      if (controller.signal.aborted) throw fail("timeout", info);
+      throw fail(local ? "local-network" : "network", info);
     }
     if (!res.ok) throw fail("http-status", { ...info, status: res.status, statusText: res.statusText });
     let bytes;

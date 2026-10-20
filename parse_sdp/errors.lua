@@ -434,10 +434,10 @@ M.register("sdp.a.ts-refclk.ptp-malformed", {
 -- line (malformed_attr in grammar/base.lua). Each id quotes the syntax the
 -- value failed. Same kind and severity as ts-refclk.ptp-malformed: error
 -- by default, demotable, and a demoted parse keeps the raw value.
-local function register_malformed(id, message, spec_ref)
+local function register_malformed(id, message, spec_ref, default_severity)
   M.register(id, {
     kind             = "hard-syntactic",
-    default_severity = "error",
+    default_severity = default_severity or "error",
     code             = "INVALID_VALUE",
     message_template = message,
     spec_ref         = spec_ref,
@@ -479,9 +479,11 @@ register_malformed("sdp.a.rtpmap.malformed",
   "RFC 8866 §6.6 (rtpmap-value ABNF)")
 
 -- RFC 8866 §6.15: "fmtp-value = fmt SP format-specific-params",
--- "format-specific-params = byte-string". The body is any byte-string,
--- so only the format and the separating SP can be malformed. The parser
--- reads the format as an RTP payload type (0-127, §6.6).
+-- "format-specific-params = byte-string". RFC 8866 §9: "byte-string =
+-- 1*(%x01-09/%x0B-0C/%x0E-FF)" ";any byte except NUL, CR, or LF". So the
+-- format, the separating SP, and a NUL in the body can be malformed (a
+-- bare CR ends the line and is a PARSE_ERROR). The parser reads the
+-- format as an RTP payload type (0-127, §6.6).
 register_malformed("sdp.a.fmtp.malformed",
   "a=fmtp value must be '<format> <format-specific parameters>', with the"
  .. " format an RTP payload type from 0 to 127",
@@ -514,10 +516,15 @@ register_malformed("sdp.a.ssrc-group.malformed",
  .. " decimal ssrc-ids, each after a single space",
   "RFC 5576 §10 (ssrc-group-attr ABNF)")
 
--- RFC 8830 §2: "msid-value = msid-id [ SP msid-appdata ]".
+-- RFC 8830 §2: "msid-value = msid-id [ SP msid-appdata ]", "msid-id =
+-- 1*64token-char ; see RFC 4566", "msid-appdata = 1*64token-char ; see
+-- RFC 4566". RFC 8830 §3: "If the "msid" attribute does not conform to
+-- the ABNF given here, it SHOULD be ignored." A receiver ignores the
+-- attribute and the session still works, so the default is warn.
 register_malformed("sdp.a.msid.malformed",
-  "a=msid value must be '<msid-id>[ <msid-appdata>]', two fields at most",
-  "RFC 8830 §2 (msid-value ABNF)")
+  "a=msid value must be '<msid-id>[ <msid-appdata>]', each field 1 to 64"
+ .. " token characters",
+  "RFC 8830 §2 (msid-value ABNF)", "warn")
 
 -- RFC 8285 §8: "extmap-value = mapentry SP extensionname [SP
 -- extensionattributes]", "mapentry = "extmap:" 1*5DIGIT ["/"
@@ -806,7 +813,9 @@ M.register("st2110-31.a.rtpmap.am824-clock-rate-set", {
 -- the name or value or between the name, equal sign, and value;
 -- a <name> standalone declaration, with no whitespace within the name."
 -- Scope: applies only when the surrounding rtpmap encoding is `raw`. Other
--- ST 2110 essence specs do not carry this prohibition.
+-- ST 2110 essence specs do not carry this prohibition. Recorded once per
+-- line, at the first such whitespace; a body that also has another entry
+-- defect is reported by this id only, not also as st2110-20.a.fmtp.malformed.
 M.register("st2110-20.a.fmtp.no-whitespace-around-equals", {
   kind             = "hard-syntactic",
   default_severity = "error",
@@ -816,6 +825,36 @@ M.register("st2110-20.a.fmtp.no-whitespace-around-equals", {
   spec_ref         = "ST 2110-20:2022 §7.1",
   verified         = true,
 })
+
+-- ST 2110-20:2022 §7.1: "The <format specific parameters> section shall
+-- consist of a sequence of media type parameter entries, separated by the
+-- semicolon (";") character followed by whitespace." Soft-syntactic: a
+-- ';' with no whitespace after it still separates the entries
+-- unambiguously. Recorded once per raw-video fmtp line, at the first such
+-- ';' (decision parse_sdp-ajh).
+M.register("st2110-20.a.fmtp.semicolon-without-whitespace", {
+  kind             = "soft-syntactic",
+  default_severity = "warn",
+  code             = "MALFORMED_LINE",
+  message_template =
+    "raw video fmtp parameters must be separated by ';' followed by whitespace",
+  spec_ref         = "ST 2110-20:2022 §7.1",
+  verified         = true,
+})
+
+-- ST 2110-20:2022 §7.1: "The <format specific parameters> section shall
+-- consist of a sequence of media type parameter entries, separated by the
+-- semicolon (";") character followed by whitespace." "Each media type
+-- parameter entry shall be constructed as either - a <name>=<value> pair,
+-- with no whitespace within the name or value or between the name, equal
+-- sign, and value - a <name> standalone declaration, with no whitespace
+-- within the name." Recorded for a raw-video fmtp body with an entry that
+-- is empty, has no name, has whitespace within the name or the value, or
+-- has whitespace before the next ';' or before the first entry.
+register_malformed("st2110-20.a.fmtp.malformed",
+  "raw video fmtp parameters must be '<name>=<value>' or '<name>' entries"
+ .. " separated by ';', with no whitespace within a name or a value",
+  "ST 2110-20:2022 §7.1")
 
 -- ── ST 2110-20 raw video required fmtp parameters (Phase 6.C.C) ───────────
 -- ST 2110-20:2022 §7.2 lists eight required Media Type Parameters for raw
@@ -2157,7 +2196,9 @@ M.register("tr-10-6.a.fmtp.fec-add-latency-audio-requires-fecprofile", {
 -- TR-10-13 §13: "The privacy attribute of an SDP transport file shall be
 -- formatted as a follow with a semicolon and an optional space separating
 -- the parameters and a CRLF to terminate the attribute line."
--- Format line: "a=privacy: protocol =<protocol>; mode =<mode>; ..."
+-- Format line: "a=privacy:protocol=<protocol>; mode=<mode>; iv=<iv>;
+-- key_generator=<key_generator>; key_version=<key_version>;
+-- key_id=<key_id> CRLF"
 register_malformed("tr-10-13.a.privacy.malformed",
   "a=privacy value must be <key>=<value> parameters separated by a"
  .. " semicolon and an optional space",

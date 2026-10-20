@@ -9,6 +9,87 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 
+## [1.9.0] — 2026-10-20
+
+### Fixed
+
+- The playground loads an SDP file from an `http://` device address in
+  Chrome and Edge 142 and later. In 1.8.0 and 1.8.1, the page refused
+  every `http://` address before the request, as mixed content. Chrome
+  and Edge now send such a request to a device on the local network
+  after the user allows local network access, and the page asks for
+  that with `targetAddressSpace: "local"`. The status line asks the user
+  to allow the permission. A local-network request has 60 seconds to
+  complete, because that time includes the permission prompt. When the
+  request fails, the message lists the possible reasons: a browser that
+  blocks mixed content, the permission not allowed, an address that is
+  not on the local network, a missing CORS header, or a device that
+  cannot be reached.
+- `a=msid` requires each field to be 1 to 64 token characters, as
+  RFC 8830 §2 defines (`msid-id = 1*64token-char`,
+  `msid-appdata = 1*64token-char`). In earlier releases, the parser
+  accepted any non-whitespace text of any length. A longer field, or a
+  character such as `/`, `:` or `"`, is reported as
+  `sdp.a.msid.malformed`. The default severity of that check is `warn`,
+  because RFC 8830 §3 says a receiver "SHOULD" ignore a non-conforming
+  `a=msid`. The attribute is kept with `malformed = true`.
+- `a=privacy` follows the TR-10-13 §13 format line
+  (`a=privacy:protocol=<protocol>; mode=<mode>; ...`). In earlier
+  releases, the parser accepted a space after `privacy:` and around `=`.
+  The only optional space is the one after `;`. A space in another place
+  is reported as `tr-10-13.a.privacy.malformed`.
+- At the ST 2110 tier, a raw-video `a=fmtp` parameter name can contain
+  any character except whitespace, `;` and `=` (for example
+  `x.vendor=1`). ST 2110-20 §7.1 forbids only whitespace in a name. In
+  earlier releases, such a name failed the line with a PARSE_ERROR and
+  no check id.
+- At the ST 2110 tier, whitespace inside a raw-video `a=fmtp` value
+  (`colorimetry=BT 709`), before a `;`, or before the first parameter is
+  reported as `st2110-20.a.fmtp.malformed` (ST 2110-20 §7.1). Whitespace
+  before the line end stays the `sdp.line.trailing-whitespace` warning.
+- A value that matches an attribute's syntax but fails a value check is
+  reported once, by that check's id. In earlier releases, the value was
+  also reported by the attribute's `.malformed` check. This affects
+  `a=rtpmap` at the ST 2110 tier (for example `raw/48000`), the `ptp=`
+  form of `a=ts-refclk`, and IPMX `a=group:FID`, `a=infoframe`, `a=hkep`
+  and `a=privacy`. An `a=fmtp` with a payload type that is not valid is
+  reported only as `sdp.a.fmtp.malformed` at the ST 2110 tier.
+- A NUL byte in an `a=fmtp` value is reported as `sdp.a.fmtp.malformed`
+  at the value, at every tier (RFC 8866 §9 `byte-string` excludes NUL).
+  In earlier releases, the RFC 8866 tier accepted it with no finding, and
+  the ST 2110 tier reported a §7.2 required-parameter error.
+- A raw-video `a=fmtp` with whitespace around `=` and another entry
+  defect (`sampling = a b`) is reported once, as
+  `st2110-20.a.fmtp.no-whitespace-around-equals`. In earlier releases,
+  it was also reported as `st2110-20.a.fmtp.malformed`.
+
+### Added
+
+- New check `st2110-20.a.fmtp.malformed` (ST 2110-20:2022 §7.1). A
+  raw-video `a=fmtp` body with an empty entry (`;;`), an entry with no
+  name, or whitespace inside a name is reported at the value. In earlier
+  releases, the line failed with a PARSE_ERROR and no check id. When the
+  check is demoted, the line is kept as written and round-trips.
+- New check `st2110-20.a.fmtp.semicolon-without-whitespace`
+  (soft-syntactic, default `warn`). ST 2110-20:2022 §7.1 says raw-video
+  fmtp parameters are "separated by the semicolon (";") character
+  followed by whitespace". The check is recorded once per line, at the
+  first `;` with no space or tab after it.
+
+- The playground shows a note under the input box when the report has
+  an LF-only line-ending finding for pasted or typed text. A copy, a
+  paste, or the text box itself can change CRLF to LF, so the finding
+  may come from the copy and not from the file. "Don't show again" hides
+  the note in this browser.
+
+### Changed
+
+- `to_sdp()` joins decomposed `a=fmtp` parameters with `"; "` instead of
+  `";"`, as ST 2110-20:2022 §7.1 requires. Both forms parse to the same
+  document.
+- `st2110-20.a.fmtp.no-whitespace-around-equals` is recorded at the
+  first whitespace around `=`, not at the end of the entry.
+
 ## [1.8.1] — 2026-10-20
 
 ### Changed
