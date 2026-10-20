@@ -36,7 +36,8 @@ above the text box, or chosen from the "Examples" dropdown. Each of
 those actions runs the analysis at once. Text typed into the box
 is analyzed when the "Analyze" button is pressed or when Ctrl+Enter
 (Cmd+Enter on macOS) is pressed inside the box. An input that cannot be
-read is reported in a banner under the toolbar.
+read is reported in a banner under the toolbar. A URL that cannot be
+loaded is reported in a banner directly under the "From URL" box.
 
 ## Loading an SDP file from a URL
 
