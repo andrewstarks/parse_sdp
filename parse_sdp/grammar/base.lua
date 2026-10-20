@@ -735,8 +735,8 @@ local rules = {
   -- The captures are FLAT (not wrapped in a sub-Ct) so they land at the
   -- top level of the media_section Ct alongside info / connection / etc.
   -- media: RFC 8866 §5.14 defines audio/video/text/application/message;
-  --   parser accepts any token (registry strictness deferred per PLAN.md
-  --   Known Deferred Items).
+  --   parser accepts any token (§8.2.2 makes control/data SHOULD NOT,
+  --   not MUST NOT; decision bead parse_sdp-xdg).
   -- proto: any token (covers "RTP/AVP", "RTP/SAVP", "udp", etc.).
   -- port_count: present iff "/" follows the port; captured as number.
   -- fmts: array of payload-type or format-name tokens.

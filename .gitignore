@@ -13,3 +13,10 @@ spec_conformance/.cache/
 
 # Claude Code harness runtime artifacts
 .claude/scheduled_tasks.lock
+
+# Beads / Dolt files (added by bd init)
+.dolt/
+*.db
+.beads-credential-key
+.beads/proxieddb/
+*.gate.lock*
