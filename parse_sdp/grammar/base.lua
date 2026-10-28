@@ -202,6 +202,90 @@ local function check_dynamic_pt_rtpmap(block, ctx)
   return true
 end
 
+-- RFC 8866 §5.14: "If noncontiguous ports are used or if they don't follow
+-- the parity rule of even RTP ports and odd RTCP ports, the "a=rtcp:"
+-- attribute MUST be used." An odd RTP port does not follow the parity
+-- rule. With a=rtcp-mux (RFC 5761) RTCP shares the RTP port and there is
+-- no second port to pair, so the rule does not apply.
+local function check_odd_port_rtcp(block, ctx)
+  if not is_rtp_block(block) then return true end
+  if type(block.port) ~= "number" or block.port % 2 == 0 then return true end
+  if attr_get(block, "rtcp") or attr_get(block, "rtcp-mux") then return true end
+  return errors.record(ctx, "sdp.m.odd-port-requires-rtcp", {
+    field_path = string.format("media[%d].port", ctx.media_index or 0),
+  })
+end
+
+-- RFC 8866 §6.15: "The format must be one of the formats specified for
+-- the media."
+local function check_fmtp_format_in_media(block, ctx)
+  local fmts = {}
+  for _, f in ipairs(block.fmts or {}) do fmts[f] = true end
+  for _, attr in ipairs(attrs_get(block, "fmtp")) do
+    if not fmts[tostring(attr.payload_type)] then
+      local cont = errors.record(ctx, "sdp.a.fmtp.format-not-in-media", {
+        field_path = string.format("media[%d].attributes[fmtp:pt=%s]",
+                                   ctx.media_index or 0, tostring(attr.payload_type)),
+      })
+      if not cont then return false end
+    end
+  end
+  return true
+end
+
+-- RFC 8285 §5: "In the signaling section, the range 1-256 is referred to
+-- as the valid range". §6: "A usable mapping MUST use IDs in the valid
+-- range, and each ID in this range MUST be used only once for each media
+-- section (or only once if the mappings are session level)"; "An
+-- extension URI with the same attributes MUST NOT appear more than once
+-- applying to the same stream, i.e., at session level or in the
+-- declarations for a single stream at media level"; "The definitions MUST
+-- be either all session level or all media level; it is not permitted to
+-- mix the two styles."
+local function check_extmap_scope(attrs, field_path, ctx)
+  local ids, uris = {}, {}
+  for _, e in ipairs(attrs) do
+    local fp = field_path .. ".attributes[extmap]"
+    if e.id < 1 or e.id > 256 then
+      if not errors.record(ctx, "sdp.a.extmap.id-out-of-range", { field_path = fp }) then
+        return false
+      end
+    end
+    if ids[e.id] then
+      if not errors.record(ctx, "sdp.a.extmap.duplicate-id", { field_path = fp }) then
+        return false
+      end
+    end
+    ids[e.id] = true
+    local key = e.uri .. "\0" .. (e.attributes or "")
+    if uris[key] then
+      if not errors.record(ctx, "sdp.a.extmap.duplicate-uri", { field_path = fp }) then
+        return false
+      end
+    end
+    uris[key] = true
+  end
+  return true
+end
+
+local function check_extmap_invariants(doc, ctx)
+  local session = attrs_get(doc.session, "extmap")
+  if not check_extmap_scope(session, "session", ctx) then return false end
+  for i, m in ipairs(doc.media) do
+    local media = attrs_get(m, "extmap")
+    if #session > 0 and #media > 0 then
+      local cont = errors.record(ctx, "sdp.a.extmap.mixed-levels", {
+        field_path = string.format("media[%d].attributes[extmap]", i - 1),
+      })
+      if not cont then return false end
+    end
+    if not check_extmap_scope(media, string.format("media[%d]", i - 1), ctx) then
+      return false
+    end
+  end
+  return true
+end
+
 -- RFC 7273 §4.6 (gps/gal/glonass are traceable to UTC) + §4.7 (`:traceable`
 -- suffix on ntp/ptp/private indicates traceable). All other ts-refclk forms
 -- (specific NTP servers, specific PTP grandmasters, `local`, bare `private`,
@@ -472,6 +556,7 @@ local base_semantic_checks = {
   check_mid_uniqueness,
   check_group_attribute_invariants,
   check_session_tsrefclk_traceability,
+  check_extmap_invariants,
 }
 
 -- Per-media-block checks: `(block, ctx)` functions that fire from the
@@ -480,6 +565,8 @@ local base_semantic_checks = {
 local base_media_section_checks = {
   check_dynamic_pt_rtpmap,
   check_media_tsrefclk_traceability,
+  check_odd_port_rtcp,
+  check_fmtp_format_in_media,
 }
 -- Payload-format checks (RFC 6184 H.264, ...) from parse_sdp.grammar.codecs.
 for _, check in ipairs(codecs.media_section_checks) do
@@ -783,6 +870,7 @@ local rules = {
         + V"a_maxptime"
         + V"a_framerate"
         + V"a_quality"
+        + V"a_setup"
         + V"a_tier_extensions"
         ) * #V"value_boundary_chars"
       + V"a_malformed"
@@ -827,6 +915,7 @@ local rules = {
                          * V"fmtp_no_nul",
                        { chars = 1 - V"value_boundary_chars" + P("\0") })
       + malformed_attr("mid",           "sdp.a.mid.malformed")
+      + malformed_attr("setup",         "sdp.a.setup.malformed")
       + V"tier_malformed",
 
   tier_malformed = P(false),
@@ -854,6 +943,7 @@ local rules = {
        + P("rtpmap")        + P("quality")    + P("group")
        + P("ptime")         + P("msid")       + P("ssrc")
        + P("rtcp")          + P("fmtp")       + P("mid")
+       + P("setup")
        + V"tier_attr_names")
       * (P(":") + V"line_end_chars"),
 
@@ -1267,6 +1357,13 @@ local rules = {
   a_ptime = P("ptime:")
       * Cg(Cc("ptime"),    "name")
       * Cg(V"nonzero_int_or_real_num", "value"),
+
+  -- setup (RFC 4145 §4):
+  --   setup-attr = "a=setup:" role
+  --   role       = "active" / "passive" / "actpass" / "holdconn"
+  a_setup = P("setup:")
+      * Cg(Cc("setup"), "name")
+      * Cg(C(P("actpass") + P("active") + P("passive") + P("holdconn")), "role"),
   a_maxptime = P("maxptime:")
       * Cg(Cc("maxptime"), "name")
       * Cg(V"nonzero_int_or_real_num", "value"),

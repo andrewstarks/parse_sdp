@@ -1186,10 +1186,30 @@ local FMTP_COMMON_CHECKS = {
 -- encodings or essences with no spec-grounded fmtp narrowings. Cross-
 -- encoding §8.7 TSMODE/TSDELAY value-form checks still fire via
 -- FMTP_COMMON_CHECKS above.
+-- ST 2110-21:2022 §8.2: "The following payload-format-specific Media Type
+-- parameters may be added to the a=fmtp clause of the SDP for video RTP
+-- streams conforming to this standard." TROFF "is expressed as a positive
+-- integer number of microseconds"; CMAX "is expressed as an integer
+-- number." Raw video; smpte291 and jxsv carry their own ids.
+local function check_raw_troff_cmax(params, ctx, pos, field_path)
+  local troff = base.params_get(params, "TROFF")
+  if troff ~= nil and (troff == true or not validate_troff(tostring(troff))) then
+    if not errors.record(ctx, "st2110-21.a.fmtp.troff-invalid-value",
+                         { pos = pos, field_path = field_path }) then return false end
+  end
+  local cmax = base.params_get(params, "CMAX")
+  if cmax ~= nil and (cmax == true or not validate_integer(tostring(cmax))) then
+    if not errors.record(ctx, "st2110-21.a.fmtp.cmax-invalid-value",
+                         { pos = pos, field_path = field_path }) then return false end
+  end
+  return true
+end
+
 local FMTP_CHECKS_BY_ENCODING = {
   raw = {
     check_raw_video_fmtp,
     check_raw_video_fmtp_cross_param,
+    check_raw_troff_cmax,
   },
   jxsv = {
     check_jxsv_fmtp,
@@ -1282,23 +1302,87 @@ local function check_rtpmap_requires_fmtp(block, ctx)
   return true
 end
 
--- ST 2110-22:2022 §7.3 (verbatim): "The media-level section of the SDP
--- object shall include the attribute listed in Table 3." Table 3's only
--- row is `b=<brtype>:<brvalue>` with `<brtype> shall be AS` and
--- `<brvalue>` an integer number of kilobits per second. Applies per
--- media block that carries a jxsv rtpmap. (TR-10-7 §11 substitutes
--- only the Table 3 cell semantics for IPMX-compressed-video; the
--- §7.3 SHALL on presence is unchanged and inherited via composition.)
-local function check_jxsv_bandwidth(block, ctx)
-  local has_jxsv = false
+-- A block ST 2110-22 governs: its rtpmap encoding is jxsv (RFC 9134 is
+-- the ST 2110-22 registration) or an fmtp carries SSN=ST2110-22:* (§7.2
+-- Table 2). The IPMX tier adds every compressed video block (decision
+-- parse_sdp-59w) by calling check_st2110_22_block itself.
+local SSN_22_PREFIX = P("ST2110-22:")
+
+local function is_st2110_22_block(block)
   for _, attr in ipairs(base.attrs_get(block, "rtpmap")) do
-    if attr.encoding == "jxsv" then
-      has_jxsv = true
-      break
+    if attr.encoding == "jxsv" then return true end
+  end
+  for _, attr in ipairs(base.attrs_get(block, "fmtp")) do
+    local ssn = attr.params and base.params_get(attr.params, "SSN")
+    if type(ssn) == "string" and SSN_22_PREFIX:match(ssn) then return true end
+  end
+  return false
+end
+
+local function block_has_jxsv(block)
+  for _, attr in ipairs(base.attrs_get(block, "rtpmap")) do
+    if attr.encoding == "jxsv" then return true end
+  end
+  return false
+end
+
+-- §7.2 Table 1 on a non-jxsv ST 2110-22 block (jxsv gets the same keys
+-- in-grammar through check_jxsv_fmtp): width, height, TP required and
+-- their value forms, plus the optional Table 2 CMAX and SSN forms.
+local ST2110_22_GENERIC_REQUIRED = { "width", "height", "TP" }
+local ST2110_22_GENERIC_FORMS    = { "width", "height", "CMAX", "SSN" }
+
+local function check_st2110_22_generic_fmtp(block, ctx)
+  local checked = false
+  for _, attr in ipairs(base.attrs_get(block, "fmtp")) do
+    if attr.params then
+      checked = true
+      local params = attr.params
+      local field_path = string.format("media[%d].attributes[fmtp:pt=%d]",
+                                       ctx.media_index or 0, attr.payload_type)
+      for _, key in ipairs(ST2110_22_GENERIC_REQUIRED) do
+        if base.params_get(params, key) == nil then
+          if not errors.record(ctx, "st2110-22.a.fmtp." .. key .. "-required",
+                               { field_path = field_path }) then return false end
+        end
+      end
+      for _, key in ipairs(ST2110_22_GENERIC_FORMS) do
+        local val = base.params_get(params, key)
+        if val ~= nil and not JXSV_VALUE_VALIDATORS[key](tostring(val)) then
+          if not errors.record(ctx, "st2110-22.a.fmtp." .. key .. "-invalid-value",
+                               { field_path = field_path }) then return false end
+        end
+      end
+      local tp = base.params_get(params, "TP")
+      if tp ~= nil and not JXSV_ENUM_VALUES.TP[tostring(tp)] then
+        if not errors.record(ctx, "st2110-22.a.fmtp.TP-invalid-value",
+                             { field_path = field_path }) then return false end
+      end
     end
   end
-  if not has_jxsv then return true end
+  if not checked then
+    -- No decomposed fmtp at all: the Table 1 parameters are missing.
+    local field_path = string.format("media[%d].attributes[fmtp]", ctx.media_index or 0)
+    for _, key in ipairs(ST2110_22_GENERIC_REQUIRED) do
+      if not errors.record(ctx, "st2110-22.a.fmtp." .. key .. "-required",
+                           { field_path = field_path }) then return false end
+    end
+  end
+  return true
+end
 
+-- Every ST 2110-22 rule that is not jxsv-specific, on one block:
+-- §5.2 "The RTP Timestamp Clock rate shall be 90 kHz." (non-jxsv blocks;
+--      jxsv has st2110-22.a.rtpmap.jxsv-clock-rate)
+-- §7.2 Table 1 required parameters (non-jxsv blocks)
+-- §7.3 Table 3 b=AS (check_st2110_22_bandwidth below)
+-- §7.4 "The SDP object shall include an indication of frame rate via one
+--      of the mechanisms listed in Table 4." (a=framerate or fmtp
+--      exactframerate)
+-- ST 2110-22:2019 §7.2 Table 1 "TP: Either 2110TPNL or 2110TPW": with
+--      SSN=ST2110-22:2019, TP=2110TPN names a value that version does not
+--      define.
+local function check_st2110_22_bandwidth(block, ctx)
   local field_path = string.format(
     "media[%d].bandwidths", ctx.media_index or 0)
   local has_as = false
@@ -1319,6 +1403,143 @@ local function check_jxsv_bandwidth(block, ctx)
   end
   return true
 end
+
+local function check_st2110_22_block(block, ctx)
+  local media_path = string.format("media[%d]", ctx.media_index or 0)
+  if not block_has_jxsv(block) then
+    for _, attr in ipairs(base.attrs_get(block, "rtpmap")) do
+      if attr.clock_rate ~= 90000 then
+        if not errors.record(ctx, "st2110-22.a.rtpmap.clock-rate-must-be-90000",
+            { field_path = string.format("%s.attributes[rtpmap:pt=%d]",
+                                         media_path, attr.payload_type) }) then
+          return false
+        end
+      end
+    end
+    if not check_st2110_22_generic_fmtp(block, ctx) then return false end
+  end
+  if not check_st2110_22_bandwidth(block, ctx) then return false end
+
+  local has_rate = base.attr_get(block, "framerate") ~= nil
+  for _, attr in ipairs(base.attrs_get(block, "fmtp")) do
+    if attr.params and base.params_get(attr.params, "exactframerate") ~= nil then
+      has_rate = true
+    end
+    local ssn = attr.params and base.params_get(attr.params, "SSN")
+    local tp  = attr.params and base.params_get(attr.params, "TP")
+    if ssn == "ST2110-22:2019" and tp == "2110TPN" then
+      if not errors.record(ctx, "st2110-22.a.fmtp.tp-2110tpn-requires-ssn-2022",
+          { field_path = string.format("%s.attributes[fmtp:pt=%d]",
+                                       media_path, attr.payload_type) }) then
+        return false
+      end
+    end
+  end
+  if not has_rate then
+    if not errors.record(ctx, "st2110-22.framerate-indication-required",
+                         { field_path = media_path }) then return false end
+  end
+  return true
+end
+
+local function check_st2110_22(block, ctx)
+  if not is_st2110_22_block(block) then return true end
+  return check_st2110_22_block(block, ctx)
+end
+
+-- ST 2110-10:2022 §8.3: "If the Media Clock is directly derived from the
+-- Timestamp Reference Clock, the direct reference shall be used and the
+-- offset shall be included." / "If the Media Clock is asynchronous ... the
+-- following form shall be used: a=mediaclk:sender". §7.3: "In this
+-- standard, the offset value shall be zero." §8.2: PTP devices "shall use
+-- the ts-refclk:ptp form, signaling either the grandmaster clockIdentity
+-- and domain number, or signaling that the PTP is traceable"; NOTE 1 "the
+-- PTP domain number is expressed as a decimal number"; RFC 7273 §4.8 "PTP
+-- domain allowed number range: 0-127". Session-level and media-level
+-- attributes both describe the stream, so both are checked.
+local PTP_DOMAIN = patterns.pos_int + P("0")
+
+local function check_timing_attr_values(attrs, field_path, ctx)
+  for _, a in ipairs(attrs) do
+    if a.name == "mediaclk" and not a.malformed then
+      local fp = field_path .. ".attributes[mediaclk]"
+      if a.mode ~= "direct" and a.mode ~= "sender" then
+        if not errors.record(ctx, "st2110-10.a.mediaclk.form-invalid-value",
+                             { field_path = fp }) then return false end
+      elseif a.mode == "direct" then
+        if a.offset == nil then
+          if not errors.record(ctx, "st2110-10.a.mediaclk.direct-offset-required",
+                               { field_path = fp }) then return false end
+        elseif a.offset ~= 0 then
+          if not errors.record(ctx, "st2110-10.a.mediaclk.direct-offset-must-be-zero",
+                               { field_path = fp }) then return false end
+        end
+      end
+    elseif a.name == "ts-refclk" and not a.malformed and a.source == "ptp"
+           and a.grandmaster ~= nil then
+      local fp = field_path .. ".attributes[ts-refclk]"
+      if a.domain == nil then
+        if not errors.record(ctx, "st2110-10.a.ts-refclk.ptp-domain-required",
+                             { field_path = fp }) then return false end
+      elseif not (PTP_DOMAIN * -1):match(a.domain) or tonumber(a.domain) > 127 then
+        if not errors.record(ctx, "st2110-10.a.ts-refclk.ptp-domain-invalid-value",
+                             { field_path = fp }) then return false end
+      end
+    end
+  end
+  return true
+end
+
+local function check_timing_attributes(doc, ctx)
+  if not check_timing_attr_values(doc.session.attributes or {}, "session", ctx) then
+    return false
+  end
+  for i, m in ipairs(doc.media) do
+    if not check_timing_attr_values(m.attributes or {},
+                                    string.format("media[%d]", i - 1), ctx) then
+      return false
+    end
+  end
+  return true
+end
+
+-- ST 2110-30:2025 §6.2: "Digital audio streams shall conform to AES67,
+-- including the Session Description Protocol (SDP) as described in IETF
+-- RFC 8866, subject to the constraints in this document." AES67 §8.1:
+-- "Descriptions shall include a ptime attribute indicating the desired
+-- packet time." ST 2110-31:2022 §6.1: "Senders under this standard shall
+-- signal a ptime attribute in the SDP" and "The <packet-time> parameter
+-- shall take one of the values from the Table 1, based on the prevailing
+-- sampling rate".
+local AM824_PTIME = {
+  [48000] = { [1] = true, [0.12] = true, [0.08] = true },
+  [96000] = { [1] = true, [0.12] = true, [0.08] = true },
+  [44100] = { [1.09] = true, [0.14] = true, [0.09] = true },
+}
+
+local function check_audio_ptime(block, ctx)
+  local ptime = base.attr_get(block, "ptime")
+  for _, attr in ipairs(base.attrs_get(block, "rtpmap")) do
+    local enc = attr.encoding
+    if enc == "L16" or enc == "L24" then
+      if ptime == nil then
+        return errors.record(ctx, "st2110-30.a.ptime-required",
+          { field_path = string.format("media[%d].attributes[ptime]", ctx.media_index or 0) })
+      end
+    elseif enc == "AM824" then
+      local fp = string.format("media[%d].attributes[ptime]", ctx.media_index or 0)
+      if ptime == nil then
+        return errors.record(ctx, "st2110-31.a.ptime-required", { field_path = fp })
+      end
+      local allowed = AM824_PTIME[attr.clock_rate]
+      if allowed and not allowed[ptime.value] then
+        return errors.record(ctx, "st2110-31.a.ptime-invalid-value", { field_path = fp })
+      end
+    end
+  end
+  return true
+end
+
 
 local overrides = {
   rules = {
@@ -1607,6 +1828,7 @@ local overrides = {
     check_media_description_present,
     check_ts_refclk_presence,
     check_group_dup_coherence,
+    check_timing_attributes,
   },
 
   media_section_checks = {
@@ -1614,8 +1836,13 @@ local overrides = {
     check_rtpmap_requires_fmtp,
     check_mediaclk_presence,
     check_audio_packet_payload_fit,
-    check_jxsv_bandwidth,
+    check_audio_ptime,
+    check_st2110_22,
   },
 }
 
-return base.extend(base, overrides)
+local M = base.extend(base, overrides)
+-- The IPMX tier applies ST 2110-22 to every compressed video block.
+M.is_st2110_22_block   = is_st2110_22_block
+M.check_st2110_22_block = check_st2110_22_block
+return M

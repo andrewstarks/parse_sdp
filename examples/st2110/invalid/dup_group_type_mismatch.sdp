@@ -14,5 +14,6 @@ m=audio 5010 RTP/AVP 97
 c=IN IP4 239.100.0.2/64
 a=mid:leg2
 a=rtpmap:97 L24/48000/8
+a=ptime:1
 a=fmtp:97 channel-order=SMPTE2110.(ST)
 a=mediaclk:direct=0

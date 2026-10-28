@@ -88,17 +88,19 @@ local EXPECTED = {
     { error = "st2110-20.a.fmtp.sampling-required", line = 8,
       findings = { "st2110-20.a.fmtp.sampling-required@8" } },
   ["examples/st2110/invalid/06_bad_channel_order.sdp"] =
-    { error = "st2110-30.a.fmtp.channel-order-invalid", line = 8,
-      findings = { "st2110-30.a.fmtp.channel-order-invalid@8" } },
+    { error = "st2110-30.a.fmtp.channel-order-invalid", line = 9,
+      findings = { "st2110-30.a.fmtp.channel-order-invalid@9" } },
   ["examples/st2110/invalid/07_missing_smpte291_ssn.sdp"] =
     { error = "st2110-40.a.fmtp.ssn-required", line = 8,
       findings = { "st2110-40.a.fmtp.ssn-required@8" } },
   ["examples/st2110/invalid/08_missing_ssn.sdp"] =
     { error = "st2110-41.a.fmtp.SSN-required", line = 8,
       findings = { "st2110-41.a.fmtp.SSN-required@8" } },
+  -- Demoted, the malformed ptime is skipped, so ST 2110-30 reports it
+  -- missing as well.
   ["examples/st2110/invalid/09_bad_ptime.sdp"] =
     { error = "sdp.a.ptime.malformed", line = 10,
-      findings = { "sdp.a.ptime.malformed@10" } },
+      findings = { "sdp.a.ptime.malformed@10", "st2110-30.a.ptime-required@0" } },
   -- Demoted, the malformed fmtp is skipped, so the §7.2 parameters are
   -- reported missing.
   ["examples/st2110/invalid/10_fmtp_empty_entry.sdp"] =
@@ -115,6 +117,12 @@ local EXPECTED = {
         "st2110-20.a.fmtp.SSN-required@0",
         "st2110-20.a.fmtp.TP-required@0",
       } },
+  ["examples/st2110/invalid/11_mediaclk_offset.sdp"] =
+    { error = "st2110-10.a.mediaclk.direct-offset-must-be-zero", line = 0,
+      findings = { "st2110-10.a.mediaclk.direct-offset-must-be-zero@0" } },
+  ["examples/st2110/invalid/12_audio_without_ptime.sdp"] =
+    { error = "st2110-30.a.ptime-required", line = 0,
+      findings = { "st2110-30.a.ptime-required@0" } },
   ["examples/st2110/invalid/dup_group_type_mismatch.sdp"] =
     { error = "st2110-10.a.group-dup.media-type-same", line = 0,
       findings = {

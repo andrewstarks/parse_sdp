@@ -35,8 +35,9 @@ local MINIMAL_WITH_RTPMAP = lines_to_sdp({
   "s=Test Session",
   "c=IN IP4 224.0.0.1/127",
   "t=0 0",
-  "m=video 49170 RTP/AVP 96",
-  "a=rtpmap:96 H264/90000",
+  "m=audio 49170 RTP/AVP 96",
+  "a=rtpmap:96 L24/48000/2",
+  "a=ptime:1",
   "a=ts-refclk:localmac=00-11-22-33-44-55",
   "a=mediaclk:sender",
 })

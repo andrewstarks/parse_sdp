@@ -491,6 +491,12 @@ register_malformed("sdp.a.fmtp.malformed",
 
 -- RFC 5888 §4: "mid-attribute = "a=mid:" identification-tag",
 -- "identification-tag = token".
+-- RFC 4145 §4: "setup-attr = "a=setup:" role / role = "active" /
+-- "passive" / "actpass" / "holdconn"".
+register_malformed("sdp.a.setup.malformed",
+  "a=setup value must be active, passive, actpass, or holdconn",
+  "RFC 4145 §4 (setup-attr ABNF)")
+
 register_malformed("sdp.a.mid.malformed",
   "a=mid value must be an identification-tag: one token, with no spaces",
   "RFC 5888 §4 (mid-attribute ABNF)")
@@ -587,6 +593,80 @@ register_malformed("sdp.a.mediaclk.malformed",
  .. " direct[=<offset>][ rate=<n>/<d>], IEEE1722=<EUI-64>, or an extension"
  .. " <name>[=<value>] whose name is not one of these",
   "RFC 7273 §5.4 (media-clksrc ABNF)")
+
+-- ── Port, fmtp and extmap cross-attribute checks (RFC 8866, RFC 8285) ──────
+-- RFC 8866 §5.14 (verbatim): "If noncontiguous ports are used or if they
+-- don't follow the parity rule of even RTP ports and odd RTCP ports, the
+-- "a=rtcp:" attribute MUST be used."
+M.register("sdp.m.odd-port-requires-rtcp", {
+  kind             = "semantic",
+  default_severity = "error",
+  code             = "MISSING_FIELD",
+  message_template = "an odd RTP port requires an a=rtcp attribute (or a=rtcp-mux)",
+  spec_ref         = "RFC 8866 §5.14",
+  verified         = true,
+})
+-- RFC 8866 §6.15 (verbatim): "The format must be one of the formats
+-- specified for the media."
+M.register("sdp.a.fmtp.format-not-in-media", {
+  kind             = "semantic",
+  default_severity = "error",
+  code             = "INVALID_VALUE",
+  message_template = "a=fmtp format must be one of the formats on the m= line",
+  spec_ref         = "RFC 8866 §6.15",
+  verified         = true,
+})
+-- RFC 8285 §5 (verbatim): "In the signaling section, the range 1-256 is
+-- referred to as the valid range". §6: "A usable mapping MUST use IDs in
+-- the valid range, and each ID in this range MUST be used only once for
+-- each media section (or only once if the mappings are session level)".
+M.register("sdp.a.extmap.id-out-of-range", {
+  kind             = "semantic",
+  default_severity = "error",
+  code             = "INVALID_VALUE",
+  message_template = "a=extmap id must be from 1 to 256",
+  spec_ref         = "RFC 8285 §5 / §6",
+  verified         = true,
+})
+M.register("sdp.a.extmap.duplicate-id", {
+  kind             = "semantic",
+  default_severity = "error",
+  code             = "INVALID_VALUE",
+  message_template = "a=extmap id used more than once in one media description (or at session level)",
+  spec_ref         = "RFC 8285 §6",
+  verified         = true,
+})
+-- RFC 8285 §6 (verbatim): "An extension URI with the same attributes MUST
+-- NOT appear more than once applying to the same stream, i.e., at session
+-- level or in the declarations for a single stream at media level."
+M.register("sdp.a.extmap.duplicate-uri", {
+  kind             = "semantic",
+  default_severity = "error",
+  code             = "INVALID_VALUE",
+  message_template = "a=extmap URI with the same attributes appears more than once for one stream",
+  spec_ref         = "RFC 8285 §6",
+  verified         = true,
+})
+-- RFC 8285 §6 (verbatim): "The definitions MUST be either all session
+-- level or all media level; it is not permitted to mix the two styles."
+M.register("sdp.a.extmap.mixed-levels", {
+  kind             = "semantic",
+  default_severity = "error",
+  code             = "INVALID_VALUE",
+  message_template = "a=extmap must be all session level or all media level",
+  spec_ref         = "RFC 8285 §6",
+  verified         = true,
+})
+-- RFC 3555 §4.1.15 (verbatim, audio/L16): "The only emphasis value
+-- defined here is emphasis=50-15".
+M.register("sdp.a.fmtp.l16.emphasis-invalid-value", {
+  kind             = "semantic",
+  default_severity = "error",
+  code             = "INVALID_VALUE",
+  message_template = "L16 fmtp 'emphasis' must be 50-15",
+  spec_ref         = "RFC 3555 §4.1.15",
+  verified         = true,
+})
 
 -- ── c= connection-address checks (RFC 8866 §5.7 / §9) ──────────────────────
 
@@ -1707,6 +1787,157 @@ M.register("st2110-41.a.fmtp.maxudp-forbidden", {
   verified         = true,
 })
 
+-- ── ST 2110-10 §8.2 / §8.3 / §7.3 timing attribute values ────────────────
+-- ST 2110-10:2022 §8.2 (verbatim): "Devices which are referenced to IEEE
+-- Std 1588-2008 shall use the ts-refclk:ptp form, signaling either the
+-- grandmaster clockIdentity and domain number, or signaling that the PTP
+-- is traceable." NOTE 1: "the PTP domain number is expressed as a decimal
+-- number". RFC 7273 §4.8: "PTP domain allowed number range: 0-127 (IEEE
+-- 1588-2008)".
+M.register("st2110-10.a.ts-refclk.ptp-domain-required", {
+  kind             = "semantic",
+  default_severity = "error",
+  code             = "MISSING_FIELD",
+  message_template = "a=ts-refclk:ptp= with a grandmaster must also signal the domain number",
+  spec_ref         = "ST 2110-10:2022 §8.2",
+  verified         = true,
+})
+M.register("st2110-10.a.ts-refclk.ptp-domain-invalid-value", {
+  kind             = "semantic",
+  default_severity = "error",
+  code             = "INVALID_VALUE",
+  message_template = "a=ts-refclk:ptp= domain must be a decimal number from 0 to 127",
+  spec_ref         = "ST 2110-10:2022 §8.2; RFC 7273 §4.8",
+  verified         = true,
+})
+-- ST 2110-10:2022 §8.3 (verbatim): "If the Media Clock is directly derived
+-- from the Timestamp Reference Clock, the direct reference shall be used
+-- and the offset shall be included." / "If the Media Clock is asynchronous
+-- with respect to the Timestamp Reference Clock ... the following form
+-- shall be used: a=mediaclk:sender". §7.3: "In this standard, the offset
+-- value shall be zero."
+M.register("st2110-10.a.mediaclk.form-invalid-value", {
+  kind             = "semantic",
+  default_severity = "error",
+  code             = "INVALID_VALUE",
+  message_template = "a=mediaclk must be direct=<offset> or sender",
+  spec_ref         = "ST 2110-10:2022 §8.3",
+  verified         = true,
+})
+M.register("st2110-10.a.mediaclk.direct-offset-required", {
+  kind             = "semantic",
+  default_severity = "error",
+  code             = "MISSING_FIELD",
+  message_template = "a=mediaclk:direct must include the offset",
+  spec_ref         = "ST 2110-10:2022 §8.3",
+  verified         = true,
+})
+M.register("st2110-10.a.mediaclk.direct-offset-must-be-zero", {
+  kind             = "semantic",
+  default_severity = "error",
+  code             = "INVALID_VALUE",
+  message_template = "a=mediaclk:direct offset must be 0",
+  spec_ref         = "ST 2110-10:2022 §7.3",
+  verified         = true,
+})
+
+-- ── ST 2110-21 §8.2 optional parameters on every video stream ────────────
+-- ST 2110-21:2022 §8.2 (verbatim): "The following payload-format-specific
+-- Media Type parameters may be added to the a=fmtp clause of the SDP for
+-- video RTP streams conforming to this standard." TROFF: "This value is
+-- expressed as a positive integer number of microseconds." CMAX: "This
+-- value is expressed as an integer number." Registered here for raw video;
+-- smpte291 and jxsv keep their own ids (st2110-40.a.fmtp.troff-invalid-
+-- value, st2110-22.a.fmtp.CMAX-invalid-value).
+M.register("st2110-21.a.fmtp.troff-invalid-value", {
+  kind             = "semantic",
+  default_severity = "error",
+  code             = "INVALID_VALUE",
+  message_template = "fmtp 'TROFF' must be a positive integer (microseconds)",
+  spec_ref         = "ST 2110-21:2022 §8.2",
+  verified         = true,
+})
+M.register("st2110-21.a.fmtp.cmax-invalid-value", {
+  kind             = "semantic",
+  default_severity = "error",
+  code             = "INVALID_VALUE",
+  message_template = "fmtp 'CMAX' must be an integer",
+  spec_ref         = "ST 2110-21:2022 §8.2",
+  verified         = true,
+})
+
+-- ── ST 2110-22 on every stream it governs ───────────────────────────────
+-- Applies to a block whose rtpmap encoding is jxsv or whose fmtp carries
+-- SSN=ST2110-22:*, and at the IPMX tier to every compressed video block
+-- (decision parse_sdp-59w).
+-- ST 2110-22:2022 §7.4 (verbatim): "The SDP object shall include an
+-- indication of frame rate via one of the mechanisms listed in Table 4."
+-- (a=framerate, or exactframerate in a=fmtp).
+M.register("st2110-22.framerate-indication-required", {
+  kind             = "semantic",
+  default_severity = "error",
+  code             = "MISSING_FIELD",
+  message_template = "an ST 2110-22 stream must signal its frame rate with a=framerate or fmtp exactframerate",
+  spec_ref         = "ST 2110-22:2022 §7.4",
+  verified         = true,
+})
+-- ST 2110-22:2019 §7.2 Table 1 (verbatim): "TP: Either 2110TPNL or 2110TPW
+-- as specified in section 5.3". ST 2110-22:2022 §7.2 Table 2: "SSN ...
+-- depending on the version of the standard implemented."
+M.register("st2110-22.a.fmtp.tp-2110tpn-requires-ssn-2022", {
+  kind             = "semantic",
+  default_severity = "error",
+  code             = "INVALID_VALUE",
+  message_template = "TP=2110TPN is not defined by ST 2110-22:2019; SSN=ST2110-22:2019 permits only 2110TPNL and 2110TPW",
+  spec_ref         = "ST 2110-22:2019 §7.2 Table 1",
+  verified         = true,
+})
+-- ST 2110-22:2022 §5.2 (verbatim): "The RTP Timestamp Clock rate shall be
+-- 90 kHz." (jxsv has its own st2110-22.a.rtpmap.jxsv-clock-rate.)
+M.register("st2110-22.a.rtpmap.clock-rate-must-be-90000", {
+  kind             = "semantic",
+  default_severity = "error",
+  code             = "INVALID_VALUE",
+  message_template = "an ST 2110-22 stream's rtpmap clock rate must be 90000",
+  spec_ref         = "ST 2110-22:2022 §5.2",
+  verified         = true,
+})
+
+-- ── ST 2110-30 / ST 2110-31 ptime ────────────────────────────────────────
+-- ST 2110-30:2025 §6.2 (verbatim): "Digital audio streams shall conform to
+-- AES67, including the Session Description Protocol (SDP) as described in
+-- IETF RFC 8866, subject to the constraints in this document." AES67 §8.1:
+-- "Descriptions shall include a ptime attribute indicating the desired
+-- packet time."
+M.register("st2110-30.a.ptime-required", {
+  kind             = "semantic",
+  default_severity = "error",
+  code             = "MISSING_FIELD",
+  message_template = "an ST 2110-30 audio stream must include a=ptime",
+  spec_ref         = "ST 2110-30:2025 §6.2; AES67 §8.1",
+  verified         = true,
+})
+-- ST 2110-31:2022 §6.1 (verbatim): "Senders under this standard shall
+-- signal a ptime attribute in the SDP" and "The <packet-time> parameter
+-- shall take one of the values from the Table 1, based on the prevailing
+-- sampling rate": 48000 and 96000: 1, 0.12, 0.08; 44100: 1.09, 0.14, 0.09.
+M.register("st2110-31.a.ptime-required", {
+  kind             = "semantic",
+  default_severity = "error",
+  code             = "MISSING_FIELD",
+  message_template = "an AM824 stream must include a=ptime",
+  spec_ref         = "ST 2110-31:2022 §6.1",
+  verified         = true,
+})
+M.register("st2110-31.a.ptime-invalid-value", {
+  kind             = "semantic",
+  default_severity = "error",
+  code             = "INVALID_VALUE",
+  message_template = "AM824 a=ptime must be a Table 1 value for the clock rate (1, 0.12, 0.08 at 48000 and 96000; 1.09, 0.14, 0.09 at 44100)",
+  spec_ref         = "ST 2110-31:2022 §6.1 Table 1",
+  verified         = true,
+})
+
 -- ── ST 2110-10 required-attribute presence (Phase 6.D.A) ─────────────────
 -- ST 2110-10:2022 §8.2: "All stream descriptions shall have a ts-refclk
 -- attribute as specified in IETF RFC 7273 section 4."
@@ -2311,7 +2542,7 @@ M.register("st2110-22.b.as-required", {
   default_severity = "error",
   code             = "MISSING_FIELD",
   message_template =
-    "media block carrying a jxsv rtpmap must include a media-level"
+    "an ST 2110-22 media block must include a media-level"
     .. " b=AS:<kbps> attribute",
   spec_ref         = "ST 2110-22:2022 §7.3",
   verified         = true,
@@ -2322,7 +2553,7 @@ M.register("st2110-22.b.as-invalid-value", {
   default_severity = "error",
   code             = "INVALID_VALUE",
   message_template =
-    "b=AS value must be a positive integer (kbps) on jxsv media blocks",
+    "b=AS value must be a positive integer (kbps) on ST 2110-22 media blocks",
   spec_ref         = "ST 2110-22:2022 §7.3",
   verified         = true,
 })
@@ -2602,6 +2833,17 @@ M.register("tr-10-13.a.privacy.protocol-null-forbidden", {
     "a=privacy 'protocol' value 'NULL' is forbidden in an SDP transport file"
     .. " (omit the a=privacy attribute instead)",
   spec_ref = "TR-10-13 §13", verified = true,
+})
+
+-- TR-10-13 §20 (verbatim, RTP transport protocol adaptations): "The
+-- protocol parameter shall be RTP or RTP_KV."
+M.register("tr-10-13.a.privacy.rtp-protocol-invalid-value", {
+  kind             = "semantic",
+  default_severity = "error",
+  code             = "INVALID_VALUE",
+  message_template = "a=privacy 'protocol' on an RTP stream must be RTP or RTP_KV",
+  spec_ref         = "TR-10-13 §20",
+  verified         = true,
 })
 
 M.register("tr-10-13.a.privacy.mode-invalid-value", {

@@ -363,6 +363,7 @@ describe("IPMX TR-10-1 §10.2 — TR-10-11 jxsv inheritance", function()
       "b=AS:1500000",
       "a=mid:1",
       "a=rtpmap:96 jxsv/90000",
+      "a=framerate:25",
       fmtp_line,
       TIMING_TS_REFCLK,
       TIMING_MEDIACLK,
@@ -555,6 +556,9 @@ describe("IPMX TR-10-2 §7 — RTP port must be > 1024 and even", function()
       TIMING_TS_REFCLK,
       TIMING_MEDIACLK,
     }
+    -- RFC 8866 §5.14: an odd RTP port needs a=rtcp at every tier; the
+    -- TR-10-2 §7 parity rule is the finding under test here.
+    if port % 2 == 1 then lines[#lines + 1] = string.format("a=rtcp:%d", port + 1) end
     return lines_to_sdp(lines)
   end
 
@@ -1612,4 +1616,92 @@ describe("IPMX TR-10-14 §14 — USB block constraints", function()
     assert.is_truthy(base.match(sdp))
     assert.is_truthy(st2110.match(sdp))
   end)
+end)
+
+describe("IPMX — compressed video follows ST 2110-22 §7 (TR-10-7 §10, TR-10-11 §10)", function()
+  local function h264_ipmx(extra, fmtp)
+    local lines = {
+      "v=0", "o=- 1 1 IN IP4 192.0.2.1", "s=Test", "t=0 0",
+      "m=video 30000 RTP/AVP 96", "c=IN IP4 239.0.0.1/64",
+    }
+    for _, l in ipairs(extra) do lines[#lines + 1] = l end
+    lines[#lines + 1] = "a=mid:1"
+    lines[#lines + 1] = "a=rtpmap:96 H264/90000"
+    lines[#lines + 1] = fmtp or "a=fmtp:96 width=1920;height=1080;TP=2110TPW;IPMX;packetization-mode=1"
+    lines[#lines + 1] = TIMING_TS_REFCLK
+    lines[#lines + 1] = TIMING_MEDIACLK
+    return lines_to_sdp(lines)
+  end
+  -- SPEC: "The SDP object shall be constructed as described in ST 2110-22
+  -- section 7, subject also to the provisions of TR-10-1."
+  it("accepts an H264 block with width, height, TP, b=AS and a=framerate", function()
+    local doc, ctx = ipmx.match(h264_ipmx({ "b=AS:20000", "a=framerate:25" }))
+    assert.is_truthy(doc)
+    assert.same({}, ctx.findings)
+  end)
+  it("requires b=AS and a frame-rate indication on an H264 block", function()
+    local _, ctx = ipmx.match(h264_ipmx({}), { fail_on_first = false })
+    assert.is_not_nil(finding_for(ctx, "st2110-22.b.as-required"))
+    assert.is_not_nil(finding_for(ctx, "st2110-22.framerate-indication-required"))
+  end)
+  it("requires width, height and TP on an H264 block", function()
+    local _, ctx = ipmx.match(h264_ipmx({ "b=AS:20000", "a=framerate:25" },
+      "a=fmtp:96 IPMX;packetization-mode=1"), { fail_on_first = false })
+    for _, key in ipairs({ "width", "height", "TP" }) do
+      assert.is_not_nil(finding_for(ctx, "st2110-22.a.fmtp." .. key .. "-required"))
+    end
+  end)
+  -- SPEC: TR-10-11 §9 "The Media Clock and RTP Clock rate for streams
+  -- compliant with this TR shall be 90 kHz."
+  it("rejects an H265 block at 48000", function()
+    local _, ctx = ipmx.match(lines_to_sdp({
+      "v=0", "o=- 1 1 IN IP4 192.0.2.1", "s=Test", "t=0 0",
+      "m=video 30000 RTP/AVP 96", "c=IN IP4 239.0.0.1/64", "b=AS:20000", "a=framerate:25",
+      "a=mid:1", "a=rtpmap:96 H265/48000",
+      "a=fmtp:96 width=1920;height=1080;TP=2110TPW;IPMX",
+      TIMING_TS_REFCLK, TIMING_MEDIACLK,
+    }), { fail_on_first = false })
+    assert.is_not_nil(finding_for(ctx, "st2110-22.a.rtpmap.clock-rate-must-be-90000"))
+  end)
+  -- NOT-SPEC: library — TR-10-2 and TR-10-4 cover raw and smpte291.
+  it("does not apply to raw video", function()
+    local doc, ctx = ipmx.match(lines_to_sdp({
+      "v=0", "o=- 1 1 IN IP4 192.0.2.1", "s=Test", "t=0 0",
+      "m=video 30000 RTP/AVP 96", "c=IN IP4 239.0.0.1/64", "a=mid:1",
+      "a=rtpmap:96 raw/90000", RAW_FMTP_IPMX_PT96, TIMING_TS_REFCLK, TIMING_MEDIACLK,
+    }))
+    assert.is_truthy(doc)
+    assert.same({}, ctx.findings)
+  end)
+end)
+
+describe("IPMX TR-10-13 §20 — a=privacy protocol on an RTP stream", function()
+  local function video_with_privacy(protocol)
+    return lines_to_sdp({
+      "v=0", "o=- 1 1 IN IP4 192.0.2.1", "s=Test", "t=0 0",
+      "m=video 30000 RTP/AVP 96", "c=IN IP4 239.0.0.1/64", "a=mid:1",
+      "a=rtpmap:96 raw/90000", RAW_FMTP_IPMX_PT96,
+      "a=privacy:protocol=" .. protocol .. "; mode=AES-128-CTR; iv=0123456789abcdef;"
+        .. " key_generator=0123456789abcdef0123456789abcdef; key_version=00000001;"
+        .. " key_id=0123456789abcdef",
+      TIMING_TS_REFCLK, TIMING_MEDIACLK,
+    })
+  end
+  -- SPEC: "The protocol parameter shall be RTP or RTP_KV."
+  for _, p in ipairs({ "RTP", "RTP_KV" }) do
+    it(("accepts protocol=%s"):format(p), function()
+      local doc, ctx = ipmx.match(video_with_privacy(p))
+      assert.is_truthy(doc)
+      assert.same({}, ctx.findings)
+    end)
+  end
+  for _, p in ipairs({ "UDP", "USB_KV", "SRT" }) do
+    it(("rejects protocol=%s [tr-10-13.a.privacy.rtp-protocol-invalid-value]"):format(p), function()
+      local doc, ctx = ipmx.match(video_with_privacy(p))
+      assert.is_nil(doc)
+      local f = finding_for(ctx, "tr-10-13.a.privacy.rtp-protocol-invalid-value")
+      assert.is_not_nil(f)
+      assert.equal("TR-10-13 §20", f.spec_ref)
+    end)
+  end
 end)

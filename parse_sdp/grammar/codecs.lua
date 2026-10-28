@@ -487,6 +487,18 @@ local CODECS = {
     clock_id   = "sdp.a.rtpmap.mp2t.clock-rate-must-be-90000",
     fmtp       = function() return true end,
   },
+  -- RFC 3555 §4.1.15 (audio/L16): "The only emphasis value defined here is
+  -- emphasis=50-15 to indicate the 50/15 microsecond preemphasis used with
+  -- Compact Disks."
+  l16 = {
+    fmtp = function(params, ctx, field_path)
+      local v = params_ci(params)["emphasis"]
+      if v ~= nil and v ~= "50-15" then
+        return record(ctx, "sdp.a.fmtp.l16.emphasis-invalid-value", field_path)
+      end
+      return true
+    end,
+  },
 }
 
 local function check_codec_block(block, ctx)
@@ -496,7 +508,7 @@ local function check_codec_block(block, ctx)
     if codec then
       local field_path = string.format("media[%d].attributes[rtpmap:pt=%d]",
                                        ctx.media_index or 0, r.payload_type)
-      if codec.media_id and not codec.media[block.media] then
+      if codec.media and not codec.media[block.media] then
         if not record(ctx, codec.media_id, field_path) then return false end
       end
       if codec.clock_rate and r.clock_rate ~= codec.clock_rate then

@@ -11,6 +11,43 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ### Added
 
+- Checks for the admitted limitations the MatroxSdp parity matrix
+  revisited (22 new check ids, registry 297 → 319; bead `parse_sdp-j7c.7`):
+  - RFC 8866: an odd RTP port needs `a=rtcp` or `a=rtcp-mux`
+    (`sdp.m.odd-port-requires-rtcp`, §5.14); an `a=fmtp` format must be
+    an `m=` format (`sdp.a.fmtp.format-not-in-media`, §6.15).
+  - RFC 4145: `a=setup` is a decomposed attribute (`role`) with
+    `sdp.a.setup.malformed`.
+  - RFC 8285: extmap id 1 to 256, unique ids per scope, no repeated URI
+    with the same attributes, no mixing of session and media levels
+    (`sdp.a.extmap.id-out-of-range`, `duplicate-id`, `duplicate-uri`,
+    `mixed-levels`).
+  - RFC 3555: `L16` `emphasis` must be `50-15`
+    (`sdp.a.fmtp.l16.emphasis-invalid-value`).
+  - ST 2110-10: `a=mediaclk` must be `direct=<offset>` or `sender`, the
+    offset is required and must be 0 (`st2110-10.a.mediaclk.*`, §8.3,
+    §7.3); a PTP grandmaster must carry a decimal domain 0 to 127
+    (`st2110-10.a.ts-refclk.ptp-domain-required`,
+    `ptp-domain-invalid-value`, §8.2).
+  - ST 2110-21: `TROFF` and `CMAX` value forms on `raw` video
+    (`st2110-21.a.fmtp.troff-invalid-value`, `cmax-invalid-value`, §8.2).
+  - ST 2110-22 on every stream it governs (`jxsv`, any block with
+    `SSN=ST2110-22:*`, and at the IPMX tier every compressed video
+    block): a frame-rate indication (`st2110-22.framerate-indication-required`,
+    §7.4), `TP=2110TPN` only with the 2022 edition
+    (`st2110-22.a.fmtp.tp-2110tpn-requires-ssn-2022`), the 90 kHz clock
+    rate on non-`jxsv` blocks (`st2110-22.a.rtpmap.clock-rate-must-be-90000`,
+    §5.2), and the existing `width`/`height`/`TP` and `b=AS` checks now
+    applied to those blocks too.
+  - ST 2110-30 / ST 2110-31: `a=ptime` required on `L16`, `L24`
+    (`st2110-30.a.ptime-required`, §6.2 via AES67 §8.1) and `AM824`
+    (`st2110-31.a.ptime-required`), and the AM824 value against Table 1
+    (`st2110-31.a.ptime-invalid-value`).
+  - TR-10-13: `a=privacy` `protocol` must be `RTP` or `RTP_KV` on an RTP
+    stream (`tr-10-13.a.privacy.rtp-protocol-invalid-value`, §20).
+  - Decision `parse_sdp-dxe`: ST 2110-10 §8.1 "one SDP per stream" binds
+    the constructing device and is not checked on the file.
+
 - `audits/MATROXSDP_PARITY.md`: a parity matrix against the SDP parser and
   checker in the IPMX fork of AMWA nmos-testing (`MatroxSdp.py`,
   `MatroxSdpCheck.py`, commit d26bc1b). Every parse behavior and check
@@ -78,6 +115,13 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
   `examples/generic/invalid/06_h264_interleaving_in_mode1.sdp`.
 
 ### Changed
+
+- Fixtures that the new checks found non-conformant: the ST 2110 audio
+  examples gain `a=ptime`, and the IPMX pathological example keeps all
+  its `a=extmap` lines at the session level. The pinned AMWA BCP-006-01
+  `jpeg-xs.sdp` pairs `SSN=ST2110-22:2019` with `TP=2110TPN`, which the
+  2019 edition does not define, so `spec_conformance/manifest.lua` now
+  expects it to fail with that clause.
 
 - `examples/generic/valid/04_typical_streaming.sdp` and
   `05_pathological.sdp`: the `mpeg4-generic` fmtp lines gain the
