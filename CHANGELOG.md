@@ -9,6 +9,17 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 
+### Added
+
+- `audits/MATROXSDP_PARITY.md`: a parity matrix against the SDP parser and
+  checker in the IPMX fork of AMWA nmos-testing (`MatroxSdp.py`,
+  `MatroxSdpCheck.py`, commit d26bc1b). Every parse behavior and check
+  there has a verdict (ADOPT, COVERED, REJECT, OUT OF SCOPE) with the
+  primary clause, and every REJECT has a closed decision bead. Section 9
+  lists the places where that checker and the specification text disagree.
+  Eighteen decision beads record the rejected checks and the tier placement
+  of the codec RFC checks (`parse_sdp-59w`).
+
 ### Changed
 
 - `spec_conformance/SDPOKER_BACKLOG.md` points at the current files
