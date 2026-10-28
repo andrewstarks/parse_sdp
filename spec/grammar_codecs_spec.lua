@@ -400,3 +400,256 @@ describe("codecs — decode_h264_profile_level_id (RFC 6184 §8.1)", function()
     assert.is_nil(decode(nil))
   end)
 end)
+
+describe("codecs — H.265 rtpmap mapping (RFC 7798 §7.2.1)", function()
+
+  -- SPEC: RFC 7798 §7.2.1 "The media name in the "m=" line of SDP MUST be
+  -- video." / "The clock rate in the "a=rtpmap" line MUST be 90000."
+  it("accepts m=video with H265/90000", function()
+    local doc, ctx = match_all(sdp_with({
+      "m=video 49170 RTP/AVP 98", "a=rtpmap:98 H265/90000" }))
+    assert.is_truthy(doc)
+    assert.same({}, ctx.findings)
+  end)
+
+  it("rejects H265 on m=audio", function()
+    local _, ctx = match_all(sdp_with({
+      "m=audio 49170 RTP/AVP 98", "a=rtpmap:98 H265/90000" }))
+    local f = finding_for(ctx, "sdp.a.rtpmap.h265.media-type-must-be-video")
+    assert.is_not_nil(f)
+    assert.equal("RFC 7798 §7.2.1", f.spec_ref)
+  end)
+
+  it("rejects an H265 clock rate other than 90000", function()
+    local _, ctx = match_all(sdp_with({
+      "m=video 49170 RTP/AVP 98", "a=rtpmap:98 h265/90001" }))
+    assert.is_not_nil(finding_for(ctx, "sdp.a.rtpmap.h265.clock-rate-must-be-90000"))
+  end)
+end)
+
+describe("codecs — H.265 fmtp value forms (RFC 7798 §7.1)", function()
+
+  local function h265_fmtp(body)
+    return sdp_with({
+      "m=video 49170 RTP/AVP 98",
+      "a=rtpmap:98 H265/90000",
+      "a=fmtp:98 " .. body,
+    })
+  end
+
+  -- Each row: parameter, a conforming value, a non-conforming value, with
+  -- the §7.1 clause the pair exercises.
+  local FORMS = {
+    -- "The value of profile-space MUST be in the range of 0 to 3 ... The
+    -- value of profile-id MUST be in the range of 0 to 31"
+    { "profile-space", "3", "4" },
+    { "profile-id",    "0", "32" },
+    -- "The value of tier-flag MUST be in the range of 0 to 1 ... The value
+    -- of level-id MUST be in the range of 0 to 255"
+    { "tier-flag", "1", "2" },
+    { "level-id",  "255", "256" },
+    -- "A base16 [RFC4648] (hexadecimal) representation of six bytes of data"
+    { "interop-constraints", "B00000000000", "B000000000" },
+    -- "A base16 [RFC4648] representation of four bytes of data."
+    { "profile-compatibility-indicator", "60000000", "6000000" },
+    -- "MUST be in the range of 0 to 6, inclusive."
+    { "sprop-sub-layer-id", "6", "7" },
+    { "recv-sub-layer-id",  "0", "-1" },
+    -- "MUST be in the range of 0 to 255" (tested with level-id=0 so the
+    -- not-higher-than rule stays quiet)
+    { "max-recv-level-id", "level-id=0;max-recv-level-id=255", "level-id=0;max-recv-level-id=256", true },
+    -- "MUST be equal to "SRST", "MRST" or "MRMT"."
+    { "tx-mode", "MRMT", "srst" },
+    -- "a comma-separated (',') list of base64 [RFC4648] representations"
+    { "sprop-vps", "QAEMAf//AWAAAAMAAAMAAAMAAAMAlqwJ", "QAEMAf//AWAAAAMAAAMAAAMAAAMAlqwJ," },
+    { "sprop-sps", "QgEBAWAAAAMAAAMAAAMAAAMAlqAB4CACHH+QvNJM7LdkAQAAAwABAAADAA8I", "Qg EB" },
+    { "sprop-pps", "RAHA8vA8kA==", "RAHA8vA8kA===" },
+    { "sprop-sei", "TgF/kA==,TgEAkA==", "TgF/kA==,," },
+    -- "The value of max-lsr is an integer" (and six others)
+    { "max-lsr", "133693440", "1.3e8" },
+    { "max-lps", "8912896", "8912896px" },
+    { "max-cpb", "40000", "" },
+    { "max-br",  "40000", "40000k" },
+    { "max-tr",  "22", "twenty-two" },
+    { "max-tc",  "20", "0x14" },
+    { "max-fps", "60", "59.94" },
+    -- "The value of max-dpb MUST be in the range of 1 to 16, inclusive."
+    { "max-dpb", "16", "0" },
+    { "max-dpb", "1", "17" },
+    -- "MUST be an integer in the range of 0 to 32767, inclusive."
+    { "sprop-max-don-diff",     "0", "32768" },
+    { "sprop-depack-buf-nalus", "32767", "32768" },
+    -- "MUST be an integer in the range of 0 to 4294967295, inclusive."
+    { "sprop-depack-buf-bytes", "4294967295", "4294967296" },
+    -- "MUST be an integer in the range of 1 to 4294967295, inclusive."
+    { "depack-buf-cap", "1", "0" },
+    -- "MUST be an integer in the range of 0 to 3, inclusive."
+    { "sprop-segmentation-id", "3", "4" },
+    -- "A base16 [RFC4648] representation of the syntax element
+    -- min_spatial_segmentation_idc"
+    { "sprop-spatial-segmentation-idc", "1FF", "1FG" },
+    -- "each hash type provided as an unsigned integer value (0-255)";
+    -- "the value contains no hash types" is a defined case.
+    { "include-dph", "0,2", "0,256" },
+    { "include-dph", "", "0, 2" },
+  }
+  for _, row in ipairs(FORMS) do
+    local key, good, bad, whole = row[1], row[2], row[3], row[4]
+    local id = "sdp.a.fmtp.h265." .. key .. "-invalid-value"
+    local good_body = whole and good or (key .. "=" .. good)
+    local bad_body  = whole and bad  or (key .. "=" .. bad)
+    it(("accepts %s"):format(good_body), function()
+      local doc, ctx = match_all(h265_fmtp(good_body))
+      assert.is_truthy(doc)
+      assert.is_nil(finding_for(ctx, id))
+    end)
+    it(("rejects %s [%s]"):format(bad_body, id), function()
+      local _, ctx = match_all(h265_fmtp(bad_body))
+      local f = finding_for(ctx, id)
+      assert.is_not_nil(f)
+      assert.equal("media[0].attributes[fmtp:pt=98]", f.field_path)
+      assert.equal("RFC 7798 §7.1", f.spec_ref)
+    end)
+  end
+
+  -- SPEC: "When sprop-max-don-diff is present and greater than 0, this
+  -- parameter MUST be present and the value MUST be greater than 0."
+  describe("sprop-depack-buf-nalus / -bytes with sprop-max-don-diff", function()
+    for _, key in ipairs({ "sprop-depack-buf-nalus", "sprop-depack-buf-bytes" }) do
+      local id = "sdp.a.fmtp.h265." .. key .. "-required-when-max-don-diff"
+      local other = key == "sprop-depack-buf-nalus"
+        and "sprop-depack-buf-bytes=1" or "sprop-depack-buf-nalus=1"
+      it(("requires %s when sprop-max-don-diff=1"):format(key), function()
+        local _, ctx = match_all(h265_fmtp("sprop-max-don-diff=1;" .. other))
+        local f = finding_for(ctx, id)
+        assert.is_not_nil(f)
+        assert.equal("MISSING_FIELD", f.code)
+      end)
+      it(("rejects %s=0 when sprop-max-don-diff=1"):format(key), function()
+        local _, ctx = match_all(h265_fmtp(
+          "sprop-max-don-diff=1;" .. other .. ";" .. key .. "=0"))
+        assert.is_not_nil(finding_for(ctx, id))
+      end)
+      it(("accepts %s=1 when sprop-max-don-diff=1"):format(key), function()
+        local _, ctx = match_all(h265_fmtp(
+          "sprop-max-don-diff=1;" .. other .. ";" .. key .. "=1"))
+        assert.is_nil(finding_for(ctx, id))
+      end)
+      it(("does not require %s when sprop-max-don-diff=0"):format(key), function()
+        local _, ctx = match_all(h265_fmtp("sprop-max-don-diff=0"))
+        assert.is_nil(finding_for(ctx, id))
+      end)
+      it(("does not require %s when sprop-max-don-diff is absent"):format(key), function()
+        local _, ctx = match_all(h265_fmtp("tx-mode=SRST"))
+        assert.is_nil(finding_for(ctx, id))
+      end)
+    end
+  end)
+
+  -- SPEC: "max-recv-level-id MUST NOT be present when the highest level
+  -- the receiver supports is not higher than the default level." and "if
+  -- no level-id is present, a value of 93 (i.e., level 3.1) MUST be
+  -- inferred."
+  describe("max-recv-level-id against level-id", function()
+    local ID = "sdp.a.fmtp.h265.max-recv-level-id-not-higher-than-level-id"
+    it("accepts max-recv-level-id=120 with level-id=93", function()
+      local _, ctx = match_all(h265_fmtp("level-id=93;max-recv-level-id=120"))
+      assert.is_nil(finding_for(ctx, ID))
+    end)
+    it("rejects max-recv-level-id=93 with level-id=93", function()
+      local _, ctx = match_all(h265_fmtp("level-id=93;max-recv-level-id=93"))
+      assert.is_not_nil(finding_for(ctx, ID))
+    end)
+    it("rejects max-recv-level-id=90 with level-id absent (inferred 93)", function()
+      local _, ctx = match_all(h265_fmtp("max-recv-level-id=90"))
+      assert.is_not_nil(finding_for(ctx, ID))
+    end)
+    it("accepts max-recv-level-id=120 with level-id absent", function()
+      local _, ctx = match_all(h265_fmtp("max-recv-level-id=120"))
+      assert.is_nil(finding_for(ctx, ID))
+    end)
+  end)
+
+  -- NOT-SPEC: library — dec-parallel-cap carries ';' inside its braces,
+  -- which the key=value split cannot represent, so a line that carries it
+  -- is left unchecked rather than reported through its fragments.
+  it("skips a line that carries dec-parallel-cap", function()
+    local doc, ctx = match_all(h265_fmtp(
+      "profile-id=99;dec-parallel-cap={w:8;level-id=120;max-lsr=133693440}"))
+    assert.is_truthy(doc)
+    assert.same({}, ctx.findings)
+  end)
+
+  -- SPEC: RFC 8866 §6.6 (RFC 4855 §3): names are case-insensitive.
+  it("matches parameter names case-insensitively", function()
+    local _, ctx = match_all(h265_fmtp("Tier-Flag=2"))
+    assert.is_not_nil(finding_for(ctx, "sdp.a.fmtp.h265.tier-flag-invalid-value"))
+  end)
+end)
+
+describe("codecs — decode_h265_profile (RFC 7798 §7.1)", function()
+  local decode = codecs.decode_h265_profile
+
+  local function params_of(body)
+    local doc = base.match(sdp_with({
+      "m=video 49170 RTP/AVP 98", "a=rtpmap:98 H265/90000", "a=fmtp:98 " .. body }),
+      { fail_on_first = false })
+    return base.attr_get(doc.media[1], "fmtp").params
+  end
+
+  -- SPEC: inferred values "profile-space ... 0", "profile-id ... 1 (i.e.,
+  -- the Main profile)", "tier-flag ... 0", "level-id ... 93 (i.e., level
+  -- 3.1)", interop flags 1, 0, 1, 1.
+  it("infers Main, Main tier, level 3.1, progressive when nothing is given", function()
+    local d = decode(params_of("tx-mode=SRST"))
+    assert.equal(0, d.profile_space)
+    assert.equal(1, d.profile_id)
+    assert.equal("Main", d.profile)
+    assert.equal("Main", d.tier)
+    assert.equal(93, d.level_id)
+    assert.equal("3.1", d.level)
+    assert.is_true(d.progressive_source_flag)
+    assert.is_false(d.interlaced_source_flag)
+    assert.is_true(d.non_packed_constraint_flag)
+    assert.is_true(d.frame_only_constraint_flag)
+    assert.is_true(d.profile_compatibility_flags[1])
+    assert.is_false(d.profile_compatibility_flags[2])
+  end)
+
+  it("decodes profile-id=2, tier-flag=1, level-id=150 as Main 10, High tier, level 5", function()
+    local d = decode(params_of("profile-id=2;tier-flag=1;level-id=150"))
+    assert.equal("Main 10", d.profile)
+    assert.equal("High", d.tier)
+    assert.equal("5", d.level)
+  end)
+
+  -- SPEC: interop-constraints bits progressive_source_flag,
+  -- interlaced_source_flag, non_packed_constraint_flag,
+  -- frame_only_constraint_flag from the most significant bit.
+  it("reads the interop-constraints flags", function()
+    local d = decode(params_of("interop-constraints=400000000000"))
+    assert.is_false(d.progressive_source_flag)
+    assert.is_true(d.interlaced_source_flag)
+    assert.is_false(d.non_packed_constraint_flag)
+    assert.is_false(d.frame_only_constraint_flag)
+  end)
+
+  -- SPEC: "bit j of profile-compatibility-indicator =
+  -- general_profile_compatibility_flag[j]", most significant bit first.
+  it("reads profile-compatibility-indicator=60000000 as flags 1 and 2", function()
+    local d = decode(params_of("profile-compatibility-indicator=60000000"))
+    assert.is_false(d.profile_compatibility_flags[0])
+    assert.is_true(d.profile_compatibility_flags[1])
+    assert.is_true(d.profile_compatibility_flags[2])
+    assert.is_false(d.profile_compatibility_flags[3])
+    assert.is_false(d.profile_compatibility_flags[31])
+  end)
+
+  -- NOT-SPEC: library — errors are values.
+  it("returns nil, err for a malformed value", function()
+    local d, err = decode(params_of("level-id=999"))
+    assert.is_nil(d)
+    assert.is_string(err)
+    assert.is_nil(decode(nil))
+  end)
+end)
