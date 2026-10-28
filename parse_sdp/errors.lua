@@ -1048,6 +1048,19 @@ M.register("sdp.a.fmtp.mp4a-latm.config-required-when-cpresent-0", {
   verified         = true,
 })
 
+-- ── Codec payload formats: MPEG-2 TS, RFC 2250 (base tier) ─────────────────
+-- RFC 2250 §2 (verbatim): "timestamp: 32 bit 90K Hz timestamp representing
+-- the target transmission time for the first byte of the packet." RFC 3551
+-- Table 5 registers MP2T with clock rate 90,000.
+M.register("sdp.a.rtpmap.mp2t.clock-rate-must-be-90000", {
+  kind             = "semantic",
+  default_severity = "error",
+  code             = "INVALID_VALUE",
+  message_template = "an MP2T rtpmap clock rate must be 90000",
+  spec_ref         = "RFC 2250 §2; RFC 3551 Table 5",
+  verified         = true,
+})
+
 -- ── ST 2110 rtpmap narrowings per media type (Phase 6.B) ───────────────────
 -- Each ST 2110 essence has a defined encoding-name × media-type × clock-rate
 -- triple. Cited against primary spec text via the Phase-3 audit

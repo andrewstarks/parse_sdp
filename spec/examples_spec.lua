@@ -59,6 +59,9 @@ local EXPECTED = {
       findings = {
         "sdp.a.fmtp.mpeg4-generic.aac-mode-requires-size-and-index-lengths@0",
       } },
+  ["examples/generic/invalid/09_mp2t_clock_rate.sdp"] =
+    { error = "sdp.a.rtpmap.mp2t.clock-rate-must-be-90000", line = 0,
+      findings = { "sdp.a.rtpmap.mp2t.clock-rate-must-be-90000@0" } },
   ["examples/st2110/invalid/01_missing_tsrefclk.sdp"] =
     { error = "st2110.attr.ts-refclk-required", line = 0,
       findings = { "st2110.attr.ts-refclk-required@0" } },

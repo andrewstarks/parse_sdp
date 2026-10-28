@@ -155,6 +155,7 @@
     "CELP",
     "hbr",
     "lbr",
-    "streamtype"
+    "streamtype",
+    "mp2t"
   ]
 }

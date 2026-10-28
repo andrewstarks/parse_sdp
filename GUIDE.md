@@ -1507,6 +1507,15 @@ checked.
 | `sdp.a.fmtp.mp4a-latm.config-invalid-value`, `MPS-asc` | A value that is not a hexadecimal octet string. | RFC 6416 §7.3 |
 | `sdp.a.fmtp.mp4a-latm.config-required-when-cpresent-0` | `cpresent=0` without `config`. | RFC 6416 §7.3 |
 
+MPEG-2 transport stream (RFC 2250, encoding `MP2T`). RFC 3551 Table 5
+registers the encoding under media type "AV", so the `m=` media type is
+not checked, and the `video/MP2T` registration (RFC 3555 section 4.2.9)
+defines no parameters, so an `a=fmtp` for it is not checked.
+
+| Id | The check rejects | `spec_ref` |
+| --- | --- | --- |
+| `sdp.a.rtpmap.mp2t.clock-rate-must-be-90000` | An `MP2T` rtpmap clock rate other than 90000. | RFC 2250 §2; RFC 3551 Table 5 |
+
 #### Malformed known attributes
 
 The parser recognizes the attributes in the table below by name. When
@@ -1623,9 +1632,10 @@ specifications are silent.
 - The `a=rtpmap` encoding name of an audio or video stream. Encodings
   other than `raw`, `jxsv`, `smpte291`, `AM824`, and `ST2110-41` get no
   per-encoding checks at the ST 2110 tier; `opus/48000/2` passes. `H264`,
-  `H265`, `mpeg4-generic`, and `MP4A-LATM` get their RFC checks at every
-  tier (see [Codec payload-format checks](#codec-payload-format-checks)),
-  but no ST 2110-22 check follows from them.
+  `H265`, `mpeg4-generic`, `MP4A-LATM`, and `MP2T` get their RFC checks
+  at every tier (see
+  [Codec payload-format checks](#codec-payload-format-checks)), but no
+  ST 2110-22 check follows from them.
 - An H.265 `a=fmtp` line that carries `dec-parallel-cap`. Its braces
   hold semicolons, so the `key=value` split cannot carry it, and the
   line's other H.265 parameters are not checked either.
@@ -2265,7 +2275,7 @@ internal helper.
 | `spec/grammar_base_spec.lua` | standards | RFC 8866 base SDP: every leaf rule, every soft-syntactic and semantic finding, and the doc shape. Each test cites the clause. |
 | `spec/grammar_st2110_spec.lua` | standards | SMPTE ST 2110 overrides and per-block and cross-section checks (parts -10, -20, -21, -22, -30, -31, -40, -41). |
 | `spec/grammar_ipmx_spec.lua` | standards | VSF TR-10 / IPMX overrides and per-block and cross-section checks (TR-10-1 through TR-10-14). |
-| `spec/grammar_codecs_spec.lua` | standards | The payload-format RFC checks that run at every tier (H.264, RFC 6184; H.265, RFC 7798; AAC, RFC 3640 and RFC 6416) and the `decode_*` helpers. |
+| `spec/grammar_codecs_spec.lua` | standards | The payload-format RFC checks that run at every tier (H.264, RFC 6184; H.265, RFC 7798; AAC, RFC 3640 and RFC 6416; MP2T, RFC 2250) and the `decode_*` helpers. |
 | `spec/roundtrip_spec.lua` | standards | Every base and IPMX attribute renderer, and the parse, serialize, and re-parse round trip over `examples/{generic,st2110,ipmx}/valid/*.sdp`. |
 | `spec/examples_spec.lua` | standards | Every file under `examples/<tier>/valid/` passes its tier. Every file under `examples/<tier>/invalid/` fails its tier with the check id, line, and full findings list that the spec's `EXPECTED` table records. |
 | `spec/mutation_spec.lua` | library API | Properties over mutated copies of every example and fixture. An inserted unparseable line is the reported error. `sdp.parse` never raises. `fail_on_first` does not change the verdict. Every mutant that parses round-trips, under the default policy and with errors demoted. |

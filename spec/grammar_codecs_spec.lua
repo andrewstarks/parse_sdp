@@ -876,3 +876,63 @@ describe("codecs — MP4A-LATM (RFC 6416 §7.3 / §7.4)", function()
     end
   end)
 end)
+
+describe("codecs — MPEG-2 transport stream, MP2T (RFC 2250 §2, RFC 3551 Table 5)", function()
+
+  -- SPEC: RFC 2250 §2 "32 bit 90K Hz timestamp"; RFC 3551 Table 5 "33 MP2T
+  -- AV 90,000".
+  it("accepts MP2T/90000 on m=video and on m=audio (media type AV)", function()
+    for _, media in ipairs({ "video", "audio" }) do
+      local doc, ctx = match_all(sdp_with({
+        "m=" .. media .. " 30000 RTP/AVP 33", "a=rtpmap:33 MP2T/90000" }))
+      assert.is_truthy(doc)
+      assert.same({}, ctx.findings)
+    end
+  end)
+
+  it("rejects an MP2T clock rate other than 90000", function()
+    local _, ctx = match_all(sdp_with({
+      "m=video 30000 RTP/AVP 100", "a=rtpmap:100 mp2t/27000000" }))
+    local f = finding_for(ctx, "sdp.a.rtpmap.mp2t.clock-rate-must-be-90000")
+    assert.is_not_nil(f)
+    assert.equal("RFC 2250 §2; RFC 3551 Table 5", f.spec_ref)
+  end)
+
+  -- NOT-SPEC: library — RFC 3555 §4.2.9 defines no parameters, so an fmtp
+  -- on an MP2T payload type is left alone.
+  it("does not check an MP2T fmtp", function()
+    local doc, ctx = match_all(sdp_with({
+      "m=video 30000 RTP/AVP 100", "a=rtpmap:100 MP2T/90000", "a=fmtp:100 x=1" }))
+    assert.is_truthy(doc)
+    assert.same({}, ctx.findings)
+  end)
+
+  -- SPEC: ST 2110-10:2022 §8.5 DUP leg coherence runs on any encoding; the
+  -- RFC 7104 §4.2 shape (two MP2T legs, separate destinations) is the
+  -- non-2110 case.
+  it("ST 2110 tier: DUP coherence fires on MP2T legs with different fmtp", function()
+    local _, ctx = st2110.match(table.concat({
+      "v=0",
+      "o=- 1122334455 1122334466 IN IP4 192.0.2.1",
+      "s=DUP Grouping Semantics",
+      "t=0 0",
+      "a=group:DUP S1a S1b",
+      "m=video 30000 RTP/AVP 100",
+      "c=IN IP4 233.252.0.1/127",
+      "a=source-filter: incl IN IP4 233.252.0.1 198.51.100.1",
+      "a=rtpmap:100 MP2T/90000",
+      "a=fmtp:100 x=1",
+      "a=mid:S1a",
+      support.TIMING_TS_REFCLK, support.TIMING_MEDIACLK,
+      "m=video 30000 RTP/AVP 100",
+      "c=IN IP4 233.252.0.2/127",
+      "a=source-filter: incl IN IP4 233.252.0.2 198.51.100.1",
+      "a=rtpmap:100 MP2T/90000",
+      "a=fmtp:100 x=2",
+      "a=mid:S1b",
+      support.TIMING_TS_REFCLK, support.TIMING_MEDIACLK,
+    }, "\r\n") .. "\r\n", { fail_on_first = false })
+    assert.is_not_nil(finding_for(ctx, "st2110-10.a.group-dup.fmtp-same"))
+    assert.is_nil(finding_for(ctx, "st2110-10.a.group-dup.rtpmap-same"))
+  end)
+end)
