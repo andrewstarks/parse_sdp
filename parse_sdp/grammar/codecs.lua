@@ -477,6 +477,16 @@ local CODECS = {
     media_id = "sdp.a.rtpmap.mp4a-latm.media-type-must-be-audio",
     fmtp     = check_mp4a_latm_fmtp,
   },
+  -- RFC 2250 §2: the RTP packet carries a "32 bit 90K Hz timestamp
+  -- representing the target transmission time"; RFC 3551 Table 5 registers
+  -- MP2T with clock rate 90,000 and media type "AV" (audio or video), so
+  -- the media type is not checked. RFC 3555 §4.2.9: "Required parameters:
+  -- None. Optional parameters: None.", so no fmtp parameter is defined.
+  mp2t = {
+    clock_rate = 90000,
+    clock_id   = "sdp.a.rtpmap.mp2t.clock-rate-must-be-90000",
+    fmtp       = function() return true end,
+  },
 }
 
 local function check_codec_block(block, ctx)
@@ -486,7 +496,7 @@ local function check_codec_block(block, ctx)
     if codec then
       local field_path = string.format("media[%d].attributes[rtpmap:pt=%d]",
                                        ctx.media_index or 0, r.payload_type)
-      if not codec.media[block.media] then
+      if codec.media_id and not codec.media[block.media] then
         if not record(ctx, codec.media_id, field_path) then return false end
       end
       if codec.clock_rate and r.clock_rate ~= codec.clock_rate then

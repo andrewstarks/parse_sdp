@@ -56,6 +56,12 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
   `config`, `MPS-asc`, and `SBR-enabled`; `config` required when
   `cpresent=0`. Neither registration fixes a clock rate, so none is
   checked.
+- MPEG-2 transport stream: `sdp.a.rtpmap.mp2t.clock-rate-must-be-90000`
+  (RFC 2250 §2, RFC 3551 Table 5). The media type is not checked (Table 5
+  registers MP2T as "AV") and no fmtp parameter is defined (RFC 3555
+  §4.2.9). `examples/generic/valid/12_rfc7104_dup_mp2t.sdp` follows the
+  RFC 7104 §4.2 `a=group:DUP` example, and
+  `examples/generic/invalid/09_mp2t_clock_rate.sdp` the clock-rate check.
 - `examples/generic/valid/10_aac_mpeg4_generic.sdp`,
   `examples/generic/valid/11_aac_mp4a_latm.sdp`, and
   `examples/generic/invalid/08_aac_hbr_missing_lengths.sdp`.

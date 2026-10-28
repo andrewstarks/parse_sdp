@@ -1,0 +1,7 @@
+v=0
+o=- 3720000010 1 IN IP4 192.0.2.10
+s=MPEG-2 transport stream with the system clock as the RTP clock
+c=IN IP4 233.252.0.13/127
+t=0 0
+m=video 30000 RTP/AVP 100
+a=rtpmap:100 MP2T/27000000
