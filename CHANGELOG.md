@@ -31,6 +31,22 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
   `sar-supported` against `sar-understood`. The checks live in the new
   `parse_sdp/grammar/codecs.lua` (decision `parse_sdp-59w`) and read the
   rtpmap encoding and fmtp parameter names without regard to case.
+- H.265 checks from RFC 7798 at every tier (34 new check ids,
+  `sdp.a.rtpmap.h265.*` and `sdp.a.fmtp.h265.*`): `m=video` and clock
+  rate 90000 (§7.2.1); the value form of every §7.1 fmtp parameter
+  (`profile-space` 0 to 3, `profile-id` 0 to 31, `tier-flag`, `level-id`,
+  the twelve- and eight-digit hex forms, `tx-mode`, the base64 lists, the
+  `sprop-*` and `max-*` ranges, `include-dph`); `sprop-depack-buf-nalus`
+  and `sprop-depack-buf-bytes` required and non-zero when
+  `sprop-max-don-diff` is greater than 0; and `max-recv-level-id` not
+  higher than `level-id`. A line that carries `dec-parallel-cap` is not
+  checked (its value holds semicolons).
+- `sdp.decode_h265_profile(params)`: profile space, id, tier and level
+  with the RFC's inferred defaults, the profile group name, the
+  `interop-constraints` flags, and the 32 profile-compatibility flags. A
+  convenience, not a check.
+- `examples/generic/valid/09_h265_rfc7798.sdp` and
+  `examples/generic/invalid/07_h265_depack_buf_missing.sdp`.
 - `sdp.decode_h264_profile_level_id(hex)`: the three bytes, the six
   constraint flags, the level (including 1b), and the ITU-T H.264 profile
   name of a `profile-level-id` value. A convenience, not a check.

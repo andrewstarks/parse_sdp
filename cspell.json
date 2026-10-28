@@ -146,6 +146,11 @@
     "trunc",
     "CAVLC",
     "Multiview",
-    "PLId"
+    "PLId",
+    "dph",
+    "idc",
+    "lps",
+    "lsr",
+    "MATROXSDP"
   ]
 }

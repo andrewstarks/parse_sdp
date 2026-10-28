@@ -46,6 +46,13 @@ local EXPECTED = {
         "sdp.a.fmtp.h264.sprop-interleaving-depth-forbidden-in-mode@0",
         "sdp.a.fmtp.h264.sprop-max-don-diff-forbidden-in-mode@0",
       } },
+  ["examples/generic/invalid/07_h265_depack_buf_missing.sdp"] =
+    { error = "sdp.a.fmtp.h265.sprop-depack-buf-nalus-required-when-max-don-diff",
+      line = 0,
+      findings = {
+        "sdp.a.fmtp.h265.sprop-depack-buf-nalus-required-when-max-don-diff@0",
+        "sdp.a.fmtp.h265.sprop-depack-buf-bytes-required-when-max-don-diff@0",
+      } },
   ["examples/st2110/invalid/01_missing_tsrefclk.sdp"] =
     { error = "st2110.attr.ts-refclk-required", line = 0,
       findings = { "st2110.attr.ts-refclk-required@0" } },

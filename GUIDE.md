@@ -702,6 +702,33 @@ local d = sdp.decode_h264_profile_level_id(sdp.params_get(fmtp.params, "profile-
 print(d.profile, d.level)   --> Constrained Baseline  3
 ```
 
+#### `sdp.decode_h265_profile(params)`
+
+Decodes the profile, tier and level parameters of an H.265 `a=fmtp`
+params list (RFC 7798 section 7.1). The result has `profile_space`,
+`profile_id`, `tier_flag`, and `level_id` (numbers; when a parameter is
+absent the RFC's inferred value is used: 0, 1, 0, and 93), `tier`
+(`"Main"` or `"High"`), `level` (`level_id` divided by 30, as a string
+such as `"3.1"` or `"4"`), `profile` (the ITU-T H.265 profile group that
+`profile_id` selects, for example `"Main 10"`; nil for a `profile_id` the
+table does not know), the four `interop-constraints` flags as booleans
+(`progressive_source_flag`, `interlaced_source_flag`,
+`non_packed_constraint_flag`, `frame_only_constraint_flag`; inferred 1,
+0, 1, 1 when absent), and `profile_compatibility_flags`, a table indexed
+0 to 31 read from `profile-compatibility-indicator` most significant bit
+first (flag 1 and 2 set is `60000000`). The sub-profiles that the
+constraint bits distinguish within a group are not named.
+
+This is a convenience for reading a parsed value, not a check. A
+malformed value returns `nil` and a message; the validator's own checks
+are the `sdp.a.fmtp.h265.*-invalid-value` ids.
+
+```lua
+local fmtp = sdp.attr_get(doc.media[1], "fmtp")
+local d = sdp.decode_h265_profile(fmtp.params)
+print(d.profile, d.tier, d.level)   --> Main  Main  4
+```
+
 ### Doc methods
 
 #### `doc:validate([mode])`
@@ -1419,6 +1446,37 @@ through [`sdp.decode_h264_profile_level_id`](#sdpdecode_h264_profile_level_idhex
 | `sdp.a.fmtp.h264.sprop-init-buf-time-forbidden-in-mode`, `sprop-max-don-diff-forbidden-in-mode` | The parameter present when `packetization-mode` is `0` or `1`. | RFC 6184 §8.1 |
 | `sdp.a.fmtp.h264.use-level-src-parameter-sets-forbidden-with-in-band` | `use-level-src-parameter-sets` present with a value other than `0` when `in-band-parameter-sets` is `1`. | RFC 6184 §8.1 |
 
+H.265 (RFC 7798). The decoded profile, tier and level are available
+through [`sdp.decode_h265_profile`](#sdpdecode_h265_profileparams). An
+`a=fmtp` line that carries `dec-parallel-cap` is not checked: that
+parameter's value holds semicolons inside its braces, which the
+`key=value` split of `a=fmtp` cannot carry, so checking its fragments
+would report parameters that are not there.
+
+| Id | The check rejects | `spec_ref` |
+| --- | --- | --- |
+| `sdp.a.rtpmap.h265.media-type-must-be-video` | An `a=rtpmap` with encoding `H265` on an `m=` line whose media type is not `video`. | RFC 7798 §7.2.1 |
+| `sdp.a.rtpmap.h265.clock-rate-must-be-90000` | An `H265` rtpmap clock rate other than 90000. | RFC 7798 §7.2.1 |
+| `sdp.a.fmtp.h265.profile-space-invalid-value` | A value that is not an integer from 0 to 3. | RFC 7798 §7.1 |
+| `sdp.a.fmtp.h265.profile-id-invalid-value` | A value that is not an integer from 0 to 31. | RFC 7798 §7.1 |
+| `sdp.a.fmtp.h265.tier-flag-invalid-value` | A value other than `0` or `1`. | RFC 7798 §7.1 |
+| `sdp.a.fmtp.h265.level-id-invalid-value`, `max-recv-level-id-invalid-value` | A value that is not an integer from 0 to 255. | RFC 7798 §7.1 |
+| `sdp.a.fmtp.h265.interop-constraints-invalid-value` | A value that is not twelve hexadecimal digits. | RFC 7798 §7.1 |
+| `sdp.a.fmtp.h265.profile-compatibility-indicator-invalid-value` | A value that is not eight hexadecimal digits. | RFC 7798 §7.1 |
+| `sdp.a.fmtp.h265.sprop-sub-layer-id-invalid-value`, `recv-sub-layer-id-invalid-value` | A value that is not an integer from 0 to 6. | RFC 7798 §7.1 |
+| `sdp.a.fmtp.h265.tx-mode-invalid-value` | A value other than `SRST`, `MRST`, or `MRMT`. | RFC 7798 §7.1 |
+| `sdp.a.fmtp.h265.sprop-vps-invalid-value`, `sprop-sps`, `sprop-pps`, `sprop-sei` | A value that is not a comma-separated list of base64 strings. | RFC 7798 §7.1 |
+| `sdp.a.fmtp.h265.max-lsr-invalid-value`, `max-lps`, `max-cpb`, `max-br`, `max-tr`, `max-tc`, `max-fps` | A value that is not a decimal integer. The comparison with the H.265 level tables is not made. | RFC 7798 §7.1 |
+| `sdp.a.fmtp.h265.max-dpb-invalid-value` | A value that is not an integer from 1 to 16. | RFC 7798 §7.1 |
+| `sdp.a.fmtp.h265.sprop-max-don-diff-invalid-value`, `sprop-depack-buf-nalus-invalid-value` | A value that is not an integer from 0 to 32767. | RFC 7798 §7.1 |
+| `sdp.a.fmtp.h265.sprop-depack-buf-bytes-invalid-value` | A value that is not an integer from 0 to 4294967295. | RFC 7798 §7.1 |
+| `sdp.a.fmtp.h265.depack-buf-cap-invalid-value` | A value that is not an integer from 1 to 4294967295. | RFC 7798 §7.1 |
+| `sdp.a.fmtp.h265.sprop-segmentation-id-invalid-value` | A value that is not an integer from 0 to 3. | RFC 7798 §7.1 |
+| `sdp.a.fmtp.h265.sprop-spatial-segmentation-idc-invalid-value` | A value that is not hexadecimal digits. | RFC 7798 §7.1 |
+| `sdp.a.fmtp.h265.include-dph-invalid-value` | A value that is neither empty nor a comma-separated list of integers from 0 to 255. | RFC 7798 §7.1 |
+| `sdp.a.fmtp.h265.sprop-depack-buf-nalus-required-when-max-don-diff`, `sprop-depack-buf-bytes-required-when-max-don-diff` | The parameter absent or `0` when `sprop-max-don-diff` is present and greater than 0. | RFC 7798 §7.1 |
+| `sdp.a.fmtp.h265.max-recv-level-id-not-higher-than-level-id` | A `max-recv-level-id` that is not greater than `level-id` (93 when `level-id` is absent). | RFC 7798 §7.1 |
+
 #### Malformed known attributes
 
 The parser recognizes the attributes in the table below by name. When
@@ -1535,9 +1593,12 @@ specifications are silent.
 - The `a=rtpmap` encoding name of an audio or video stream. Encodings
   other than `raw`, `jxsv`, `smpte291`, `AM824`, and `ST2110-41` get no
   per-encoding checks at the ST 2110 tier; `opus/48000/2` passes. `H264`
-  gets the RFC 6184 checks at every tier (see
+  and `H265` get the RFC 6184 and RFC 7798 checks at every tier (see
   [Codec payload-format checks](#codec-payload-format-checks)), but no
-  ST 2110-22 check follows from it.
+  ST 2110-22 check follows from them.
+- An H.265 `a=fmtp` line that carries `dec-parallel-cap`. Its braces
+  hold semicolons, so the `key=value` split cannot carry it, and the
+  line's other H.265 parameters are not checked either.
 - The presence of `a=ptime` on audio streams, and the `a=ptime` value
   against the ST 2110-31 Table 1 packet times.
 - That the payload type of an `a=fmtp` line matches an `a=rtpmap` line.
@@ -2174,7 +2235,7 @@ internal helper.
 | `spec/grammar_base_spec.lua` | standards | RFC 8866 base SDP: every leaf rule, every soft-syntactic and semantic finding, and the doc shape. Each test cites the clause. |
 | `spec/grammar_st2110_spec.lua` | standards | SMPTE ST 2110 overrides and per-block and cross-section checks (parts -10, -20, -21, -22, -30, -31, -40, -41). |
 | `spec/grammar_ipmx_spec.lua` | standards | VSF TR-10 / IPMX overrides and per-block and cross-section checks (TR-10-1 through TR-10-14). |
-| `spec/grammar_codecs_spec.lua` | standards | The payload-format RFC checks that run at every tier (H.264, RFC 6184) and the `decode_*` helpers. |
+| `spec/grammar_codecs_spec.lua` | standards | The payload-format RFC checks that run at every tier (H.264, RFC 6184; H.265, RFC 7798) and the `decode_*` helpers. |
 | `spec/roundtrip_spec.lua` | standards | Every base and IPMX attribute renderer, and the parse, serialize, and re-parse round trip over `examples/{generic,st2110,ipmx}/valid/*.sdp`. |
 | `spec/examples_spec.lua` | standards | Every file under `examples/<tier>/valid/` passes its tier. Every file under `examples/<tier>/invalid/` fails its tier with the check id, line, and full findings list that the spec's `EXPECTED` table records. |
 | `spec/mutation_spec.lua` | library API | Properties over mutated copies of every example and fixture. An inserted unparseable line is the reported error. `sdp.parse` never raises. `fail_on_first` does not change the verdict. Every mutant that parses round-trips, under the default policy and with errors demoted. |
