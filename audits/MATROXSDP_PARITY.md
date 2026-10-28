@@ -20,6 +20,15 @@ Verdicts:
   the closed `decision` bead that holds the quote.
 - **OUT OF SCOPE**: the check compares the SDP against IS-04 / IS-05 state
   that is not in the SDP (CLAUDE.md "Validation Strictness Principle").
+- **NONE**: a parse behavior or default that neither parser turns into a
+  check, and for which the text defines no rule. Nothing to adopt or
+  reject.
+
+Status (2026-10-28): every ADOPT row landed. PR #28 (H.264), #30 (H.265),
+#31 (AAC), #32 (MP2T), #33 (the limitations rows) carry the ids the rows
+name. Two rows changed verdict while landing and say so inline: the
+ST 2110-10 §8.1 media-count row (decision `parse_sdp-dxe`) and the RFC
+6416 `bitrate` row (decision `parse_sdp-cad`).
 
 Phases are the child beads of epic `parse_sdp-j7c`: `.3` H.264, `.4` H.265,
 `.5` AAC, `.6` MP2T, `.7` limitations, `.8` close-out.
@@ -48,7 +57,7 @@ Two facts about the reference shape every verdict below:
 | 819–865 | `c=` three tokens; address split on `/`; no address, multicast or TTL checks; never required | COVERED and stricter: `sdp.c.address.invalid-ipv4/ipv6`, `sdp.c.ipv4-multicast.ttl-required` / `ttl-out-of-range` / `numaddr-invalid`, `sdp.c.ipv6-multicast.*`, `sdp.c.ipv4-unicast.suffix-not-allowed`, `sdp.session.connection-required` | RFC 8866 §5.7, §9 | — |
 | 867–881 | `b=` type must be `AS`; value an integer | REJECT `parse_sdp-t7u` (CT is defined; unknown types MUST be ignored). Value form COVERED (grammar: `bwtype ":" bandwidth`, digits) | RFC 8866 §5.8 | — |
 | 883–892 | `t=` two integers | COVERED (grammar) | RFC 8866 §5.9 | — |
-| 969–970, 733–738 | At most two `m=` sections; without `a=group` exactly one | Base tier: REJECT (RFC 8866 §5.14 sets no limit; folded into `parse_sdp-ae4`). ST 2110 tier: ADOPT `st2110-10.m.one-stream-per-sdp` — more than two media descriptions, or two that are not one `a=group:DUP` pair, fail | ST 2110-10:2022 §8.1 "Devices which contain one or more Senders shall construct one SDP session description as specified in IETF RFC 4566 for each RTP stream (or redundant pair of streams)" | `.7` |
+| 969–970, 733–738 | At most two `m=` sections; without `a=group` exactly one | REJECT `parse_sdp-dxe` at every tier: RFC 8866 §5.14 sets no limit, and ST 2110-10 §8.1 binds the device that constructs SDP objects ("Devices ... shall construct one SDP session description ... for each RTP stream (or redundant pair of streams)"), not the content of one object. Each stream in a multi-stream SDP is checked; a file with no stream stays rejected (`st2110-10.m.media-description-required`) | ST 2110-10:2022 §8.1 | — |
 | 977–978 | `m=` exactly four tokens, so one format only | REJECT `parse_sdp-ae4` | RFC 8866 §5.14 `fmt *(SP fmt)` | — |
 | 983–984 | Media type in {audio, video, text, application, message} | REJECT `parse_sdp-xdg` (existing decision) | RFC 8866 §5.14 "may be extended" | — |
 | 986–997 | Port `int` or `int/int`; no range | COVERED (grammar: `port ["/" integer]`); upper bound stays a GUIDE limitation | RFC 8866 §5.14 | — |
@@ -56,7 +65,7 @@ Two facts about the reference shape every verdict below:
 | 1015–1057 | Session-level `c=`, `b=`, `i=`, hkep, privacy, extmap, mediaclk, ts-refclk copied into each media | COVERED: session-level attributes stay at the session level in the doc; checks that need them (`st2110.attr.ts-refclk-required`, source-filter dest cross-check, privacy, hkep) read both levels | RFC 8866 §5 (session-level attributes apply to all media) | — |
 | 2020 | Odd RTP port without `a=rtcp` fails (RTP/AVP and TCP/RTP/AVP only) | ADOPT `sdp.m.odd-port-requires-rtcp` (base tier, RTP protos) | RFC 8866 §5.14 "If noncontiguous ports are used or if they don't follow the parity rule of even RTP ports and odd RTCP ports, the "a=rtcp:" attribute MUST be used." | `.7` |
 | 2023 | Port count other than 1 with `a=rtcp` fails | REJECT `parse_sdp-8xw` | RFC 3605 §3.2 (informative) | — |
-| 2028 | RTCP port defaults to port+1 | Parse convenience, no check. The IPMX tier has `tr-10-1.a.rtcp.port-must-be-media-port-plus-1` | TR-10-1 §8.7 | — |
+| 2028 | RTCP port defaults to port+1 | NONE: Parse convenience, no check. The IPMX tier has `tr-10-1.a.rtcp.port-must-be-media-port-plus-1` | TR-10-1 §8.7 | — |
 
 ## 2. Attribute handlers (`process_session_attribute` 899–927, `process_media_attribute` 929–966)
 
@@ -69,17 +78,17 @@ Two facts about the reference shape every verdict below:
 | 1059–1079 | `a=source-filter`: media level only; at least five tokens; mode `incl`; `IN`; `IP4`/`IP6`; first source only; no address checks | Form COVERED `sdp.a.source-filter.malformed` (both levels per RFC 4570 §3); dest COVERED `sdp.a.source-filter.dest-not-in-connections`; `incl`-only: REJECT `parse_sdp-qbr` | RFC 4570 §3, §3.1, Appendix A | — |
 | 1081–1125 | `a=rtcp`: one or four tokens; port int; `IN`; `IP4`/`IP6` | COVERED `sdp.a.rtcp.malformed` (RFC 3605 §2.1 ABNF); IPMX `tr-10-1.a.rtcp.port-must-be-media-port-plus-1` | RFC 3605 §2.1; TR-10-1 §8.7 | — |
 | 1127–1172 | `a=rtpmap`: rejected when the `m=` format is non-numeric; two tokens; PT ≤ 127 with no lower bound; PT must equal the `m=` format; encoding `/` rate [`/` channels] | Form COVERED `sdp.a.rtpmap.malformed` (PT 0–127 both bounds); PT-must-equal-`m=`: REJECT `parse_sdp-56g`; dynamic PT needs an rtpmap COVERED `sdp.m.rtpmap-required-for-dynamic-pt` | RFC 8866 §6.6, §8.2.3 | — |
-| 1151–1155 | Audio rtpmap rate stored as sample rate | Parse shape only; `parse_sdp` stores `clock_rate` and `channels` for every media type | RFC 8866 §6.6 | — |
+| 1151–1155 | Audio rtpmap rate stored as sample rate | NONE: Parse shape only; `parse_sdp` stores `clock_rate` and `channels` for every media type | RFC 8866 §6.6 | — |
 | 1213–1264 | `a=ts-refclk`: `local`, `localmac`, `ntp`, `ptp` (`version:gmid[:domain]` or `version:traceable`, no version set, no GMID or domain form check); unknown sources stored with a warning | COVERED and stricter: `sdp.a.ts-refclk.malformed` (RFC 7273 §4.8 clksrc set + `clksrc-ext`), `sdp.a.ts-refclk.ptp-malformed` (EUI-64 GMID), `sdp.a.ts-refclk.traceable-mix`. PTP version token: no closed set (ABNF `ptp-version-ext = token`), so no check. Domain: ADOPT at the ST 2110 tier `st2110-10.a.ts-refclk.ptp-domain-required` (non-traceable PTP must carry the domain) and `st2110-10.a.ts-refclk.ptp-domain-invalid-value` (decimal 0–127) | RFC 7273 §4.8 ABNF; ST 2110-10:2022 §8.2 "shall use the ts-refclk:ptp form, signaling either the grandmaster clockIdentity and domain number, or signaling that the PTP is traceable" and NOTE 1 "the PTP domain number is expressed as a decimal number"; RFC 7273 §4.8 "PTP domain allowed number range: 0-127 (IEEE 1588-2008)" | `.7` |
 | 1266–1311 | `a=mediaclk`: `sender`; `direct` with offset `int()` (negative allowed, no bound) and optional `rate=n[/d]`; unknown types stored with a warning | Form COVERED `sdp.a.mediaclk.malformed` (RFC 7273 §5.4 ABNF, `direct ["=" 1*DIGIT]`, so no sign). ST 2110 tier: ADOPT `st2110-10.a.mediaclk.form-invalid-value` (direct or sender), `st2110-10.a.mediaclk.direct-offset-required`, `st2110-10.a.mediaclk.direct-offset-must-be-zero` | RFC 7273 §5.4; ST 2110-10:2022 §8.3 "the direct reference shall be used and the offset shall be included" / "the following form shall be used: a=mediaclk:sender"; §7.3 "In this standard, the offset value shall be zero." | `.7` |
 | 1313–1344 | `a=hkep`: six tokens; port int; `IN`; `IP4`/`IP6`; address, node-id, port-id unchecked; two slots, third dropped | Form COVERED and stricter: `tr-10-5.a.hkep.malformed`, `nettype-invalid-value`, `addrtype-invalid-value`, `node-id-invalid-form`, `port-id-invalid-form`. Two-slot limit: REJECT `parse_sdp-sr4` | TR-10-5 §10 | — |
 | 1346–1400 | `a=privacy`: exactly six `;` parts; keys protocol (10 values), mode (16 values), iv 16 hex, key_generator 32 hex, key_version 8 hex, key_id 16 hex; other keys rejected | COVERED: `tr-10-13.a.privacy.malformed`, `*-required` (five keys), `iv-invalid-form`, `key_generator-invalid-form`, `key_version-invalid-form`, `key_id-invalid-form`, `mode-invalid-value`, `protocol-null-forbidden`, `trailing-semicolon`, `dup-legs-must-match`; USB `tr-10-14.a.privacy.usb-protocol-must-be-usb_kv`. Protocol value on RTP blocks: ADOPT `tr-10-13.a.privacy.rtp-protocol-invalid-value` (RTP or RTP_KV) | TR-10-13 §13; §20 "The protocol parameter shall be RTP or RTP_KV." | `.7` |
-| 1402–1408 | `a=control` stored raw | Generic attribute; no check either side | — | — |
+| 1402–1408 | `a=control` stored raw | NONE: Generic attribute; no check either side | — | — |
 | 1410–1448 | `a=extmap`: at least two tokens; id ≤ 256 with no lower bound; direction `sendonly` only; URI unchecked; no duplicate check; eight slots per level | Form COVERED `sdp.a.extmap.malformed` (RFC 8285 §8 ABNF incl. the four directions). ADOPT `sdp.a.extmap.id-out-of-range` (1–256), `sdp.a.extmap.duplicate-id` (per media section, or session), `sdp.a.extmap.duplicate-uri` (same URI and attributes twice for one stream), `sdp.a.extmap.mixed-levels`. sendonly-only: REJECT `parse_sdp-ocx` (PEP URNs COVERED `tr-10-13.a.extmap.pep-direction-must-be-sendonly`). Eight-slot limit: REJECT `parse_sdp-8gb` | RFC 8285 §5 "In the signaling section, the range 1-256 is referred to as the valid range"; §6 "A usable mapping MUST use IDs in the valid range, and each ID in this range MUST be used only once for each media section (or only once if the mappings are session level)", "An extension URI with the same attributes MUST NOT appear more than once applying to the same stream", "The definitions MUST be either all session level or all media level" | `.7` |
 | 1450–1454 | `a=mid` stored raw | COVERED `sdp.a.mid.malformed` (token), `sdp.a.mid.duplicate-tag` | RFC 5888 §4 | — |
 | 1456–1464 | `a=setup` role in {active, passive, actpass, holdconn}; not stored | ADOPT `sdp.a.setup.malformed` (known attribute, value set); IPMX USB COVERED `tr-10-14.usb.setup-must-be-passive`, `setup-required` | RFC 4145 §4 `role = "active" / "passive" / "actpass" / "holdconn"` | `.7` |
 | 1466–1488 | `a=ptime` / `a=maxptime`: float, non-zero, negative allowed, stored as truncated µs | COVERED `sdp.a.ptime.malformed`, `sdp.a.maxptime.malformed` (`non-zero-int-or-real`, no sign) | RFC 8866 §6.4, §6.5, §9 | — |
-| 1490–1500 | `a=framecount` non-zero int | Not a registered attribute; generic pass-through | — | — |
+| 1490–1500 | `a=framecount` non-zero int | NONE: Not a registered attribute; generic pass-through | — | — |
 | 1502–1515 | `a=framerate`: float; a value containing `.` becomes trunc(f·1001+0.5)/1001 | Form COVERED `sdp.a.framerate.malformed`; coercion: REJECT `parse_sdp-0m9` | RFC 8866 §6.13 "Decimal representations of fractional values are allowed." | — |
 
 ## 3. `process_fmtp` (1174–1211)
@@ -110,7 +119,7 @@ any string is accepted.
 | SSN (1580) | raw | COVERED `st2110-20.a.fmtp.SSN-invalid-value`, `SSN-required`, `ssn-required-for-2022-only-values`; `st2110-22.a.fmtp.SSN-invalid-value`; `st2110-40.a.fmtp.ssn-*`; `st2110-41.a.fmtp.SSN-*` | ST 2110-20:2022 §7.2; ST 2110-22:2022 §7.2; ST 2110-40:2023 §7; ST 2110-41:2024 §6 | — |
 | TP (1590) | auto-enum | COVERED `st2110-20.a.fmtp.TP-invalid-value`, `TP-required`; `st2110-22.a.fmtp.TP-invalid-value`, `TP-required` | ST 2110-21:2022 §8.1; ST 2110-22:2022 §5.3, §7.2 | — |
 | interlace, segmented (1616, 1657) | flag; value forbidden | COVERED `st2110-20.a.fmtp.interlace-invalid-value`, `segmented-invalid-value`, `segmented-requires-interlace`; `st2110-22.a.fmtp.interlace/segmented-*` | ST 2110-20:2022 §7.3; RFC 9134 §7.1 | — |
-| top-field-first (1610) | flag | Not a parameter ST 2110-20:2022 defines (no occurrence in the text; §7.3 lists `interlace` and `segmented`). Generic k=v pass-through; no check | ST 2110-20:2022 §7.3 | — |
+| top-field-first (1610) | flag | NONE: Not a parameter ST 2110-20:2022 defines (no occurrence in the text; §7.3 lists `interlace` and `segmented`). Generic k=v pass-through; no check | ST 2110-20:2022 §7.3 | — |
 | PAR (1670) | `W[:H]` integers, 0 accepted, quotes stripped | COVERED `st2110-20.a.fmtp.PAR-invalid-value` | ST 2110-20:2022 §7.3 | — |
 | TCS (1684) | auto-enum | COVERED `st2110-20.a.fmtp.TCS-invalid-value` + four `tcs-*-requires-depth-16f`, `key-forbids-tcs`; `st2110-22.a.fmtp.TCS-invalid-value` | ST 2110-20:2022 §7.6, §7.4.1; RFC 9134 §7.1 | — |
 | TROFF (1691) | integer | COVERED on smpte291 `st2110-40.a.fmtp.troff-invalid-value`. On raw and jxsv: GUIDE limitation. ADOPT `st2110-21.a.fmtp.troff-invalid-value` for every video block at the ST 2110 tier (the -40 id is a rule-7 misplacement to fold in) | ST 2110-21:2022 §8.2 "may be added to the a=fmtp clause of the SDP for video RTP streams conforming to this standard ... TROFF ... This value is expressed as a positive integer number of microseconds." | `.7` |
@@ -122,8 +131,8 @@ any string is accepted.
 | Parameter (line) | Reference | Verdict | Citation | Phase |
 | --- | --- | --- | --- | --- |
 | IPMX (1584) | flag | COVERED `tr-10-1.a.fmtp.marker-required` | TR-10-1 §10.1 | — |
-| chroma-position (1597) | one or two integers | No TR-10 text on disk defines `chroma-position` as an SDP parameter (TR-10-2 does not list it). Generic k=v pass-through; no check | — | — |
-| gamma (1622) | float | Same: not in TR-10-2. No check | — | — |
+| chroma-position (1597) | one or two integers | NONE: No TR-10 text on disk defines `chroma-position` as an SDP parameter (TR-10-2 does not list it). Generic k=v pass-through; no check | — | — |
+| gamma (1622) | float | NONE: Same: not in TR-10-2. No check | — | — |
 | htotal, vtotal, measuredpixclk (1629–1643) | integer | COVERED `tr-10-1.a.fmtp.htotal/vtotal/measuredpixclk-required`, `-invalid-value` | TR-10-1 §10.2 | — |
 | measuredsamplerate (1650) | integer | COVERED `tr-10-1.a.fmtp.measuredsamplerate-required`, `-invalid-value` | TR-10-1 §10.3 | — |
 
@@ -133,7 +142,7 @@ any string is accepted.
 | --- | --- | --- | --- | --- |
 | transmode, packetmode (1705, 1713) | int; 0 vs non-zero | COVERED `st2110-22.a.fmtp.transmode-invalid-value`, `packetmode-invalid-value`, `packetmode-required` | RFC 9134 §7.1 | — |
 | profile, level, sublevel (1721–1735) | auto-enum | COVERED `st2110-22.a.fmtp.profile/level/sublevel-invalid-value` | RFC 9134 §7.1 | — |
-| fbblevel (1742) | auto-enum | No SDP definition (RTCP Media Info Block field, TR-10-15 Part 1 §12); pass-through. See `spec_conformance/SDPOKER_BACKLOG.md` | TR-10-15 Part 1 §12 | — |
+| fbblevel (1742) | auto-enum | NONE: No SDP definition (RTCP Media Info Block field, TR-10-15 Part 1 §12); pass-through. See `spec_conformance/SDPOKER_BACKLOG.md` | TR-10-15 Part 1 §12 | — |
 
 ### 4.4 ST 2110-40 and audio
 
@@ -158,13 +167,13 @@ Shared fields in the reference; the two registrations are distinct here.
 | objectType (1791) | integer | ADOPT `sdp.a.fmtp.mpeg4-generic.objectType-invalid-value` (decimal) | RFC 3640 §4.1 "The decimal value from Table 8 in ISO/IEC 14496-1" | `.5` |
 | object (1798) | integer | ADOPT `sdp.a.fmtp.mp4a-latm.object-invalid-value` (decimal) | RFC 6416 §7.3 "a decimal representation of the MPEG-4 Audio Object Type" | `.5` |
 | cpresent (1783) | int → bool | ADOPT `sdp.a.fmtp.mp4a-latm.cpresent-invalid-value` (0 or 1), `sdp.a.fmtp.mp4a-latm.config-required-when-cpresent-0` | RFC 6416 §7.3 "A 0 indicates the configuration data has not been multiplexed into an RTP payload, and in that case, the "config" parameter MUST be present" | `.5` |
-| bitrate (1865) | integer | ADOPT `sdp.a.fmtp.mp4a-latm.bitrate-invalid-value` (integer) | RFC 6416 §7.3 "the data rate for the audio bitstream" | `.5` |
+| bitrate (1865) | integer | REJECT `parse_sdp-cad`: §7.3 states no syntax | RFC 6416 §7.3 "the data rate for the audio bitstream" | — |
 | constantDuration, maxDisplacement, de-interleaveBufferSize (1801–1815) | integer | ADOPT `-invalid-value` (decimal) for each | RFC 3640 §4.1 | `.5` |
 | sizeLength, indexLength, indexDeltaLength (1822–1836) | integer | ADOPT `-invalid-value` (integer); `sdp.a.fmtp.mpeg4-generic.aac-mode-requires-size-and-index-lengths` for `mode=AAC-hbr` / `AAC-lbr`; `sdp.a.fmtp.mpeg4-generic.constantSize-sizeLength-exclusive`. Zero rejected by the reference: REJECT `parse_sdp-rt3` | RFC 3640 §3.3.5 / §3.3.6 "the following parameters MUST be present: sizeLength, indexLength, and indexDeltaLength"; §4.1 "The sizeLength and the constantSize parameters MUST NOT be simultaneously present" | `.5` |
 | CTSDeltaLength, DTSDeltaLength (1843, 1850) | integer | ADOPT `-invalid-value` (integer) | RFC 3640 §4.1 | `.5` |
 | randomAccessIndication (1857) | int → bool | ADOPT `-invalid-value` (0 or 1) | RFC 3640 §4.1 "A decimal value of zero or one" | `.5` |
 | streamStateIndication, auxiliaryDataSizeLength, constantSize | not handled | ADOPT `-invalid-value` (integer); `streamStateIndication` on an audio or video block: `sdp.a.fmtp.mpeg4-generic.streamStateIndication-forbidden` | RFC 3640 §4.1 "SHALL NOT be present for MPEG-4 audio and MPEG-4 video streams" | `.5` |
-| rate (rtpmap clock) | — | No closed value: RFC 3640 §3.1 "the rate SHOULD be set to the same value as the sampling rate" (SHOULD); RFC 6416 "Other rates MAY be indicated". No check | RFC 3640 §3.1; RFC 6416 §7.3 | — |
+| rate (rtpmap clock) | — | NONE: No closed value: RFC 3640 §3.1 "the rate SHOULD be set to the same value as the sampling rate" (SHOULD); RFC 6416 "Other rates MAY be indicated". No check | RFC 3640 §3.1; RFC 6416 §7.3 | — |
 
 ### 4.6 H.264, RFC 6184 (1886–1925)
 
@@ -205,7 +214,7 @@ Shared fields in the reference; the two registrations are distinct here.
 | --- | --- | --- | --- | --- |
 | rtpmap clock rate | `check_sdp_rfc2250` 332 | ADOPT `sdp.a.rtpmap.mp2t.clock-rate-must-be-90000` | RFC 2250 §2 "timestamp: 32 bit 90K Hz timestamp representing the target transmission time"; RFC 3551 Table 5 "33 MP2T AV 90,000" | `.6` |
 | media type must be video | 326 | REJECT without bead: RFC 3551 Table 5 registers MP2T under media type "AV" (audio or video); RFC 3555 §4.2.9 registers `video/MP2T`. An `m=audio` MP2T is within RFC 3551. No check | RFC 3551 §5.7, Table 5 | — |
-| fmtp parameters | none | RFC 3555 §4.2.9 "Required parameters: None. Optional parameters: None." No check | RFC 3555 §4.2.9 | — |
+| fmtp parameters | none | NONE: RFC 3555 §4.2.9 "Required parameters: None. Optional parameters: None." No check | RFC 3555 §4.2.9 | — |
 
 ## 5. `MatroxSdpCheck.py` conditions (19 functions, 119 raise sites)
 
@@ -240,7 +249,7 @@ Shared fields in the reference; the two registrations are distinct here.
 
 | Line | Condition | Verdict | Citation |
 | --- | --- | --- | --- |
-| 151, 154, 157 | audio; encoding; sample rate | Encoding/clock: no closed rule (RFC 3640 §3.1 SHOULD). No check | RFC 3640 §3.1 |
+| 151, 154, 157 | audio; encoding; sample rate | NONE: Encoding/clock: no closed rule (RFC 3640 §3.1 SHOULD). No check | RFC 3640 §3.1 |
 | 163 | streamType must be 5 | REJECT `parse_sdp-rt3` | RFC 3640 §4.1 |
 | 166, 173 | profile-level-id present; decimal; not 0, 254, 255 | ADOPT `-required`, `-invalid-value` (decimal). Exclusions: REJECT `parse_sdp-rt3` | RFC 3640 §4.1 |
 | 176 | config present | ADOPT `sdp.a.fmtp.mpeg4-generic.config-required` | RFC 3640 §4.1 Required parameters |
@@ -252,7 +261,7 @@ Shared fields in the reference; the two registrations are distinct here.
 
 | Line | Condition | Verdict | Citation |
 | --- | --- | --- | --- |
-| 197, 201, 204 | audio; encoding LATM/ADTS; sample rate | No closed rule. No check | RFC 6416 §7.3 |
+| 197, 201, 204 | audio; encoding LATM/ADTS; sample rate | NONE: No closed rule. No check | RFC 6416 §7.3 |
 | 213 | cpresent=0 without config | ADOPT `sdp.a.fmtp.mp4a-latm.config-required-when-cpresent-0` | RFC 6416 §7.3 |
 
 ### 5.6 `check_sdp_rfc8331` (216) stub, no rows
@@ -293,8 +302,8 @@ Shared fields in the reference; the two registrations are distinct here.
 | --- | --- | --- | --- |
 | 338, 348 | mediaclk and ts-refclk present | COVERED `st2110.attr.mediaclk-required`, `st2110.attr.ts-refclk-required` | ST 2110-10:2022 §8.3, §8.2 |
 | 342 | non-IPMX: mediaclk must be direct with offset 0 | REJECT `parse_sdp-e74` (sender is permitted). ADOPT the two real SHALLs: `st2110-10.a.mediaclk.form-invalid-value`, `direct-offset-required`, `direct-offset-must-be-zero` (§2) | ST 2110-10:2022 §8.3, §7.3 |
-| 345 | IPMX: mediaclk sender or direct=0 | Same ids via composition; TR-10-1 §10.5 repeats the two SHALLs | TR-10-1 §10.5 |
-| 351 | MAXUDP default 1460 | No check (a default, see §6) | ST 2110-10:2022 §6.3 |
+| 345 | IPMX: mediaclk sender or direct=0 | NONE: Same ids via composition; TR-10-1 §10.5 repeats the two SHALLs | TR-10-1 §10.5 |
+| 351 | MAXUDP default 1460 | NONE: No check (a default, see §6) | ST 2110-10:2022 §6.3 |
 
 ### 5.11 `check_sdp_st2110_20` (354–434)
 
@@ -332,12 +341,12 @@ Shared fields in the reference; the two registrations are distinct here.
 
 | Line | Condition | Verdict | Citation |
 | --- | --- | --- | --- |
-| 485, 489, 492 | audio; L8/L16/L20/L24; sample rate | No closed SDP rule in ST 2110-30 beyond AES67; grammar covers the rtpmap form. No check | ST 2110-30:2025 §6.2 |
+| 485, 489, 492 | audio; L8/L16/L20/L24; sample rate | NONE: No closed SDP rule in ST 2110-30 beyond AES67; grammar covers the rtpmap form. No check | ST 2110-30:2025 §6.2 |
 | 495 | channel-order required with `SMPTE2110.` prefix | REJECT `parse_sdp-hsm`; value form COVERED `channel-order-invalid` | ST 2110-30:2025 §6.2.2 |
 | 498 | ptime present | ADOPT `st2110-30.a.ptime-required` | ST 2110-30:2025 §6.2 "shall conform to AES67, including the Session Description Protocol (SDP)"; AES67-2013 §8.1 "Descriptions shall include a ptime attribute indicating the desired packet time." (the 2013 edition is the one on disk; ST 2110-31:2022 Note 2 cites the same clause number in AES67:2018) |
 | 502, 505 | ptime in a value set; maxptime in the set and ≥ ptime | REJECT `parse_sdp-wgo` | AES67 §8.1 "Values outside those enumerated in table 4 shall be correctly interpreted." |
 | 508 | ts-refclk present | COVERED `st2110.attr.ts-refclk-required` | ST 2110-10:2022 §8.2 |
-| 512, 515 | mediaclk direct (non-IPMX) / sender or direct (IPMX) | As §5.10 | ST 2110-10:2022 §8.3 |
+| 512, 515 | mediaclk direct (non-IPMX) / sender or direct (IPMX) | NONE: As §5.10 | ST 2110-10:2022 §8.3 |
 
 ### 5.15 `check_sdp_st2110_31` (518–548), AM824
 
@@ -348,7 +357,7 @@ Shared fields in the reference; the two registrations are distinct here.
 | 530 | channel count even | COVERED `am824-channels-must-be-even`, `am824-channels-required` | ST 2110-31:2022 §6.1 |
 | 533 | channel-order prefix when present | COVERED `st2110-31.a.fmtp.channel-order-aes3-requires-am824`, `st2110-30.a.fmtp.channel-order-invalid` | ST 2110-31:2022 §6.2 |
 | 537 | ptime present and in the Table 1 set for the clock rate | ADOPT `st2110-31.a.ptime-required`, `st2110-31.a.ptime-invalid-value` | ST 2110-31:2022 §6.1 "Senders under this standard shall signal a ptime attribute in the SDP" and "The `<packet-time>` parameter shall take one of the values from the Table 1, based on the prevailing sampling rate" |
-| 540–547 | ts-refclk, mediaclk | As §5.10 | ST 2110-10:2022 §8.2, §8.3 |
+| 540–547 | ts-refclk, mediaclk | NONE: As §5.10 | ST 2110-10:2022 §8.2, §8.3 |
 
 ### 5.16–5.18 `check_sdp_st2110_40`, `check_sdp_ipmx`, `check_sdp_nmos` stubs, no rows
 
@@ -403,7 +412,7 @@ helpers the brief names, written from the RFC bit layouts:
 | test_02 479 | measuredpixclk, htotal, vtotal non-zero | COVERED `tr-10-1.a.fmtp.*-required`, `-invalid-value` |
 | test_02 486, test_03 822 | mediaclk sender or direct | ADOPT (§2, ST 2110-10 §8.3 / TR-10-1 §10.5) |
 | test_02 524 (part) | clock 90000 | COVERED per encoding (raw, jxsv); ADOPT H264/H265 (base) and ST 2110-22 applicability |
-| test_02 557–618, test_03 883–909 | per-encoding check chains | Per §5 |
+| test_02 557–618, test_03 883–909 | per-encoding check chains | NONE: Per §5 |
 | test_02 620, test_03 912 | unknown media type fails | OUT OF SCOPE: the Flow's media type is IS-04 |
 | test_03 761–773 | encoding in {L8, L16, L20, L24, AM824} | OUT OF SCOPE: the test enumerates the IS-04 media types it tests, not an SDP rule |
 | test_03 817 | measuredsamplerate non-zero | COVERED `tr-10-1.a.fmtp.measuredsamplerate-*` |
@@ -482,4 +491,12 @@ land in Phase `.6` (fixtures) and the codec phases:
 
 ## 11. Counts
 
-Filled at close-out (Phase `.8`).
+Rows by verdict: ADOPT 63, COVERED 89, REJECT 16, OUT OF SCOPE 2 (plus
+the 34 IS-04 / IS-05 comparisons listed in §8.2 without rows), NONE 18.
+Decision beads cited: 24. Registered checks after the effort: 319 (197
+before). GUIDE limitations removed: `a=setup` values, extmap id range and
+uniqueness, PTP domain, mediaclk offset, per-encoding checks for H264 /
+H265 / mpeg4-generic / MP4A-LATM / MP2T / L16, ptime presence on audio
+streams and the AM824 values, the fmtp format against the `m=` line,
+TROFF and CMAX on raw video, frame-rate signaling on jxsv, the privacy
+protocol on RTP blocks, and `b=AS` on non-jxsv ST 2110-22 blocks.

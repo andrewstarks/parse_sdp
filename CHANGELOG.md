@@ -47,6 +47,13 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
     stream (`tr-10-13.a.privacy.rtp-protocol-invalid-value`, §20).
   - Decision `parse_sdp-dxe`: ST 2110-10 §8.1 "one SDP per stream" binds
     the constructing device and is not checked on the file.
+- Two more fixtures from the parity effort:
+  `examples/generic/valid/13_rfc8866_section5.sdp` is the RFC 8866
+  section 5 example as the RFC prints it, and
+  `examples/st2110/valid/10_nmos_extmap_video.sdp` is an original 1080i25
+  stream with the NMOS RTP header-extension URNs at non-contiguous ids, a
+  PTP reference with a domain, and the `interlace` flag.
+  `audits/MATROXSDP_PARITY.md` carries its final counts.
 
 - `audits/MATROXSDP_PARITY.md`: a parity matrix against the SDP parser and
   checker in the IPMX fork of AMWA nmos-testing (`MatroxSdp.py`,
