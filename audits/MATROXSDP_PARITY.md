@@ -425,7 +425,37 @@ test_02 425, 440, 446, 459–476, 492–519, 524, 534, 542, 552; test_03 757,
 2744. Each compares the SDP with a Flow, Source, Node clock or IS-05 leg.
 The SDP does not carry that state (CLAUDE.md "What the library validates").
 
-### 8.3 `SdpToCapabilities._verify_capabilities_identical` (141–173)
+#### 8.2a Other files that read the parsed SDP (reviewed 2026-10-28, no rows)
+
+These were outside the brief's list and were read afterwards. None adds a
+check on the SDP object:
+
+- `IpmxSdpTest.py` `test_11` (2212–2423), `test_101` (1445–1794),
+  `test_102` (1794–2111): decode the SDP and compare its `c=`, port and
+  `source-filter` addresses with the IS-05 transport parameters
+  (OUT OF SCOPE, as §8.2). `test_11` also requires the IS-05 destination
+  port to be 5004 and the destination to be a `239.S.C.D` address with S
+  in 1–127 and C.D equal to the source's; both run on the IS-05
+  parameters, not the SDP. The address rule is TR-10-9 v2 §17.1, a default
+  ("When no user defined value is provided, IPMX Senders shall use the
+  following method to assign a default IPv4 multicast address", with "A
+  method shall be provided for a user to change this default value"), so
+  an SDP cannot show whether it applies. No TR-10 markdown on disk carries
+  a 5004 clause.
+- `BCP0060201Test.py` (427, 448, 943–960) and `BCP0060301Test.py` (453,
+  477, 978–1000): decode `profile-level-id` / `packetization-mode` (H.264)
+  and `profile-id`, `profile-space`, `profile-compatibility-indicator`,
+  `sprop-max-don-diff` (H.265) and compare them with the IS-04 Flow's
+  `profile`, `level` and `packet_transmission_mode` (OUT OF SCOPE).
+- `IS0501Test.py` (128, 615, 663, 711): `IS05Utils.check_sdp_matches_params`,
+  an IS-05 comparison (OUT OF SCOPE).
+- `tests/test_sdp_to_capabilities.py`: ten inline fixtures asserting
+  capability conversion (`CapFormat*`), not validation; the features they
+  use (raw, L24, smpte291, MP2T DUP, IPMX marker, fractional frame rate)
+  are all in `examples/`. `tests/test_flow_to_capabilities.py` does not
+  read SDP.
+
+## 8.3 `SdpToCapabilities._verify_capabilities_identical` (141–173)
 
 Compares the capability sets built from the two DUP legs: same capability
 names; per capability the same type, min, max and enumerated values. The

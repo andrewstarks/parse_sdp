@@ -54,6 +54,10 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
   stream with the NMOS RTP header-extension URNs at non-contiguous ids, a
   PTP reference with a domain, and the `interlace` flag.
   `audits/MATROXSDP_PARITY.md` carries its final counts.
+- `audits/MATROXSDP_PARITY.md` §8.2a records the reference files outside
+  the brief that read the SDP (`IpmxSdpTest` `test_11`/`101`/`102`, the
+  BCP-006-02/-03 and IS-05 suites, the capabilities tests); all compare it
+  with IS-04/IS-05 state or test conversion, so no check follows.
 
 - `audits/MATROXSDP_PARITY.md`: a parity matrix against the SDP parser and
   checker in the IPMX fork of AMWA nmos-testing (`MatroxSdp.py`,
