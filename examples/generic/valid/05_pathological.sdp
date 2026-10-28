@@ -41,7 +41,7 @@ a=rtpmap:100 opus/48000/2
 a=rtpmap:101 G722/8000
 a=rtpmap:0 PCMU/8000
 a=rtpmap:8 PCMA/8000
-a=fmtp:99 streamtype=5; profile-level-id=1; mode=AAC-hbr; sizelength=13; indexlength=3
+a=fmtp:99 streamtype=5; profile-level-id=1; mode=AAC-hbr; config=1190; sizelength=13; indexlength=3; indexdeltalength=3
 a=fmtp:100 maxplaybackrate=48000; sprop-stereo=1
 a=lang:en
 a=sendonly
@@ -50,7 +50,7 @@ i=Alternate audio — Spanish stereo
 c=IN IP4 239.255.0.4/128
 b=AS:256
 a=rtpmap:102 MPEG4-GENERIC/48000/2
-a=fmtp:102 streamtype=5; profile-level-id=1; mode=AAC-hbr; sizelength=13; indexlength=3
+a=fmtp:102 streamtype=5; profile-level-id=1; mode=AAC-hbr; config=1190; sizelength=13; indexlength=3; indexdeltalength=3
 a=lang:es
 a=sendonly
 m=audio 5024 RTP/AVP 103
@@ -58,7 +58,7 @@ i=Alternate audio — French stereo
 c=IN IP4 239.255.0.5/128
 b=AS:256
 a=rtpmap:103 MPEG4-GENERIC/48000/2
-a=fmtp:103 streamtype=5; profile-level-id=1; mode=AAC-hbr; sizelength=13; indexlength=3
+a=fmtp:103 streamtype=5; profile-level-id=1; mode=AAC-hbr; config=1190; sizelength=13; indexlength=3; indexdeltalength=3
 a=lang:fr
 a=sendonly
 m=application 5030 RTP/AVP 104

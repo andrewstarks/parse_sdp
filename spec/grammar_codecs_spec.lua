@@ -653,3 +653,226 @@ describe("codecs — decode_h265_profile (RFC 7798 §7.1)", function()
     assert.is_nil(decode(nil))
   end)
 end)
+
+describe("codecs — mpeg4-generic (RFC 3640 §4.1)", function()
+
+  local HBR = "streamType=5;profile-level-id=41;mode=AAC-hbr;config=1190;"
+    .. "sizeLength=13;indexLength=3;indexDeltaLength=3"
+
+  -- Remove one `key=value;` entry (the key may contain '-', a Lua pattern
+  -- quantifier, so it is escaped).
+  local function strip(body, key)
+    local out = body:gsub(key:gsub("%-", "%%-") .. "=[^;]*;?", "")
+    return (out:gsub(";$", ""))
+  end
+
+  local function aac(body, media)
+    return sdp_with({
+      "m=" .. (media or "audio") .. " 49230 RTP/AVP 96",
+      "a=rtpmap:96 mpeg4-generic/48000/2",
+      "a=fmtp:96 " .. body,
+    })
+  end
+
+  -- SPEC: "Required parameters: ... streamType ... profile-level-id ...
+  -- config ... mode"
+  it("accepts an AAC-hbr fmtp with every required parameter", function()
+    local doc, ctx = match_all(aac(HBR))
+    assert.is_truthy(doc)
+    assert.same({}, ctx.findings)
+  end)
+  for _, key in ipairs({ "streamType", "profile-level-id", "config", "mode" }) do
+    it(("requires %s"):format(key), function()
+      local body = strip(HBR, key)
+      local _, ctx = match_all(aac(body))
+      local f = finding_for(ctx, "sdp.a.fmtp.mpeg4-generic." .. key .. "-required")
+      assert.is_not_nil(f)
+      assert.equal("MISSING_FIELD", f.code)
+      assert.equal("RFC 3640 §4.1", f.spec_ref)
+    end)
+  end
+
+  -- SPEC: ""video" MUST be used for MPEG-4 Visual streams ... "audio" MUST
+  -- be used for MPEG-4 Audio streams ... "application" MUST be used for
+  -- MPEG-4 Systems streams"
+  it("accepts mpeg4-generic on m=video and m=application", function()
+    for _, media in ipairs({ "video", "application" }) do
+      local _, ctx = match_all(aac(HBR, media))
+      assert.is_nil(finding_for(ctx, "sdp.a.rtpmap.mpeg4-generic.media-type-invalid-value"))
+    end
+  end)
+  it("rejects mpeg4-generic on m=text", function()
+    local _, ctx = match_all(aac(HBR, "text"))
+    assert.is_not_nil(finding_for(ctx, "sdp.a.rtpmap.mpeg4-generic.media-type-invalid-value"))
+  end)
+
+  -- Each row: parameter, conforming value, non-conforming value.
+  local FORMS = {
+    -- "The integer value that indicates the type of MPEG-4 stream"
+    { "streamType", "5", "audio" },
+    -- "A decimal representation of the MPEG-4 Profile Level indication."
+    { "profile-level-id", "41", "0x29" },
+    -- "A hexadecimal representation of an octet string" / config=""
+    { "config", "1190", "119" },
+    { "config", '""', "zz" },
+    -- "The decimal value from Table 8 in ISO/IEC 14496-1"
+    { "objectType", "2", "2.0" },
+    { "constantSize", "27", "27b" },
+    { "constantDuration", "1024", "1024.0" },
+    { "maxDisplacement", "5", "-5" },
+    { "de-interleaveBufferSize", "8192", "8k" },
+    { "sizeLength", "13", "thirteen" },
+    { "indexLength", "3", "" },
+    { "indexDeltaLength", "3", "3x" },
+    { "CTSDeltaLength", "16", "1e1" },
+    { "DTSDeltaLength", "16", "0x10" },
+    -- "A decimal value of zero or one"
+    { "randomAccessIndication", "1", "2" },
+    { "streamStateIndication", "4", "four" },
+    { "auxiliaryDataSizeLength", "8", "eight" },
+  }
+  for _, row in ipairs(FORMS) do
+    local key, good, bad = row[1], row[2], row[3]
+    local id = "sdp.a.fmtp.mpeg4-generic." .. key .. "-invalid-value"
+    -- constantSize and sizeLength are exclusive; test constantSize on a
+    -- generic-mode body without sizeLength.
+    local base_body = key == "constantSize"
+      and "streamType=5;profile-level-id=14;mode=CELP-cbr;config=440E00"
+      or strip(HBR, key)
+    it(("accepts %s=%s"):format(key, good), function()
+      local _, ctx = match_all(aac(base_body .. ";" .. key .. "=" .. good))
+      assert.is_nil(finding_for(ctx, id))
+    end)
+    it(("rejects %s=%s [%s]"):format(key, bad, id), function()
+      local _, ctx = match_all(aac(base_body .. ";" .. key .. "=" .. bad))
+      local f = finding_for(ctx, id)
+      assert.is_not_nil(f)
+      assert.equal("RFC 3640 §4.1", f.spec_ref)
+    end)
+  end
+
+  -- SPEC: "The sizeLength and the constantSize parameters MUST NOT be
+  -- simultaneously present."
+  it("rejects constantSize together with sizeLength", function()
+    local _, ctx = match_all(aac(HBR .. ";constantSize=27"))
+    assert.is_not_nil(finding_for(ctx,
+      "sdp.a.fmtp.mpeg4-generic.constantSize-sizeLength-exclusive"))
+  end)
+
+  -- SPEC: §3.3.5 / §3.3.6 "the following parameters MUST be present:
+  -- sizeLength, indexLength, and indexDeltaLength."
+  for _, mode in ipairs({ "AAC-hbr", "AAC-lbr" }) do
+    for _, key in ipairs({ "sizeLength", "indexLength", "indexDeltaLength" }) do
+      it(("requires %s in mode %s"):format(key, mode), function()
+        local body = strip((HBR:gsub("AAC%-hbr", mode)), key)
+        local _, ctx = match_all(aac(body))
+        local f = finding_for(ctx,
+          "sdp.a.fmtp.mpeg4-generic.aac-mode-requires-size-and-index-lengths")
+        assert.is_not_nil(f)
+        assert.equal("RFC 3640 §3.3.5 / §3.3.6", f.spec_ref)
+      end)
+    end
+  end
+  it("does not require the lengths in mode generic", function()
+    local _, ctx = match_all(aac(
+      "streamType=5;profile-level-id=41;mode=generic;config=1190"))
+    assert.is_nil(finding_for(ctx,
+      "sdp.a.fmtp.mpeg4-generic.aac-mode-requires-size-and-index-lengths"))
+  end)
+
+  -- SPEC: "streamStateIndication ... SHALL NOT be present for MPEG-4 audio
+  -- and MPEG-4 video streams."
+  it("rejects streamStateIndication on m=audio", function()
+    local _, ctx = match_all(aac(HBR .. ";streamStateIndication=4"))
+    assert.is_not_nil(finding_for(ctx,
+      "sdp.a.fmtp.mpeg4-generic.streamStateIndication-forbidden"))
+  end)
+  it("accepts streamStateIndication on m=application", function()
+    local _, ctx = match_all(aac(
+      "streamType=1;profile-level-id=1;mode=generic;config=\"\";streamStateIndication=4",
+      "application"))
+    assert.is_nil(finding_for(ctx,
+      "sdp.a.fmtp.mpeg4-generic.streamStateIndication-forbidden"))
+  end)
+
+  -- SPEC: RFC 3640 §4.1 "MIME format parameters are not case dependent"
+  it("matches parameter names case-insensitively", function()
+    local _, ctx = match_all(aac(
+      "streamtype=5;PROFILE-LEVEL-ID=41;Mode=AAC-hbr;Config=1190;"
+      .. "SizeLength=13;IndexLength=3;IndexDeltaLength=3"))
+    assert.same({}, ctx.findings)
+  end)
+end)
+
+describe("codecs — MP4A-LATM (RFC 6416 §7.3 / §7.4)", function()
+
+  local function latm(body, media)
+    return sdp_with({
+      "m=" .. (media or "audio") .. " 49232 RTP/AVP 97",
+      "a=rtpmap:97 MP4A-LATM/48000/2",
+      "a=fmtp:97 " .. body,
+    })
+  end
+
+  -- SPEC: §7.4 "The media type (audio) goes in SDP "m=" as the media name."
+  it("rejects MP4A-LATM on m=video", function()
+    local _, ctx = match_all(latm("cpresent=1", "video"))
+    local f = finding_for(ctx, "sdp.a.rtpmap.mp4a-latm.media-type-must-be-audio")
+    assert.is_not_nil(f)
+    assert.equal("RFC 6416 §7.4", f.spec_ref)
+  end)
+
+  -- NOT-SPEC: library — §7.3 fixes no clock rate ("Other rates MAY be
+  -- indicated"), so none is checked.
+  it("accepts any clock rate", function()
+    local doc, ctx = match_all(sdp_with({
+      "m=audio 49232 RTP/AVP 97", "a=rtpmap:97 mp4a-latm/44100/2", "a=fmtp:97 cpresent=1" }))
+    assert.is_truthy(doc)
+    assert.same({}, ctx.findings)
+  end)
+
+  local FORMS = {
+    { "profile-level-id",     "41", "41a" },
+    { "MPS-profile-level-id", "55", "fifty-five" },
+    { "object",               "2", "AAC-LC" },
+    { "cpresent",             "0", "2" },
+    { "config",               "40002310", "4000231" },
+    { "MPS-asc",              "0000", "00g0" },
+    { "SBR-enabled",          "1", "true" },
+  }
+  for _, row in ipairs(FORMS) do
+    local key, good, bad = row[1], row[2], row[3]
+    local id = "sdp.a.fmtp.mp4a-latm." .. key .. "-invalid-value"
+    local lead = key == "config" and "" or "config=40002310;"
+    it(("accepts %s=%s"):format(key, good), function()
+      local _, ctx = match_all(latm(lead .. key .. "=" .. good))
+      assert.is_nil(finding_for(ctx, id))
+    end)
+    it(("rejects %s=%s [%s]"):format(key, bad, id), function()
+      local _, ctx = match_all(latm(lead .. key .. "=" .. bad))
+      local f = finding_for(ctx, id)
+      assert.is_not_nil(f)
+      assert.equal("RFC 6416 §7.3", f.spec_ref)
+    end)
+  end
+
+  -- SPEC: "A 0 indicates the configuration data has not been multiplexed
+  -- into an RTP payload, and in that case, the "config" parameter MUST be
+  -- present"
+  it("requires config when cpresent=0", function()
+    local _, ctx = match_all(latm("profile-level-id=41;cpresent=0"))
+    local f = finding_for(ctx, "sdp.a.fmtp.mp4a-latm.config-required-when-cpresent-0")
+    assert.is_not_nil(f)
+    assert.equal("MISSING_FIELD", f.code)
+  end)
+  it("accepts cpresent=0 with config", function()
+    local _, ctx = match_all(latm("cpresent=0;config=40002310"))
+    assert.is_nil(finding_for(ctx, "sdp.a.fmtp.mp4a-latm.config-required-when-cpresent-0"))
+  end)
+  it("does not require config when cpresent=1 or absent", function()
+    for _, body in ipairs({ "cpresent=1", "profile-level-id=41" }) do
+      local _, ctx = match_all(latm(body))
+      assert.is_nil(finding_for(ctx, "sdp.a.fmtp.mp4a-latm.config-required-when-cpresent-0"))
+    end
+  end)
+end)

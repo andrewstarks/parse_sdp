@@ -73,6 +73,23 @@ local function record(ctx, id, field_path)
   return errors.record(ctx, id, { field_path = field_path })
 end
 
+-- Run a family's value-form rows over a lower-cased params view: each row
+-- is { name, predicate } and records `<prefix><name>-invalid-value` when
+-- the parameter is present and the predicate rejects it. `name` keeps the
+-- RFC's spelling for the id; the lookup is case-insensitive.
+local function check_value_forms(p, forms, prefix, ctx, field_path)
+  for _, row in ipairs(forms) do
+    local key, ok = row[1], row[2]
+    local v = p[string.lower(key)]
+    if v ~= nil and not ok(v) then
+      if not record(ctx, prefix .. key .. "-invalid-value", field_path) then
+        return false
+      end
+    end
+  end
+  return true
+end
+
 -- ── H.264, RFC 6184 §8.1 ─────────────────────────────────────────────────────
 
 -- Value forms, each quoted from RFC 6184 §8.1.
@@ -124,13 +141,8 @@ end
 
 local function check_h264_fmtp(params, ctx, field_path)
   local p = params_ci(params)
-  for _, row in ipairs(H264_VALUE_FORMS) do
-    local key, ok = row[1], row[2]
-    if p[key] ~= nil and not ok(p[key]) then
-      if not record(ctx, "sdp.a.fmtp.h264." .. key .. "-invalid-value",
-                    field_path) then return false end
-    end
-  end
+  if not check_value_forms(p, H264_VALUE_FORMS, "sdp.a.fmtp.h264.", ctx,
+                           field_path) then return false end
   if p["sar-supported"] ~= nil and not sar_supported_ok(p["sar-supported"], p) then
     if not record(ctx, "sdp.a.fmtp.h264.sar-supported-invalid-value",
                   field_path) then return false end
@@ -269,13 +281,8 @@ local function check_h265_fmtp(params, ctx, field_path)
   -- be checked as parameters of their own. A line that carries it is not
   -- checked (GUIDE.md limitation).
   if p["dec-parallel-cap"] ~= nil then return true end
-  for _, row in ipairs(H265_VALUE_FORMS) do
-    local key, ok = row[1], row[2]
-    if p[key] ~= nil and not ok(p[key]) then
-      if not record(ctx, "sdp.a.fmtp.h265." .. key .. "-invalid-value",
-                    field_path) then return false end
-    end
-  end
+  if not check_value_forms(p, H265_VALUE_FORMS, "sdp.a.fmtp.h265.", ctx,
+                           field_path) then return false end
 
   -- "When sprop-max-don-diff is present and greater than 0, this
   -- parameter MUST be present and the value MUST be greater than 0."
@@ -309,16 +316,137 @@ local function check_h265_fmtp(params, ctx, field_path)
   return true
 end
 
+-- ── AAC: mpeg4-generic (RFC 3640 §4.1) and MP4A-LATM (RFC 6416 §7.3) ───────
+
+-- RFC 3640 §4.1 config: "A hexadecimal representation of an octet
+-- string" (two digits per octet; "up to 7 zero-valued padding bits shall
+-- follow the configuration data" to reach octet alignment), or "a quoted
+-- empty hexadecimal octet string, as follows: config=\"\"". RFC 6416 §7.3
+-- config and MPS-asc: the same octet-string form.
+local HEX_OCTETS = (HEX * HEX) ^ 1 * -1
+local hex_octets_ok = matches(HEX_OCTETS)
+local function config_ok(v) return v == '""' or hex_octets_ok(v) end
+
+-- Value forms, each quoted from RFC 3640 §4.1.
+local MPEG4_GENERIC_VALUE_FORMS = {
+  -- "The integer value that indicates the type of MPEG-4 stream"
+  { "streamType",              is_int },
+  -- "A decimal representation of the MPEG-4 Profile Level indication."
+  { "profile-level-id",        is_int },
+  { "config",                  config_ok },
+  -- "The decimal value from Table 8 in ISO/IEC 14496-1"
+  { "objectType",              is_int },
+  -- "The constant size in octets of each Access Unit"
+  { "constantSize",            is_int },
+  -- "The constant duration of each Access Unit ... measured with the same
+  -- units as the RTP time stamp."
+  { "constantDuration",        is_int },
+  -- "The decimal representation of the maximum displacement in time"
+  { "maxDisplacement",         is_int },
+  -- "The decimal representation in number of octets"
+  { "de-interleaveBufferSize", is_int },
+  -- "The number of bits on which the ... field is encoded" (five lengths)
+  { "sizeLength",              is_int },
+  { "indexLength",             is_int },
+  { "indexDeltaLength",        is_int },
+  { "CTSDeltaLength",          is_int },
+  { "DTSDeltaLength",          is_int },
+  -- "A decimal value of zero or one"
+  { "randomAccessIndication",  int_in(0, 1) },
+  { "streamStateIndication",   is_int },
+  { "auxiliaryDataSizeLength", is_int },
+}
+
+-- "Required parameters: ... streamType ... profile-level-id ... config
+-- ... mode"
+local MPEG4_GENERIC_REQUIRED = { "streamType", "profile-level-id", "config", "mode" }
+
+local function check_mpeg4_generic_fmtp(params, ctx, field_path, block)
+  local p = params_ci(params)
+  for _, key in ipairs(MPEG4_GENERIC_REQUIRED) do
+    if p[string.lower(key)] == nil then
+      if not record(ctx, "sdp.a.fmtp.mpeg4-generic." .. key .. "-required",
+                    field_path) then return false end
+    end
+  end
+  if not check_value_forms(p, MPEG4_GENERIC_VALUE_FORMS,
+                           "sdp.a.fmtp.mpeg4-generic.", ctx, field_path) then
+    return false
+  end
+
+  -- "The sizeLength and the constantSize parameters MUST NOT be
+  -- simultaneously present."
+  if p["sizelength"] ~= nil and p["constantsize"] ~= nil then
+    if not record(ctx, "sdp.a.fmtp.mpeg4-generic.constantSize-sizeLength-exclusive",
+                  field_path) then return false end
+  end
+
+  -- §3.3.5 (AAC-lbr) and §3.3.6 (AAC-hbr): "In addition to the required
+  -- MIME format parameters, the following parameters MUST be present:
+  -- sizeLength, indexLength, and indexDeltaLength."
+  local mode = type(p["mode"]) == "string" and string.upper(p["mode"]) or ""
+  if mode == "AAC-HBR" or mode == "AAC-LBR" then
+    if p["sizelength"] == nil or p["indexlength"] == nil
+       or p["indexdeltalength"] == nil then
+      if not record(ctx,
+          "sdp.a.fmtp.mpeg4-generic.aac-mode-requires-size-and-index-lengths",
+          field_path) then return false end
+    end
+  end
+
+  -- streamStateIndication: "SHALL NOT be present for MPEG-4 audio and
+  -- MPEG-4 video streams." (§4.1 maps those to m=audio and m=video)
+  if p["streamstateindication"] ~= nil
+     and (block.media == "audio" or block.media == "video") then
+    if not record(ctx, "sdp.a.fmtp.mpeg4-generic.streamStateIndication-forbidden",
+                  field_path) then return false end
+  end
+  return true
+end
+
+-- Value forms, each quoted from RFC 6416 §7.3.
+local MP4A_LATM_VALUE_FORMS = {
+  -- "a decimal representation of MPEG-4 Audio Profile Level indication"
+  { "profile-level-id",     is_int },
+  -- "a decimal representation of the MPEG Surround Profile Level"
+  { "MPS-profile-level-id", is_int },
+  -- "a decimal representation of the MPEG-4 Audio Object Type"
+  { "object",               is_int },
+  -- "a boolean parameter ... A 0 indicates ... a 1 indicates"
+  { "cpresent",             int_in(0, 1) },
+  -- "a hexadecimal representation of an octet string"
+  { "config",               hex_octets_ok },
+  -- "The same mapping rules as for the "config" parameter apply."
+  { "MPS-asc",              hex_octets_ok },
+  -- "a boolean parameter ... set to 0 ... set to 1"
+  { "SBR-enabled",          int_in(0, 1) },
+}
+
+local function check_mp4a_latm_fmtp(params, ctx, field_path)
+  local p = params_ci(params)
+  if not check_value_forms(p, MP4A_LATM_VALUE_FORMS, "sdp.a.fmtp.mp4a-latm.",
+                           ctx, field_path) then return false end
+  -- "A 0 indicates the configuration data has not been multiplexed into
+  -- an RTP payload, and in that case, the "config" parameter MUST be
+  -- present"
+  if p["cpresent"] == "0" and p["config"] == nil then
+    if not record(ctx, "sdp.a.fmtp.mp4a-latm.config-required-when-cpresent-0",
+                  field_path) then return false end
+  end
+  return true
+end
+
 -- ── Dispatch ─────────────────────────────────────────────────────────────────
 
--- Keyed by the lower-cased rtpmap encoding name. `media` and `clock_rate`
--- are the §8.2.1-style "MUST be" mappings; `fmtp` checks a decomposed
--- fmtp params list for that encoding.
+-- Keyed by the lower-cased rtpmap encoding name. `media` is the set of
+-- m= media types the registration maps the encoding to and `clock_rate`
+-- the rate the registration fixes (nil when it fixes none); `fmtp` checks
+-- a decomposed fmtp params list for that encoding.
 local CODECS = {
   -- RFC 6184 §8.2.1: "The media name in the "m=" line of SDP MUST be
   -- video." / "The clock rate in the "a=rtpmap" line MUST be 90000."
   h264 = {
-    media      = "video",
+    media      = { video = true },
     media_id   = "sdp.a.rtpmap.h264.media-type-must-be-video",
     clock_rate = 90000,
     clock_id   = "sdp.a.rtpmap.h264.clock-rate-must-be-90000",
@@ -327,11 +455,27 @@ local CODECS = {
   -- RFC 7798 §7.2.1: "The media name in the "m=" line of SDP MUST be
   -- video." / "The clock rate in the "a=rtpmap" line MUST be 90000."
   h265 = {
-    media      = "video",
+    media      = { video = true },
     media_id   = "sdp.a.rtpmap.h265.media-type-must-be-video",
     clock_rate = 90000,
     clock_id   = "sdp.a.rtpmap.h265.clock-rate-must-be-90000",
     fmtp       = check_h265_fmtp,
+  },
+  -- RFC 3640 §4.1: "video" MUST be used for MPEG-4 Visual streams,
+  -- "audio" ... for MPEG-4 Audio streams, "application" ... for MPEG-4
+  -- Systems streams. The clock rate is a SHOULD (§3.1), so none is fixed.
+  ["mpeg4-generic"] = {
+    media    = { video = true, audio = true, application = true },
+    media_id = "sdp.a.rtpmap.mpeg4-generic.media-type-invalid-value",
+    fmtp     = check_mpeg4_generic_fmtp,
+  },
+  -- RFC 6416 §7.4: "The media type (audio) goes in SDP "m=" as the media
+  -- name." §7.3 rate: "The default value is 90000. Other rates MAY be
+  -- indicated", so none is fixed.
+  ["mp4a-latm"] = {
+    media    = { audio = true },
+    media_id = "sdp.a.rtpmap.mp4a-latm.media-type-must-be-audio",
+    fmtp     = check_mp4a_latm_fmtp,
   },
 }
 
@@ -342,10 +486,10 @@ local function check_codec_block(block, ctx)
     if codec then
       local field_path = string.format("media[%d].attributes[rtpmap:pt=%d]",
                                        ctx.media_index or 0, r.payload_type)
-      if block.media ~= codec.media then
+      if not codec.media[block.media] then
         if not record(ctx, codec.media_id, field_path) then return false end
       end
-      if r.clock_rate ~= codec.clock_rate then
+      if codec.clock_rate and r.clock_rate ~= codec.clock_rate then
         if not record(ctx, codec.clock_id, field_path) then return false end
       end
       if codec_by_pt[r.payload_type] == nil then
@@ -358,7 +502,7 @@ local function check_codec_block(block, ctx)
     if codec and f.params then
       local field_path = string.format("media[%d].attributes[fmtp:pt=%d]",
                                        ctx.media_index or 0, f.payload_type)
-      if not codec.fmtp(f.params, ctx, field_path) then return false end
+      if not codec.fmtp(f.params, ctx, field_path, block) then return false end
     end
   end
   return true
