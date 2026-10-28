@@ -18,6 +18,7 @@ local errors             = require("parse_sdp.errors")
 local grammar_base       = require("parse_sdp.grammar.base")
 local grammar_st2110_mod = require("parse_sdp.grammar.st2110")
 local grammar_ipmx_mod   = require("parse_sdp.grammar.ipmx")
+local grammar_codecs     = require("parse_sdp.grammar.codecs")
 local new_serialize      = require("parse_sdp.serialize")
 
 local TIER_MATCH = {
@@ -210,6 +211,17 @@ M.attrs_get = grammar_base.attrs_get
 -- — `fmtp.params`, not the `fmtp` table — since param lists have no
 -- wrapping object.
 M.params_get = grammar_base.params_get
+
+--- Decode an H.264 `profile-level-id` fmtp value (RFC 6184 §8.1) into its
+-- three bytes and their meaning: `profile_idc`, `profile_iop`, `level_idc`
+-- (numbers), `constraint_set0_flag` .. `constraint_set5_flag` (booleans),
+-- `level` (a string such as `"3.1"` or `"1b"`), and `profile` (the ITU-T
+-- H.264 Annex A profile name, or nil when the profile_idc is not one the
+-- table knows). A parsed convenience, never a check: a value that is not
+-- six hexadecimal digits returns nil and a message.
+-- @param hex string  The six-hexadecimal-digit value.
+-- @return table  The decoded fields, or nil, err.
+M.decode_h264_profile_level_id = grammar_codecs.decode_h264_profile_level_id
 
 -- Exposed for spec access; not part of the public contract.
 M._errors = errors

@@ -143,6 +143,9 @@
     "smbps",
     "sprop",
     "SRST",
-    "trunc"
+    "trunc",
+    "CAVLC",
+    "Multiview",
+    "PLId"
   ]
 }

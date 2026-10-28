@@ -30,6 +30,8 @@ local lpeg      = require("lpeg")
 local errors    = require("parse_sdp.errors")
 local addresses = require("parse_sdp.grammar.addresses")
 local patterns  = require("parse_sdp.grammar.patterns")
+local accessors = require("parse_sdp.grammar.accessors")
+local codecs    = require("parse_sdp.grammar.codecs")
 local P, R, S, V, C, Cc, Cg, Cb, Ct, Cmt, Carg =
   lpeg.P, lpeg.R, lpeg.S, lpeg.V, lpeg.C, lpeg.Cc, lpeg.Cg, lpeg.Cb, lpeg.Ct, lpeg.Cmt, lpeg.Carg
 
@@ -37,46 +39,12 @@ local P, R, S, V, C, Cc, Cg, Cb, Ct, Cmt, Carg =
 -- than V-rules because they are not candidates for per-tier override.
 local SP = P(" ")
 
--- Look up a value in the ordered kv-list shape `a_fmtp` and `a_privacy`
--- capture (Ct of {key, value | true} sub-tables, input order preserved
--- for round-trip determinism). Returns nil when absent, the value when
--- present (string for k=v entries, true for bare flags).
-local function params_get(params, key)
-  if params == nil then return nil end
-  for i = 1, #params do
-    local e = params[i]
-    if e[1] == key then return e[2] end
-  end
-  return nil
-end
-
--- Outer-attribute accessors over a block's ordered `attributes` array
--- (a `doc.session` or `doc.media[i]` table). Mirror params_get for the
--- attribute list: attr_get returns the first decomposed attribute whose
--- `name` matches (or nil); attrs_get returns all matches in document
--- order (empty table when none). nil-safe on the block / its attributes.
--- A malformed attribute (`malformed = true`, see malformed_attr) is not
--- decomposed, so neither accessor returns it.
-local function attr_get(block, name)
-  local attrs = block and block.attributes
-  if attrs == nil then return nil end
-  for i = 1, #attrs do
-    local a = attrs[i]
-    if a.name == name and not a.malformed then return a end
-  end
-  return nil
-end
-
-local function attrs_get(block, name)
-  local out = {}
-  local attrs = block and block.attributes
-  if attrs == nil then return out end
-  for i = 1, #attrs do
-    local a = attrs[i]
-    if a.name == name and not a.malformed then out[#out + 1] = a end
-  end
-  return out
-end
+-- Doc accessors (params_get / attr_get / attrs_get) live in
+-- parse_sdp.grammar.accessors so parse_sdp.grammar.codecs can share them
+-- without a require cycle; re-exported below.
+local params_get = accessors.params_get
+local attr_get   = accessors.attr_get
+local attrs_get  = accessors.attrs_get
 
 -- ── Semantic checks ─────────────────────────────────────────────────────────
 -- Cross-section invariants the grammar alone can't express. Each check
@@ -513,6 +481,10 @@ local base_media_section_checks = {
   check_dynamic_pt_rtpmap,
   check_media_tsrefclk_traceability,
 }
+-- Payload-format checks (RFC 6184 H.264, ...) from parse_sdp.grammar.codecs.
+for _, check in ipairs(codecs.media_section_checks) do
+  base_media_section_checks[#base_media_section_checks + 1] = check
+end
 
 -- Factory producing a document-level Cmt callback bound to a specific
 -- check list. Walks the captured doc, runs each check in order, and

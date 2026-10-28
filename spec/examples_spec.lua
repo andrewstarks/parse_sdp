@@ -39,6 +39,13 @@ local EXPECTED = {
   ["examples/generic/invalid/05_multiple_errors.sdp"] =
     { error = "sdp.c.address.invalid-ipv4", line = 4,
       findings = { "sdp.c.address.invalid-ipv4@4" } },
+  ["examples/generic/invalid/06_h264_interleaving_in_mode1.sdp"] =
+    { error = "sdp.a.fmtp.h264.sprop-interleaving-depth-forbidden-in-mode",
+      line = 0,
+      findings = {
+        "sdp.a.fmtp.h264.sprop-interleaving-depth-forbidden-in-mode@0",
+        "sdp.a.fmtp.h264.sprop-max-don-diff-forbidden-in-mode@0",
+      } },
   ["examples/st2110/invalid/01_missing_tsrefclk.sdp"] =
     { error = "st2110.attr.ts-refclk-required", line = 0,
       findings = { "st2110.attr.ts-refclk-required@0" } },
