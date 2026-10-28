@@ -9,6 +9,18 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 
+### Changed
+
+- `spec_conformance/SDPOKER_BACKLOG.md` points at the current files
+  (`spec/grammar_*_spec.lua`, `parse_sdp/grammar/*.lua`) instead of the
+  pre-split `spec/st2110_spec.lua` and `parse_sdp.lua`, and four rows now
+  state the current behavior: the PTP domain in `a=ts-refclk:ptp=` is
+  optional (RFC 7273 §4.8 ABNF), a trailing `;` on `a=fmtp` is the
+  warn-severity `sdp.a.fmtp.trailing-semicolon`, `a=ts-refclk:local` is
+  accepted as the RFC 7273 §4.8 `local` source, and `a=source-filter` is not
+  required at any tier. Two regression tests in
+  `spec/grammar_st2110_spec.lua` guard the last two.
+
 ## [1.9.1] — 2026-10-20
 
 ### Added
