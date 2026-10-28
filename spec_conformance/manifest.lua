@@ -157,6 +157,12 @@ return {
       source = "bcp_006_01",
       path = "examples/jpeg-xs.sdp",
       mode = "st2110",
+      -- The fixture pairs SSN=ST2110-22:2019 with TP=2110TPN. ST 2110-22:2019
+      -- §7.2 Table 1 defines TP as "Either 2110TPNL or 2110TPW"; 2110TPN
+      -- arrived with the 2022 edition. The example is non-conformant to
+      -- the edition it names (st2110-22.a.fmtp.tp-2110tpn-requires-ssn-2022).
+      expect = "fail",
+      expect_spec_ref = "ST 2110-22:2019 §7.2 Table 1",
     },
   },
 }

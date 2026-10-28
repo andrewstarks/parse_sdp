@@ -3234,3 +3234,179 @@ describe("base SDP grammar — group attribute invariants (Phase 6.E.A)",
     end)
   end)
 end)
+
+describe("base SDP grammar — a=setup (RFC 4145 §4)", function()
+  -- SPEC: RFC 4145 §4 "setup-attr = "a=setup:" role / role = "active" /
+  -- "passive" / "actpass" / "holdconn""
+  for _, role in ipairs({ "active", "passive", "actpass", "holdconn" }) do
+    it(("decomposes a=setup:%s into role"):format(role), function()
+      local doc = base.match(minimal(nil, {
+        { "m=application 9 TCP usb", "a=setup:" .. role } }))
+      assert.is_truthy(doc)
+      assert.equal(role, base.attr_get(doc.media[1], "setup").role)
+    end)
+  end
+  it("rejects a=setup:client [sdp.a.setup.malformed]", function()
+    local doc, ctx = base.match(minimal(nil, {
+      { "m=application 9 TCP usb", "a=setup:client" } }), { fail_on_first = false })
+    assert.is_truthy(doc)
+    local f = support.finding_for(ctx, "sdp.a.setup.malformed")
+    assert.is_not_nil(f)
+    assert.equal("RFC 4145 §4 (setup-attr ABNF)", f.spec_ref)
+    assert.is_true(doc.media[1].attributes[1].malformed)
+  end)
+  it("rejects a=setup:activeX (no extra characters)", function()
+    local _, ctx = base.match(minimal(nil, {
+      { "m=application 9 TCP usb", "a=setup:activeX" } }), { fail_on_first = false })
+    assert.is_not_nil(support.finding_for(ctx, "sdp.a.setup.malformed"))
+  end)
+end)
+
+describe("base SDP grammar — odd RTP port requires a=rtcp (RFC 8866 §5.14)", function()
+  local ID = "sdp.m.odd-port-requires-rtcp"
+  local function with(media_line, extra)
+    return minimal(nil, { { media_line, "a=rtpmap:96 H264/90000", extra } })
+  end
+  -- SPEC: "If noncontiguous ports are used or if they don't follow the
+  -- parity rule of even RTP ports and odd RTCP ports, the "a=rtcp:"
+  -- attribute MUST be used."
+  it("rejects an odd RTP port with no a=rtcp", function()
+    local _, ctx = base.match(with("m=video 49171 RTP/AVP 96"), { fail_on_first = false })
+    local f = support.finding_for(ctx, ID)
+    assert.is_not_nil(f)
+    assert.equal("media[0].port", f.field_path)
+    assert.equal("MISSING_FIELD", f.code)
+  end)
+  it("accepts an odd RTP port with a=rtcp", function()
+    local doc, ctx = base.match(with("m=video 49171 RTP/AVP 96", "a=rtcp:49172"))
+    assert.is_truthy(doc)
+    assert.same({}, ctx.findings)
+  end)
+  -- SPEC: RFC 5761 §5.1.1 — with a=rtcp-mux RTCP uses the RTP port, so
+  -- there is no RTCP port to pair.
+  it("accepts an odd RTP port with a=rtcp-mux", function()
+    local doc = base.match(with("m=video 49171 RTP/AVP 96", "a=rtcp-mux"))
+    assert.is_truthy(doc)
+  end)
+  it("accepts an even RTP port with no a=rtcp", function()
+    local doc = base.match(with("m=video 49170 RTP/AVP 96"))
+    assert.is_truthy(doc)
+  end)
+  -- NOT-SPEC: library — the rule is about RTP ports.
+  it("does not apply to a non-RTP transport", function()
+    local doc = base.match(minimal(nil, { { "m=application 9001 TCP usb" } }))
+    assert.is_truthy(doc)
+  end)
+end)
+
+describe("base SDP grammar — a=fmtp format must be an m= format (RFC 8866 §6.15)", function()
+  local ID = "sdp.a.fmtp.format-not-in-media"
+  -- SPEC: "The format must be one of the formats specified for the media."
+  it("rejects an fmtp for a payload type the m= line does not list", function()
+    local _, ctx = base.match(minimal(nil, {
+      { "m=video 49170 RTP/AVP 96", "a=rtpmap:96 H264/90000", "a=fmtp:97 x=1" } }),
+      { fail_on_first = false })
+    local f = support.finding_for(ctx, ID)
+    assert.is_not_nil(f)
+    assert.equal("media[0].attributes[fmtp:pt=97]", f.field_path)
+  end)
+  it("accepts an fmtp for a listed payload type", function()
+    local doc, ctx = base.match(minimal(nil, {
+      { "m=video 49170 RTP/AVP 96 97", "a=rtpmap:96 H264/90000",
+        "a=rtpmap:97 VP8/90000", "a=fmtp:97 x=1" } }))
+    assert.is_truthy(doc)
+    assert.same({}, ctx.findings)
+  end)
+  it("accepts an fmtp for a static payload type", function()
+    local doc = base.match(minimal(nil, {
+      { "m=audio 49170 RTP/AVP 0", "a=fmtp:0 x=1" } }))
+    assert.is_truthy(doc)
+  end)
+end)
+
+describe("base SDP grammar — a=extmap ids, URIs and levels (RFC 8285 §5 / §6)", function()
+  local URI = "urn:ietf:params:rtp-hdrext:toffset"
+  local function media_with(...)
+    local block = { "m=video 49170 RTP/AVP 96", "a=rtpmap:96 H264/90000" }
+    for _, l in ipairs({ ... }) do block[#block + 1] = l end
+    return minimal(nil, { block })
+  end
+  -- SPEC: §5 "In the signaling section, the range 1-256 is referred to as
+  -- the valid range"; §6 "A usable mapping MUST use IDs in the valid range"
+  it("rejects extmap id 0", function()
+    local _, ctx = base.match(media_with("a=extmap:0 " .. URI), { fail_on_first = false })
+    local f = support.finding_for(ctx, "sdp.a.extmap.id-out-of-range")
+    assert.is_not_nil(f)
+    assert.equal("media[0].attributes[extmap]", f.field_path)
+  end)
+  it("rejects extmap id 257", function()
+    local _, ctx = base.match(media_with("a=extmap:257 " .. URI), { fail_on_first = false })
+    assert.is_not_nil(support.finding_for(ctx, "sdp.a.extmap.id-out-of-range"))
+  end)
+  it("accepts extmap ids 1 and 256", function()
+    local doc, ctx = base.match(media_with(
+      "a=extmap:1 " .. URI, "a=extmap:256 urn:ietf:params:rtp-hdrext:ssrc-audio-level"))
+    assert.is_truthy(doc)
+    assert.same({}, ctx.findings)
+  end)
+  -- SPEC: §6 "each ID in this range MUST be used only once for each media
+  -- section (or only once if the mappings are session level)"
+  it("rejects the same id twice in one media description", function()
+    local _, ctx = base.match(media_with(
+      "a=extmap:1 " .. URI, "a=extmap:1 urn:ietf:params:rtp-hdrext:ssrc-audio-level"),
+      { fail_on_first = false })
+    assert.is_not_nil(support.finding_for(ctx, "sdp.a.extmap.duplicate-id"))
+  end)
+  -- Session-level attributes follow t= (RFC 8866 §5), so these are built
+  -- by hand.
+  local function session_extmaps(extmaps, media_extmap)
+    local lines = { "v=0", "o=- 1 1 IN IP4 192.0.2.1", "s=Test",
+                    "c=IN IP4 224.0.0.1/127", "t=0 0" }
+    for _, e in ipairs(extmaps) do lines[#lines + 1] = e end
+    lines[#lines + 1] = "m=video 49170 RTP/AVP 96"
+    lines[#lines + 1] = "a=rtpmap:96 H264/90000"
+    if media_extmap then lines[#lines + 1] = media_extmap end
+    return lines_to_sdp(lines)
+  end
+  it("rejects the same id twice at session level", function()
+    local _, ctx = base.match(session_extmaps({
+      "a=extmap:1 " .. URI, "a=extmap:1 urn:ietf:params:rtp-hdrext:ssrc-audio-level" }),
+      { fail_on_first = false })
+    local f = support.finding_for(ctx, "sdp.a.extmap.duplicate-id")
+    assert.is_not_nil(f)
+    assert.equal("session.attributes[extmap]", f.field_path)
+  end)
+  it("accepts the same id in two different media descriptions", function()
+    local doc = base.match(minimal(nil, {
+      { "m=video 49170 RTP/AVP 96", "a=rtpmap:96 H264/90000", "a=extmap:1 " .. URI },
+      { "m=video 49172 RTP/AVP 96", "a=rtpmap:96 H264/90000", "a=extmap:1 " .. URI } }))
+    assert.is_truthy(doc)
+  end)
+  -- SPEC: §6 "An extension URI with the same attributes MUST NOT appear
+  -- more than once applying to the same stream"
+  it("rejects the same URI twice for one stream", function()
+    local _, ctx = base.match(media_with("a=extmap:1 " .. URI, "a=extmap:2 " .. URI),
+      { fail_on_first = false })
+    assert.is_not_nil(support.finding_for(ctx, "sdp.a.extmap.duplicate-uri"))
+  end)
+  it("accepts the same URI twice with different attributes", function()
+    local doc, ctx = base.match(media_with("a=extmap:1 " .. URI .. " a", "a=extmap:2 " .. URI .. " b"))
+    assert.is_truthy(doc)
+    assert.same({}, ctx.findings)
+  end)
+  -- SPEC: §6 "The definitions MUST be either all session level or all
+  -- media level; it is not permitted to mix the two styles."
+  it("rejects session-level and media-level extmap together", function()
+    local _, ctx = base.match(session_extmaps({ "a=extmap:1 " .. URI },
+      "a=extmap:2 urn:ietf:params:rtp-hdrext:ssrc-audio-level"),
+      { fail_on_first = false })
+    local f = support.finding_for(ctx, "sdp.a.extmap.mixed-levels")
+    assert.is_not_nil(f)
+    assert.equal("media[0].attributes[extmap]", f.field_path)
+  end)
+  it("accepts session-level extmap with none at media level", function()
+    local doc, ctx = base.match(session_extmaps({ "a=extmap:1 " .. URI }))
+    assert.is_truthy(doc)
+    assert.same({}, ctx.findings)
+  end)
+end)

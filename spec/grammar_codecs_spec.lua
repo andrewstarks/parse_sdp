@@ -936,3 +936,28 @@ describe("codecs — MPEG-2 transport stream, MP2T (RFC 2250 §2, RFC 3551 Table
     assert.is_nil(finding_for(ctx, "st2110-10.a.group-dup.rtpmap-same"))
   end)
 end)
+
+describe("codecs — L16 emphasis (RFC 3555 §4.1.15)", function()
+  -- SPEC: "The only emphasis value defined here is emphasis=50-15"
+  it("accepts emphasis=50-15", function()
+    local doc, ctx = match_all(sdp_with({
+      "m=audio 49170 RTP/AVP 97", "a=rtpmap:97 L16/48000/2", "a=fmtp:97 emphasis=50-15" }))
+    assert.is_truthy(doc)
+    assert.same({}, ctx.findings)
+  end)
+  it("rejects emphasis=75-15", function()
+    local _, ctx = match_all(sdp_with({
+      "m=audio 49170 RTP/AVP 97", "a=rtpmap:97 l16/48000/2", "a=fmtp:97 Emphasis=75-15" }))
+    local f = finding_for(ctx, "sdp.a.fmtp.l16.emphasis-invalid-value")
+    assert.is_not_nil(f)
+    assert.equal("RFC 3555 §4.1.15", f.spec_ref)
+  end)
+  -- NOT-SPEC: library — L24 has no emphasis parameter in RFC 3190, so the
+  -- L16 rule does not reach it.
+  it("does not check emphasis on L24", function()
+    local doc, ctx = match_all(sdp_with({
+      "m=audio 49170 RTP/AVP 97", "a=rtpmap:97 L24/48000/2", "a=fmtp:97 emphasis=75-15" }))
+    assert.is_truthy(doc)
+    assert.same({}, ctx.findings)
+  end)
+end)

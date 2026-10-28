@@ -318,6 +318,13 @@ ATTR_RENDERERS.mid = function(attr, field_path)
   return ln("a", "mid:" .. tostring(vs[1]))
 end
 
+-- setup (RFC 4145 §4): role.
+ATTR_RENDERERS.setup = function(attr, field_path)
+  local vs, e = require_fields(attr, field_path, { "role" })
+  if not vs then return nil, e end
+  return ln("a", "setup:" .. tostring(vs[1]))
+end
+
 -- ptime (RFC 8866 §6.4): value = non-zero-int-or-real.
 -- Required: value.
 ATTR_RENDERERS.ptime = function(attr, field_path)

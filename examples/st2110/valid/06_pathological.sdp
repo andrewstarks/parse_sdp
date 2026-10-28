@@ -36,24 +36,28 @@ m=audio 21000 RTP/AVP 99
 i=Main audio — English 5.1 L24 48kHz
 c=IN IP4 239.100.11.1/64
 a=rtpmap:99 L24/48000/6
+a=ptime:1
 a=fmtp:99 channel-order=SMPTE2110.(51)
 a=mediaclk:direct=0
 m=audio 21002 RTP/AVP 99
 i=Main audio redundant — separate path
 c=IN IP4 239.100.11.2/64
 a=rtpmap:99 L24/48000/6
+a=ptime:1
 a=fmtp:99 channel-order=SMPTE2110.(51)
 a=mediaclk:direct=0
 m=audio 21004 RTP/AVP 100
 i=Secondary audio — Spanish stereo L24 48kHz
 c=IN IP4 239.100.11.3/64
 a=rtpmap:100 L24/48000/2
+a=ptime:1
 a=fmtp:100 channel-order=SMPTE2110.(ST)
 a=mediaclk:direct=0
 m=audio 21006 RTP/AVP 101
 i=Backup audio — mono program mix L16 48kHz
 c=IN IP4 239.100.11.4/64
 a=rtpmap:101 L16/48000/1
+a=ptime:1
 a=fmtp:101 channel-order=SMPTE2110.(M)
 a=mediaclk:direct=0
 m=video 22000 RTP/AVP 102

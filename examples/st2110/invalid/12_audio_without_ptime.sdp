@@ -1,0 +1,10 @@
+v=0
+o=- 3720000012 1 IN IP4 192.0.2.10
+s=ST 2110-30 audio without a=ptime
+t=0 0
+m=audio 5004 RTP/AVP 96
+c=IN IP4 239.100.0.2/64
+a=rtpmap:96 L24/48000/2
+a=fmtp:96 channel-order=SMPTE2110.(ST)
+a=ts-refclk:ptp=IEEE1588-2008:AA-BB-CC-DD-EE-FF-00-11:0
+a=mediaclk:direct=0

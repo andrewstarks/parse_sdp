@@ -12,11 +12,13 @@ a=mediaclk:direct=0
 m=audio 10010 RTP/AVP 97
 c=IN IP4 239.200.0.2/64
 a=rtpmap:97 L24/48000/6
+a=ptime:1
 a=fmtp:97 channel-order=SMPTE2110.(51)
 a=mediaclk:direct=0
 m=audio 10012 RTP/AVP 98
 c=IN IP4 239.200.0.3/64
 a=rtpmap:98 L24/48000/2
+a=ptime:1
 a=fmtp:98 channel-order=SMPTE2110.(ST)
 a=mediaclk:direct=0
 m=video 10020 RTP/AVP 100

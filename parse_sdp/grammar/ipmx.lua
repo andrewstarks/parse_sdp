@@ -719,7 +719,7 @@ local function check_usb_block(block, ctx)
     local cont = errors.record(ctx, "tr-10-14.usb.setup-required",
       { field_path = field_path .. ".attributes[setup]" })
     if not cont then return false end
-  elseif setup.value ~= "passive" then
+  elseif setup.role ~= "passive" then
     local cont = errors.record(ctx, "tr-10-14.usb.setup-must-be-passive",
       { field_path = field_path .. ".attributes[setup]" })
     if not cont then return false end
@@ -730,6 +730,45 @@ local function check_usb_block(block, ctx)
       local cont = errors.record(ctx,
         "tr-10-14.a.privacy.usb-protocol-must-be-usb_kv",
         { field_path = field_path .. ".attributes[privacy]" })
+      if not cont then return false end
+    end
+  end
+  return true
+end
+
+-- TR-10-0 assigns every compressed video stream to TR-10-7 ("any
+-- compressed video that does not generate a constant number of bytes per
+-- frame as required by TR-10-11") or TR-10-11 ("constant bit-rate
+-- compressed video"); TR-10-7 §10 and TR-10-11 §10: "The SDP object shall
+-- be constructed as described in ST 2110-22 section 7, subject also to
+-- the provisions of TR-10-1." TR-10-11 §9: "The Media Clock and RTP Clock
+-- rate for streams compliant with this TR shall be 90 kHz." So every
+-- m=video block whose encoding is not raw (TR-10-2) or smpte291 (TR-10-4)
+-- gets the ST 2110-22 checks; the ST 2110 tier already ran them on jxsv
+-- and SSN=ST2110-22 blocks (decision parse_sdp-59w).
+local NOT_COMPRESSED_VIDEO = { raw = true, smpte291 = true }
+
+local function check_compressed_video(block, ctx)
+  if not is_rtp_block(block) or block.media ~= "video" then return true end
+  if st2110.is_st2110_22_block(block) then return true end
+  local rtpmaps = base.attrs_get(block, "rtpmap")
+  if #rtpmaps == 0 then return true end
+  for _, attr in ipairs(rtpmaps) do
+    if NOT_COMPRESSED_VIDEO[attr.encoding] then return true end
+  end
+  return st2110.check_st2110_22_block(block, ctx)
+end
+
+-- TR-10-13 §20 (verbatim): "The protocol parameter shall be RTP or RTP_KV."
+local RTP_PRIVACY_PROTOCOLS = { RTP = true, RTP_KV = true }
+
+local function check_rtp_privacy_protocol(block, ctx)
+  if not is_rtp_block(block) then return true end
+  for _, attr in ipairs(base.attrs_get(block, "privacy")) do
+    local protocol = attr.params and base.params_get(attr.params, "protocol")
+    if type(protocol) == "string" and not RTP_PRIVACY_PROTOCOLS[protocol] then
+      local cont = errors.record(ctx, "tr-10-13.a.privacy.rtp-protocol-invalid-value",
+        { field_path = string.format("media[%d].attributes[privacy]", ctx.media_index or 0) })
       if not cont then return false end
     end
   end
@@ -771,6 +810,8 @@ return st2110.extend(st2110, {
     check_ipmx_port_constraints,
     check_rtcp_port_convention,
     check_usb_block,
+    check_compressed_video,
+    check_rtp_privacy_protocol,
   },
   semantic_checks = {
     check_infoframe_cross_section,

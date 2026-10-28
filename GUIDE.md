@@ -1188,6 +1188,7 @@ fields for known attribute names.
 | `rtpmap` | `payload_type` (number), `encoding` (string), `clock_rate` (number), `channels` (number, optional) |
 | `fmtp` | `payload_type` (number) and either `params` or `raw`. `params` is an ordered list of `{key, value}` pairs (string value) and `{flag, true}` entries. When the value after the payload type is not a list of `key=value` and flag tokens, for example `a=fmtp:0 0-15`, the attribute has `raw` (the value as one string) and no `params` field. |
 | `mid` | `tag` (string) |
+| `setup` | `role` (string: `active`, `passive`, `actpass`, or `holdconn`) |
 | `group` | `semantics` (string), `tags` (array of strings, possibly empty) |
 | `ssrc-group` | `semantics` (string), `ssrc_ids` (array of numbers) |
 | `ssrc` | `ssrc_id` (number), `attribute` (string), `value` (string, optional) |
@@ -1365,6 +1366,8 @@ registry stores it.
 | `sdp.o.username-required` | An `o=` line with an empty username. In version 1.9.1 the grammar rejects this structurally with `PARSE_ERROR`; the id is registered but is not emitted. | RFC 8866 §5.2 |
 | `sdp.session.connection-required` | A media description with no `c=` line when the session level has no `c=` line either. A session with no media descriptions and no `c=` line is accepted. | RFC 8866 §5.7 |
 | `sdp.m.rtpmap-required-for-dynamic-pt` | An RTP media description whose `m=` line lists a payload type from 96 to 127 with no `a=rtpmap` for that payload type. | RFC 8866 §8.2.3 |
+| `sdp.m.odd-port-requires-rtcp` | An RTP media description whose `m=` port is odd and that has neither `a=rtcp` nor `a=rtcp-mux`. An odd RTP port does not follow the even-RTP, odd-RTCP parity rule, so the RTCP port must be stated. | RFC 8866 §5.14 |
+| `sdp.a.fmtp.format-not-in-media` | An `a=fmtp` whose format is not one of the formats on the `m=` line. | RFC 8866 §6.15 |
 | `sdp.file.bom-present` | A file that starts with a UTF-8 byte order mark (warning). | RFC 8866 §6 |
 | `sdp.file.trailing-newline-missing` | A last line with no line terminator (warning). | RFC 8866 §5 |
 | `sdp.line.lf-only-line-ending` | A line that ends with LF alone instead of CRLF (warning). The finding names the line that ended with the LF. | RFC 8866 §9 |
@@ -1414,6 +1417,10 @@ finding message states the difference. A host name is still accepted in
 | `sdp.a.source-filter.dest-not-in-connections` | An `a=source-filter` whose destination address does not equal any `c=` address in the SDP file, after expansion of layered multicast ranges. A filter with address type `*` is not checked. The source addresses are not checked. | RFC 4570 §3.1 |
 | `sdp.a.ts-refclk.ptp-malformed` | An `a=ts-refclk:ptp=` value that is not `<version>:<EUI-64>[:<domain>]` or `<version>:traceable`, where the EUI-64 is eight hexadecimal octets separated by dashes. The version token and the domain are not checked. | RFC 7273 §4.8 (ptp / ptp-server / EUI64 ABNF) |
 | `sdp.a.ts-refclk.traceable-mix` | A traceable `a=ts-refclk` source (`gps`, `gal`, `glonass`, or a `traceable` form of `ntp`, `ptp`, or `private`) and a non-traceable source at the same level: the session level, or one media description. Mixing across levels is accepted. | RFC 7273 §4.8 |
+| `sdp.a.extmap.id-out-of-range` | An `a=extmap` id outside 1 to 256. | RFC 8285 §5 / §6 |
+| `sdp.a.extmap.duplicate-id` | The same `a=extmap` id twice in one media description, or twice at the session level. | RFC 8285 §6 |
+| `sdp.a.extmap.duplicate-uri` | The same `a=extmap` URI with the same extension attributes twice for one stream (one media description, or the session level). The same URI with different attributes is accepted. | RFC 8285 §6 |
+| `sdp.a.extmap.mixed-levels` | `a=extmap` at the session level and in a media description of the same file. | RFC 8285 §6 |
 
 #### Codec payload-format checks
 
@@ -1516,6 +1523,12 @@ defines no parameters, so an `a=fmtp` for it is not checked.
 | --- | --- | --- |
 | `sdp.a.rtpmap.mp2t.clock-rate-must-be-90000` | An `MP2T` rtpmap clock rate other than 90000. | RFC 2250 §2; RFC 3551 Table 5 |
 
+Linear PCM (RFC 3555, encoding `L16`).
+
+| Id | The check rejects | `spec_ref` |
+| --- | --- | --- |
+| `sdp.a.fmtp.l16.emphasis-invalid-value` | An `L16` fmtp `emphasis` value other than `50-15`, the only value the registration defines. | RFC 3555 §4.1.15 |
+
 #### Malformed known attributes
 
 The parser recognizes the attributes in the table below by name. When
@@ -1557,6 +1570,7 @@ reported as `tr-10-1.a.group.fid-forbidden` and not as
 | `sdp.a.rtpmap.malformed` | An `a=rtpmap` value that is not `<payload type> <encoding>/<clock rate>[/<channels>]`, with a payload type from 0 to 127, a token encoding name, and a clock rate and channel count that are integers with no leading zero. `a=rtpmap:97 L24/48000/0` is an example. | RFC 8866 §6.6 (rtpmap-value ABNF) |
 | `sdp.a.fmtp.malformed` | An `a=fmtp` value that does not start with a payload type from 0 to 127 followed by a space and at least one byte, or a value that holds a NUL byte. | RFC 8866 §6.15 (fmtp-value = fmt SP format-specific-params) |
 | `sdp.a.mid.malformed` | An `a=mid` value that is not one token. | RFC 5888 §4 (mid-attribute ABNF) |
+| `sdp.a.setup.malformed` | An `a=setup` value other than `active`, `passive`, `actpass`, or `holdconn`. | RFC 4145 §4 (setup-attr ABNF) |
 | `sdp.a.group.malformed` | An `a=group` value that is not a semantics token followed by zero or more tokens, each after one space. | RFC 5888 §5 (group-attribute ABNF) |
 | `sdp.a.ssrc.malformed` | An `a=ssrc` value that is not `<ssrc-id> <attribute>[:<value>]` with a decimal ssrc-id. | RFC 5576 §10 (ssrc-attr ABNF) |
 | `sdp.a.ssrc-group.malformed` | An `a=ssrc-group` value that is not a semantics token followed by zero or more decimal ssrc-ids, each after one space. | RFC 5576 §10 (ssrc-group-attr ABNF) |
@@ -1618,37 +1632,35 @@ The library also does not check the following. Each item is a
 limitation of the current implementation, not a statement that the
 specifications are silent.
 
-- The `a=setup` and `a=connection` values (RFC 4145) on any block other
-  than an IPMX USB transport block, where `a=setup` must be `passive`.
 - The `m=` port value against an upper bound. `m=video 70000` is
   accepted at every tier.
-- The `a=extmap` id range, the uniqueness of extmap ids, and the form of
-  the extmap URI. The only extmap check is the IPMX
-  `tr-10-13.a.extmap.pep-direction-must-be-sendonly`.
-- The PTP version token (`IEEE1588-2008`, `IEEE1588-2019`, or any other
-  token) and the PTP domain value in `a=ts-refclk:ptp=`.
-- The `a=mediaclk:direct=<offset>` value. Any digit string is accepted
-  at every tier.
+- The `a=connection` value (RFC 4145). `a=setup` is checked at every
+  tier.
+- The PTP version token in `a=ts-refclk:ptp=` (`IEEE1588-2008`,
+  `IEEE1588-2019`, or any other token). RFC 7273 leaves it open.
 - The `a=rtpmap` encoding name of an audio or video stream. Encodings
   other than `raw`, `jxsv`, `smpte291`, `AM824`, and `ST2110-41` get no
   per-encoding checks at the ST 2110 tier; `opus/48000/2` passes. `H264`,
-  `H265`, `mpeg4-generic`, `MP4A-LATM`, and `MP2T` get their RFC checks
+  `H265`, `mpeg4-generic`, `MP4A-LATM`, `MP2T`, and `L16` get their RFC checks
   at every tier (see
-  [Codec payload-format checks](#codec-payload-format-checks)), but no
-  ST 2110-22 check follows from them.
+  [Codec payload-format checks](#codec-payload-format-checks)). At the
+  ST 2110 tier an ST 2110-22 stream is recognized by `jxsv` or by
+  `SSN=ST2110-22:*`; an `H264` block without that marker gets no
+  ST 2110-22 check there. At the IPMX tier every compressed video block
+  does.
+- The `a=ptime` value on `L16` and `L24` streams. AES67 section 8.1 says
+  values outside its table shall be correctly interpreted, so only the
+  presence is required.
+- An `a=fmtp` for a payload type that the `m=` line lists but no
+  `a=rtpmap` names (a static payload type) gets only the cross-encoding
+  checks (`TSMODE`, `TSDELAY`, and at the IPMX tier the FEC parameters).
+- Whether one SDP file describes more than one stream. ST 2110-10
+  section 8.1 says a device shall construct one SDP per stream (or
+  redundant pair); the library checks each stream it finds and rejects
+  only a file with none.
 - An H.265 `a=fmtp` line that carries `dec-parallel-cap`. Its braces
   hold semicolons, so the `key=value` split cannot carry it, and the
   line's other H.265 parameters are not checked either.
-- The presence of `a=ptime` on audio streams, and the `a=ptime` value
-  against the ST 2110-31 Table 1 packet times.
-- That the payload type of an `a=fmtp` line matches an `a=rtpmap` line.
-  An `a=fmtp` for a payload type with no `a=rtpmap` gets only the
-  cross-encoding checks (`TSMODE`, `TSDELAY`, and at the IPMX tier the
-  FEC parameters).
-- `TROFF` and `CMAX` on a `raw` video `a=fmtp`. `TROFF` is checked only
-  on `smpte291` and `CMAX` only on `jxsv`.
-- Frame-rate signaling on a `jxsv` stream. Neither `a=framerate` nor
-  `exactframerate` is required.
 - `a=group:FID` at the ST 2110 tier. The IPMX tier rejects it
   (`tr-10-1.a.group.fid-forbidden`).
 - Multicast control-block addresses such as 224.0.0.0/24. Any address
@@ -1657,10 +1669,6 @@ specifications are silent.
 - RTP attributes (`a=rtpmap`, `a=fmtp`, `a=mediaclk`, `a=ts-refclk`) on
   an IPMX USB transport block. TR-10-14 section 14 does not forbid them
   in explicit text, so the library accepts them.
-- The `a=privacy` `protocol` value on an RTP block, other than the
-  forbidden value `NULL`. Only a USB block requires `USB_KV`.
-- `b=AS` on a non-`jxsv` block. The `b=AS` checks apply only to `jxsv`
-  blocks.
 - The `a=hkep` port and the `a=infoframe` port against an upper bound.
   Both must be positive integers; `a=hkep:70000` is accepted.
 - The `k=` line. The parser accepts a `k=` line in the RFC 8866 position
@@ -1714,6 +1722,11 @@ media description also has its own.
 | `st2110-10.m.proto-must-be-rtp-avp` | An RTP media description whose protocol is not `RTP/AVP`, for example `RTP/AVPF` or `RTP/SAVP`. | ST 2110-10:2022 §6.2 |
 | `st2110.attr.ts-refclk-required` | An RTP media description with no `a=ts-refclk` when the session level has none either. | ST 2110-10:2022 §8.2 |
 | `st2110.attr.mediaclk-required` | An RTP media description with no media-level `a=mediaclk`. | ST 2110-10:2022 §8.3 |
+| `st2110-10.a.mediaclk.form-invalid-value` | An `a=mediaclk` (session or media level) that is neither `direct` nor `sender`. Section 8.3 names those two forms for the two possible clock relationships. | ST 2110-10:2022 §8.3 |
+| `st2110-10.a.mediaclk.direct-offset-required` | `a=mediaclk:direct` with no `=<offset>`. | ST 2110-10:2022 §8.3 |
+| `st2110-10.a.mediaclk.direct-offset-must-be-zero` | `a=mediaclk:direct=<offset>` with an offset other than 0. | ST 2110-10:2022 §7.3 |
+| `st2110-10.a.ts-refclk.ptp-domain-required` | `a=ts-refclk:ptp=<version>:<grandmaster>` with no `:<domain>`. The traceable form needs no domain. | ST 2110-10:2022 §8.2 |
+| `st2110-10.a.ts-refclk.ptp-domain-invalid-value` | A PTP domain that is not a decimal number from 0 to 127. | ST 2110-10:2022 §8.2; RFC 7273 §4.8 |
 | `st2110-10.a.fmtp.tsmode-invalid-value` | An `a=fmtp` `TSMODE` value other than `SAMP`, `NEW`, or `PRES`. The check runs on every decomposed `a=fmtp` line, whatever the encoding. | ST 2110-10:2022 §8.7 |
 | `st2110-10.a.fmtp.tsdelay-invalid-value` | An `a=fmtp` `TSDELAY` value that is not a positive decimal integer. `TSDELAY=0` is rejected. The check runs on every decomposed `a=fmtp` line. | ST 2110-10:2022 §8.7 |
 
@@ -1791,6 +1804,8 @@ Value-form checks, which run when the parameter is present:
 | `st2110-20.a.fmtp.RANGE-invalid-value` | A `RANGE` value outside the set above. | ST 2110-20:2022 §7.3 |
 | `st2110-20.a.fmtp.MAXUDP-invalid-value` | A `MAXUDP` that is not a positive integer, or that is greater than 8960 (the Extended UDP Size Limit). | ST 2110-20:2022 §7.3 |
 | `st2110-20.a.fmtp.PAR-invalid-value` | A `PAR` that is not `W:H` with both parts positive integers in lowest terms. `12:11` is accepted; `2:2` is rejected. | ST 2110-20:2022 §7.3 |
+| `st2110-21.a.fmtp.troff-invalid-value` | A `TROFF` on a `raw` video fmtp that is not a positive integer. | ST 2110-21:2022 §8.2 |
+| `st2110-21.a.fmtp.cmax-invalid-value` | A `CMAX` on a `raw` video fmtp that is not an integer. | ST 2110-21:2022 §8.2 |
 | `st2110-20.a.fmtp.interlace-invalid-value` | An `interlace` parameter with an `=value`. The parameter is a bare flag. | ST 2110-20:2022 §7.3 |
 | `st2110-20.a.fmtp.segmented-invalid-value` | A `segmented` parameter with an `=value`. The parameter is a bare flag. | ST 2110-20:2022 §7.3 |
 | `st2110-20.a.fmtp.no-whitespace-around-equals` | A space or tab before or after the `=` of any parameter on a `raw` video `a=fmtp` line. The check is hard-syntactic and is recorded once per line, at the first such space or tab. A line with this defect is reported by this check only, even when the body has other entry defects (`sampling = a b`). Demoted, a body that otherwise has the entry form keeps its `params`; any other body is kept as `{name, malformed = true, value}`. | ST 2110-20:2022 §7.1 |
@@ -1827,7 +1842,14 @@ Checks on the `a=rtpmap` line:
 ### ST 2110-21 and ST 2110-22: JPEG XS (`jxsv`) checks
 
 The checks in this subsection apply to a media description with an
-`a=rtpmap` whose encoding name is `jxsv`. ST 2110-22:2022 section 7.2
+`a=rtpmap` whose encoding name is `jxsv`. The ST 2110-22 checks that
+are not specific to JPEG XS (`width`, `height`, and `TP` required and
+their value forms, `b=AS`, the frame-rate indication, the 90 kHz clock
+rate, and the `TP`/`SSN` edition coupling) also apply to any media
+description whose fmtp carries `SSN=ST2110-22:2019` or
+`SSN=ST2110-22:2022`, and at the IPMX tier to every `m=video` media
+description whose encoding is not `raw` or `smpte291` (TR-10-7 and
+TR-10-11 both send compressed video to ST 2110-22 section 7). ST 2110-22:2022 section 7.2
 Table 1 lists `width`, `height`, and `TP` as the mandatory
 format-specific parameters, and the IANA `video/jxsv` registration in
 RFC 9134 section 7.1 adds `packetmode`. Section 7.3 Table 3 requires a
@@ -1864,6 +1886,9 @@ differ from the ST 2110-20 sets because RFC 9134 defines them for
 | `st2110-22.a.rtpmap.jxsv-media-type` | An `a=rtpmap` for `jxsv` in a media description whose `m=` media type is not `video`. | ST 2110-22:2022 §6.2 / RFC 9134 |
 | `st2110-22.b.as-required` | A `jxsv` media description with no media-level `b=AS` line. | ST 2110-22:2022 §7.3 |
 | `st2110-22.b.as-invalid-value` | A `b=AS` value on a `jxsv` media description that is not a positive integer. | ST 2110-22:2022 §7.3 |
+| `st2110-22.framerate-indication-required` | An ST 2110-22 media description with neither `a=framerate` nor an fmtp `exactframerate`. | ST 2110-22:2022 §7.4 |
+| `st2110-22.a.fmtp.tp-2110tpn-requires-ssn-2022` | `TP=2110TPN` together with `SSN=ST2110-22:2019`. The 2019 edition defines only `2110TPNL` and `2110TPW`. | ST 2110-22:2019 §7.2 Table 1 |
+| `st2110-22.a.rtpmap.clock-rate-must-be-90000` | An ST 2110-22 media description (other than `jxsv`, which has its own id) whose rtpmap clock rate is not 90000. | ST 2110-22:2022 §5.2 |
 | `st2110-22.a.fmtp.width-required` | A `jxsv` stream with no `width` parameter. | ST 2110-22:2022 §7.2 |
 | `st2110-22.a.fmtp.height-required` | A `jxsv` stream with no `height` parameter. | ST 2110-22:2022 §7.2 |
 | `st2110-22.a.fmtp.TP-required` | A `jxsv` stream with no `TP` parameter. | ST 2110-22:2022 §7.2 |
@@ -1916,6 +1941,9 @@ without a check on the order.
 | `st2110-30.a.fmtp.channel-order-invalid` | A `channel-order` value that is not `<convention>.<order>`, or an `SMPTE2110` order that is not a parenthesized, comma-separated list of the group symbols above. | ST 2110-30:2025 §6.2.2 |
 | `st2110-30.a.fmtp.maxudp-forbidden` | A `MAXUDP` parameter on an `L16` or `L24` stream. Section 6.2.1 requires the Standard UDP Size Limit, and `MAXUDP` signals operation beyond it. `AM824` is not checked. | ST 2110-30:2025 §6.2.1 |
 | `st2110-30.audio.packet-payload-fit` | An `L16` or `L24` stream whose RTP payload per packet exceeds 1448 octets (the 1460-octet Standard UDP Size Limit minus the 12-octet RTP header). The payload is channels (1 when absent) times bytes per sample (2 for `L16`, 3 for `L24`) times samples per packet (clock rate times `a=ptime` in milliseconds, divided by 1000 and rounded to the nearest integer). The check runs only when the media description has an `a=ptime` line. `AM824` is not checked. | ST 2110-30:2025 §6.2.1 |
+| `st2110-30.a.ptime-required` | An `L16` or `L24` media description with no `a=ptime`. ST 2110-30 requires AES67's SDP, and AES67 section 8.1 requires `ptime`. The value is not restricted. | ST 2110-30:2025 §6.2; AES67 §8.1 |
+| `st2110-31.a.ptime-required` | An `AM824` media description with no `a=ptime`. | ST 2110-31:2022 §6.1 |
+| `st2110-31.a.ptime-invalid-value` | An `AM824` `a=ptime` that is not a Table 1 value for the clock rate: 1, 0.12, or 0.08 at 48000 and 96000; 1.09, 0.14, or 0.09 at 44100. | ST 2110-31:2022 §6.1 Table 1 |
 | `st2110-31.a.fmtp.channel-order-aes3-requires-am824` | The group `AES3` in a `channel-order` on a stream whose encoding is not `AM824`. | ST 2110-31:2022 §6.2 |
 | `st2110-31.a.rtpmap.am824-channels-required` | An `a=rtpmap` for `AM824` with no channel count. | ST 2110-31:2022 §6.1 |
 | `st2110-31.a.rtpmap.am824-channels-must-be-even` | An `a=rtpmap` for `AM824` with an odd channel count. Each AES3 signal has two subframe sequences. | ST 2110-31:2022 §6.1 |
@@ -2131,6 +2159,7 @@ The `protocol` value is not restricted on an RTP block, except that
 | `tr-10-13.a.privacy.key_version-required` | An `a=privacy` with no `key_version` parameter. | TR-10-13 §13 |
 | `tr-10-13.a.privacy.key_id-required` | An `a=privacy` with no `key_id` parameter. | TR-10-13 §13 |
 | `tr-10-13.a.privacy.protocol-null-forbidden` | `protocol=NULL`. Section 13 says to omit the attribute instead. | TR-10-13 §13 |
+| `tr-10-13.a.privacy.rtp-protocol-invalid-value` | An `a=privacy` on an RTP media description whose `protocol` is neither `RTP` nor `RTP_KV`. | TR-10-13 §20 |
 | `tr-10-13.a.privacy.mode-invalid-value` | A `mode` outside the twelve values above. `NULL` is therefore rejected. | TR-10-13 §20.1 (per §13 'NULL mode shall not be used') |
 | `tr-10-13.a.privacy.iv-invalid-form` | An `iv` that is not 16 hexadecimal digits (64 bits) with no spaces. | TR-10-13 §13 |
 | `tr-10-13.a.privacy.key_generator-invalid-form` | A `key_generator` that is not 32 hexadecimal digits (128 bits). | TR-10-13 §13 |
