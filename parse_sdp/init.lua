@@ -223,6 +223,18 @@ M.params_get = grammar_base.params_get
 -- @return table  The decoded fields, or nil, err.
 M.decode_h264_profile_level_id = grammar_codecs.decode_h264_profile_level_id
 
+--- Decode the H.265 profile, tier and level parameters of an `a=fmtp`
+-- params list (RFC 7798 §7.1): `profile_space`, `profile_id`, `tier_flag`,
+-- `level_id` (numbers, with the RFC's inferred values 0, 1, 0, 93 when
+-- absent), `tier` (`"Main"` or `"High"`), `level` (a string such as
+-- `"3.1"`), `profile` (the ITU-T H.265 profile group that profile_id
+-- selects, or nil), the four interop flags as booleans, and
+-- `profile_compatibility_flags` (a table indexed 0 to 31). A parsed
+-- convenience, never a check: a malformed value returns nil and a message.
+-- @param params table  The ordered params list of an H265 fmtp attribute.
+-- @return table  The decoded fields, or nil, err.
+M.decode_h265_profile = grammar_codecs.decode_h265_profile
+
 -- Exposed for spec access; not part of the public contract.
 M._errors = errors
 

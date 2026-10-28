@@ -826,6 +826,97 @@ M.register("sdp.a.fmtp.h264.use-level-src-parameter-sets-forbidden-with-in-band"
   verified         = true,
 })
 
+-- ── Codec payload formats: H.265, RFC 7798 (base tier, parse_sdp-59w) ──────
+-- RFC 7798 §7.2.1 (verbatim): "The media name in the "m=" line of SDP MUST
+-- be video." / "The clock rate in the "a=rtpmap" line MUST be 90000."
+M.register("sdp.a.rtpmap.h265.media-type-must-be-video", {
+  kind             = "semantic",
+  default_severity = "error",
+  code             = "INVALID_VALUE",
+  message_template = "an H265 rtpmap requires m=video",
+  spec_ref         = "RFC 7798 §7.2.1",
+  verified         = true,
+})
+M.register("sdp.a.rtpmap.h265.clock-rate-must-be-90000", {
+  kind             = "semantic",
+  default_severity = "error",
+  code             = "INVALID_VALUE",
+  message_template = "an H265 rtpmap clock rate must be 90000",
+  spec_ref         = "RFC 7798 §7.2.1",
+  verified         = true,
+})
+
+-- RFC 7798 §7.1 value forms, one id per parameter. The clause for each is
+-- quoted in parse_sdp/grammar/codecs.lua beside the pattern that tests it.
+local H265_VALUE_FORMS = {
+  { "profile-space",                  "an integer from 0 to 3" },
+  { "profile-id",                     "an integer from 0 to 31" },
+  { "tier-flag",                      "0 or 1" },
+  { "level-id",                       "an integer from 0 to 255" },
+  { "interop-constraints",            "twelve hexadecimal digits" },
+  { "profile-compatibility-indicator", "eight hexadecimal digits" },
+  { "sprop-sub-layer-id",             "an integer from 0 to 6" },
+  { "recv-sub-layer-id",              "an integer from 0 to 6" },
+  { "max-recv-level-id",              "an integer from 0 to 255" },
+  { "tx-mode",                        "SRST, MRST, or MRMT" },
+  { "sprop-vps",                      "a comma-separated list of base64 values" },
+  { "sprop-sps",                      "a comma-separated list of base64 values" },
+  { "sprop-pps",                      "a comma-separated list of base64 values" },
+  { "sprop-sei",                      "a comma-separated list of base64 values" },
+  { "max-lsr",                        "an integer" },
+  { "max-lps",                        "an integer" },
+  { "max-cpb",                        "an integer" },
+  { "max-br",                         "an integer" },
+  { "max-tr",                         "an integer" },
+  { "max-tc",                         "an integer" },
+  { "max-fps",                        "an integer" },
+  { "max-dpb",                        "an integer from 1 to 16" },
+  { "sprop-max-don-diff",             "an integer from 0 to 32767" },
+  { "sprop-depack-buf-nalus",         "an integer from 0 to 32767" },
+  { "sprop-depack-buf-bytes",         "an integer from 0 to 4294967295" },
+  { "depack-buf-cap",                 "an integer from 1 to 4294967295" },
+  { "sprop-segmentation-id",          "an integer from 0 to 3" },
+  { "sprop-spatial-segmentation-idc", "hexadecimal digits" },
+  { "include-dph",                    "empty or a comma-separated list of integers from 0 to 255" },
+}
+for _, p in ipairs(H265_VALUE_FORMS) do
+  M.register("sdp.a.fmtp.h265." .. p[1] .. "-invalid-value", {
+    kind             = "semantic",
+    default_severity = "error",
+    code             = "INVALID_VALUE",
+    message_template = "H265 fmtp '" .. p[1] .. "' must be " .. p[2],
+    spec_ref         = "RFC 7798 §7.1",
+    verified         = true,
+  })
+end
+
+-- RFC 7798 §7.1 (verbatim, sprop-depack-buf-nalus and sprop-depack-buf-
+-- bytes): "When sprop-max-don-diff is present and greater than 0, this
+-- parameter MUST be present and the value MUST be greater than 0."
+for _, key in ipairs({ "sprop-depack-buf-nalus", "sprop-depack-buf-bytes" }) do
+  M.register("sdp.a.fmtp.h265." .. key .. "-required-when-max-don-diff", {
+    kind             = "semantic",
+    default_severity = "error",
+    code             = "MISSING_FIELD",
+    message_template = "H265 fmtp '" .. key
+      .. "' must be present and greater than 0 when sprop-max-don-diff is greater than 0",
+    spec_ref         = "RFC 7798 §7.1",
+    verified         = true,
+  })
+end
+
+-- RFC 7798 §7.1 (verbatim): "max-recv-level-id MUST NOT be present when
+-- the highest level the receiver supports is not higher than the default
+-- level." The default level is level-id, 93 when absent.
+M.register("sdp.a.fmtp.h265.max-recv-level-id-not-higher-than-level-id", {
+  kind             = "semantic",
+  default_severity = "error",
+  code             = "INVALID_VALUE",
+  message_template = "H265 fmtp 'max-recv-level-id' must be higher than level-id (93 when absent)",
+  spec_ref         = "RFC 7798 §7.1",
+  verified         = true,
+})
+
 -- ── ST 2110 rtpmap narrowings per media type (Phase 6.B) ───────────────────
 -- Each ST 2110 essence has a defined encoding-name × media-type × clock-rate
 -- triple. Cited against primary spec text via the Phase-3 audit
