@@ -59,7 +59,8 @@ parse_sdp/
     accessors.lua    params_get / attr_get / attrs_get over the doc shape
                      (shared by base.lua and codecs.lua; re-exported).
     codecs.lua       base-tier checks from the IETF payload-format
-                     registrations (H.264 RFC 6184, H.265 RFC 7798), keyed by the rtpmap
+                     registrations (H.264 RFC 6184, H.265 RFC 7798, AAC
+                     RFC 3640 / RFC 6416), keyed by the rtpmap
                      encoding, plus the decode_* helpers. Decision
                      parse_sdp-59w places codec RFC checks here.
     base.lua         RFC 8866 base SDP grammar + base_semantic_checks.
@@ -72,7 +73,7 @@ spec/
                            per-line checks, doc-level semantic checks.
   grammar_st2110_spec.lua  SMPTE ST 2110 narrowings + cross-section invariants.
   grammar_ipmx_spec.lua    VSF TR-10 / IPMX overrides + cross-section invariants.
-  grammar_codecs_spec.lua  payload-format RFC checks (H.264, H.265) and decode helpers.
+  grammar_codecs_spec.lua  payload-format RFC checks (H.264, H.265, AAC) and decode helpers.
   -- Internal helpers (white-box; exposed only for spec access):
   grammar_patterns_spec.lua   numeric value-form patterns.
   grammar_addresses_spec.lua  IPv4 / IPv6 grammars + expansion / canonicalize.

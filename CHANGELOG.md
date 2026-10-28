@@ -41,6 +41,24 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
   `sprop-max-don-diff` is greater than 0; and `max-recv-level-id` not
   higher than `level-id`. A line that carries `dec-parallel-cap` is not
   checked (its value holds semicolons).
+- AAC checks at every tier (33 new check ids). RFC 3640 `mpeg4-generic`
+  (`sdp.a.rtpmap.mpeg4-generic.*`, `sdp.a.fmtp.mpeg4-generic.*`): the
+  `m=` media type in {video, audio, application}; `streamType`,
+  `profile-level-id`, `config`, and `mode` required; the value form of
+  every §4.1 parameter (`config` a hexadecimal octet string or `""`,
+  `randomAccessIndication` 0/1, the rest decimal integers);
+  `constantSize` and `sizeLength` exclusive; `sizeLength`, `indexLength`,
+  and `indexDeltaLength` required for `mode=AAC-hbr` / `AAC-lbr`
+  (§3.3.5 / §3.3.6); `streamStateIndication` forbidden on audio and video
+  streams. RFC 6416 `MP4A-LATM` (`sdp.a.rtpmap.mp4a-latm.*`,
+  `sdp.a.fmtp.mp4a-latm.*`): `m=audio`; the value form of
+  `profile-level-id`, `MPS-profile-level-id`, `object`, `cpresent`,
+  `config`, `MPS-asc`, and `SBR-enabled`; `config` required when
+  `cpresent=0`. Neither registration fixes a clock rate, so none is
+  checked.
+- `examples/generic/valid/10_aac_mpeg4_generic.sdp`,
+  `examples/generic/valid/11_aac_mp4a_latm.sdp`, and
+  `examples/generic/invalid/08_aac_hbr_missing_lengths.sdp`.
 - `sdp.decode_h265_profile(params)`: profile space, id, tier and level
   with the RFC's inferred defaults, the profile group name, the
   `interop-constraints` flags, and the 32 profile-compatibility flags. A
@@ -55,6 +73,10 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ### Changed
 
+- `examples/generic/valid/04_typical_streaming.sdp` and
+  `05_pathological.sdp`: the `mpeg4-generic` fmtp lines gain the
+  `config` parameter RFC 3640 §4.1 requires and the `indexdeltalength`
+  that `mode=AAC-hbr` requires (§3.3.6); the files were non-conformant.
 - `params_get`, `attr_get`, and `attrs_get` moved to
   `parse_sdp/grammar/accessors.lua`; `base.params_get` and the `sdp.*`
   exports are unchanged.

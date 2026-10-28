@@ -917,6 +917,137 @@ M.register("sdp.a.fmtp.h265.max-recv-level-id-not-higher-than-level-id", {
   verified         = true,
 })
 
+-- ── Codec payload formats: AAC, RFC 3640 and RFC 6416 (base tier) ──────────
+-- RFC 3640 §4.1 (verbatim): ""video" MUST be used for MPEG-4 Visual
+-- streams ... "audio" MUST be used for MPEG-4 Audio streams ...
+-- "application" MUST be used for MPEG-4 Systems streams".
+M.register("sdp.a.rtpmap.mpeg4-generic.media-type-invalid-value", {
+  kind             = "semantic",
+  default_severity = "error",
+  code             = "INVALID_VALUE",
+  message_template = "an mpeg4-generic rtpmap requires m=video, m=audio, or m=application",
+  spec_ref         = "RFC 3640 §4.1",
+  verified         = true,
+})
+-- RFC 3640 §4.1 (verbatim): "Required parameters: ... streamType ...
+-- profile-level-id ... config ... mode".
+for _, key in ipairs({ "streamType", "profile-level-id", "config", "mode" }) do
+  M.register("sdp.a.fmtp.mpeg4-generic." .. key .. "-required", {
+    kind             = "semantic",
+    default_severity = "error",
+    code             = "MISSING_FIELD",
+    message_template = "mpeg4-generic fmtp must include '" .. key .. "'",
+    spec_ref         = "RFC 3640 §4.1",
+    verified         = true,
+  })
+end
+-- RFC 3640 §4.1 value forms, one id per parameter. The clause for each is
+-- quoted in parse_sdp/grammar/codecs.lua beside the pattern that tests it.
+local MPEG4_GENERIC_VALUE_FORMS = {
+  { "streamType",              "an integer" },
+  { "profile-level-id",        "a decimal integer" },
+  { "config",                  "a hexadecimal octet string or \"\"" },
+  { "objectType",              "a decimal integer" },
+  { "constantSize",            "an integer" },
+  { "constantDuration",        "an integer" },
+  { "maxDisplacement",         "a decimal integer" },
+  { "de-interleaveBufferSize", "a decimal integer" },
+  { "sizeLength",              "an integer" },
+  { "indexLength",             "an integer" },
+  { "indexDeltaLength",        "an integer" },
+  { "CTSDeltaLength",          "an integer" },
+  { "DTSDeltaLength",          "an integer" },
+  { "randomAccessIndication",  "0 or 1" },
+  { "streamStateIndication",   "an integer" },
+  { "auxiliaryDataSizeLength", "an integer" },
+}
+for _, p in ipairs(MPEG4_GENERIC_VALUE_FORMS) do
+  M.register("sdp.a.fmtp.mpeg4-generic." .. p[1] .. "-invalid-value", {
+    kind             = "semantic",
+    default_severity = "error",
+    code             = "INVALID_VALUE",
+    message_template = "mpeg4-generic fmtp '" .. p[1] .. "' must be " .. p[2],
+    spec_ref         = "RFC 3640 §4.1",
+    verified         = true,
+  })
+end
+-- RFC 3640 §4.1 (verbatim): "The sizeLength and the constantSize
+-- parameters MUST NOT be simultaneously present."
+M.register("sdp.a.fmtp.mpeg4-generic.constantSize-sizeLength-exclusive", {
+  kind             = "semantic",
+  default_severity = "error",
+  code             = "INVALID_VALUE",
+  message_template = "mpeg4-generic fmtp must not carry both 'constantSize' and 'sizeLength'",
+  spec_ref         = "RFC 3640 §4.1",
+  verified         = true,
+})
+-- RFC 3640 §3.3.5 / §3.3.6 (verbatim): "In addition to the required MIME
+-- format parameters, the following parameters MUST be present:
+-- sizeLength, indexLength, and indexDeltaLength."
+M.register("sdp.a.fmtp.mpeg4-generic.aac-mode-requires-size-and-index-lengths", {
+  kind             = "semantic",
+  default_severity = "error",
+  code             = "MISSING_FIELD",
+  message_template = "mpeg4-generic fmtp with mode AAC-hbr or AAC-lbr must include "
+    .. "'sizeLength', 'indexLength', and 'indexDeltaLength'",
+  spec_ref         = "RFC 3640 §3.3.5 / §3.3.6",
+  verified         = true,
+})
+-- RFC 3640 §4.1 (verbatim): "streamStateIndication: ... SHALL NOT be
+-- present for MPEG-4 audio and MPEG-4 video streams."
+M.register("sdp.a.fmtp.mpeg4-generic.streamStateIndication-forbidden", {
+  kind             = "semantic",
+  default_severity = "error",
+  code             = "INVALID_VALUE",
+  message_template = "mpeg4-generic fmtp 'streamStateIndication' must not be present "
+    .. "on an audio or video stream",
+  spec_ref         = "RFC 3640 §4.1",
+  verified         = true,
+})
+
+-- RFC 6416 §7.4 (verbatim): "The media type (audio) goes in SDP "m=" as
+-- the media name."
+M.register("sdp.a.rtpmap.mp4a-latm.media-type-must-be-audio", {
+  kind             = "semantic",
+  default_severity = "error",
+  code             = "INVALID_VALUE",
+  message_template = "an MP4A-LATM rtpmap requires m=audio",
+  spec_ref         = "RFC 6416 §7.4",
+  verified         = true,
+})
+-- RFC 6416 §7.3 value forms, one id per parameter; clauses quoted in
+-- parse_sdp/grammar/codecs.lua.
+local MP4A_LATM_VALUE_FORMS = {
+  { "profile-level-id",     "a decimal integer" },
+  { "MPS-profile-level-id", "a decimal integer" },
+  { "object",               "a decimal integer" },
+  { "cpresent",             "0 or 1" },
+  { "config",               "a hexadecimal octet string" },
+  { "MPS-asc",              "a hexadecimal octet string" },
+  { "SBR-enabled",          "0 or 1" },
+}
+for _, p in ipairs(MP4A_LATM_VALUE_FORMS) do
+  M.register("sdp.a.fmtp.mp4a-latm." .. p[1] .. "-invalid-value", {
+    kind             = "semantic",
+    default_severity = "error",
+    code             = "INVALID_VALUE",
+    message_template = "MP4A-LATM fmtp '" .. p[1] .. "' must be " .. p[2],
+    spec_ref         = "RFC 6416 §7.3",
+    verified         = true,
+  })
+end
+-- RFC 6416 §7.3 (verbatim): "A 0 indicates the configuration data has not
+-- been multiplexed into an RTP payload, and in that case, the "config"
+-- parameter MUST be present"
+M.register("sdp.a.fmtp.mp4a-latm.config-required-when-cpresent-0", {
+  kind             = "semantic",
+  default_severity = "error",
+  code             = "MISSING_FIELD",
+  message_template = "MP4A-LATM fmtp must include 'config' when cpresent is 0",
+  spec_ref         = "RFC 6416 §7.3",
+  verified         = true,
+})
+
 -- ── ST 2110 rtpmap narrowings per media type (Phase 6.B) ───────────────────
 -- Each ST 2110 essence has a defined encoding-name × media-type × clock-rate
 -- triple. Cited against primary spec text via the Phase-3 audit

@@ -1477,6 +1477,36 @@ would report parameters that are not there.
 | `sdp.a.fmtp.h265.sprop-depack-buf-nalus-required-when-max-don-diff`, `sprop-depack-buf-bytes-required-when-max-don-diff` | The parameter absent or `0` when `sprop-max-don-diff` is present and greater than 0. | RFC 7798 §7.1 |
 | `sdp.a.fmtp.h265.max-recv-level-id-not-higher-than-level-id` | A `max-recv-level-id` that is not greater than `level-id` (93 when `level-id` is absent). | RFC 7798 §7.1 |
 
+MPEG-4 generic (RFC 3640, encoding `mpeg4-generic`). The registration
+fixes no clock rate (the RFC says the rate SHOULD equal the audio
+sampling rate), so none is checked. The `mode` value set is open ("Other
+modes are expected to be defined in future RFCs"), so only its presence
+is checked.
+
+| Id | The check rejects | `spec_ref` |
+| --- | --- | --- |
+| `sdp.a.rtpmap.mpeg4-generic.media-type-invalid-value` | An `mpeg4-generic` rtpmap on an `m=` line whose media type is not `video`, `audio`, or `application`. | RFC 3640 §4.1 |
+| `sdp.a.fmtp.mpeg4-generic.streamType-required`, `profile-level-id-required`, `config-required`, `mode-required` | An `mpeg4-generic` fmtp without the parameter. | RFC 3640 §4.1 |
+| `sdp.a.fmtp.mpeg4-generic.streamType-invalid-value`, `profile-level-id`, `objectType`, `constantSize`, `constantDuration`, `maxDisplacement`, `de-interleaveBufferSize`, `sizeLength`, `indexLength`, `indexDeltaLength`, `CTSDeltaLength`, `DTSDeltaLength`, `streamStateIndication`, `auxiliaryDataSizeLength` | A value that is not a decimal integer. | RFC 3640 §4.1 |
+| `sdp.a.fmtp.mpeg4-generic.config-invalid-value` | A value that is neither a hexadecimal octet string (an even number of hexadecimal digits) nor the quoted empty string `""`. | RFC 3640 §4.1 |
+| `sdp.a.fmtp.mpeg4-generic.randomAccessIndication-invalid-value` | A value other than `0` or `1`. | RFC 3640 §4.1 |
+| `sdp.a.fmtp.mpeg4-generic.constantSize-sizeLength-exclusive` | `constantSize` and `sizeLength` on the same fmtp. | RFC 3640 §4.1 |
+| `sdp.a.fmtp.mpeg4-generic.aac-mode-requires-size-and-index-lengths` | `mode=AAC-hbr` or `mode=AAC-lbr` without `sizeLength`, `indexLength`, and `indexDeltaLength`. | RFC 3640 §3.3.5 / §3.3.6 |
+| `sdp.a.fmtp.mpeg4-generic.streamStateIndication-forbidden` | `streamStateIndication` on an `m=audio` or `m=video` block. | RFC 3640 §4.1 |
+
+MPEG-4 audio LATM (RFC 6416, encoding `MP4A-LATM`). The registration
+fixes no clock rate ("The default value is 90000. Other rates MAY be
+indicated"), and defines no syntax for `bitrate`, so neither is
+checked.
+
+| Id | The check rejects | `spec_ref` |
+| --- | --- | --- |
+| `sdp.a.rtpmap.mp4a-latm.media-type-must-be-audio` | An `MP4A-LATM` rtpmap on an `m=` line whose media type is not `audio`. | RFC 6416 §7.4 |
+| `sdp.a.fmtp.mp4a-latm.profile-level-id-invalid-value`, `MPS-profile-level-id`, `object` | A value that is not a decimal integer. | RFC 6416 §7.3 |
+| `sdp.a.fmtp.mp4a-latm.cpresent-invalid-value`, `SBR-enabled` | A value other than `0` or `1`. | RFC 6416 §7.3 |
+| `sdp.a.fmtp.mp4a-latm.config-invalid-value`, `MPS-asc` | A value that is not a hexadecimal octet string. | RFC 6416 §7.3 |
+| `sdp.a.fmtp.mp4a-latm.config-required-when-cpresent-0` | `cpresent=0` without `config`. | RFC 6416 §7.3 |
+
 #### Malformed known attributes
 
 The parser recognizes the attributes in the table below by name. When
@@ -1592,10 +1622,10 @@ specifications are silent.
   at every tier.
 - The `a=rtpmap` encoding name of an audio or video stream. Encodings
   other than `raw`, `jxsv`, `smpte291`, `AM824`, and `ST2110-41` get no
-  per-encoding checks at the ST 2110 tier; `opus/48000/2` passes. `H264`
-  and `H265` get the RFC 6184 and RFC 7798 checks at every tier (see
-  [Codec payload-format checks](#codec-payload-format-checks)), but no
-  ST 2110-22 check follows from them.
+  per-encoding checks at the ST 2110 tier; `opus/48000/2` passes. `H264`,
+  `H265`, `mpeg4-generic`, and `MP4A-LATM` get their RFC checks at every
+  tier (see [Codec payload-format checks](#codec-payload-format-checks)),
+  but no ST 2110-22 check follows from them.
 - An H.265 `a=fmtp` line that carries `dec-parallel-cap`. Its braces
   hold semicolons, so the `key=value` split cannot carry it, and the
   line's other H.265 parameters are not checked either.
@@ -2235,7 +2265,7 @@ internal helper.
 | `spec/grammar_base_spec.lua` | standards | RFC 8866 base SDP: every leaf rule, every soft-syntactic and semantic finding, and the doc shape. Each test cites the clause. |
 | `spec/grammar_st2110_spec.lua` | standards | SMPTE ST 2110 overrides and per-block and cross-section checks (parts -10, -20, -21, -22, -30, -31, -40, -41). |
 | `spec/grammar_ipmx_spec.lua` | standards | VSF TR-10 / IPMX overrides and per-block and cross-section checks (TR-10-1 through TR-10-14). |
-| `spec/grammar_codecs_spec.lua` | standards | The payload-format RFC checks that run at every tier (H.264, RFC 6184; H.265, RFC 7798) and the `decode_*` helpers. |
+| `spec/grammar_codecs_spec.lua` | standards | The payload-format RFC checks that run at every tier (H.264, RFC 6184; H.265, RFC 7798; AAC, RFC 3640 and RFC 6416) and the `decode_*` helpers. |
 | `spec/roundtrip_spec.lua` | standards | Every base and IPMX attribute renderer, and the parse, serialize, and re-parse round trip over `examples/{generic,st2110,ipmx}/valid/*.sdp`. |
 | `spec/examples_spec.lua` | standards | Every file under `examples/<tier>/valid/` passes its tier. Every file under `examples/<tier>/invalid/` fails its tier with the check id, line, and full findings list that the spec's `EXPECTED` table records. |
 | `spec/mutation_spec.lua` | library API | Properties over mutated copies of every example and fixture. An inserted unparseable line is the reported error. `sdp.parse` never raises. `fail_on_first` does not change the verdict. Every mutant that parses round-trips, under the default policy and with errors demoted. |

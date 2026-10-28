@@ -53,6 +53,12 @@ local EXPECTED = {
         "sdp.a.fmtp.h265.sprop-depack-buf-nalus-required-when-max-don-diff@0",
         "sdp.a.fmtp.h265.sprop-depack-buf-bytes-required-when-max-don-diff@0",
       } },
+  ["examples/generic/invalid/08_aac_hbr_missing_lengths.sdp"] =
+    { error = "sdp.a.fmtp.mpeg4-generic.aac-mode-requires-size-and-index-lengths",
+      line = 0,
+      findings = {
+        "sdp.a.fmtp.mpeg4-generic.aac-mode-requires-size-and-index-lengths@0",
+      } },
   ["examples/st2110/invalid/01_missing_tsrefclk.sdp"] =
     { error = "st2110.attr.ts-refclk-required", line = 0,
       findings = { "st2110.attr.ts-refclk-required@0" } },

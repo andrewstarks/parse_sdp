@@ -151,6 +151,10 @@
     "idc",
     "lps",
     "lsr",
-    "MATROXSDP"
+    "MATROXSDP",
+    "CELP",
+    "hbr",
+    "lbr",
+    "streamtype"
   ]
 }
