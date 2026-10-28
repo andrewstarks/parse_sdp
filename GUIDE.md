@@ -679,6 +679,29 @@ end
 
 ---
 
+#### `sdp.decode_h264_profile_level_id(hex)`
+
+Decodes an H.264 `profile-level-id` value (RFC 8866 `a=fmtp`, RFC 6184
+section 8.1) into its three bytes and what they mean. The result has
+`profile_idc`, `profile_iop`, and `level_idc` (numbers), the six
+`constraint_set0_flag` to `constraint_set5_flag` booleans taken from
+`profile_iop` most significant bit first, `level` (a string such as
+`"3.1"`, `"4"`, or `"1b"`), and `profile` (the ITU-T H.264 Annex A
+profile name, for example `"Constrained Baseline"`; nil when the
+`profile_idc` is not one the table knows). Level 1b follows RFC 6184:
+`level_idc` 9, or `level_idc` 11 with `constraint_set3_flag` set.
+
+This is a convenience for reading a parsed value. It is not a check: a
+value that is not six hexadecimal digits returns `nil` and a message,
+and the validator's own check is `sdp.a.fmtp.h264.profile-level-id-invalid-value`.
+
+```lua
+local m = doc.media[1]
+local fmtp = sdp.attr_get(m, "fmtp")
+local d = sdp.decode_h264_profile_level_id(sdp.params_get(fmtp.params, "profile-level-id"))
+print(d.profile, d.level)   --> Constrained Baseline  3
+```
+
 ### Doc methods
 
 #### `doc:validate([mode])`
@@ -1365,6 +1388,37 @@ finding message states the difference. A host name is still accepted in
 | `sdp.a.ts-refclk.ptp-malformed` | An `a=ts-refclk:ptp=` value that is not `<version>:<EUI-64>[:<domain>]` or `<version>:traceable`, where the EUI-64 is eight hexadecimal octets separated by dashes. The version token and the domain are not checked. | RFC 7273 §4.8 (ptp / ptp-server / EUI64 ABNF) |
 | `sdp.a.ts-refclk.traceable-mix` | A traceable `a=ts-refclk` source (`gps`, `gal`, `glonass`, or a `traceable` form of `ntp`, `ptp`, or `private`) and a non-traceable source at the same level: the session level, or one media description. Mixing across levels is accepted. | RFC 7273 §4.8 |
 
+#### Codec payload-format checks
+
+The checks below come from the IETF media-type registrations of RTP
+payload formats. They apply to a media description whose `a=rtpmap`
+names the encoding (compared without regard to case), and to the
+`a=fmtp` lines of the payload types that rtpmap binds. A parameter the
+registration does not define passes through. An `a=fmtp` whose value is
+not a list of `key=value` tokens is not checked.
+
+H.264 (RFC 6184). The decoded form of `profile-level-id` is available
+through [`sdp.decode_h264_profile_level_id`](#sdpdecode_h264_profile_level_idhex).
+
+| Id | The check rejects | `spec_ref` |
+| --- | --- | --- |
+| `sdp.a.rtpmap.h264.media-type-must-be-video` | An `a=rtpmap` with encoding `H264` on an `m=` line whose media type is not `video`. | RFC 6184 §8.2.1 |
+| `sdp.a.rtpmap.h264.clock-rate-must-be-90000` | An `H264` rtpmap clock rate other than 90000. | RFC 6184 §8.2.1 |
+| `sdp.a.fmtp.h264.profile-level-id-invalid-value` | A `profile-level-id` that is not six hexadecimal digits. | RFC 6184 §8.1 |
+| `sdp.a.fmtp.h264.max-recv-level-invalid-value` | A `max-recv-level` that is not four hexadecimal digits. | RFC 6184 §8.1 |
+| `sdp.a.fmtp.h264.max-mbps-invalid-value`, `max-smbps`, `max-fs`, `max-cpb`, `max-dpb`, `max-br`, `sar-understood` (one id per parameter) | A value that is not a decimal integer. The comparison with the H.264 level tables is not made. | RFC 6184 §8.1 |
+| `sdp.a.fmtp.h264.redundant-pic-cap-invalid-value`, `use-level-src-parameter-sets`, `in-band-parameter-sets`, `level-asymmetry-allowed` | A value other than `0` or `1`. | RFC 6184 §8.1 |
+| `sdp.a.fmtp.h264.packetization-mode-invalid-value` | A value other than `0`, `1`, or `2`. | RFC 6184 §8.1 |
+| `sdp.a.fmtp.h264.sprop-interleaving-depth-invalid-value`, `sprop-max-don-diff` | A value that is not an integer from 0 to 32767. | RFC 6184 §8.1 |
+| `sdp.a.fmtp.h264.sprop-deint-buf-req-invalid-value`, `deint-buf-cap`, `sprop-init-buf-time`, `max-rcmd-nalu-size` | A value that is not an integer from 0 to 4294967295. | RFC 6184 §8.1 |
+| `sdp.a.fmtp.h264.sar-supported-invalid-value` | A value that is not an integer from 1 to `sar-understood` (13 when `sar-understood` is absent) or 255. | RFC 6184 §8.1 |
+| `sdp.a.fmtp.h264.sprop-parameter-sets-invalid-value` | A value that is not a comma-separated list of base64 strings. | RFC 6184 §8.1 |
+| `sdp.a.fmtp.h264.sprop-level-parameter-sets-invalid-value` | A value that is not colon-separated `PLId:PSL` pairs, where `PLId` is six hexadecimal digits and `PSL` a comma-separated list of base64 strings. | RFC 6184 §8.1 |
+| `sdp.a.fmtp.h264.sprop-interleaving-depth-forbidden-in-mode`, `sprop-deint-buf-req-forbidden-in-mode` | The parameter present when `packetization-mode` is absent, `0`, or `1`. | RFC 6184 §8.1 |
+| `sdp.a.fmtp.h264.sprop-interleaving-depth-required`, `sprop-deint-buf-req-required` | The parameter absent when `packetization-mode` is `2`. | RFC 6184 §8.1 |
+| `sdp.a.fmtp.h264.sprop-init-buf-time-forbidden-in-mode`, `sprop-max-don-diff-forbidden-in-mode` | The parameter present when `packetization-mode` is `0` or `1`. | RFC 6184 §8.1 |
+| `sdp.a.fmtp.h264.use-level-src-parameter-sets-forbidden-with-in-band` | `use-level-src-parameter-sets` present with a value other than `0` when `in-band-parameter-sets` is `1`. | RFC 6184 §8.1 |
+
 #### Malformed known attributes
 
 The parser recognizes the attributes in the table below by name. When
@@ -1480,7 +1534,10 @@ specifications are silent.
   at every tier.
 - The `a=rtpmap` encoding name of an audio or video stream. Encodings
   other than `raw`, `jxsv`, `smpte291`, `AM824`, and `ST2110-41` get no
-  per-encoding checks at the ST 2110 tier; `opus/48000/2` passes.
+  per-encoding checks at the ST 2110 tier; `opus/48000/2` passes. `H264`
+  gets the RFC 6184 checks at every tier (see
+  [Codec payload-format checks](#codec-payload-format-checks)), but no
+  ST 2110-22 check follows from it.
 - The presence of `a=ptime` on audio streams, and the `a=ptime` value
   against the ST 2110-31 Table 1 packet times.
 - That the payload type of an `a=fmtp` line matches an `a=rtpmap` line.
@@ -2117,6 +2174,7 @@ internal helper.
 | `spec/grammar_base_spec.lua` | standards | RFC 8866 base SDP: every leaf rule, every soft-syntactic and semantic finding, and the doc shape. Each test cites the clause. |
 | `spec/grammar_st2110_spec.lua` | standards | SMPTE ST 2110 overrides and per-block and cross-section checks (parts -10, -20, -21, -22, -30, -31, -40, -41). |
 | `spec/grammar_ipmx_spec.lua` | standards | VSF TR-10 / IPMX overrides and per-block and cross-section checks (TR-10-1 through TR-10-14). |
+| `spec/grammar_codecs_spec.lua` | standards | The payload-format RFC checks that run at every tier (H.264, RFC 6184) and the `decode_*` helpers. |
 | `spec/roundtrip_spec.lua` | standards | Every base and IPMX attribute renderer, and the parse, serialize, and re-parse round trip over `examples/{generic,st2110,ipmx}/valid/*.sdp`. |
 | `spec/examples_spec.lua` | standards | Every file under `examples/<tier>/valid/` passes its tier. Every file under `examples/<tier>/invalid/` fails its tier with the check id, line, and full findings list that the spec's `EXPECTED` table records. |
 | `spec/mutation_spec.lua` | library API | Properties over mutated copies of every example and fixture. An inserted unparseable line is the reported error. `sdp.parse` never raises. `fail_on_first` does not change the verdict. Every mutant that parses round-trips, under the default policy and with errors demoted. |

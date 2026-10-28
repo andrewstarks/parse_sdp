@@ -715,6 +715,117 @@ M.register("sdp.a.source-filter.dest-not-in-connections", {
   verified         = true,
 })
 
+-- ── Codec payload formats: H.264, RFC 6184 (base tier, parse_sdp-59w) ──────
+-- RFC 6184 §8.2.1 (verbatim): "The media name in the "m=" line of SDP MUST
+-- be video." / "The clock rate in the "a=rtpmap" line MUST be 90000."
+M.register("sdp.a.rtpmap.h264.media-type-must-be-video", {
+  kind             = "semantic",
+  default_severity = "error",
+  code             = "INVALID_VALUE",
+  message_template = "an H264 rtpmap requires m=video",
+  spec_ref         = "RFC 6184 §8.2.1",
+  verified         = true,
+})
+M.register("sdp.a.rtpmap.h264.clock-rate-must-be-90000", {
+  kind             = "semantic",
+  default_severity = "error",
+  code             = "INVALID_VALUE",
+  message_template = "an H264 rtpmap clock rate must be 90000",
+  spec_ref         = "RFC 6184 §8.2.1",
+  verified         = true,
+})
+
+-- RFC 6184 §8.1 value forms, one id per parameter. The clause for each is
+-- quoted in parse_sdp/grammar/codecs.lua beside the pattern that tests it.
+local H264_VALUE_FORMS = {
+  { "profile-level-id",             "six hexadecimal digits" },
+  { "max-recv-level",               "four hexadecimal digits" },
+  { "max-mbps",                     "an integer" },
+  { "max-smbps",                    "an integer" },
+  { "max-fs",                       "an integer" },
+  { "max-cpb",                      "an integer" },
+  { "max-dpb",                      "an integer" },
+  { "max-br",                       "an integer" },
+  { "redundant-pic-cap",            "0 or 1" },
+  { "sprop-parameter-sets",         "a comma-separated list of base64 values" },
+  { "sprop-level-parameter-sets",   "colon-separated PLId:PSL pairs (six hex digits, then base64 values)" },
+  { "use-level-src-parameter-sets", "0 or 1" },
+  { "in-band-parameter-sets",       "0 or 1" },
+  { "level-asymmetry-allowed",      "0 or 1" },
+  { "packetization-mode",           "an integer from 0 to 2" },
+  { "sprop-interleaving-depth",     "an integer from 0 to 32767" },
+  { "sprop-max-don-diff",           "an integer from 0 to 32767" },
+  { "sprop-deint-buf-req",          "an integer from 0 to 4294967295" },
+  { "deint-buf-cap",                "an integer from 0 to 4294967295" },
+  { "sprop-init-buf-time",          "an integer from 0 to 4294967295" },
+  { "max-rcmd-nalu-size",           "an integer from 0 to 4294967295" },
+  { "sar-understood",               "an integer" },
+  { "sar-supported",                "an integer from 1 to sar-understood (13 when absent), or 255" },
+}
+for _, p in ipairs(H264_VALUE_FORMS) do
+  M.register("sdp.a.fmtp.h264." .. p[1] .. "-invalid-value", {
+    kind             = "semantic",
+    default_severity = "error",
+    code             = "INVALID_VALUE",
+    message_template = "H264 fmtp '" .. p[1] .. "' must be " .. p[2],
+    spec_ref         = "RFC 6184 §8.1",
+    verified         = true,
+  })
+end
+
+-- RFC 6184 §8.1 (verbatim, sprop-interleaving-depth and sprop-deint-buf-
+-- req): "This parameter MUST NOT be present when packetization-mode is
+-- not present or the value of packetization-mode is equal to 0 or 1. This
+-- parameter MUST be present when the value of packetization-mode is equal
+-- to 2."
+for _, key in ipairs({ "sprop-interleaving-depth", "sprop-deint-buf-req" }) do
+  M.register("sdp.a.fmtp.h264." .. key .. "-forbidden-in-mode", {
+    kind             = "semantic",
+    default_severity = "error",
+    code             = "INVALID_VALUE",
+    message_template = "H264 fmtp '" .. key
+      .. "' must not be present unless packetization-mode is 2",
+    spec_ref         = "RFC 6184 §8.1",
+    verified         = true,
+  })
+  M.register("sdp.a.fmtp.h264." .. key .. "-required", {
+    kind             = "semantic",
+    default_severity = "error",
+    code             = "MISSING_FIELD",
+    message_template = "H264 fmtp '" .. key
+      .. "' must be present when packetization-mode is 2",
+    spec_ref         = "RFC 6184 §8.1",
+    verified         = true,
+  })
+end
+
+-- RFC 6184 §8.1 (verbatim, sprop-init-buf-time and sprop-max-don-diff):
+-- "The parameter MUST NOT be present if the value of packetization-mode
+-- is equal to 0 or 1."
+for _, key in ipairs({ "sprop-init-buf-time", "sprop-max-don-diff" }) do
+  M.register("sdp.a.fmtp.h264." .. key .. "-forbidden-in-mode", {
+    kind             = "semantic",
+    default_severity = "error",
+    code             = "INVALID_VALUE",
+    message_template = "H264 fmtp '" .. key
+      .. "' must not be present when packetization-mode is 0 or 1",
+    spec_ref         = "RFC 6184 §8.1",
+    verified         = true,
+  })
+end
+
+-- RFC 6184 §8.1 (verbatim): "When in-band-parameter-sets is equal to 1,
+-- use-level-src-parameter-sets MUST NOT be present or MUST be equal to 0."
+M.register("sdp.a.fmtp.h264.use-level-src-parameter-sets-forbidden-with-in-band", {
+  kind             = "semantic",
+  default_severity = "error",
+  code             = "INVALID_VALUE",
+  message_template = "H264 fmtp 'use-level-src-parameter-sets' must be absent "
+    .. "or 0 when in-band-parameter-sets is 1",
+  spec_ref         = "RFC 6184 §8.1",
+  verified         = true,
+})
+
 -- ── ST 2110 rtpmap narrowings per media type (Phase 6.B) ───────────────────
 -- Each ST 2110 essence has a defined encoding-name × media-type × clock-rate
 -- triple. Cited against primary spec text via the Phase-3 audit

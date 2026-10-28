@@ -201,6 +201,8 @@ parse_sdp/
 │       ├── addresses.lua        # IPv4 and IPv6 grammars, multicast expansion
 │       ├── bitops.lua, bitops_53.lua, bitops_compat.lua
 │       │                        # bitwise helpers: native on 5.3+, arithmetic on 5.1/5.2
+│       ├── accessors.lua        # params_get / attr_get / attrs_get over the doc shape
+│       ├── codecs.lua           # payload-format RFC checks (H.264) and decode helpers
 │       ├── base.lua             # RFC 8866 base grammar and checks
 │       ├── st2110.lua           # SMPTE ST 2110 overrides
 │       └── ipmx.lua             # VSF TR-10 / IPMX overrides
@@ -208,6 +210,7 @@ parse_sdp/
 │   ├── grammar_base_spec.lua    # RFC 8866 base SDP; every test cites a clause
 │   ├── grammar_st2110_spec.lua  # SMPTE ST 2110; every test cites a clause
 │   ├── grammar_ipmx_spec.lua    # VSF TR-10 / IPMX; every test cites a clause
+│   ├── grammar_codecs_spec.lua  # payload-format RFC checks (H.264); every test cites a clause
 │   ├── grammar_patterns_spec.lua, grammar_addresses_spec.lua,
 │   │     grammar_compose_spec.lua, grammar_bitops_spec.lua  # internal helper tests
 │   ├── error_registry_spec.lua, errors_spec.lua

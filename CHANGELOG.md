@@ -19,9 +19,29 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
   lists the places where that checker and the specification text disagree.
   Eighteen decision beads record the rejected checks and the tier placement
   of the codec RFC checks (`parse_sdp-59w`).
+- H.264 checks from RFC 6184 at every tier (32 new check ids,
+  `sdp.a.rtpmap.h264.*` and `sdp.a.fmtp.h264.*`): the `m=` media type
+  must be `video` and the rtpmap clock rate 90000 (§8.2.1); the value form
+  of every §8.1 fmtp parameter (`profile-level-id` six hex digits,
+  `packetization-mode` 0 to 2, the `sprop-*` ranges, the 0/1 flags, the
+  base64 lists); `sprop-interleaving-depth` and `sprop-deint-buf-req`
+  forbidden unless `packetization-mode` is 2 and required when it is;
+  `sprop-init-buf-time` and `sprop-max-don-diff` forbidden in modes 0 and
+  1; `use-level-src-parameter-sets` with `in-band-parameter-sets=1`; and
+  `sar-supported` against `sar-understood`. The checks live in the new
+  `parse_sdp/grammar/codecs.lua` (decision `parse_sdp-59w`) and read the
+  rtpmap encoding and fmtp parameter names without regard to case.
+- `sdp.decode_h264_profile_level_id(hex)`: the three bytes, the six
+  constraint flags, the level (including 1b), and the ITU-T H.264 profile
+  name of a `profile-level-id` value. A convenience, not a check.
+- `examples/generic/valid/08_h264_rfc6184.sdp` and
+  `examples/generic/invalid/06_h264_interleaving_in_mode1.sdp`.
 
 ### Changed
 
+- `params_get`, `attr_get`, and `attrs_get` moved to
+  `parse_sdp/grammar/accessors.lua`; `base.params_get` and the `sdp.*`
+  exports are unchanged.
 - `spec_conformance/SDPOKER_BACKLOG.md` points at the current files
   (`spec/grammar_*_spec.lua`, `parse_sdp/grammar/*.lua`) instead of the
   pre-split `spec/st2110_spec.lua` and `parse_sdp.lua`, and four rows now
