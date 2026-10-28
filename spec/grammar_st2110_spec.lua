@@ -2680,6 +2680,38 @@ describe("ST 2110-10 — required attribute presence (Phase 6.D.A)", function()
     end)
   end)
 
+  -- SPEC: ST 2110-10:2022 §8.2 "Devices which are not referenced to IEEE
+  -- Std 1588-2008 shall use an appropriate ts-refclk format as specified in
+  -- IETF RFC 7273 or the extended form shown below". RFC 7273 §4.8 defines
+  -- `local`; a PTP form without `:<domain>` is the RFC 7273 ABNF optional
+  -- domain. RFC 4570 §3 does not require a=source-filter for multicast and
+  -- no ST 2110 clause adds that requirement (SDPoker backlog: Streampunk #9,
+  -- Streampunk #25, AMWA #19 / Streampunk #12).
+  describe("forms the backlog once rejected and §8.2 / RFC 4570 admit", function()
+    for _, line in ipairs({
+      "a=ts-refclk:local",
+      "a=ts-refclk:ptp=IEEE1588-2008:39-A7-94-FF-FE-07-CB-D0",
+    }) do
+      it(("accepts %s on a multicast block with no a=source-filter"):format(line),
+          function()
+        local doc, ctx = st2110.match(sdp_lines({
+          "v=0",
+          "o=- 1 1 IN IP4 192.0.2.1",
+          "s=Test",
+          "t=0 0",
+          "m=video 30000 RTP/AVP 96",
+          "c=IN IP4 239.0.0.1/64",
+          "a=rtpmap:96 raw/90000",
+          RAW_FMTP_COMPLETE_PT96,
+          line,
+          TIMING_MEDIACLK,
+        }))
+        assert.is_truthy(doc)
+        assert.same({}, ctx.findings)
+      end)
+    end
+  end)
+
   describe("a=mediaclk required per media block (§8.3)", function()
 
     it("accepts a media block that carries a media-level a=mediaclk", function()
