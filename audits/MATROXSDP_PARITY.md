@@ -261,7 +261,7 @@ Shared fields in the reference; the two registrations are distinct here.
 
 | Line | Condition | Verdict | Citation |
 | --- | --- | --- | --- |
-| 224, 227 | video; H264 | RFC 6184 §8.1 registers `video/H264`; an `m=audio` H264 block contradicts the registration but the RFC states no SDP MUST. No check | RFC 6184 §8.1 |
+| 224, 227 | video; H264 | ADOPT `sdp.a.rtpmap.h264.media-type-must-be-video` | RFC 6184 §8.2.1 "The media name in the "m=" line of SDP MUST be video." |
 | 230 | clock 90000 | ADOPT (§4.6) | RFC 6184 §8.2.1 |
 | 238 | profile-level-id hex | ADOPT (§4.6) | RFC 6184 §8.1 |
 | 241 | packetization-mode 0–2 | ADOPT | RFC 6184 §8.1 |
@@ -272,7 +272,7 @@ Shared fields in the reference; the two registrations are distinct here.
 
 | Line | Condition | Verdict | Citation |
 | --- | --- | --- | --- |
-| 262, 265 | video; H265 | As H264: no check | RFC 7798 §7.1 |
+| 262, 265 | video; H265 | ADOPT `sdp.a.rtpmap.h265.media-type-must-be-video` | RFC 7798 §7.2.1 "The media name in the "m=" line of SDP MUST be video." |
 | 268 | clock 90000 | ADOPT (§4.7) | RFC 7798 §7.2.1 |
 | 271, 274 | profile-space ≤ 3; profile-id ≤ 31 | ADOPT | RFC 7798 §7.1 |
 | 288, 296, 320 | interop-constraints, profile-compatibility-indicator, spatial-segmentation-idc hex | ADOPT | RFC 7798 §7.1 |
