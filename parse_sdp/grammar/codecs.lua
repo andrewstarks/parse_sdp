@@ -59,30 +59,35 @@ end
 local is_int = matches(DIGITS)
 
 -- Lower-cased view of an fmtp params list; first occurrence wins, as in
--- accessors.params_get.
+-- accessors.params_get. Entries that are not {key, value} pairs are
+-- skipped, so a hand-built list cannot raise.
 local function params_ci(params)
   local t = {}
   for _, e in ipairs(params) do
-    local k = string.lower(e[1])
-    if t[k] == nil then t[k] = e[2] end
+    if type(e) == "table" and type(e[1]) == "string" then
+      local k = string.lower(e[1])
+      if t[k] == nil then t[k] = e[2] end
+    end
   end
   return t
 end
 
-local function record(ctx, id, field_path)
-  return errors.record(ctx, id, { field_path = field_path })
+-- loc: { pos = <attribute byte offset>, field_path = <doc path> }, built
+-- once per attribute by check_codec_block.
+local function record(ctx, id, loc)
+  return errors.record(ctx, id, loc)
 end
 
 -- Run a family's value-form rows over a lower-cased params view: each row
 -- is { name, predicate } and records `<prefix><name>-invalid-value` when
 -- the parameter is present and the predicate rejects it. `name` keeps the
 -- RFC's spelling for the id; the lookup is case-insensitive.
-local function check_value_forms(p, forms, prefix, ctx, field_path)
+local function check_value_forms(p, forms, prefix, ctx, loc)
   for _, row in ipairs(forms) do
     local key, ok = row[1], row[2]
     local v = p[string.lower(key)]
     if v ~= nil and not ok(v) then
-      if not record(ctx, prefix .. key .. "-invalid-value", field_path) then
+      if not record(ctx, prefix .. key .. "-invalid-value", loc) then
         return false
       end
     end
@@ -124,6 +129,9 @@ local H264_VALUE_FORMS = {
   { "deint-buf-cap",               int_in(0, 4294967295) },
   { "sprop-init-buf-time",         int_in(0, 4294967295) },
   { "max-rcmd-nalu-size",          int_in(0, 4294967295) },
+  -- sar-understood has no form sentence; it "indicates the maximum value
+  -- of aspect_ratio_idc (specified in [1]) smaller than 255", and
+  -- aspect_ratio_idc is an integer code (H.264 Table E-1).
   { "sar-understood",              is_int },
 }
 
@@ -139,13 +147,13 @@ local function sar_supported_ok(v, p)
   return n >= 1 and n <= understood
 end
 
-local function check_h264_fmtp(params, ctx, field_path)
+local function check_h264_fmtp(params, ctx, loc)
   local p = params_ci(params)
   if not check_value_forms(p, H264_VALUE_FORMS, "sdp.a.fmtp.h264.", ctx,
-                           field_path) then return false end
+                           loc) then return false end
   if p["sar-supported"] ~= nil and not sar_supported_ok(p["sar-supported"], p) then
     if not record(ctx, "sdp.a.fmtp.h264.sar-supported-invalid-value",
-                  field_path) then return false end
+                  loc) then return false end
   end
 
   -- packetization-mode: "When the value of packetization-mode is equal to
@@ -164,11 +172,11 @@ local function check_h264_fmtp(params, ctx, field_path)
     if mode == 2 then
       if p[key] == nil then
         if not record(ctx, "sdp.a.fmtp.h264." .. key .. "-required",
-                      field_path) then return false end
+                      loc) then return false end
       end
     elseif p[key] ~= nil then
       if not record(ctx, "sdp.a.fmtp.h264." .. key .. "-forbidden-in-mode",
-                    field_path) then return false end
+                    loc) then return false end
     end
   end
 
@@ -177,18 +185,22 @@ local function check_h264_fmtp(params, ctx, field_path)
   for _, key in ipairs({ "sprop-init-buf-time", "sprop-max-don-diff" }) do
     if (mode == 0 or mode == 1) and p[key] ~= nil then
       if not record(ctx, "sdp.a.fmtp.h264." .. key .. "-forbidden-in-mode",
-                    field_path) then return false end
+                    loc) then return false end
     end
   end
 
   -- "When in-band-parameter-sets is equal to 1, use-level-src-parameter-
-  -- sets MUST NOT be present or MUST be equal to 0."
-  if p["in-band-parameter-sets"] == "1"
-     and p["use-level-src-parameter-sets"] ~= nil
-     and p["use-level-src-parameter-sets"] ~= "0" then
+  -- sets MUST NOT be present or MUST be equal to 0." Both values are read
+  -- as numbers once their 0/1 form passed; a malformed one is reported
+  -- above and treated as absent here.
+  local in_band   = int_in(0, 1)(p["in-band-parameter-sets"])
+                    and tonumber(p["in-band-parameter-sets"])
+  local use_level = int_in(0, 1)(p["use-level-src-parameter-sets"])
+                    and tonumber(p["use-level-src-parameter-sets"])
+  if in_band == 1 and use_level and use_level ~= 0 then
     if not record(ctx,
         "sdp.a.fmtp.h264.use-level-src-parameter-sets-forbidden-with-in-band",
-        field_path) then return false end
+        loc) then return false end
   end
   return true
 end
@@ -274,7 +286,7 @@ local H265_VALUE_FORMS = {
   { "include-dph",                    dph_ok },
 }
 
-local function check_h265_fmtp(params, ctx, field_path)
+local function check_h265_fmtp(params, ctx, loc)
   local p = params_ci(params)
   -- dec-parallel-cap's ABNF puts ';' inside its braces, which the RFC 8866
   -- §6.15 key=value split cannot carry: the entries it breaks into would
@@ -282,7 +294,7 @@ local function check_h265_fmtp(params, ctx, field_path)
   -- checked (GUIDE.md limitation).
   if p["dec-parallel-cap"] ~= nil then return true end
   if not check_value_forms(p, H265_VALUE_FORMS, "sdp.a.fmtp.h265.", ctx,
-                           field_path) then return false end
+                           loc) then return false end
 
   -- "When sprop-max-don-diff is present and greater than 0, this
   -- parameter MUST be present and the value MUST be greater than 0."
@@ -294,7 +306,7 @@ local function check_h265_fmtp(params, ctx, field_path)
       local v = p[key]
       if v == nil or (is_int(v) and tonumber(v) == 0) then
         if not record(ctx, "sdp.a.fmtp.h265." .. key
-                      .. "-required-when-max-don-diff", field_path) then
+                      .. "-required-when-max-don-diff", loc) then
           return false
         end
       end
@@ -310,7 +322,7 @@ local function check_h265_fmtp(params, ctx, field_path)
     if tonumber(p["max-recv-level-id"]) <= level_id then
       if not record(ctx,
           "sdp.a.fmtp.h265.max-recv-level-id-not-higher-than-level-id",
-          field_path) then return false end
+          loc) then return false end
     end
   end
   return true
@@ -361,16 +373,16 @@ local MPEG4_GENERIC_VALUE_FORMS = {
 -- ... mode"
 local MPEG4_GENERIC_REQUIRED = { "streamType", "profile-level-id", "config", "mode" }
 
-local function check_mpeg4_generic_fmtp(params, ctx, field_path, block)
+local function check_mpeg4_generic_fmtp(params, ctx, loc)
   local p = params_ci(params)
   for _, key in ipairs(MPEG4_GENERIC_REQUIRED) do
     if p[string.lower(key)] == nil then
       if not record(ctx, "sdp.a.fmtp.mpeg4-generic." .. key .. "-required",
-                    field_path) then return false end
+                    loc) then return false end
     end
   end
   if not check_value_forms(p, MPEG4_GENERIC_VALUE_FORMS,
-                           "sdp.a.fmtp.mpeg4-generic.", ctx, field_path) then
+                           "sdp.a.fmtp.mpeg4-generic.", ctx, loc) then
     return false
   end
 
@@ -378,7 +390,7 @@ local function check_mpeg4_generic_fmtp(params, ctx, field_path, block)
   -- simultaneously present."
   if p["sizelength"] ~= nil and p["constantsize"] ~= nil then
     if not record(ctx, "sdp.a.fmtp.mpeg4-generic.constantSize-sizeLength-exclusive",
-                  field_path) then return false end
+                  loc) then return false end
   end
 
   -- §3.3.5 (AAC-lbr) and §3.3.6 (AAC-hbr): "In addition to the required
@@ -390,16 +402,24 @@ local function check_mpeg4_generic_fmtp(params, ctx, field_path, block)
        or p["indexdeltalength"] == nil then
       if not record(ctx,
           "sdp.a.fmtp.mpeg4-generic.aac-mode-requires-size-and-index-lengths",
-          field_path) then return false end
+          loc) then return false end
     end
   end
 
-  -- streamStateIndication: "SHALL NOT be present for MPEG-4 audio and
-  -- MPEG-4 video streams." (§4.1 maps those to m=audio and m=video)
+  -- streamStateIndication: "This parameter MAY be present when
+  -- transporting MPEG-4 system streams, and SHALL NOT be present for
+  -- MPEG-4 audio and MPEG-4 video streams." The stream kind is the
+  -- streamType parameter, whose "coding corresponds to the values of the
+  -- streamType, as defined in Table 9 (streamType Values) in ISO/IEC
+  -- 14496-1": 4 is VisualStream, 5 is AudioStream. The m= media type
+  -- does not identify it: §4.1 puts an MPEG-4 Systems stream of an
+  -- audio/visual presentation under m=video, and the §3.3.2 example
+  -- carries streamStateIndication on such an m=video block.
+  local stream_type = is_int(p["streamtype"]) and tonumber(p["streamtype"])
   if p["streamstateindication"] ~= nil
-     and (block.media == "audio" or block.media == "video") then
+     and (stream_type == 4 or stream_type == 5) then
     if not record(ctx, "sdp.a.fmtp.mpeg4-generic.streamStateIndication-forbidden",
-                  field_path) then return false end
+                  loc) then return false end
   end
   return true
 end
@@ -422,16 +442,17 @@ local MP4A_LATM_VALUE_FORMS = {
   { "SBR-enabled",          int_in(0, 1) },
 }
 
-local function check_mp4a_latm_fmtp(params, ctx, field_path)
+local function check_mp4a_latm_fmtp(params, ctx, loc)
   local p = params_ci(params)
   if not check_value_forms(p, MP4A_LATM_VALUE_FORMS, "sdp.a.fmtp.mp4a-latm.",
-                           ctx, field_path) then return false end
+                           ctx, loc) then return false end
   -- "A 0 indicates the configuration data has not been multiplexed into
   -- an RTP payload, and in that case, the "config" parameter MUST be
-  -- present"
-  if p["cpresent"] == "0" and p["config"] == nil then
+  -- present" (read as a number once the 0/1 form passed)
+  if int_in(0, 1)(p["cpresent"]) and tonumber(p["cpresent"]) == 0
+     and p["config"] == nil then
     if not record(ctx, "sdp.a.fmtp.mp4a-latm.config-required-when-cpresent-0",
-                  field_path) then return false end
+                  loc) then return false end
   end
   return true
 end
@@ -477,24 +498,27 @@ local CODECS = {
     media_id = "sdp.a.rtpmap.mp4a-latm.media-type-must-be-audio",
     fmtp     = check_mp4a_latm_fmtp,
   },
-  -- RFC 2250 §2: the RTP packet carries a "32 bit 90K Hz timestamp
-  -- representing the target transmission time"; RFC 3551 Table 5 registers
-  -- MP2T with clock rate 90,000 and media type "AV" (audio or video), so
-  -- the media type is not checked. RFC 3555 §4.2.9: "Required parameters:
-  -- None. Optional parameters: None.", so no fmtp parameter is defined.
+  -- RFC 2250 §2 describes a "32 bit 90K Hz timestamp representing the
+  -- target transmission time" (descriptive, not a MUST); the normative
+  -- source is the RFC 3551 §6 registration, Table 5, which fixes the
+  -- clock rate at 90,000 and the media type as "AV" (audio or video), so
+  -- the media type is not checked. RFC 3555 §4.2.9 (the video/MP2T
+  -- registration, which RFC 4856 did not carry over): "Required
+  -- parameters: None. Optional parameters: None.", so no fmtp parameter
+  -- is defined.
   mp2t = {
     clock_rate = 90000,
     clock_id   = "sdp.a.rtpmap.mp2t.clock-rate-must-be-90000",
     fmtp       = function() return true end,
   },
-  -- RFC 3555 §4.1.15 (audio/L16): "The only emphasis value defined here is
-  -- emphasis=50-15 to indicate the 50/15 microsecond preemphasis used with
-  -- Compact Disks."
+  -- RFC 4856 §2.1.15 (audio/L16; obsoletes RFC 3555 §4.1.15 with the same
+  -- text): "The only emphasis value defined here is emphasis=50-15 to
+  -- indicate the 50/15 microsecond preemphasis used with Compact Disks."
   l16 = {
-    fmtp = function(params, ctx, field_path)
+    fmtp = function(params, ctx, loc)
       local v = params_ci(params)["emphasis"]
       if v ~= nil and v ~= "50-15" then
-        return record(ctx, "sdp.a.fmtp.l16.emphasis-invalid-value", field_path)
+        return record(ctx, "sdp.a.fmtp.l16.emphasis-invalid-value", loc)
       end
       return true
     end,
@@ -506,25 +530,34 @@ local function check_codec_block(block, ctx)
   for _, r in ipairs(accessors.attrs_get(block, "rtpmap")) do
     local codec = CODECS[string.lower(r.encoding)]
     if codec then
-      local field_path = string.format("media[%d].attributes[rtpmap:pt=%d]",
-                                       ctx.media_index or 0, r.payload_type)
+      local loc = {
+        pos        = r._pos,
+        field_path = string.format("media[%d].attributes[rtpmap:pt=%d]",
+                                   ctx.media_index or 0, r.payload_type),
+      }
       if codec.media and not codec.media[block.media] then
-        if not record(ctx, codec.media_id, field_path) then return false end
+        if not record(ctx, codec.media_id, loc) then return false end
       end
       if codec.clock_rate and r.clock_rate ~= codec.clock_rate then
-        if not record(ctx, codec.clock_id, field_path) then return false end
+        if not record(ctx, codec.clock_id, loc) then return false end
       end
       if codec_by_pt[r.payload_type] == nil then
         codec_by_pt[r.payload_type] = codec
       end
     end
   end
+  -- An fmtp the grammar accepted through its raw fallback (params == nil)
+  -- is present with no readable parameters, so the registration's
+  -- required parameters are reported missing (decision parse_sdp-n7i).
   for _, f in ipairs(accessors.attrs_get(block, "fmtp")) do
     local codec = codec_by_pt[f.payload_type]
-    if codec and f.params then
-      local field_path = string.format("media[%d].attributes[fmtp:pt=%d]",
-                                       ctx.media_index or 0, f.payload_type)
-      if not codec.fmtp(f.params, ctx, field_path, block) then return false end
+    if codec then
+      local loc = {
+        pos        = f._pos,
+        field_path = string.format("media[%d].attributes[fmtp:pt=%d]",
+                                   ctx.media_index or 0, f.payload_type),
+      }
+      if not codec.fmtp(f.params or {}, ctx, loc) then return false end
     end
   end
   return true
@@ -538,11 +571,16 @@ M.media_section_checks = { check_codec_block }
 -- of the values of constraint_set0_flag, constraint_set1_flag,
 -- constraint_set2_flag, constraint_set3_flag, constraint_set4_flag,
 -- constraint_set5_flag, and reserved_zero_2bits in bit-significance order,
--- starting from the most-significant bit", then level_idc. Level 1b: "If
--- the level_idc byte ... is equal to 11 and bit 4 of the profile-iop byte
--- ... is equal to 1 or if the level_idc byte ... is equal to 9". The
--- profile names follow ITU-T H.264 Annex A; a profile_idc the table does
--- not know leaves `profile` nil.
+-- starting from the most-significant bit", then level_idc. Level 1b:
+-- "when profile_idc is equal to 66, 77, or 88 (the Baseline, Main, or
+-- Extended profile), level_idc is equal to 11, and bit 4
+-- (constraint_set3_flag) of the profile-iop byte is equal to 1, the
+-- default level is Level 1b"; for the other profiles H.264 Annex A
+-- signals Level 1b as level_idc 9 (RFC 6184 §8.2.2: "for indication of
+-- Level 1b when profile_idc is equal to 66, 77, or 88, bit 4
+-- (constraint_set3_flag) of profile-iop"). The profile names follow
+-- ITU-T H.264 Annex A; a profile_idc the table does not know leaves
+-- `profile` nil.
 local CONSTRAINT_MASKS = { 128, 64, 32, 16, 8, 4 }  -- constraint_set0..5
 
 local function h264_profile_name(idc, cs)
@@ -582,8 +620,9 @@ function M.decode_h264_profile_level_id(hex)
   for i, mask in ipairs(CONSTRAINT_MASKS) do
     cs[i - 1] = bitops.band(profile_iop, mask) ~= 0
   end
+  local cs3_is_level_1b = profile_idc == 66 or profile_idc == 77 or profile_idc == 88
   local level
-  if level_idc == 9 or (level_idc == 11 and cs[3]) then
+  if level_idc == 9 or (level_idc == 11 and cs[3] and cs3_is_level_1b) then
     level = "1b"
   elseif level_idc % 10 == 0 then
     level = string.format("%d", level_idc / 10)
@@ -659,7 +698,7 @@ function M.decode_h265_profile(params)
   local flags
   if interop == nil then
     flags = { 1, 0, 1, 1 }
-  elseif HEX12:match(interop) then
+  elseif type(interop) == "string" and HEX12:match(interop) then
     local top = tonumber(interop:sub(1, 1), 16)
     flags = {}
     for i, mask in ipairs({ 8, 4, 2, 1 }) do
@@ -673,7 +712,7 @@ function M.decode_h265_profile(params)
   local compat_flags = {}
   if compat == nil then
     for j = 0, 31 do compat_flags[j] = (j == profile_id) end
-  elseif HEX8:match(compat) then
+  elseif type(compat) == "string" and HEX8:match(compat) then
     for j = 0, 31 do
       local digit = tonumber(compat:sub(1 + (j - j % 4) / 4, 1 + (j - j % 4) / 4), 16)
       compat_flags[j] = bitops.band(digit, 2 ^ (3 - j % 4)) ~= 0

@@ -1,9 +1,9 @@
 package = "parse_sdp"
-version = "1.9.1-1"
+version = "1.10.0-1"
 
 source = {
   url  = "git+https://github.com/andrewstarks/parse_sdp.git",
-  tag  = "v1.9.1",
+  tag  = "v1.10.0",
 }
 
 description = {
@@ -51,6 +51,8 @@ build = {
     ["parse_sdp.grammar.bitops"]         = "parse_sdp/grammar/bitops.lua",
     ["parse_sdp.grammar.bitops_53"]      = "parse_sdp/grammar/bitops_53.lua",
     ["parse_sdp.grammar.bitops_compat"]  = "parse_sdp/grammar/bitops_compat.lua",
+    ["parse_sdp.grammar.accessors"]      = "parse_sdp/grammar/accessors.lua",
+    ["parse_sdp.grammar.codecs"]         = "parse_sdp/grammar/codecs.lua",
     ["parse_sdp.grammar.base"]           = "parse_sdp/grammar/base.lua",
     ["parse_sdp.grammar.st2110"]         = "parse_sdp/grammar/st2110.lua",
     ["parse_sdp.grammar.ipmx"]           = "parse_sdp/grammar/ipmx.lua",

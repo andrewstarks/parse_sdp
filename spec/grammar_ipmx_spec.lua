@@ -389,6 +389,65 @@ describe("IPMX TR-10-1 §10.2 — TR-10-11 jxsv inheritance", function()
   end)
 end)
 
+describe("IPMX — ST 2110-22 applies only where the ST 2110 tier applies it (decision parse_sdp-59w)", function()
+  local function video_ipmx(rtpmap, fmtp, extra)
+    local lines = {
+      "v=0", "o=- 1 1 IN IP4 192.0.2.1", "s=Test", "t=0 0",
+      "m=video 30000 RTP/AVP 96", "c=IN IP4 239.0.0.1/64",
+    }
+    for _, l in ipairs(extra or {}) do lines[#lines + 1] = l end
+    lines[#lines + 1] = "a=mid:1"
+    lines[#lines + 1] = rtpmap
+    lines[#lines + 1] = fmtp
+    lines[#lines + 1] = TIMING_TS_REFCLK
+    lines[#lines + 1] = TIMING_MEDIACLK
+    return lines_to_sdp(lines)
+  end
+  -- NOT-SPEC: library — TR-10-7 §10 and TR-10-11 §10 bind devices
+  -- "compliant with this TR"; TR-10-1 §10 defers to "the SMPTE ST 2110
+  -- standards suite as they apply to each specific media format" and
+  -- names neither. Nothing in the SDP says a plain H264, H265, MP2T or
+  -- VP9 block is one of those streams, so the ST 2110-22 §7 checks do
+  -- not reach it (red-team bead parse_sdp-1wh.2).
+  for _, row in ipairs({
+    { "H264", "a=rtpmap:96 H264/90000", "a=fmtp:96 IPMX;packetization-mode=1" },
+    { "H265", "a=rtpmap:96 H265/90000", "a=fmtp:96 IPMX;profile-id=1" },
+    { "MP2T", "a=rtpmap:96 MP2T/90000", "a=fmtp:96 IPMX" },
+    { "VP9",  "a=rtpmap:96 VP9/90000",  "a=fmtp:96 IPMX" },
+  }) do
+    it(("accepts an %s block with no b=AS, frame rate, width, height or TP"):format(row[1]), function()
+      local doc, ctx = ipmx.match(video_ipmx(row[2], row[3]))
+      assert.is_truthy(doc)
+      assert.same({}, ctx.findings)
+    end)
+  end
+  it("reports an H265 clock rate once, from RFC 7798", function()
+    local _, ctx = ipmx.match(video_ipmx("a=rtpmap:96 H265/48000", "a=fmtp:96 IPMX"),
+                              { fail_on_first = false })
+    assert.is_not_nil(finding_for(ctx, "sdp.a.rtpmap.h265.clock-rate-must-be-90000"))
+    assert.is_nil(finding_for(ctx, "st2110-22.a.rtpmap.clock-rate-must-be-90000"))
+  end)
+  -- SPEC: ST 2110-22:2022 §7.2 Table 2 SSN; §7.3 Table 3 b=AS. The SSN
+  -- marks the block as an ST 2110-22 stream at every tier.
+  it("still applies ST 2110-22 to a block that signals SSN=ST2110-22", function()
+    local doc, ctx = ipmx.match(video_ipmx("a=rtpmap:96 H264/90000",
+      "a=fmtp:96 width=1920;height=1080;TP=2110TPW;SSN=ST2110-22:2022;IPMX;packetization-mode=1",
+      { "a=framerate:25" }))
+    assert.is_nil(doc)
+    assert.is_not_nil(finding_for(ctx, "st2110-22.b.as-required"))
+  end)
+  -- NOT-SPEC: library — TR-10-2 and TR-10-4 cover raw and smpte291.
+  it("does not apply to raw video", function()
+    local doc, ctx = ipmx.match(lines_to_sdp({
+      "v=0", "o=- 1 1 IN IP4 192.0.2.1", "s=Test", "t=0 0",
+      "m=video 30000 RTP/AVP 96", "c=IN IP4 239.0.0.1/64", "a=mid:1",
+      "a=rtpmap:96 raw/90000", RAW_FMTP_IPMX_PT96, TIMING_TS_REFCLK, TIMING_MEDIACLK,
+    }))
+    assert.is_truthy(doc)
+    assert.same({}, ctx.findings)
+  end)
+end)
+
 -- A minimal IPMX-conformant audio SDP fixture (L24 stereo at 48 kHz)
 -- with all required IPMX fmtp params present — used as a baseline for
 -- §10.2 cross-encoding scope tests and as the foundation for §10.3
@@ -1423,6 +1482,84 @@ describe("IPMX TR-10-13 §13 — DUP legs use the same privacy parameters", func
 
 end)
 
+describe("IPMX TR-10-13 §20 — a=privacy protocol on an RTP stream", function()
+  local function video_with_privacy(protocol)
+    return lines_to_sdp({
+      "v=0", "o=- 1 1 IN IP4 192.0.2.1", "s=Test", "t=0 0",
+      "m=video 30000 RTP/AVP 96", "c=IN IP4 239.0.0.1/64", "a=mid:1",
+      "a=rtpmap:96 raw/90000", RAW_FMTP_IPMX_PT96,
+      "a=privacy:protocol=" .. protocol .. "; mode=AES-128-CTR; iv=0123456789abcdef;"
+        .. " key_generator=0123456789abcdef0123456789abcdef; key_version=00000001;"
+        .. " key_id=0123456789abcdef",
+      TIMING_TS_REFCLK, TIMING_MEDIACLK,
+    })
+  end
+  -- SPEC: "The protocol parameter shall be RTP or RTP_KV."
+  for _, p in ipairs({ "RTP", "RTP_KV" }) do
+    it(("accepts protocol=%s"):format(p), function()
+      local doc, ctx = ipmx.match(video_with_privacy(p))
+      assert.is_truthy(doc)
+      assert.same({}, ctx.findings)
+    end)
+  end
+  for _, p in ipairs({ "UDP", "USB_KV", "SRT" }) do
+    it(("rejects protocol=%s [tr-10-13.a.privacy.rtp-protocol-invalid-value]"):format(p), function()
+      local doc, ctx = ipmx.match(video_with_privacy(p))
+      assert.is_nil(doc)
+      local f = finding_for(ctx, "tr-10-13.a.privacy.rtp-protocol-invalid-value")
+      assert.is_not_nil(f)
+      assert.equal("media[0].attributes[privacy]", f.field_path)
+      assert.equal(10, f.line)
+      assert.equal("TR-10-13 §20", f.spec_ref)
+    end)
+  end
+
+  -- SPEC: TR-10-13 §23 "a session-level privacy attribute represents the
+  -- default value for each media-level privacy attribute unless an
+  -- explicit media-level privacy attribute is provided for the
+  -- corresponding "m=" section."
+  local function privacy_line(protocol)
+    return "a=privacy:protocol=" .. protocol .. "; mode=AES-128-CTR; iv=0123456789abcdef;"
+      .. " key_generator=0123456789abcdef0123456789abcdef; key_version=00000001;"
+      .. " key_id=0123456789abcdef"
+  end
+  local function session_privacy_over(session_protocol, media_lines)
+    local lines = {
+      "v=0", "o=- 1 1 IN IP4 192.0.2.1", "s=Test", "t=0 0",
+      privacy_line(session_protocol),
+    }
+    for _, l in ipairs(media_lines) do lines[#lines + 1] = l end
+    return lines_to_sdp(lines)
+  end
+  local VIDEO = {
+    "m=video 30000 RTP/AVP 96", "c=IN IP4 239.0.0.1/64", "a=mid:1",
+    "a=rtpmap:96 raw/90000", RAW_FMTP_IPMX_PT96, TIMING_TS_REFCLK, TIMING_MEDIACLK,
+  }
+  it("checks a session-level a=privacy against the RTP block it covers", function()
+    local doc, ctx = ipmx.match(session_privacy_over("USB_KV", VIDEO))
+    assert.is_nil(doc)
+    local f = finding_for(ctx, "tr-10-13.a.privacy.rtp-protocol-invalid-value")
+    assert.is_not_nil(f)
+    assert.equal("session.attributes[privacy]", f.field_path)
+    assert.equal(5, f.line)
+  end)
+  it("lets a media-level a=privacy override the session default", function()
+    local media = { (table.unpack or unpack)(VIDEO) }
+    media[#media + 1] = privacy_line("RTP")
+    local doc, ctx = ipmx.match(session_privacy_over("USB_KV", media))
+    assert.is_truthy(doc)
+    assert.same({}, ctx.findings)
+  end)
+  it("checks a session-level a=privacy against a USB block [tr-10-14.a.privacy.usb-protocol-must-be-usb_kv]", function()
+    local doc, ctx = ipmx.match(session_privacy_over("RTP", {
+      "m=application 30000 TCP usb", "c=IN IP4 192.0.2.2", "a=setup:passive" }))
+    assert.is_nil(doc)
+    local f = finding_for(ctx, "tr-10-14.a.privacy.usb-protocol-must-be-usb_kv")
+    assert.is_not_nil(f)
+    assert.equal("session.attributes[privacy]", f.field_path)
+  end)
+end)
+
 describe("IPMX TR-10-13 §20.1 — a=extmap PEP direction", function()
 
   local function build_with_extmap(opts)
@@ -1561,6 +1698,15 @@ describe("IPMX TR-10-14 §14 — USB block constraints", function()
     assert.equal("media[0].attributes[setup]", f.field_path)
   end)
 
+  -- NOT-SPEC: library — a malformed a=setup counts as present; its own
+  -- finding names the defect (decision parse_sdp-n7i).
+  it("does not also report a malformed a=setup as missing", function()
+    local _, ctx = ipmx.match(build_usb_sdp({ "a=setup:sideways" }), { fail_on_first = false })
+    assert.is_not_nil(finding_for(ctx, "sdp.a.setup.malformed"))
+    assert.is_nil(finding_for(ctx, "tr-10-14.usb.setup-required"))
+    assert.is_nil(finding_for(ctx, "tr-10-14.usb.setup-must-be-passive"))
+  end)
+
   for _, role in ipairs({ "active", "actpass", "holdconn" }) do
     it("rejects a USB block with a=setup:" .. role, function()
       local doc, ctx = ipmx.match(build_usb_sdp({ "a=setup:" .. role }))
@@ -1616,92 +1762,4 @@ describe("IPMX TR-10-14 §14 — USB block constraints", function()
     assert.is_truthy(base.match(sdp))
     assert.is_truthy(st2110.match(sdp))
   end)
-end)
-
-describe("IPMX — compressed video follows ST 2110-22 §7 (TR-10-7 §10, TR-10-11 §10)", function()
-  local function h264_ipmx(extra, fmtp)
-    local lines = {
-      "v=0", "o=- 1 1 IN IP4 192.0.2.1", "s=Test", "t=0 0",
-      "m=video 30000 RTP/AVP 96", "c=IN IP4 239.0.0.1/64",
-    }
-    for _, l in ipairs(extra) do lines[#lines + 1] = l end
-    lines[#lines + 1] = "a=mid:1"
-    lines[#lines + 1] = "a=rtpmap:96 H264/90000"
-    lines[#lines + 1] = fmtp or "a=fmtp:96 width=1920;height=1080;TP=2110TPW;IPMX;packetization-mode=1"
-    lines[#lines + 1] = TIMING_TS_REFCLK
-    lines[#lines + 1] = TIMING_MEDIACLK
-    return lines_to_sdp(lines)
-  end
-  -- SPEC: "The SDP object shall be constructed as described in ST 2110-22
-  -- section 7, subject also to the provisions of TR-10-1."
-  it("accepts an H264 block with width, height, TP, b=AS and a=framerate", function()
-    local doc, ctx = ipmx.match(h264_ipmx({ "b=AS:20000", "a=framerate:25" }))
-    assert.is_truthy(doc)
-    assert.same({}, ctx.findings)
-  end)
-  it("requires b=AS and a frame-rate indication on an H264 block", function()
-    local _, ctx = ipmx.match(h264_ipmx({}), { fail_on_first = false })
-    assert.is_not_nil(finding_for(ctx, "st2110-22.b.as-required"))
-    assert.is_not_nil(finding_for(ctx, "st2110-22.framerate-indication-required"))
-  end)
-  it("requires width, height and TP on an H264 block", function()
-    local _, ctx = ipmx.match(h264_ipmx({ "b=AS:20000", "a=framerate:25" },
-      "a=fmtp:96 IPMX;packetization-mode=1"), { fail_on_first = false })
-    for _, key in ipairs({ "width", "height", "TP" }) do
-      assert.is_not_nil(finding_for(ctx, "st2110-22.a.fmtp." .. key .. "-required"))
-    end
-  end)
-  -- SPEC: TR-10-11 §9 "The Media Clock and RTP Clock rate for streams
-  -- compliant with this TR shall be 90 kHz."
-  it("rejects an H265 block at 48000", function()
-    local _, ctx = ipmx.match(lines_to_sdp({
-      "v=0", "o=- 1 1 IN IP4 192.0.2.1", "s=Test", "t=0 0",
-      "m=video 30000 RTP/AVP 96", "c=IN IP4 239.0.0.1/64", "b=AS:20000", "a=framerate:25",
-      "a=mid:1", "a=rtpmap:96 H265/48000",
-      "a=fmtp:96 width=1920;height=1080;TP=2110TPW;IPMX",
-      TIMING_TS_REFCLK, TIMING_MEDIACLK,
-    }), { fail_on_first = false })
-    assert.is_not_nil(finding_for(ctx, "st2110-22.a.rtpmap.clock-rate-must-be-90000"))
-  end)
-  -- NOT-SPEC: library — TR-10-2 and TR-10-4 cover raw and smpte291.
-  it("does not apply to raw video", function()
-    local doc, ctx = ipmx.match(lines_to_sdp({
-      "v=0", "o=- 1 1 IN IP4 192.0.2.1", "s=Test", "t=0 0",
-      "m=video 30000 RTP/AVP 96", "c=IN IP4 239.0.0.1/64", "a=mid:1",
-      "a=rtpmap:96 raw/90000", RAW_FMTP_IPMX_PT96, TIMING_TS_REFCLK, TIMING_MEDIACLK,
-    }))
-    assert.is_truthy(doc)
-    assert.same({}, ctx.findings)
-  end)
-end)
-
-describe("IPMX TR-10-13 §20 — a=privacy protocol on an RTP stream", function()
-  local function video_with_privacy(protocol)
-    return lines_to_sdp({
-      "v=0", "o=- 1 1 IN IP4 192.0.2.1", "s=Test", "t=0 0",
-      "m=video 30000 RTP/AVP 96", "c=IN IP4 239.0.0.1/64", "a=mid:1",
-      "a=rtpmap:96 raw/90000", RAW_FMTP_IPMX_PT96,
-      "a=privacy:protocol=" .. protocol .. "; mode=AES-128-CTR; iv=0123456789abcdef;"
-        .. " key_generator=0123456789abcdef0123456789abcdef; key_version=00000001;"
-        .. " key_id=0123456789abcdef",
-      TIMING_TS_REFCLK, TIMING_MEDIACLK,
-    })
-  end
-  -- SPEC: "The protocol parameter shall be RTP or RTP_KV."
-  for _, p in ipairs({ "RTP", "RTP_KV" }) do
-    it(("accepts protocol=%s"):format(p), function()
-      local doc, ctx = ipmx.match(video_with_privacy(p))
-      assert.is_truthy(doc)
-      assert.same({}, ctx.findings)
-    end)
-  end
-  for _, p in ipairs({ "UDP", "USB_KV", "SRT" }) do
-    it(("rejects protocol=%s [tr-10-13.a.privacy.rtp-protocol-invalid-value]"):format(p), function()
-      local doc, ctx = ipmx.match(video_with_privacy(p))
-      assert.is_nil(doc)
-      local f = finding_for(ctx, "tr-10-13.a.privacy.rtp-protocol-invalid-value")
-      assert.is_not_nil(f)
-      assert.equal("TR-10-13 §20", f.spec_ref)
-    end)
-  end
 end)

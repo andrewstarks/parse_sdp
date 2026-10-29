@@ -9,6 +9,8 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 
+## [1.10.0] — 2026-10-28
+
 ### Added
 
 - Checks for the admitted limitations the MatroxSdp parity matrix
@@ -21,19 +23,37 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
   - RFC 8285: extmap id 1 to 256, unique ids per scope, no repeated URI
     with the same attributes, no mixing of session and media levels
     (`sdp.a.extmap.id-out-of-range`, `duplicate-id`, `duplicate-uri`,
-    `mixed-levels`).
-  - RFC 3555: `L16` `emphasis` must be `50-15`
-    (`sdp.a.fmtp.l16.emphasis-invalid-value`).
+    `mixed-levels`; §4.3, §5). Ids 4096 to 4351 are exempt from the
+    range and the uniqueness rules: §5 says mappings that do not conform
+    "MAY be presented, for instance, during SDP Offer/Answer", and §7
+    says "multiple extensions with the same identifier in the extended
+    range 4096-4351 MAY be offered". `duplicate-uri` still applies to
+    them.
+  - RFC 7273: the `:<domain>` of `a=ts-refclk:ptp=` must match the form
+    the ABNF binds to the version token, a decimal 0 to 127 for
+    `IEEE1588-2008` and 1 to 16 printable characters for `IEEE1588-2002`
+    (`sdp.a.ts-refclk.ptp-domain-invalid-value`, §4.8 with erratum 4450,
+    which removed the `domain-nmbr=` / `domain-name=` prefixes the §5.5
+    examples omit). No form is defined for `IEEE802.1AS-2011` or a
+    vendor token, so a domain under those versions is not checked.
+  - RFC 4856 (which obsoletes RFC 3555 and keeps the clause): `L16`
+    `emphasis` must be `50-15` (`sdp.a.fmtp.l16.emphasis-invalid-value`,
+    §2.1.15).
   - ST 2110-10: `a=mediaclk` must be `direct=<offset>` or `sender`, the
     offset is required and must be 0 (`st2110-10.a.mediaclk.*`, §8.3,
-    §7.3); a PTP grandmaster must carry a decimal domain 0 to 127
-    (`st2110-10.a.ts-refclk.ptp-domain-required`,
-    `ptp-domain-invalid-value`, §8.2).
+    §7.3); an `IEEE1588-2008` grandmaster must also signal the domain
+    number (`st2110-10.a.ts-refclk.ptp-domain-required`, §8.2: "Devices
+    which are referenced to IEEE Std 1588-2008 shall use the
+    ts-refclk:ptp form, signaling either the grandmaster clockIdentity
+    and domain number, or signaling that the PTP is traceable"). The
+    version token is compared without regard to case. A grandmaster
+    under `IEEE802.1AS-2011`, `IEEE1588-2002`, or any other token needs
+    no domain.
   - ST 2110-21: `TROFF` and `CMAX` value forms on `raw` video
     (`st2110-21.a.fmtp.troff-invalid-value`, `cmax-invalid-value`, §8.2).
-  - ST 2110-22 on every stream it governs (`jxsv`, any block with
-    `SSN=ST2110-22:*`, and at the IPMX tier every compressed video
-    block): a frame-rate indication (`st2110-22.framerate-indication-required`,
+  - ST 2110-22 on every stream it governs at every tier (`jxsv`, or
+    any block whose fmtp has `SSN=ST2110-22:2019` or
+    `SSN=ST2110-22:2022`): a frame-rate indication (`st2110-22.framerate-indication-required`,
     §7.4), `TP=2110TPN` only with the 2022 edition
     (`st2110-22.a.fmtp.tp-2110tpn-requires-ssn-2022`), the 90 kHz clock
     rate on non-`jxsv` blocks (`st2110-22.a.rtpmap.clock-rate-must-be-90000`,
@@ -58,6 +78,11 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
   the brief that read the SDP (`IpmxSdpTest` `test_11`/`101`/`102`, the
   BCP-006-02/-03 and IS-05 suites, the capabilities tests); all compare it
   with IS-04/IS-05 state or test conversion, so no check follows.
+- `spec/web_fixtures_spec.lua`: asserts that `web/fixtures/checks.json`
+  and the three recorded `report_*.json` responses equal what the native
+  bridge returns today, and that `web/src/mock/` holds identical copies.
+  The fixtures were regenerated; `checks.json` still listed the 197 ids
+  of the 1.9.1 registry, and the registry now has 319.
 
 - `audits/MATROXSDP_PARITY.md`: a parity matrix against the SDP parser and
   checker in the IPMX fork of AMWA nmos-testing (`MatroxSdp.py`,
@@ -97,8 +122,9 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
   `randomAccessIndication` 0/1, the rest decimal integers);
   `constantSize` and `sizeLength` exclusive; `sizeLength`, `indexLength`,
   and `indexDeltaLength` required for `mode=AAC-hbr` / `AAC-lbr`
-  (§3.3.5 / §3.3.6); `streamStateIndication` forbidden on audio and video
-  streams. RFC 6416 `MP4A-LATM` (`sdp.a.rtpmap.mp4a-latm.*`,
+  (§3.3.5 / §3.3.6); `streamStateIndication` forbidden when
+  `streamType` is 4 or 5, the MPEG-4 visual and audio stream types of
+  ISO/IEC 14496-1 Table 9. RFC 6416 `MP4A-LATM` (`sdp.a.rtpmap.mp4a-latm.*`,
   `sdp.a.fmtp.mp4a-latm.*`): `m=audio`; the value form of
   `profile-level-id`, `MPS-profile-level-id`, `object`, `cpresent`,
   `config`, `MPS-asc`, and `SBR-enabled`; `config` required when
@@ -127,6 +153,35 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ### Changed
 
+- Every post-parse presence check follows two rules (decision
+  `parse_sdp-n7i`). First, an attribute instance the grammar already
+  reported as malformed counts as present, so one defect gives one
+  finding: `a=ptime:1.0` on an `L24` block reports only
+  `sdp.a.ptime.malformed`, no longer also `st2110-30.a.ptime-required`;
+  an ST 2110-20 `a=fmtp` with an empty `;;` entry reports only
+  `st2110-20.a.fmtp.malformed`, no longer also the nine
+  `st2110-20.a.fmtp.<key>-required` findings. The same holds for
+  `st2110.attr.mediaclk-required`, `st2110.attr.ts-refclk-required`, and
+  the `jxsv`, `smpte291`, and `ST2110-41` required-parameter checks when
+  the attribute is present but malformed. A policy that sets a
+  `.malformed` id to `off` therefore accepts that line as written.
+  Second, an `a=fmtp` the grammar accepted as an opaque byte string
+  (its value is not a list of `key=value` entries, for example an empty
+  `;;` entry at the base tier) is present with no readable parameters,
+  so the codec checks (RFC 6184, RFC 7798, RFC 3640, RFC 6416) and the
+  ST 2110-22 generic checks report each required parameter missing, on
+  the fmtp line, instead of skipping the line.
+- Findings from the post-parse attribute checks carry the attribute's
+  line and column. Before this release they had line 0 and only a
+  `field_path`. The checks are every codec `a=fmtp` and `a=rtpmap`
+  finding, the ST 2110-22 generic fmtp and clock-rate findings,
+  `st2110-10.a.mediaclk.*`, `st2110-10.a.ts-refclk.ptp-domain-required`,
+  `st2110-31.a.ptime-invalid-value`, the four `sdp.a.extmap.*` findings,
+  `tr-10-13.a.privacy.rtp-protocol-invalid-value`,
+  `tr-10-14.a.privacy.usb-protocol-must-be-usb_kv`, and
+  `tr-10-1.a.fmtp.marker-required`, which now points at the first
+  `a=fmtp` line. A finding that reports an absent attribute still has
+  line 0 and a `field_path`.
 - Fixtures that the new checks found non-conformant: the ST 2110 audio
   examples gain `a=ptime`, and the IPMX pathological example keeps all
   its `a=extmap` lines at the session level. The pinned AMWA BCP-006-01
@@ -150,6 +205,72 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
   accepted as the RFC 7273 §4.8 `local` source, and `a=source-filter` is not
   required at any tier. Two regression tests in
   `spec/grammar_st2110_spec.lua` guard the last two.
+
+### Fixed
+
+The fixes below come from the red-team review in epic `parse_sdp-1wh`
+(children `.1` to `.13`).
+
+- The IPMX tier no longer applies ST 2110-22 to every compressed video
+  block. TR-10-7 §10 and TR-10-11 §10 bind devices that conform to those
+  recommendations; TR-10-0 is descriptive; TR-10-1 §10 defers to "the
+  SMPTE ST 2110 standards suite as they apply to each specific media
+  format" and names neither. Nothing in an SDP says a plain `H264`,
+  `H265`, `MP2T`, or `VP9` block is one of those streams, and the
+  specification's silence is not grounds to reject (decision
+  `parse_sdp-59w`, amended). An `MP2T` or H.264 video block without
+  `width`, `height`, `TP`, or `b=AS` no longer fails IPMX; the
+  ST 2110-41 fast-metadata example no longer gets `st2110-22.*` findings
+  at IPMX; an `H265` block at a wrong clock rate is reported once
+  (`sdp.a.rtpmap.h265.clock-rate-must-be-90000`) instead of twice.
+- `st2110-10.a.ts-refclk.ptp-domain-required` fires only when the
+  version token is `IEEE1588-2008`, the scope of the ST 2110-10:2022
+  §8.2 SHALL. A grandmaster under `IEEE802.1AS-2011` (RFC 7273's own
+  example), `IEEE1588-2002`, or any other token needs no domain. The id
+  `st2110-10.a.ts-refclk.ptp-domain-invalid-value`, never released, is
+  removed; the domain's form is the base-tier
+  `sdp.a.ts-refclk.ptp-domain-invalid-value` listed under Added.
+- `sdp.a.fmtp.mpeg4-generic.streamStateIndication-forbidden` fires on
+  the fmtp's `streamType` (4 or 5), not on the `m=` media type.
+  RFC 3640 §4.1 puts an MPEG-4 Systems stream of an audio/visual
+  presentation under `m=video`, and the RFC's own §3.3.2 example has
+  `streamStateIndication` on an `m=video` block with `streamtype=3`,
+  which the old check rejected.
+- `tr-10-13.a.privacy.rtp-protocol-invalid-value` and
+  `tr-10-14.a.privacy.usb-protocol-must-be-usb_kv` are one
+  document-level check that applies a session-level `a=privacy` to every
+  RTP or USB media description with no media-level `a=privacy` of its
+  own. TR-10-13 §23: "a session-level privacy attribute represents the
+  default value for each media-level privacy attribute unless an
+  explicit media-level privacy attribute is provided for the
+  corresponding "m=" section." A finding on an inherited session
+  attribute has the field_path `session.attributes[privacy]`.
+- `sdp.decode_h264_profile_level_id`: Level 1b from `level_idc` 11 with
+  `constraint_set3_flag` applies only when `profile_idc` is 66, 77, or
+  88 (RFC 6184 §8.1: "when profile_idc is equal to 66, 77, or 88 (the
+  Baseline, Main, or Extended profile), level_idc is equal to 11, and
+  bit 4 (constraint_set3_flag) of the profile-iop byte is equal to 1,
+  the default level is Level 1b"). For other profiles `level_idc` 11 is
+  level 1.1. `level_idc` 9 is still 1b.
+- `sdp.decode_h265_profile` returns `nil` and a message for a parameter
+  with no value (for example `interop-constraints` as a bare flag)
+  instead of raising a Lua error, and ignores list entries that are not
+  key/value pairs.
+- `sdp.a.fmtp.h264.use-level-src-parameter-sets-forbidden-with-in-band`
+  and `sdp.a.fmtp.mp4a-latm.config-required-when-cpresent-0` compare the
+  values as numbers once the 0/1 form passed, so `=00` and `=01` behave
+  as 0 and 1.
+- Citations: `sdp.a.fmtp.l16.emphasis-invalid-value` cites RFC 4856
+  §2.1.15 (RFC 4856 obsoletes RFC 3555 and keeps the clause);
+  `st2110-22.a.fmtp.tp-2110tpn-requires-ssn-2022` cites ST 2110-22:2019
+  §5.3 ("The session description shall include a format-specific
+  parameter of either TP=2110TPNL or TP=2110TPW"); the `sdp.a.extmap.*`
+  checks cite RFC 8285 §4.3 (the valid range), §5 (the three MUSTs), and
+  §7 (the extended range) instead of §6, which is `extmap-allow-mixed`.
+- The rockspec is `parse_sdp-1.10.0-1.rockspec` and lists
+  `parse_sdp.grammar.accessors` and `parse_sdp.grammar.codecs`, which
+  the 1.9.1 rockspec omitted. CI installs the rock and requires it from
+  outside the checkout, so a module the rockspec omits fails the build.
 
 ## [1.9.1] — 2026-10-20
 

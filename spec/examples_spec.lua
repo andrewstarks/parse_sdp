@@ -41,27 +41,27 @@ local EXPECTED = {
       findings = { "sdp.c.address.invalid-ipv4@4" } },
   ["examples/generic/invalid/06_h264_interleaving_in_mode1.sdp"] =
     { error = "sdp.a.fmtp.h264.sprop-interleaving-depth-forbidden-in-mode",
-      line = 0,
+      line = 8,
       findings = {
-        "sdp.a.fmtp.h264.sprop-interleaving-depth-forbidden-in-mode@0",
-        "sdp.a.fmtp.h264.sprop-max-don-diff-forbidden-in-mode@0",
+        "sdp.a.fmtp.h264.sprop-interleaving-depth-forbidden-in-mode@8",
+        "sdp.a.fmtp.h264.sprop-max-don-diff-forbidden-in-mode@8",
       } },
   ["examples/generic/invalid/07_h265_depack_buf_missing.sdp"] =
     { error = "sdp.a.fmtp.h265.sprop-depack-buf-nalus-required-when-max-don-diff",
-      line = 0,
+      line = 8,
       findings = {
-        "sdp.a.fmtp.h265.sprop-depack-buf-nalus-required-when-max-don-diff@0",
-        "sdp.a.fmtp.h265.sprop-depack-buf-bytes-required-when-max-don-diff@0",
+        "sdp.a.fmtp.h265.sprop-depack-buf-nalus-required-when-max-don-diff@8",
+        "sdp.a.fmtp.h265.sprop-depack-buf-bytes-required-when-max-don-diff@8",
       } },
   ["examples/generic/invalid/08_aac_hbr_missing_lengths.sdp"] =
     { error = "sdp.a.fmtp.mpeg4-generic.aac-mode-requires-size-and-index-lengths",
-      line = 0,
+      line = 8,
       findings = {
-        "sdp.a.fmtp.mpeg4-generic.aac-mode-requires-size-and-index-lengths@0",
+        "sdp.a.fmtp.mpeg4-generic.aac-mode-requires-size-and-index-lengths@8",
       } },
   ["examples/generic/invalid/09_mp2t_clock_rate.sdp"] =
-    { error = "sdp.a.rtpmap.mp2t.clock-rate-must-be-90000", line = 0,
-      findings = { "sdp.a.rtpmap.mp2t.clock-rate-must-be-90000@0" } },
+    { error = "sdp.a.rtpmap.mp2t.clock-rate-must-be-90000", line = 7,
+      findings = { "sdp.a.rtpmap.mp2t.clock-rate-must-be-90000@7" } },
   ["examples/st2110/invalid/01_missing_tsrefclk.sdp"] =
     { error = "st2110.attr.ts-refclk-required", line = 0,
       findings = { "st2110.attr.ts-refclk-required@0" } },
@@ -96,30 +96,17 @@ local EXPECTED = {
   ["examples/st2110/invalid/08_missing_ssn.sdp"] =
     { error = "st2110-41.a.fmtp.SSN-required", line = 8,
       findings = { "st2110-41.a.fmtp.SSN-required@8" } },
-  -- Demoted, the malformed ptime is skipped, so ST 2110-30 reports it
-  -- missing as well.
+  -- A malformed ptime or fmtp counts as present (decision parse_sdp-n7i),
+  -- so demoting it does not add a second finding that says it is missing.
   ["examples/st2110/invalid/09_bad_ptime.sdp"] =
     { error = "sdp.a.ptime.malformed", line = 10,
-      findings = { "sdp.a.ptime.malformed@10", "st2110-30.a.ptime-required@0" } },
-  -- Demoted, the malformed fmtp is skipped, so the §7.2 parameters are
-  -- reported missing.
+      findings = { "sdp.a.ptime.malformed@10" } },
   ["examples/st2110/invalid/10_fmtp_empty_entry.sdp"] =
     { error = "st2110-20.a.fmtp.malformed", line = 8,
-      findings = {
-        "st2110-20.a.fmtp.malformed@8",
-        "st2110-20.a.fmtp.sampling-required@0",
-        "st2110-20.a.fmtp.width-required@0",
-        "st2110-20.a.fmtp.height-required@0",
-        "st2110-20.a.fmtp.exactframerate-required@0",
-        "st2110-20.a.fmtp.depth-required@0",
-        "st2110-20.a.fmtp.colorimetry-required@0",
-        "st2110-20.a.fmtp.PM-required@0",
-        "st2110-20.a.fmtp.SSN-required@0",
-        "st2110-20.a.fmtp.TP-required@0",
-      } },
+      findings = { "st2110-20.a.fmtp.malformed@8" } },
   ["examples/st2110/invalid/11_mediaclk_offset.sdp"] =
-    { error = "st2110-10.a.mediaclk.direct-offset-must-be-zero", line = 0,
-      findings = { "st2110-10.a.mediaclk.direct-offset-must-be-zero@0" } },
+    { error = "st2110-10.a.mediaclk.direct-offset-must-be-zero", line = 10,
+      findings = { "st2110-10.a.mediaclk.direct-offset-must-be-zero@10" } },
   ["examples/st2110/invalid/12_audio_without_ptime.sdp"] =
     { error = "st2110-30.a.ptime-required", line = 0,
       findings = { "st2110-30.a.ptime-required@0" } },
@@ -137,7 +124,7 @@ local EXPECTED = {
         "tr-10-1.a.fmtp.measuredpixclk-required@8",
         "tr-10-1.a.fmtp.vtotal-required@8",
         "tr-10-1.a.fmtp.htotal-required@8",
-        "tr-10-1.a.fmtp.marker-required@0",
+        "tr-10-1.a.fmtp.marker-required@8",
       } },
   ["examples/ipmx/invalid/02_fails_st2110.sdp"] =
     { error = "tr-10-1.a.fmtp.measuredpixclk-required", line = 9,
@@ -145,7 +132,7 @@ local EXPECTED = {
         "tr-10-1.a.fmtp.measuredpixclk-required@9",
         "tr-10-1.a.fmtp.vtotal-required@9",
         "tr-10-1.a.fmtp.htotal-required@9",
-        "tr-10-1.a.fmtp.marker-required@0",
+        "tr-10-1.a.fmtp.marker-required@9",
         "st2110.attr.ts-refclk-required@0",
       } },
   ["examples/ipmx/invalid/dup_privacy_mismatch.sdp"] =

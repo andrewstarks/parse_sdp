@@ -967,9 +967,11 @@ end
 -- level — when present there it covers all media blocks. §8.3's
 -- "media-level" qualifier explicitly restricts mediaclk: a session-
 -- level mediaclk does NOT satisfy a per-stream block lacking its own.
+-- A malformed instance counts as present: its own finding already names
+-- the defect on its line (decision parse_sdp-n7i).
 local function has_attr(attrs, name)
   for _, attr in ipairs(attrs) do
-    if attr.name == name and not attr.malformed then return true end
+    if attr.name == name then return true end
   end
   return false
 end
@@ -1279,6 +1281,9 @@ local FMTP_REQUIRED_BY_ENCODING = {
   smpte291      = check_smpte291_fmtp,
 }
 
+-- A malformed fmtp keeps its raw value, which its payload type leads.
+local MALFORMED_FMTP_PT = C(R("09") ^ 1) / tonumber
+
 local function check_rtpmap_requires_fmtp(block, ctx)
   local needs, has = {}, {}
   for _, attr in ipairs(base.attrs_get(block, "rtpmap")) do
@@ -1286,8 +1291,13 @@ local function check_rtpmap_requires_fmtp(block, ctx)
       needs[attr.payload_type] = attr.encoding
     end
   end
-  for _, attr in ipairs(base.attrs_get(block, "fmtp")) do
-    has[attr.payload_type] = true
+  -- A malformed fmtp counts as present (decision parse_sdp-n7i).
+  for _, attr in ipairs(block.attributes) do
+    if attr.name == "fmtp" then
+      local pt = attr.malformed and MALFORMED_FMTP_PT:match(attr.value or "")
+                 or attr.payload_type
+      if pt then has[pt] = true end
+    end
   end
   for pt, enc in pairs(needs) do
     if not has[pt] then
@@ -1304,8 +1314,9 @@ end
 
 -- A block ST 2110-22 governs: its rtpmap encoding is jxsv (RFC 9134 is
 -- the ST 2110-22 registration) or an fmtp carries SSN=ST2110-22:* (§7.2
--- Table 2). The IPMX tier adds every compressed video block (decision
--- parse_sdp-59w) by calling check_st2110_22_block itself.
+-- Table 2). No ST 2110 or TR-10 clause binds any other compressed video
+-- block to ST 2110-22, so the IPMX tier inherits this trigger unchanged
+-- (decision parse_sdp-59w, amended 2026-10-28).
 local SSN_22_PREFIX = P("ST2110-22:")
 
 local function is_st2110_22_block(block)
@@ -1333,39 +1344,32 @@ local ST2110_22_GENERIC_REQUIRED = { "width", "height", "TP" }
 local ST2110_22_GENERIC_FORMS    = { "width", "height", "CMAX", "SSN" }
 
 local function check_st2110_22_generic_fmtp(block, ctx)
-  local checked = false
   for _, attr in ipairs(base.attrs_get(block, "fmtp")) do
-    if attr.params then
-      checked = true
-      local params = attr.params
-      local field_path = string.format("media[%d].attributes[fmtp:pt=%d]",
-                                       ctx.media_index or 0, attr.payload_type)
-      for _, key in ipairs(ST2110_22_GENERIC_REQUIRED) do
-        if base.params_get(params, key) == nil then
-          if not errors.record(ctx, "st2110-22.a.fmtp." .. key .. "-required",
-                               { field_path = field_path }) then return false end
+    -- A raw-fallback fmtp has no readable parameters (decision parse_sdp-n7i).
+    local params = attr.params or {}
+    local loc = {
+      pos        = attr._pos,
+      field_path = string.format("media[%d].attributes[fmtp:pt=%d]",
+                                 ctx.media_index or 0, attr.payload_type),
+    }
+    for _, key in ipairs(ST2110_22_GENERIC_REQUIRED) do
+      if base.params_get(params, key) == nil then
+        if not errors.record(ctx, "st2110-22.a.fmtp." .. key .. "-required", loc) then
+          return false
         end
-      end
-      for _, key in ipairs(ST2110_22_GENERIC_FORMS) do
-        local val = base.params_get(params, key)
-        if val ~= nil and not JXSV_VALUE_VALIDATORS[key](tostring(val)) then
-          if not errors.record(ctx, "st2110-22.a.fmtp." .. key .. "-invalid-value",
-                               { field_path = field_path }) then return false end
-        end
-      end
-      local tp = base.params_get(params, "TP")
-      if tp ~= nil and not JXSV_ENUM_VALUES.TP[tostring(tp)] then
-        if not errors.record(ctx, "st2110-22.a.fmtp.TP-invalid-value",
-                             { field_path = field_path }) then return false end
       end
     end
-  end
-  if not checked then
-    -- No decomposed fmtp at all: the Table 1 parameters are missing.
-    local field_path = string.format("media[%d].attributes[fmtp]", ctx.media_index or 0)
-    for _, key in ipairs(ST2110_22_GENERIC_REQUIRED) do
-      if not errors.record(ctx, "st2110-22.a.fmtp." .. key .. "-required",
-                           { field_path = field_path }) then return false end
+    for _, key in ipairs(ST2110_22_GENERIC_FORMS) do
+      local val = base.params_get(params, key)
+      if val ~= nil and not JXSV_VALUE_VALIDATORS[key](tostring(val)) then
+        if not errors.record(ctx, "st2110-22.a.fmtp." .. key .. "-invalid-value", loc) then
+          return false
+        end
+      end
+    end
+    local tp = base.params_get(params, "TP")
+    if tp ~= nil and not JXSV_ENUM_VALUES.TP[tostring(tp)] then
+      if not errors.record(ctx, "st2110-22.a.fmtp.TP-invalid-value", loc) then return false end
     end
   end
   return true
@@ -1410,7 +1414,8 @@ local function check_st2110_22_block(block, ctx)
     for _, attr in ipairs(base.attrs_get(block, "rtpmap")) do
       if attr.clock_rate ~= 90000 then
         if not errors.record(ctx, "st2110-22.a.rtpmap.clock-rate-must-be-90000",
-            { field_path = string.format("%s.attributes[rtpmap:pt=%d]",
+            { pos        = attr._pos,
+              field_path = string.format("%s.attributes[rtpmap:pt=%d]",
                                          media_path, attr.payload_type) }) then
           return false
         end
@@ -1429,7 +1434,8 @@ local function check_st2110_22_block(block, ctx)
     local tp  = attr.params and base.params_get(attr.params, "TP")
     if ssn == "ST2110-22:2019" and tp == "2110TPN" then
       if not errors.record(ctx, "st2110-22.a.fmtp.tp-2110tpn-requires-ssn-2022",
-          { field_path = string.format("%s.attributes[fmtp:pt=%d]",
+          { pos        = attr._pos,
+            field_path = string.format("%s.attributes[fmtp:pt=%d]",
                                        media_path, attr.payload_type) }) then
         return false
       end
@@ -1451,39 +1457,40 @@ end
 -- Timestamp Reference Clock, the direct reference shall be used and the
 -- offset shall be included." / "If the Media Clock is asynchronous ... the
 -- following form shall be used: a=mediaclk:sender". §7.3: "In this
--- standard, the offset value shall be zero." §8.2: PTP devices "shall use
--- the ts-refclk:ptp form, signaling either the grandmaster clockIdentity
--- and domain number, or signaling that the PTP is traceable"; NOTE 1 "the
--- PTP domain number is expressed as a decimal number"; RFC 7273 §4.8 "PTP
--- domain allowed number range: 0-127". Session-level and media-level
+-- standard, the offset value shall be zero." §8.2: "Devices which are
+-- referenced to IEEE Std 1588-2008 shall use the ts-refclk:ptp form,
+-- signaling either the grandmaster clockIdentity and domain number, or
+-- signaling that the PTP is traceable." The SHALL names IEEE 1588-2008,
+-- so a grandmaster under another PTP version (IEEE802.1AS-2011,
+-- IEEE1588-2002, a vendor token) needs no domain here; the domain's form
+-- is RFC 7273's and is checked at the base tier
+-- (sdp.a.ts-refclk.ptp-domain-invalid-value). ABNF literals are
+-- case-insensitive (RFC 5234 §2.3). Session-level and media-level
 -- attributes both describe the stream, so both are checked.
-local PTP_DOMAIN = patterns.pos_int + P("0")
-
 local function check_timing_attr_values(attrs, field_path, ctx)
   for _, a in ipairs(attrs) do
     if a.name == "mediaclk" and not a.malformed then
-      local fp = field_path .. ".attributes[mediaclk]"
+      local loc = { pos = a._pos, field_path = field_path .. ".attributes[mediaclk]" }
       if a.mode ~= "direct" and a.mode ~= "sender" then
-        if not errors.record(ctx, "st2110-10.a.mediaclk.form-invalid-value",
-                             { field_path = fp }) then return false end
+        if not errors.record(ctx, "st2110-10.a.mediaclk.form-invalid-value", loc) then
+          return false
+        end
       elseif a.mode == "direct" then
         if a.offset == nil then
-          if not errors.record(ctx, "st2110-10.a.mediaclk.direct-offset-required",
-                               { field_path = fp }) then return false end
+          if not errors.record(ctx, "st2110-10.a.mediaclk.direct-offset-required", loc) then
+            return false
+          end
         elseif a.offset ~= 0 then
-          if not errors.record(ctx, "st2110-10.a.mediaclk.direct-offset-must-be-zero",
-                               { field_path = fp }) then return false end
+          if not errors.record(ctx, "st2110-10.a.mediaclk.direct-offset-must-be-zero", loc) then
+            return false
+          end
         end
       end
-    elseif a.name == "ts-refclk" and not a.malformed and a.source == "ptp"
-           and a.grandmaster ~= nil then
-      local fp = field_path .. ".attributes[ts-refclk]"
-      if a.domain == nil then
-        if not errors.record(ctx, "st2110-10.a.ts-refclk.ptp-domain-required",
-                             { field_path = fp }) then return false end
-      elseif not (PTP_DOMAIN * -1):match(a.domain) or tonumber(a.domain) > 127 then
-        if not errors.record(ctx, "st2110-10.a.ts-refclk.ptp-domain-invalid-value",
-                             { field_path = fp }) then return false end
+    elseif a.name == "ts-refclk" and a.source == "ptp" and a.grandmaster ~= nil
+           and a.domain == nil and string.upper(a.version or "") == "IEEE1588-2008" then
+      if not errors.record(ctx, "st2110-10.a.ts-refclk.ptp-domain-required",
+                           { pos = a._pos, field_path = field_path .. ".attributes[ts-refclk]" }) then
+        return false
       end
     end
   end
@@ -1518,22 +1525,23 @@ local AM824_PTIME = {
 }
 
 local function check_audio_ptime(block, ctx)
-  local ptime = base.attr_get(block, "ptime")
+  local present = has_attr(block.attributes, "ptime")
+  local ptime   = base.attr_get(block, "ptime")
+  local fp      = string.format("media[%d].attributes[ptime]", ctx.media_index or 0)
   for _, attr in ipairs(base.attrs_get(block, "rtpmap")) do
     local enc = attr.encoding
     if enc == "L16" or enc == "L24" then
-      if ptime == nil then
-        return errors.record(ctx, "st2110-30.a.ptime-required",
-          { field_path = string.format("media[%d].attributes[ptime]", ctx.media_index or 0) })
+      if not present then
+        return errors.record(ctx, "st2110-30.a.ptime-required", { field_path = fp })
       end
     elseif enc == "AM824" then
-      local fp = string.format("media[%d].attributes[ptime]", ctx.media_index or 0)
-      if ptime == nil then
+      if not present then
         return errors.record(ctx, "st2110-31.a.ptime-required", { field_path = fp })
       end
       local allowed = AM824_PTIME[attr.clock_rate]
-      if allowed and not allowed[ptime.value] then
-        return errors.record(ctx, "st2110-31.a.ptime-invalid-value", { field_path = fp })
+      if ptime and allowed and not allowed[ptime.value] then
+        return errors.record(ctx, "st2110-31.a.ptime-invalid-value",
+                             { pos = ptime._pos, field_path = fp })
       end
     end
   end
@@ -1841,8 +1849,4 @@ local overrides = {
   },
 }
 
-local M = base.extend(base, overrides)
--- The IPMX tier applies ST 2110-22 to every compressed video block.
-M.is_st2110_22_block   = is_st2110_22_block
-M.check_st2110_22_block = check_st2110_22_block
-return M
+return base.extend(base, overrides)

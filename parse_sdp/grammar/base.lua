@@ -217,13 +217,16 @@ local function check_odd_port_rtcp(block, ctx)
 end
 
 -- RFC 8866 §6.15: "The format must be one of the formats specified for
--- the media."
+-- the media." (A lower-case "must": plain-English requirement text, not a
+-- BCP 14 keyword; the registration gives an fmtp for an unlisted format
+-- nothing to describe.)
 local function check_fmtp_format_in_media(block, ctx)
   local fmts = {}
   for _, f in ipairs(block.fmts or {}) do fmts[f] = true end
   for _, attr in ipairs(attrs_get(block, "fmtp")) do
     if not fmts[tostring(attr.payload_type)] then
       local cont = errors.record(ctx, "sdp.a.fmtp.format-not-in-media", {
+        pos        = attr._pos,
         field_path = string.format("media[%d].attributes[fmtp:pt=%s]",
                                    ctx.media_index or 0, tostring(attr.payload_type)),
       })
@@ -233,33 +236,43 @@ local function check_fmtp_format_in_media(block, ctx)
   return true
 end
 
--- RFC 8285 §5: "In the signaling section, the range 1-256 is referred to
--- as the valid range". §6: "A usable mapping MUST use IDs in the valid
+-- RFC 8285 §4.3: "In the signaling section, the range 1-256 is referred
+-- to as the valid range". §5: "A usable mapping MUST use IDs in the valid
 -- range, and each ID in this range MUST be used only once for each media
--- section (or only once if the mappings are session level)"; "An
--- extension URI with the same attributes MUST NOT appear more than once
--- applying to the same stream, i.e., at session level or in the
--- declarations for a single stream at media level"; "The definitions MUST
--- be either all session level or all media level; it is not permitted to
--- mix the two styles."
+-- section (or only once if the mappings are session level). Mappings
+-- that do not conform to these rules MAY be presented, for instance,
+-- during SDP Offer/Answer [RFC3264] negotiation as described in the next
+-- section"; "An extension URI with the same attributes MUST NOT appear
+-- more than once applying to the same stream, i.e., at session level or
+-- in the declarations for a single stream at media level"; "The
+-- definitions MUST be either all session level or all media level; it is
+-- not permitted to mix the two styles." §7: "multiple extensions with the
+-- same identifier in the extended range 4096-4351 MAY be offered" and
+-- "identifiers in the range 4096-4351 MAY be offered". An id in that
+-- range therefore gets neither the range nor the uniqueness check; the
+-- URI rule has no such exemption.
+local function extmap_extended_range(id) return id >= 4096 and id <= 4351 end
+
 local function check_extmap_scope(attrs, field_path, ctx)
   local ids, uris = {}, {}
   for _, e in ipairs(attrs) do
-    local fp = field_path .. ".attributes[extmap]"
-    if e.id < 1 or e.id > 256 then
-      if not errors.record(ctx, "sdp.a.extmap.id-out-of-range", { field_path = fp }) then
-        return false
+    local loc = { pos = e._pos, field_path = field_path .. ".attributes[extmap]" }
+    if not extmap_extended_range(e.id) then
+      if e.id < 1 or e.id > 256 then
+        if not errors.record(ctx, "sdp.a.extmap.id-out-of-range", loc) then
+          return false
+        end
       end
-    end
-    if ids[e.id] then
-      if not errors.record(ctx, "sdp.a.extmap.duplicate-id", { field_path = fp }) then
-        return false
+      if ids[e.id] then
+        if not errors.record(ctx, "sdp.a.extmap.duplicate-id", loc) then
+          return false
+        end
       end
+      ids[e.id] = true
     end
-    ids[e.id] = true
     local key = e.uri .. "\0" .. (e.attributes or "")
     if uris[key] then
-      if not errors.record(ctx, "sdp.a.extmap.duplicate-uri", { field_path = fp }) then
+      if not errors.record(ctx, "sdp.a.extmap.duplicate-uri", loc) then
         return false
       end
     end
@@ -275,11 +288,68 @@ local function check_extmap_invariants(doc, ctx)
     local media = attrs_get(m, "extmap")
     if #session > 0 and #media > 0 then
       local cont = errors.record(ctx, "sdp.a.extmap.mixed-levels", {
+        pos        = media[1]._pos,
         field_path = string.format("media[%d].attributes[extmap]", i - 1),
       })
       if not cont then return false end
     end
     if not check_extmap_scope(media, string.format("media[%d]", i - 1), ctx) then
+      return false
+    end
+  end
+  return true
+end
+
+-- RFC 7273 §4.8 with verified erratum 4450 (the ABNF had a "domain-nmbr="
+-- / "domain-name=" prefix that the RFC's own §5.5 examples omit):
+--   ptp-server      = ptp-gmid [":" ptp-domain] / "traceable"
+--   ptp-domain      = ptp-domain-name / ptp-domain-nmbr
+--   ; PTP domain allowed characters: 0x21-0x7E (IEEE 1588-2002)
+--   ptp-domain-name = 1*16ptp-domain-char
+--   ptp-domain-char = %x21-7E
+--   ; PTP domain allowed number range: 0-127 (IEEE 1588-2008)
+--   ptp-domain-nmbr = ptp-domain-dgts
+--   ptp-domain-dgts = ptp-domain-n1 / ptp-domain-n2 / ptp-domain-n3
+--   ptp-domain-n1   = DIGIT             ; 0-9
+--   ptp-domain-n2   = POS-DIGIT DIGIT   ; 10-99
+--   ptp-domain-n3   = ("10"/"11") DIGIT ; 100-119
+--                   / "12" %x30-37      ; 120-127
+-- The comments bind each form to a PTP version; the ABNF defines no form
+-- for IEEE802.1AS-2011 or a ptp-version-ext token, so those get no check.
+-- ABNF literals are case-insensitive (RFC 5234 §2.3), hence the upper-
+-- cased version lookup. Longest alternative first: PEG choice does not
+-- retry an alternative once it has matched.
+local PTP_DOMAIN_NMBR = ( P("12") * R("07")
+                        + (P("10") + P("11")) * R("09")
+                        + R("19") * R("09")
+                        + R("09") ) * -1
+local PTP_DOMAIN_NAME = R("\33\126") * R("\33\126") ^ -15 * -1
+local PTP_DOMAIN_FORMS = {
+  ["IEEE1588-2008"] = PTP_DOMAIN_NMBR,
+  ["IEEE1588-2002"] = PTP_DOMAIN_NAME,
+}
+
+local function check_ptp_domain_attrs(attrs, field_path, ctx)
+  for _, a in ipairs(attrs) do
+    if a.name == "ts-refclk" and a.source == "ptp" and a.domain ~= nil then
+      local form = PTP_DOMAIN_FORMS[string.upper(a.version)]
+      if form and not form:match(a.domain) then
+        local cont = errors.record(ctx, "sdp.a.ts-refclk.ptp-domain-invalid-value",
+          { pos = a._pos, field_path = field_path .. ".attributes[ts-refclk]" })
+        if not cont then return false end
+      end
+    end
+  end
+  return true
+end
+
+local function check_ptp_domain(doc, ctx)
+  if not check_ptp_domain_attrs(doc.session.attributes or {}, "session", ctx) then
+    return false
+  end
+  for i, m in ipairs(doc.media) do
+    if not check_ptp_domain_attrs(m.attributes or {},
+                                  string.format("media[%d]", i - 1), ctx) then
       return false
     end
   end
@@ -556,6 +626,7 @@ local base_semantic_checks = {
   check_mid_uniqueness,
   check_group_attribute_invariants,
   check_session_tsrefclk_traceability,
+  check_ptp_domain,
   check_extmap_invariants,
 }
 
@@ -577,6 +648,17 @@ end
 -- check list. Walks the captured doc, runs each check in order, and
 -- either continues (return position, doc) or fails the match (return
 -- false) per ctx.fail_on_first.
+-- Every attribute carries `_pos`, its byte offset in the text, while the
+-- media-section and document checks run, so a post-parse check can put
+-- its finding on the attribute's line. Stripped here, after the checks,
+-- so the doc shape, to_json and the round-trip never see it.
+local function strip_attr_positions(doc)
+  for _, a in ipairs(doc.session.attributes or {}) do a._pos = nil end
+  for _, m in ipairs(doc.media or {}) do
+    for _, a in ipairs(m.attributes or {}) do a._pos = nil end
+  end
+end
+
 local function make_validate_doc(checks)
   return function(_, position, doc, ctx)
     -- Grammar-only consumers (no extra-arg path) get ctx=nil; default to
@@ -587,6 +669,7 @@ local function make_validate_doc(checks)
     for i = 1, #checks do
       if not checks[i](doc, ctx) then return false end
     end
+    strip_attr_positions(doc)
     return position, doc
   end
 end
@@ -852,7 +935,8 @@ local rules = {
   -- refuses to start on a known name, so a malformed known attribute is
   -- never silently downgraded to a generic carrier.
   a_value = Ct(
-        ( V"a_rtpmap"
+        Cg(lpeg.Cp(), "_pos")   -- see strip_attr_positions
+      * ( ( V"a_rtpmap"
         + V"a_fmtp"
         + V"a_ts_refclk"
         + V"a_mediaclk"
@@ -875,6 +959,7 @@ local rules = {
         ) * #V"value_boundary_chars"
       + V"a_malformed"
       + V"a_generic"
+      )
     ),
 
   -- One malformed branch per known attribute (see malformed_attr). Each

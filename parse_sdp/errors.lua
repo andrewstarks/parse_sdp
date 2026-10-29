@@ -429,6 +429,24 @@ M.register("sdp.a.ts-refclk.ptp-malformed", {
   verified         = true,
 })
 
+-- RFC 7273 §4.8 as corrected by verified erratum 4450 (the ABNF had
+-- "domain-nmbr=" / "domain-name=" prefixes that the RFC's own §5.5
+-- examples omit): "; PTP domain allowed number range: 0-127 (IEEE
+-- 1588-2008)" with "ptp-domain-nmbr = ptp-domain-dgts", a decimal with no
+-- leading zero; "; PTP domain allowed characters: 0x21-0x7E (IEEE
+-- 1588-2002)" with "ptp-domain-name = 1*16ptp-domain-char". No form is
+-- defined for IEEE802.1AS-2011 or a ptp-version-ext token, so a domain
+-- under those versions is not checked.
+M.register("sdp.a.ts-refclk.ptp-domain-invalid-value", {
+  kind             = "semantic",
+  default_severity = "error",
+  code             = "INVALID_VALUE",
+  message_template = "ts-refclk:ptp= domain must be a decimal number from 0 to 127 "
+    .. "for IEEE1588-2008, or 1 to 16 printable characters for IEEE1588-2002",
+  spec_ref         = "RFC 7273 §4.8 (ptp-domain ABNF, erratum 4450)",
+  verified         = true,
+})
+
 -- ── Malformed known attributes ─────────────────────────────────────────────
 -- A known attribute whose value its rule cannot parse to the end of the
 -- line (malformed_attr in grammar/base.lua). Each id quotes the syntax the
@@ -607,7 +625,10 @@ M.register("sdp.m.odd-port-requires-rtcp", {
   verified         = true,
 })
 -- RFC 8866 §6.15 (verbatim): "The format must be one of the formats
--- specified for the media."
+-- specified for the media." The "must" is lower case, so it is plain
+-- English rather than a BCP 14 keyword under the RFC's §1.2 boilerplate;
+-- it still states a requirement, and an fmtp for a format the m= line
+-- does not list describes nothing.
 M.register("sdp.a.fmtp.format-not-in-media", {
   kind             = "semantic",
   default_severity = "error",
@@ -616,16 +637,21 @@ M.register("sdp.a.fmtp.format-not-in-media", {
   spec_ref         = "RFC 8866 §6.15",
   verified         = true,
 })
--- RFC 8285 §5 (verbatim): "In the signaling section, the range 1-256 is
--- referred to as the valid range". §6: "A usable mapping MUST use IDs in
+-- RFC 8285 §4.3 (verbatim): "In the signaling section, the range 1-256 is
+-- referred to as the valid range". §5: "A usable mapping MUST use IDs in
 -- the valid range, and each ID in this range MUST be used only once for
--- each media section (or only once if the mappings are session level)".
+-- each media section (or only once if the mappings are session level).
+-- Mappings that do not conform to these rules MAY be presented, for
+-- instance, during SDP Offer/Answer [RFC3264] negotiation". §7:
+-- "multiple extensions with the same identifier in the extended range
+-- 4096-4351 MAY be offered" and "identifiers in the range 4096-4351 MAY
+-- be offered", so ids in 4096-4351 get neither of these two checks.
 M.register("sdp.a.extmap.id-out-of-range", {
   kind             = "semantic",
   default_severity = "error",
   code             = "INVALID_VALUE",
-  message_template = "a=extmap id must be from 1 to 256",
-  spec_ref         = "RFC 8285 §5 / §6",
+  message_template = "a=extmap id must be from 1 to 256 (4096 to 4351 may be offered)",
+  spec_ref         = "RFC 8285 §4.3 / §5 / §7",
   verified         = true,
 })
 M.register("sdp.a.extmap.duplicate-id", {
@@ -633,10 +659,10 @@ M.register("sdp.a.extmap.duplicate-id", {
   default_severity = "error",
   code             = "INVALID_VALUE",
   message_template = "a=extmap id used more than once in one media description (or at session level)",
-  spec_ref         = "RFC 8285 §6",
+  spec_ref         = "RFC 8285 §5 / §7",
   verified         = true,
 })
--- RFC 8285 §6 (verbatim): "An extension URI with the same attributes MUST
+-- RFC 8285 §5 (verbatim): "An extension URI with the same attributes MUST
 -- NOT appear more than once applying to the same stream, i.e., at session
 -- level or in the declarations for a single stream at media level."
 M.register("sdp.a.extmap.duplicate-uri", {
@@ -644,27 +670,28 @@ M.register("sdp.a.extmap.duplicate-uri", {
   default_severity = "error",
   code             = "INVALID_VALUE",
   message_template = "a=extmap URI with the same attributes appears more than once for one stream",
-  spec_ref         = "RFC 8285 §6",
+  spec_ref         = "RFC 8285 §5",
   verified         = true,
 })
--- RFC 8285 §6 (verbatim): "The definitions MUST be either all session
+-- RFC 8285 §5 (verbatim): "The definitions MUST be either all session
 -- level or all media level; it is not permitted to mix the two styles."
 M.register("sdp.a.extmap.mixed-levels", {
   kind             = "semantic",
   default_severity = "error",
   code             = "INVALID_VALUE",
   message_template = "a=extmap must be all session level or all media level",
-  spec_ref         = "RFC 8285 §6",
+  spec_ref         = "RFC 8285 §5",
   verified         = true,
 })
--- RFC 3555 §4.1.15 (verbatim, audio/L16): "The only emphasis value
--- defined here is emphasis=50-15".
+-- RFC 4856 §2.1.15 (verbatim, audio/L16; RFC 4856 obsoletes RFC 3555 and
+-- keeps the clause): "The only emphasis value defined here is
+-- emphasis=50-15".
 M.register("sdp.a.fmtp.l16.emphasis-invalid-value", {
   kind             = "semantic",
   default_severity = "error",
   code             = "INVALID_VALUE",
   message_template = "L16 fmtp 'emphasis' must be 50-15",
-  spec_ref         = "RFC 3555 §4.1.15",
+  spec_ref         = "RFC 4856 §2.1.15",
   verified         = true,
 })
 
@@ -1073,14 +1100,19 @@ M.register("sdp.a.fmtp.mpeg4-generic.aac-mode-requires-size-and-index-lengths", 
   spec_ref         = "RFC 3640 §3.3.5 / §3.3.6",
   verified         = true,
 })
--- RFC 3640 §4.1 (verbatim): "streamStateIndication: ... SHALL NOT be
--- present for MPEG-4 audio and MPEG-4 video streams."
+-- RFC 3640 §4.1 (verbatim): "streamStateIndication: ... This parameter MAY
+-- be present when transporting MPEG-4 system streams, and SHALL NOT be
+-- present for MPEG-4 audio and MPEG-4 video streams." The stream kind is
+-- the streamType parameter ("as defined in Table 9 (streamType Values) in
+-- ISO/IEC 14496-1": 4 VisualStream, 5 AudioStream), not the m= media
+-- type: the RFC's own §3.3.2 example carries streamStateIndication on an
+-- m=video block with streamtype=3.
 M.register("sdp.a.fmtp.mpeg4-generic.streamStateIndication-forbidden", {
   kind             = "semantic",
   default_severity = "error",
   code             = "INVALID_VALUE",
   message_template = "mpeg4-generic fmtp 'streamStateIndication' must not be present "
-    .. "on an audio or video stream",
+    .. "on an MPEG-4 audio or video stream (streamType 5 or 4)",
   spec_ref         = "RFC 3640 §4.1",
   verified         = true,
 })
@@ -1130,8 +1162,11 @@ M.register("sdp.a.fmtp.mp4a-latm.config-required-when-cpresent-0", {
 
 -- ── Codec payload formats: MPEG-2 TS, RFC 2250 (base tier) ─────────────────
 -- RFC 2250 §2 (verbatim): "timestamp: 32 bit 90K Hz timestamp representing
--- the target transmission time for the first byte of the packet." RFC 3551
--- Table 5 registers MP2T with clock rate 90,000.
+-- the target transmission time for the first byte of the packet." That
+-- sentence is descriptive, not a MUST; the normative source is the RFC
+-- 3551 §6 registration, Table 5, which fixes MP2T's clock rate at
+-- 90,000, and RFC 8866 §6.6 binds the rtpmap clock rate to the
+-- registration.
 M.register("sdp.a.rtpmap.mp2t.clock-rate-must-be-90000", {
   kind             = "semantic",
   default_severity = "error",
@@ -1791,23 +1826,16 @@ M.register("st2110-41.a.fmtp.maxudp-forbidden", {
 -- ST 2110-10:2022 §8.2 (verbatim): "Devices which are referenced to IEEE
 -- Std 1588-2008 shall use the ts-refclk:ptp form, signaling either the
 -- grandmaster clockIdentity and domain number, or signaling that the PTP
--- is traceable." NOTE 1: "the PTP domain number is expressed as a decimal
--- number". RFC 7273 §4.8: "PTP domain allowed number range: 0-127 (IEEE
--- 1588-2008)".
+-- is traceable." The SHALL is scoped to IEEE 1588-2008, so the check
+-- fires only on that version. The domain's form (NOTE 1 "the PTP domain
+-- number is expressed as a decimal number" is informative) is RFC 7273's
+-- and is checked at the base tier (sdp.a.ts-refclk.ptp-domain-invalid-value).
 M.register("st2110-10.a.ts-refclk.ptp-domain-required", {
   kind             = "semantic",
   default_severity = "error",
   code             = "MISSING_FIELD",
-  message_template = "a=ts-refclk:ptp= with a grandmaster must also signal the domain number",
+  message_template = "a=ts-refclk:ptp=IEEE1588-2008 with a grandmaster must also signal the domain number",
   spec_ref         = "ST 2110-10:2022 §8.2",
-  verified         = true,
-})
-M.register("st2110-10.a.ts-refclk.ptp-domain-invalid-value", {
-  kind             = "semantic",
-  default_severity = "error",
-  code             = "INVALID_VALUE",
-  message_template = "a=ts-refclk:ptp= domain must be a decimal number from 0 to 127",
-  spec_ref         = "ST 2110-10:2022 §8.2; RFC 7273 §4.8",
   verified         = true,
 })
 -- ST 2110-10:2022 §8.3 (verbatim): "If the Media Clock is directly derived
@@ -1868,8 +1896,8 @@ M.register("st2110-21.a.fmtp.cmax-invalid-value", {
 
 -- ── ST 2110-22 on every stream it governs ───────────────────────────────
 -- Applies to a block whose rtpmap encoding is jxsv or whose fmtp carries
--- SSN=ST2110-22:*, and at the IPMX tier to every compressed video block
--- (decision parse_sdp-59w).
+-- SSN=ST2110-22:*, at every tier (decision parse_sdp-59w, amended
+-- 2026-10-28: no TR-10 clause extends it to other compressed video).
 -- ST 2110-22:2022 §7.4 (verbatim): "The SDP object shall include an
 -- indication of frame rate via one of the mechanisms listed in Table 4."
 -- (a=framerate, or exactframerate in a=fmtp).
@@ -1881,15 +1909,18 @@ M.register("st2110-22.framerate-indication-required", {
   spec_ref         = "ST 2110-22:2022 §7.4",
   verified         = true,
 })
--- ST 2110-22:2019 §7.2 Table 1 (verbatim): "TP: Either 2110TPNL or 2110TPW
--- as specified in section 5.3". ST 2110-22:2022 §7.2 Table 2: "SSN ...
--- depending on the version of the standard implemented."
+-- ST 2110-22:2019 §5.3 (verbatim): "The session description shall include
+-- a format-specific parameter of either TP=2110TPNL or TP=2110TPW"; §7.2
+-- Table 1 repeats it ("TP: Either 2110TPNL or 2110TPW as specified in
+-- section 5.3"). SSN is a 2022 addition (ST 2110-22:2022 §7.2 Table 2:
+-- "SSN ... depending on the version of the standard implemented"), so a
+-- sender that names the 2019 edition in SSN is bound by its TP set.
 M.register("st2110-22.a.fmtp.tp-2110tpn-requires-ssn-2022", {
   kind             = "semantic",
   default_severity = "error",
   code             = "INVALID_VALUE",
   message_template = "TP=2110TPN is not defined by ST 2110-22:2019; SSN=ST2110-22:2019 permits only 2110TPNL and 2110TPW",
-  spec_ref         = "ST 2110-22:2019 §7.2 Table 1",
+  spec_ref         = "ST 2110-22:2019 §5.3",
   verified         = true,
 })
 -- ST 2110-22:2022 §5.2 (verbatim): "The RTP Timestamp Clock rate shall be

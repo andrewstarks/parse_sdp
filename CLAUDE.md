@@ -93,6 +93,9 @@ spec/
   mutation_spec.lua   properties over mutated copies of every example: an
                       unparseable line is the reported error, parse never
                       raises, fail_on_first keeps the verdict, round-trip.
+  web_fixtures_spec.lua  web/fixtures/checks.json and the recorded
+                      report_*.json equal what the native bridge returns
+                      today, and web/src/mock holds identical copies.
   check_coverage.lua  script (`lua spec/check_coverage.lua`): fails when a
                       registered check is never recorded by any spec.
   grammar_bitops_spec.lua  bitwise helper backends (native on 5.3+, arithmetic
