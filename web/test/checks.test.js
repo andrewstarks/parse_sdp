@@ -14,7 +14,7 @@ test("prefixOf / prefixLabel", () => {
 test("groupChecks orders base → ST 2110 by part → IPMX by TR part, ids sorted", async () => {
   const { checks } = await fixtureJson("checks.json");
   const groups = groupChecks(checks);
-  assert.deepEqual(groups.map((g) => g.prefix), ["sdp", "st2110", "st2110-10", "st2110-20", "st2110-22", "st2110-30", "st2110-31", "st2110-40", "st2110-41", "ipmx", "tr-10-1", "tr-10-5", "tr-10-6", "tr-10-10", "tr-10-13", "tr-10-14"]);
+  assert.deepEqual(groups.map((g) => g.prefix), ["sdp", "st2110", "st2110-10", "st2110-20", "st2110-21", "st2110-22", "st2110-30", "st2110-31", "st2110-40", "st2110-41", "ipmx", "tr-10-1", "tr-10-5", "tr-10-6", "tr-10-10", "tr-10-13", "tr-10-14"]);
   assert.equal(groups.reduce((n, g) => n + g.checks.length, 0), checks.length);
   const ids = groups[0].checks.map((c) => c.id);
   assert.deepEqual(ids, [...ids].sort());
