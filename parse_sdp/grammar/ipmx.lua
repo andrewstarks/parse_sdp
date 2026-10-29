@@ -56,7 +56,8 @@ local function check_ipmx_fmtp_marker(block, ctx)
   end
   if #fmtps > 0 and not marked then
     local cont = errors.record(ctx, "tr-10-1.a.fmtp.marker-required",
-      { field_path = string.format(
+      { pos        = fmtps[1]._pos,
+        field_path = string.format(
           "media[%d].attributes[fmtp]", ctx.media_index or 0) })
     if not cont then return false end
   end
@@ -708,68 +709,64 @@ end
 local function check_usb_block(block, ctx)
   if not is_usb_block(block) then return true end
   local field_path = string.format("media[%d]", ctx.media_index or 0)
-  local setup
-  local privacy
-  for _, attr in ipairs(block.attributes) do
-    if     attr.name == "setup"   then setup   = attr
-    elseif attr.name == "privacy" then privacy = attr
-    end
-  end
+  local setup = base.attr_get(block, "setup")
   if setup == nil then
+    -- A malformed a=setup counts as present; sdp.a.setup.malformed names
+    -- it (decision parse_sdp-n7i).
+    for _, attr in ipairs(block.attributes) do
+      if attr.name == "setup" then return true end
+    end
     local cont = errors.record(ctx, "tr-10-14.usb.setup-required",
       { field_path = field_path .. ".attributes[setup]" })
     if not cont then return false end
   elseif setup.role ~= "passive" then
     local cont = errors.record(ctx, "tr-10-14.usb.setup-must-be-passive",
-      { field_path = field_path .. ".attributes[setup]" })
+      { pos = setup._pos, field_path = field_path .. ".attributes[setup]" })
     if not cont then return false end
-  end
-  if privacy ~= nil and privacy.params then
-    local protocol = base.params_get(privacy.params, "protocol")
-    if protocol ~= nil and protocol ~= "USB_KV" then
-      local cont = errors.record(ctx,
-        "tr-10-14.a.privacy.usb-protocol-must-be-usb_kv",
-        { field_path = field_path .. ".attributes[privacy]" })
-      if not cont then return false end
-    end
   end
   return true
 end
 
--- TR-10-0 assigns every compressed video stream to TR-10-7 ("any
--- compressed video that does not generate a constant number of bytes per
--- frame as required by TR-10-11") or TR-10-11 ("constant bit-rate
--- compressed video"); TR-10-7 §10 and TR-10-11 §10: "The SDP object shall
--- be constructed as described in ST 2110-22 section 7, subject also to
--- the provisions of TR-10-1." TR-10-11 §9: "The Media Clock and RTP Clock
--- rate for streams compliant with this TR shall be 90 kHz." So every
--- m=video block whose encoding is not raw (TR-10-2) or smpte291 (TR-10-4)
--- gets the ST 2110-22 checks; the ST 2110 tier already ran them on jxsv
--- and SSN=ST2110-22 blocks (decision parse_sdp-59w).
-local NOT_COMPRESSED_VIDEO = { raw = true, smpte291 = true }
+-- ST 2110-22 at this tier applies to the blocks the ST 2110 tier already
+-- recognizes (jxsv, or SSN=ST2110-22:*). TR-10-7 §10 and TR-10-11 §10
+-- bind devices "compliant with this TR"; TR-10-0 is descriptive; TR-10-1
+-- §10 defers to "the SMPTE ST 2110 standards suite as they apply to each
+-- specific media format" and names neither TR. No clause makes every
+-- other m=video block an ST 2110-22 stream (decision parse_sdp-59w,
+-- amended 2026-10-28).
 
-local function check_compressed_video(block, ctx)
-  if not is_rtp_block(block) or block.media ~= "video" then return true end
-  if st2110.is_st2110_22_block(block) then return true end
-  local rtpmaps = base.attrs_get(block, "rtpmap")
-  if #rtpmaps == 0 then return true end
-  for _, attr in ipairs(rtpmaps) do
-    if NOT_COMPRESSED_VIDEO[attr.encoding] then return true end
-  end
-  return st2110.check_st2110_22_block(block, ctx)
-end
+-- TR-10-13 §23: "a session-level privacy attribute represents the default
+-- value for each media-level privacy attribute unless an explicit
+-- media-level privacy attribute is provided for the corresponding "m="
+-- section." The protocol value set follows the transport. §20 (verbatim,
+-- RTP): "The protocol parameter shall be RTP or RTP_KV." TR-10-14 §14
+-- (USB): USB_KV (the registry entry quotes it).
+local PRIVACY_PROTOCOLS_BY_TRANSPORT = {
+  rtp = { id      = "tr-10-13.a.privacy.rtp-protocol-invalid-value",
+          allowed = { RTP = true, RTP_KV = true } },
+  usb = { id      = "tr-10-14.a.privacy.usb-protocol-must-be-usb_kv",
+          allowed = { USB_KV = true } },
+}
 
--- TR-10-13 §20 (verbatim): "The protocol parameter shall be RTP or RTP_KV."
-local RTP_PRIVACY_PROTOCOLS = { RTP = true, RTP_KV = true }
-
-local function check_rtp_privacy_protocol(block, ctx)
-  if not is_rtp_block(block) then return true end
-  for _, attr in ipairs(base.attrs_get(block, "privacy")) do
-    local protocol = attr.params and base.params_get(attr.params, "protocol")
-    if type(protocol) == "string" and not RTP_PRIVACY_PROTOCOLS[protocol] then
-      local cont = errors.record(ctx, "tr-10-13.a.privacy.rtp-protocol-invalid-value",
-        { field_path = string.format("media[%d].attributes[privacy]", ctx.media_index or 0) })
-      if not cont then return false end
+local function check_privacy_protocol(doc, ctx)
+  local session_privacy = base.attrs_get(doc.session, "privacy")
+  for i, m in ipairs(doc.media) do
+    local rule = (is_rtp_block(m) and PRIVACY_PROTOCOLS_BY_TRANSPORT.rtp)
+              or (is_usb_block(m) and PRIVACY_PROTOCOLS_BY_TRANSPORT.usb)
+    if rule then
+      local attrs      = base.attrs_get(m, "privacy")
+      local field_path = string.format("media[%d].attributes[privacy]", i - 1)
+      if #attrs == 0 then
+        attrs, field_path = session_privacy, "session.attributes[privacy]"
+      end
+      for _, attr in ipairs(attrs) do
+        local protocol = base.params_get(attr.params, "protocol")
+        if protocol ~= nil and not rule.allowed[protocol] then
+          local cont = errors.record(ctx, rule.id,
+            { pos = attr._pos, field_path = field_path })
+          if not cont then return false end
+        end
+      end
     end
   end
   return true
@@ -810,12 +807,11 @@ return st2110.extend(st2110, {
     check_ipmx_port_constraints,
     check_rtcp_port_convention,
     check_usb_block,
-    check_compressed_video,
-    check_rtp_privacy_protocol,
   },
   semantic_checks = {
     check_infoframe_cross_section,
     check_group_dup_privacy,
+    check_privacy_protocol,
     check_pep_extmap_direction,
   },
 })

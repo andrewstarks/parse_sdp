@@ -162,7 +162,7 @@ return {
       -- arrived with the 2022 edition. The example is non-conformant to
       -- the edition it names (st2110-22.a.fmtp.tp-2110tpn-requires-ssn-2022).
       expect = "fail",
-      expect_spec_ref = "ST 2110-22:2019 §7.2 Table 1",
+      expect_spec_ref = "ST 2110-22:2019 §5.3",
     },
   },
 }

@@ -340,6 +340,16 @@ describe("codecs — H.264 packetization-mode presence rules (RFC 6184 §8.1)", 
         "in-band-parameter-sets=0;use-level-src-parameter-sets=1"))
       assert.is_nil(finding_for(ctx, ID))
     end)
+    -- NOT-SPEC: library — the values are compared as numbers once their
+    -- 0/1 form passed, so a leading zero does not change the verdict.
+    it("compares the values as numbers (00 is 0, 01 is 1)", function()
+      local _, ctx = match_all(h264_fmtp(
+        "in-band-parameter-sets=1;use-level-src-parameter-sets=00"))
+      assert.is_nil(finding_for(ctx, ID))
+      _, ctx = match_all(h264_fmtp(
+        "in-band-parameter-sets=01;use-level-src-parameter-sets=1"))
+      assert.is_not_nil(finding_for(ctx, ID))
+    end)
   end)
 end)
 
@@ -372,14 +382,21 @@ describe("codecs — decode_h264_profile_level_id (RFC 6184 §8.1)", function()
     assert.equal("3.1", d.level)
   end)
 
-  -- SPEC: "If the level_idc byte ... is equal to 11 and bit 4 of the
-  -- profile-iop byte ... is equal to 1 or if the level_idc byte ... is
-  -- equal to 9 ... Level 1b."
-  it("decodes level_idc 11 with constraint_set3_flag as level 1b", function()
-    assert.equal("1b", decode("42100b").level)
+  -- SPEC: "when profile_idc is equal to 66, 77, or 88 (the Baseline,
+  -- Main, or Extended profile), level_idc is equal to 11, and bit 4
+  -- (constraint_set3_flag) of the profile-iop byte is equal to 1, the
+  -- default level is Level 1b."
+  it("decodes level_idc 11 with constraint_set3_flag as level 1b for Baseline, Main and Extended", function()
+    for _, hex in ipairs({ "42100b", "4d100b", "58100b" }) do
+      assert.equal("1b", decode(hex).level, hex)
+    end
   end)
   it("decodes level_idc 11 without constraint_set3_flag as level 1.1", function()
     assert.equal("1.1", decode("42000b").level)
+  end)
+  it("decodes level_idc 11 with constraint_set3_flag as level 1.1 for High", function()
+    assert.equal("1.1", decode("64100b").level)
+    assert.equal("High", decode("64100b").profile)
   end)
   it("decodes level_idc 9 as level 1b", function()
     assert.equal("1b", decode("640009").level)
@@ -652,6 +669,18 @@ describe("codecs — decode_h265_profile (RFC 7798 §7.1)", function()
     assert.is_string(err)
     assert.is_nil(decode(nil))
   end)
+  it("returns nil, err for a bare flag, and ignores entries that are not pairs", function()
+    for _, params in ipairs({
+      { { "interop-constraints", true } },
+      { { "profile-compatibility-indicator", true } },
+      { { "level-id", true } },
+    }) do
+      local d, err = decode(params)
+      assert.is_nil(d)
+      assert.is_string(err)
+    end
+    assert.equal("Main", decode({ "a", { 1, 2 } }).profile)
+  end)
 end)
 
 describe("codecs — mpeg4-generic (RFC 3640 §4.1)", function()
@@ -780,19 +809,54 @@ describe("codecs — mpeg4-generic (RFC 3640 §4.1)", function()
       "sdp.a.fmtp.mpeg4-generic.aac-mode-requires-size-and-index-lengths"))
   end)
 
-  -- SPEC: "streamStateIndication ... SHALL NOT be present for MPEG-4 audio
-  -- and MPEG-4 video streams."
-  it("rejects streamStateIndication on m=audio", function()
+  -- SPEC: "streamStateIndication ... MAY be present when transporting
+  -- MPEG-4 system streams, and SHALL NOT be present for MPEG-4 audio and
+  -- MPEG-4 video streams." The stream kind is streamType (ISO/IEC 14496-1
+  -- Table 9: 4 VisualStream, 5 AudioStream).
+  it("rejects streamStateIndication on an audio stream (streamType=5)", function()
     local _, ctx = match_all(aac(HBR .. ";streamStateIndication=4"))
     assert.is_not_nil(finding_for(ctx,
       "sdp.a.fmtp.mpeg4-generic.streamStateIndication-forbidden"))
   end)
-  it("accepts streamStateIndication on m=application", function()
+  it("rejects streamStateIndication on a visual stream (streamType=4) whatever the m= type", function()
+    local _, ctx = match_all(aac(
+      "streamType=4;profile-level-id=1;mode=generic;config=\"\";streamStateIndication=4",
+      "application"))
+    assert.is_not_nil(finding_for(ctx,
+      "sdp.a.fmtp.mpeg4-generic.streamStateIndication-forbidden"))
+  end)
+  -- SPEC: the §3.3.2 example, an MPEG-4 Systems (BIFS-Anim, streamtype=3)
+  -- stream that §4.1 puts under m=video.
+  it("accepts the RFC 3640 §3.3.2 example: streamStateIndication on an m=video systems stream", function()
+    local doc, ctx = match_all(sdp_with({
+      "m=video 49230 RTP/AVP 96",
+      "a=rtpmap:96 mpeg4-generic/1000",
+      "a=fmtp:96 streamtype=3; profile-level-id=1807; mode=generic; objectType=2; "
+        .. "config=0842237F24001FB400094002C0; sizeLength=10; CTSDeltaLength=16; "
+        .. "randomAccessIndication=1; streamStateIndication=4" }))
+    assert.is_truthy(doc)
+    assert.same({}, ctx.findings)
+  end)
+  it("accepts streamStateIndication on m=application with streamType=1", function()
     local _, ctx = match_all(aac(
       "streamType=1;profile-level-id=1;mode=generic;config=\"\";streamStateIndication=4",
       "application"))
     assert.is_nil(finding_for(ctx,
       "sdp.a.fmtp.mpeg4-generic.streamStateIndication-forbidden"))
+  end)
+  -- NOT-SPEC: library — an fmtp the grammar accepted as an opaque byte
+  -- string (an empty ';;' entry) has no readable parameters, so the
+  -- required ones are reported missing, on the fmtp line (decision
+  -- parse_sdp-n7i). Attributes carry no position field afterwards.
+  it("reports the required parameters of an fmtp it could not decompose, on its line", function()
+    local doc, ctx = match_all(aac("streamType=5;;mode=AAC-hbr"))
+    for _, key in ipairs({ "streamType", "profile-level-id", "config", "mode" }) do
+      local f = finding_for(ctx, "sdp.a.fmtp.mpeg4-generic." .. key .. "-required")
+      assert.is_not_nil(f, key)
+      assert.equal(8, f.line)
+      assert.equal("media[0].attributes[fmtp:pt=96]", f.field_path)
+    end
+    for _, a in ipairs(doc.media[1].attributes) do assert.is_nil(a._pos) end
   end)
 
   -- SPEC: RFC 3640 §4.1 "MIME format parameters are not case dependent"
@@ -859,7 +923,9 @@ describe("codecs — MP4A-LATM (RFC 6416 §7.3 / §7.4)", function()
   -- SPEC: "A 0 indicates the configuration data has not been multiplexed
   -- into an RTP payload, and in that case, the "config" parameter MUST be
   -- present"
-  it("requires config when cpresent=0", function()
+  it("requires config when cpresent=0 (or 00)", function()
+    assert.is_not_nil(finding_for(select(2, match_all(latm("cpresent=00"))),
+      "sdp.a.fmtp.mp4a-latm.config-required-when-cpresent-0"))
     local _, ctx = match_all(latm("profile-level-id=41;cpresent=0"))
     local f = finding_for(ctx, "sdp.a.fmtp.mp4a-latm.config-required-when-cpresent-0")
     assert.is_not_nil(f)
@@ -937,7 +1003,7 @@ describe("codecs — MPEG-2 transport stream, MP2T (RFC 2250 §2, RFC 3551 Table
   end)
 end)
 
-describe("codecs — L16 emphasis (RFC 3555 §4.1.15)", function()
+describe("codecs — L16 emphasis (RFC 4856 §2.1.15)", function()
   -- SPEC: "The only emphasis value defined here is emphasis=50-15"
   it("accepts emphasis=50-15", function()
     local doc, ctx = match_all(sdp_with({
@@ -950,7 +1016,7 @@ describe("codecs — L16 emphasis (RFC 3555 §4.1.15)", function()
       "m=audio 49170 RTP/AVP 97", "a=rtpmap:97 l16/48000/2", "a=fmtp:97 Emphasis=75-15" }))
     local f = finding_for(ctx, "sdp.a.fmtp.l16.emphasis-invalid-value")
     assert.is_not_nil(f)
-    assert.equal("RFC 3555 §4.1.15", f.spec_ref)
+    assert.equal("RFC 4856 §2.1.15", f.spec_ref)
   end)
   -- NOT-SPEC: library — L24 has no emphasis parameter in RFC 3190, so the
   -- L16 rule does not reach it.

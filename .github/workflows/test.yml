@@ -31,7 +31,10 @@ jobs:
           luarocks install dkjson
           luarocks install argparse
           luarocks install busted
-      - run: luarocks make ./parse_sdp-1.9.1-1.rockspec
+      - run: luarocks make ./parse_sdp-1.10.0-1.rockspec
+      # The installed rock must load on its own: run from outside the
+      # checkout so ./?.lua cannot shadow a module the rockspec forgot.
+      - run: cd / && lua -e 'local sdp = require("parse_sdp"); assert(sdp.parse("v=0\r\no=- 1 1 IN IP4 192.0.2.1\r\ns=x\r\nt=0 0\r\n"))'
       - run: busted spec/
 
   conformance:

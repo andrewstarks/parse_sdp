@@ -110,6 +110,10 @@ local RAW_FMTP_COMPLETE_PT96 =
 local JXSV_FMTP_COMPLETE_PT96 =
     "a=fmtp:96 width=1920;height=1080;TP=2110TPN;packetmode=0"
 
+local function sdp_lines(lines)
+  return table.concat(lines, "\r\n") .. "\r\n"
+end
+
 describe("ST 2110-20 raw — rtpmap narrowings (ST 2110-20:2022 §7.1)", function()
 
   it("accepts m=video with raw/90000", function()
@@ -1763,6 +1767,33 @@ describe("ST 2110-20 raw video fmtp — 1.0-gap closes (Phase 6.C.F)",
   end)
 end)
 
+describe("ST 2110-21 §8.2 — TROFF and CMAX on raw video", function()
+  -- SPEC: "may be added to the a=fmtp clause of the SDP for video RTP
+  -- streams conforming to this standard"; TROFF "a positive integer number
+  -- of microseconds"; CMAX "an integer number".
+  it("accepts TROFF=1000 and CMAX=5 on raw", function()
+    assert.is_truthy(st2110.match(build_with_fmtp(
+      "m=video 30000 RTP/AVP 96", "a=rtpmap:96 raw/90000",
+      RAW_FMTP_COMPLETE_PT96 .. "; TROFF=1000; CMAX=5")))
+  end)
+  it("rejects TROFF=0 on raw [st2110-21.a.fmtp.troff-invalid-value]", function()
+    local doc, ctx = st2110.match(build_with_fmtp(
+      "m=video 30000 RTP/AVP 96", "a=rtpmap:96 raw/90000",
+      RAW_FMTP_COMPLETE_PT96 .. "; TROFF=0"))
+    assert.is_nil(doc)
+    local f = finding_for(ctx, "st2110-21.a.fmtp.troff-invalid-value")
+    assert.is_not_nil(f)
+    assert.equal("ST 2110-21:2022 §8.2", f.spec_ref)
+  end)
+  it("rejects CMAX=x on raw [st2110-21.a.fmtp.cmax-invalid-value]", function()
+    local doc, ctx = st2110.match(build_with_fmtp(
+      "m=video 30000 RTP/AVP 96", "a=rtpmap:96 raw/90000",
+      RAW_FMTP_COMPLETE_PT96 .. "; CMAX=x"))
+    assert.is_nil(doc)
+    assert.is_not_nil(finding_for(ctx, "st2110-21.a.fmtp.cmax-invalid-value"))
+  end)
+end)
+
 -- ───────────────────────────────────────────────────────────────────────────
 -- Phase 6.C.G.1 — ST 2110-22 jxsv fmtp required-param presence + per-key
 -- value-set narrowings. Following the same shape as the 6.C.C / 6.C.D
@@ -2120,7 +2151,7 @@ describe("ST 2110-22 jxsv fmtp — non-enum value forms", function()
       assert.is_nil(doc)
       local f = finding_for(ctx, "st2110-22.a.fmtp.tp-2110tpn-requires-ssn-2022")
       assert.is_not_nil(f)
-      assert.equal("ST 2110-22:2019 §7.2 Table 1", f.spec_ref)
+      assert.equal("ST 2110-22:2019 §5.3", f.spec_ref)
     end)
     it("accepts TP=2110TPN with SSN=ST2110-22:2022", function()
       assert.is_truthy(st2110.match(build_with_fmtp(
@@ -2241,6 +2272,92 @@ describe("ST 2110-22 jxsv fmtp — cross-parameter SHALLs", function()
       JXSV_MEDIA, JXSV_RTPMAP,
       JXSV_FMTP_COMPLETE_PT96
       .. ";segmented;colorimetry=BT2100;RANGE=FULLPROTECT")))
+  end)
+end)
+
+describe("ST 2110-22 on a non-jxsv stream signaled with SSN (§5.2, §7.2, §7.3, §7.4)", function()
+
+  local function h264_22(fmtp, extra)
+    local lines = {
+      "v=0", "o=- 1 1 IN IP4 192.0.2.1", "s=Test", "t=0 0",
+      "m=video 30000 RTP/AVP 96", "c=IN IP4 239.0.0.1/64",
+    }
+    for _, l in ipairs(extra or { "b=AS:20000", "a=framerate:25" }) do lines[#lines + 1] = l end
+    lines[#lines + 1] = "a=rtpmap:96 H264/90000"
+    lines[#lines + 1] = fmtp
+    lines[#lines + 1] = TIMING_TS_REFCLK
+    lines[#lines + 1] = TIMING_MEDIACLK
+    return sdp_lines(lines)
+  end
+  local FMTP = "a=fmtp:96 width=1920;height=1080;TP=2110TPW;SSN=ST2110-22:2022;packetization-mode=1"
+
+  -- SPEC: §7.2 Table 2 SSN "If present, the value shall be either
+  -- ST2110-22:2019 or ST2110-22:2022"; an SSN=ST2110-22 fmtp is the
+  -- signal that the block is an ST 2110-22 stream.
+  it("accepts an H264 block with width, height, TP, b=AS and a=framerate", function()
+    local doc, ctx = st2110.match(h264_22(FMTP))
+    assert.is_truthy(doc)
+    assert.same({}, ctx.findings)
+  end)
+  -- SPEC: §7.2 Table 1 width, height, TP mandatory.
+  for _, key in ipairs({ "width", "height", "TP" }) do
+    it(("requires %s [st2110-22.a.fmtp.%s-required]"):format(key, key), function()
+      local body = FMTP:gsub(key .. "=[^;]*;", "")
+      local doc, ctx = st2110.match(h264_22(body))
+      assert.is_nil(doc)
+      assert.is_not_nil(finding_for(ctx, "st2110-22.a.fmtp." .. key .. "-required"))
+    end)
+  end
+  it("rejects width=0 and TP=X on the SSN block", function()
+    local _, ctx = st2110.match(h264_22(
+      "a=fmtp:96 width=0;height=1080;TP=X;SSN=ST2110-22:2022"), { fail_on_first = false })
+    assert.is_not_nil(finding_for(ctx, "st2110-22.a.fmtp.width-invalid-value"))
+    assert.is_not_nil(finding_for(ctx, "st2110-22.a.fmtp.TP-invalid-value"))
+  end)
+  -- SPEC: §7.3 Table 3 b=AS.
+  it("requires b=AS [st2110-22.b.as-required]", function()
+    local doc, ctx = st2110.match(h264_22(FMTP, { "a=framerate:25" }))
+    assert.is_nil(doc)
+    assert.is_not_nil(finding_for(ctx, "st2110-22.b.as-required"))
+  end)
+  -- SPEC: §7.4 "The SDP object shall include an indication of frame rate
+  -- via one of the mechanisms listed in Table 4."
+  it("requires a frame-rate indication [st2110-22.framerate-indication-required]", function()
+    local doc, ctx = st2110.match(h264_22(FMTP, { "b=AS:20000" }))
+    assert.is_nil(doc)
+    local f = finding_for(ctx, "st2110-22.framerate-indication-required")
+    assert.is_not_nil(f)
+    assert.equal("media[0]", f.field_path)
+    assert.equal("ST 2110-22:2022 §7.4", f.spec_ref)
+  end)
+  it("accepts exactframerate in the fmtp as the frame-rate indication", function()
+    assert.is_truthy(st2110.match(h264_22(FMTP .. ";exactframerate=25", { "b=AS:20000" })))
+  end)
+  it("requires a frame-rate indication on jxsv too", function()
+    local doc, ctx = st2110.match(sdp_lines({
+      "v=0", "o=- 1 1 IN IP4 192.0.2.1", "s=Test", "t=0 0",
+      "m=video 30000 RTP/AVP 96", "c=IN IP4 239.0.0.1/64", "b=AS:1500000",
+      "a=rtpmap:96 jxsv/90000", JXSV_FMTP_COMPLETE_PT96, TIMING_TS_REFCLK, TIMING_MEDIACLK,
+    }))
+    assert.is_nil(doc)
+    assert.is_not_nil(finding_for(ctx, "st2110-22.framerate-indication-required"))
+  end)
+  -- SPEC: §5.2 "The RTP Timestamp Clock rate shall be 90 kHz."
+  it("rejects a clock rate other than 90000 on the SSN block [st2110-22.a.rtpmap.clock-rate-must-be-90000]", function()
+    local _, ctx = st2110.match(sdp_lines({
+      "v=0", "o=- 1 1 IN IP4 192.0.2.1", "s=Test", "t=0 0",
+      "m=video 30000 RTP/AVP 96", "c=IN IP4 239.0.0.1/64", "b=AS:20000", "a=framerate:25",
+      "a=rtpmap:96 VP8/48000", "a=fmtp:96 width=1920;height=1080;TP=2110TPW;SSN=ST2110-22:2022",
+      TIMING_TS_REFCLK, TIMING_MEDIACLK,
+    }), { fail_on_first = false })
+    assert.is_not_nil(finding_for(ctx, "st2110-22.a.rtpmap.clock-rate-must-be-90000"))
+  end)
+  -- NOT-SPEC: library — without jxsv or SSN the ST 2110 tier cannot tell
+  -- an ST 2110-22 stream from any other compressed stream.
+  it("applies none of this to an H264 block without SSN", function()
+    local doc, ctx = st2110.match(h264_22("a=fmtp:96 packetization-mode=1", {}))
+    assert.is_truthy(doc)
+    assert.same({}, ctx.findings)
   end)
 end)
 
@@ -2628,10 +2745,6 @@ end)
 
 describe("ST 2110-10 — required attribute presence (Phase 6.D.A)", function()
 
-  local function sdp_lines(lines)
-    return table.concat(lines, "\r\n") .. "\r\n"
-  end
-
   local TIMING_TS_REFCLK = "a=ts-refclk:localmac=00-11-22-33-44-55"
   local TIMING_MEDIACLK  = "a=mediaclk:sender"
 
@@ -2837,6 +2950,115 @@ describe("ST 2110-10 — required attribute presence (Phase 6.D.A)", function()
   end)
 end)
 
+describe("ST 2110-10 — timing attribute values (§8.2, §8.3, §7.3)", function()
+
+  local function video_with(ts_refclk, mediaclk)
+    return sdp_lines({
+      "v=0", "o=- 1 1 IN IP4 192.0.2.1", "s=Test", "t=0 0",
+      "m=video 30000 RTP/AVP 96", "c=IN IP4 239.0.0.1/64",
+      "a=rtpmap:96 raw/90000", RAW_FMTP_COMPLETE_PT96, ts_refclk, mediaclk,
+    })
+  end
+  local GM = "a=ts-refclk:ptp=IEEE1588-2008:39-A7-94-FF-FE-07-CB-D0"
+
+  -- SPEC: §8.3 "the direct reference shall be used and the offset shall be
+  -- included" / "the following form shall be used: a=mediaclk:sender";
+  -- §7.3 "In this standard, the offset value shall be zero."
+  describe("a=mediaclk", function()
+    it("accepts direct=0 and sender", function()
+      for _, mc in ipairs({ "a=mediaclk:direct=0", "a=mediaclk:sender" }) do
+        local doc, ctx = st2110.match(video_with(TIMING_TS_REFCLK, mc))
+        assert.is_truthy(doc)
+        assert.same({}, ctx.findings)
+      end
+    end)
+    it("rejects direct without an offset [st2110-10.a.mediaclk.direct-offset-required]", function()
+      local doc, ctx = st2110.match(video_with(TIMING_TS_REFCLK, "a=mediaclk:direct"))
+      assert.is_nil(doc)
+      local f = finding_for(ctx, "st2110-10.a.mediaclk.direct-offset-required")
+      assert.is_not_nil(f)
+      assert.equal("media[0].attributes[mediaclk]", f.field_path)
+      assert.equal("ST 2110-10:2022 §8.3", f.spec_ref)
+    end)
+    it("rejects direct=1000 [st2110-10.a.mediaclk.direct-offset-must-be-zero]", function()
+      local doc, ctx = st2110.match(video_with(TIMING_TS_REFCLK, "a=mediaclk:direct=1000"))
+      assert.is_nil(doc)
+      local f = finding_for(ctx, "st2110-10.a.mediaclk.direct-offset-must-be-zero")
+      assert.is_not_nil(f)
+      assert.equal("ST 2110-10:2022 §7.3", f.spec_ref)
+    end)
+    it("accepts direct=0 with a rate", function()
+      assert.is_truthy(st2110.match(video_with(TIMING_TS_REFCLK, "a=mediaclk:direct=0 rate=90000/1")))
+    end)
+    it("rejects IEEE1722= and an extension form [st2110-10.a.mediaclk.form-invalid-value]", function()
+      for _, mc in ipairs({ "a=mediaclk:IEEE1722=00-11-22-FF-FE-33-44-55", "a=mediaclk:vendor=x" }) do
+        local doc, ctx = st2110.match(video_with(TIMING_TS_REFCLK, mc))
+        assert.is_nil(doc)
+        assert.is_not_nil(finding_for(ctx, "st2110-10.a.mediaclk.form-invalid-value"))
+      end
+    end)
+    it("checks a session-level mediaclk too", function()
+      local _, ctx = st2110.match(sdp_lines({
+        "v=0", "o=- 1 1 IN IP4 192.0.2.1", "s=Test", "t=0 0",
+        "a=mediaclk:direct=7",
+        "m=video 30000 RTP/AVP 96", "c=IN IP4 239.0.0.1/64",
+        "a=rtpmap:96 raw/90000", RAW_FMTP_COMPLETE_PT96, TIMING_TS_REFCLK, TIMING_MEDIACLK,
+      }), { fail_on_first = false })
+      local f = finding_for(ctx, "st2110-10.a.mediaclk.direct-offset-must-be-zero")
+      assert.is_not_nil(f)
+      assert.equal("session.attributes[mediaclk]", f.field_path)
+    end)
+  end)
+
+  -- SPEC: §8.2 "Devices which are referenced to IEEE Std 1588-2008 shall
+  -- use the ts-refclk:ptp form, signaling either the grandmaster
+  -- clockIdentity and domain number, or signaling that the PTP is
+  -- traceable". The domain's form is RFC 7273's (base tier,
+  -- sdp.a.ts-refclk.ptp-domain-invalid-value).
+  describe("a=ts-refclk:ptp= domain", function()
+    it("accepts a grandmaster with domain 0 and 127", function()
+      for _, d in ipairs({ "0", "127", "37" }) do
+        local doc, ctx = st2110.match(video_with(GM .. ":" .. d, TIMING_MEDIACLK))
+        assert.is_truthy(doc)
+        assert.same({}, ctx.findings)
+      end
+    end)
+    it("accepts the traceable form with no domain", function()
+      assert.is_truthy(st2110.match(video_with(
+        "a=ts-refclk:ptp=IEEE1588-2008:traceable", TIMING_MEDIACLK)))
+    end)
+    it("rejects a grandmaster with no domain [st2110-10.a.ts-refclk.ptp-domain-required]", function()
+      local doc, ctx = st2110.match(video_with(GM, TIMING_MEDIACLK))
+      assert.is_nil(doc)
+      local f = finding_for(ctx, "st2110-10.a.ts-refclk.ptp-domain-required")
+      assert.is_not_nil(f)
+      assert.equal("media[0].attributes[ts-refclk]", f.field_path)
+      assert.equal(9, f.line)
+      assert.equal("ST 2110-10:2022 §8.2", f.spec_ref)
+    end)
+    -- SPEC: ABNF literals are case-insensitive (RFC 5234 §2.3).
+    it("reads the version without regard to case", function()
+      local _, ctx = st2110.match(video_with(
+        "a=ts-refclk:ptp=ieee1588-2008:39-A7-94-FF-FE-07-CB-D0", TIMING_MEDIACLK))
+      assert.is_not_nil(finding_for(ctx, "st2110-10.a.ts-refclk.ptp-domain-required"))
+    end)
+    -- SPEC: the SHALL names IEEE 1588-2008 only; RFC 7273 §5.5's own
+    -- example is a=ts-refclk:ptp=IEEE802.1AS-2011:39-A7-94-FF-FE-07-CB-D0.
+    for _, v in ipairs({ "IEEE802.1AS-2011", "IEEE1588-2002", "IEEE1588-2019" }) do
+      it(("does not require a domain for %s"):format(v), function()
+        local doc, ctx = st2110.match(video_with(
+          "a=ts-refclk:ptp=" .. v .. ":39-A7-94-FF-FE-07-CB-D0", TIMING_MEDIACLK))
+        assert.is_truthy(doc)
+        assert.same({}, ctx.findings)
+      end)
+    end
+    -- NOT-SPEC: library — the base tier keeps the RFC 7273 optional domain.
+    it("base tier still accepts a grandmaster with no domain", function()
+      assert.is_truthy(base.match(video_with(GM, TIMING_MEDIACLK)))
+    end)
+  end)
+end)
+
 -- ── Phase 10.A.0.2 — ST 2110-10:2022 §6.2 m= proto must be RTP/AVP ───────
 --
 -- §6.2: "All of the streams specified in this standard shall use the
@@ -2850,10 +3072,6 @@ end)
 -- "ST 2110-10:2022 §8.1" — wrong) to the correct §6.2 cite.
 
 describe("ST 2110-10 — RTP profile must be RTP/AVP (Phase 10.A.0.2)", function()
-
-  local function sdp_lines(lines)
-    return table.concat(lines, "\r\n") .. "\r\n"
-  end
 
   local TIMING_TS_REFCLK = "a=ts-refclk:localmac=00-11-22-33-44-55"
   local TIMING_MEDIACLK  = "a=mediaclk:sender"
@@ -3455,103 +3673,6 @@ end)
 -- The 1.0 parser's L16/L24 channels-required limb is over-strict per
 -- the conformance-principle audit.
 
-describe("ST 2110-31 — AM824 rtpmap channels-required (Phase 6.D.C)",
-    function()
-
-  local function audio_sdp(rtpmap_line)
-    return table.concat({
-      "v=0",
-      "o=- 1 1 IN IP4 192.0.2.1",
-      "s=Test",
-      "t=0 0",
-      "m=audio 30000 RTP/AVP 96",
-      "c=IN IP4 239.0.0.1/64",
-      rtpmap_line,
-      "a=ptime:1",
-      "a=ts-refclk:localmac=00-11-22-33-44-55",
-      "a=mediaclk:sender",
-    }, "\r\n") .. "\r\n"
-  end
-
-  it("accepts AM824 rtpmap with channels field", function()
-    assert.is_truthy(st2110.match(audio_sdp(
-      "a=rtpmap:96 AM824/48000/2")))
-  end)
-
-  it("rejects AM824 rtpmap missing the channels field", function()
-    local doc, ctx = st2110.match(audio_sdp(
-      "a=rtpmap:96 AM824/48000"))
-    assert.is_nil(doc)
-    local f = finding_for(ctx, "st2110-31.a.rtpmap.am824-channels-required")
-    assert.is_not_nil(f)
-    assert.equal("ST 2110-31:2022 §6.1", f.spec_ref)
-  end)
-
-  it("rejects when one block of two omits the channels field", function()
-    -- First block has channels (passes); second omits them.
-    -- Phase 6.F: check is now in-grammar on st2110_rtpmap_am824, so
-    -- field_path no longer carries the media-index prefix (the grammar
-    -- doesn't track which media block it's inside). The byte position
-    -- in the captured Cmt is what locates the failure.
-    local doc, ctx = st2110.match(table.concat({
-      "v=0",
-      "o=- 1 1 IN IP4 192.0.2.1",
-      "s=Test",
-      "t=0 0",
-      "m=audio 30000 RTP/AVP 96",
-      "c=IN IP4 239.0.0.1/64",
-      "a=rtpmap:96 AM824/48000/2",
-      "a=ptime:1",
-      "a=ts-refclk:localmac=00-11-22-33-44-55",
-      "a=mediaclk:sender",
-      "m=audio 30002 RTP/AVP 97",
-      "c=IN IP4 239.0.0.2/64",
-      "a=rtpmap:97 AM824/48000",
-      "a=ptime:1",
-      "a=ts-refclk:localmac=00-11-22-33-44-55",
-      "a=mediaclk:sender",
-    }, "\r\n") .. "\r\n")
-    assert.is_nil(doc)
-    assert.is_not_nil(finding_for(ctx,
-      "st2110-31.a.rtpmap.am824-channels-required"))
-  end)
-
-  -- SPEC: RFC 8866 §6.6 "channels = integer". The AM824 checks wait for
-  -- the end of the value, so a channel count of 0 is base's malformed
-  -- rtpmap and not a missing channel count.
-  it("reports AM824/48000/0 as a malformed rtpmap, not missing channels", function()
-    local _, ctx = st2110.match(audio_sdp("a=rtpmap:96 AM824/48000/0"),
-                                { fail_on_first = false })
-    assert.is_not_nil(finding_for(ctx, "sdp.a.rtpmap.malformed"))
-    assert.is_nil(finding_for(ctx,
-      "st2110-31.a.rtpmap.am824-channels-required"))
-  end)
-
-  -- SPEC: RFC 8866 §6.6 "channels = integer"; the raw clock-rate check
-  -- (ST 2110-20 §7.1) does not run on a value that fails the base ABNF.
-  it("reports raw/48000/0 as a malformed rtpmap only", function()
-    local _, ctx = st2110.match(audio_sdp("a=rtpmap:96 raw/48000/0"),
-                                { fail_on_first = false })
-    assert.is_not_nil(finding_for(ctx, "sdp.a.rtpmap.malformed"))
-    assert.is_nil(finding_for(ctx, "st2110-20.a.rtpmap.raw-clock-rate"))
-  end)
-
-  -- ── INTENTIONAL non-parity with 1.0 ──────────────────────────────────
-  -- ST 2110-30 / AES67-2013 / RFC 3551 §6 do NOT require channels on
-  -- L16 / L24 rtpmaps. The 1.0 parser enforces it citing a "ST 2110-30
-  -- tightens RFC 3551" annotation that is not supported by primary
-  -- text. Grammar tier accepts these.
-  it("does NOT fire on L24 rtpmap missing channels", function()
-    assert.is_truthy(st2110.match(audio_sdp(
-      "a=rtpmap:96 L24/48000")))
-  end)
-
-  it("does NOT fire on L16 rtpmap missing channels", function()
-    assert.is_truthy(st2110.match(audio_sdp(
-      "a=rtpmap:96 L16/48000")))
-  end)
-end)
-
 -- ── Phase 6.D.D — ST 2110-30:2025 §6.2.1 audio packet-payload-fit ───────
 --
 -- §6.2.1: "The Standard UDP Datagram Size Limit as defined in SMPTE ST
@@ -3661,6 +3782,185 @@ describe("ST 2110-30 — audio packet-payload-fit (Phase 6.D.D)", function()
     assert.is_truthy(st2110.match(audio_sdp_with_ptime(
       "a=rtpmap:96 AM824/48000/64", "a=ptime:1")))
   end)
+end)
+
+describe("ST 2110-30 — a=ptime required (§6.2 via AES67 §8.1)", function()
+  -- SPEC: ST 2110-30:2025 §6.2 "shall conform to AES67, including the
+  -- Session Description Protocol (SDP)"; AES67 §8.1 "Descriptions shall
+  -- include a ptime attribute indicating the desired packet time."
+  it("rejects an L24 stream without ptime [st2110-30.a.ptime-required]", function()
+    local doc, ctx = st2110.match(sdp_lines({
+      "v=0", "o=- 1 1 IN IP4 192.0.2.1", "s=Test", "t=0 0",
+      "m=audio 30000 RTP/AVP 96", "c=IN IP4 239.0.0.1/64",
+      "a=rtpmap:96 L24/48000/2", TIMING_TS_REFCLK, TIMING_MEDIACLK,
+    }))
+    assert.is_nil(doc)
+    local f = finding_for(ctx, "st2110-30.a.ptime-required")
+    assert.is_not_nil(f)
+    assert.equal("media[0].attributes[ptime]", f.field_path)
+  end)
+  -- NOT-SPEC: library — a malformed ptime counts as present; its own
+  -- finding names the defect (decision parse_sdp-n7i).
+  it("does not also report a malformed ptime as missing", function()
+    local _, ctx = st2110.match(sdp_lines({
+      "v=0", "o=- 1 1 IN IP4 192.0.2.1", "s=Test", "t=0 0",
+      "m=audio 30000 RTP/AVP 96", "c=IN IP4 239.0.0.1/64",
+      "a=rtpmap:96 L24/48000/2", "a=ptime:1.0", TIMING_TS_REFCLK, TIMING_MEDIACLK,
+    }), { fail_on_first = false })
+    assert.is_not_nil(finding_for(ctx, "sdp.a.ptime.malformed"))
+    assert.is_nil(finding_for(ctx, "st2110-30.a.ptime-required"))
+  end)
+  -- NOT-SPEC: library — AES67 §8.1 leaves the value open ("Values outside
+  -- those enumerated in table 4 shall be correctly interpreted"), decision
+  -- parse_sdp-wgo.
+  it("accepts any ptime value on L16 / L24", function()
+    assert.is_truthy(st2110.match(build("m=audio 30000 RTP/AVP 96", "a=rtpmap:96 L16/48000/2")))
+    assert.is_truthy(st2110.match(sdp_lines({
+      "v=0", "o=- 1 1 IN IP4 192.0.2.1", "s=Test", "t=0 0",
+      "m=audio 30000 RTP/AVP 96", "c=IN IP4 239.0.0.1/64",
+      "a=rtpmap:96 L24/48000/2", "a=ptime:0.333", TIMING_TS_REFCLK, TIMING_MEDIACLK,
+    })))
+  end)
+end)
+
+describe("ST 2110-31 — AM824 rtpmap channels-required (Phase 6.D.C)",
+    function()
+
+  local function audio_sdp(rtpmap_line)
+    return table.concat({
+      "v=0",
+      "o=- 1 1 IN IP4 192.0.2.1",
+      "s=Test",
+      "t=0 0",
+      "m=audio 30000 RTP/AVP 96",
+      "c=IN IP4 239.0.0.1/64",
+      rtpmap_line,
+      "a=ptime:1",
+      "a=ts-refclk:localmac=00-11-22-33-44-55",
+      "a=mediaclk:sender",
+    }, "\r\n") .. "\r\n"
+  end
+
+  it("accepts AM824 rtpmap with channels field", function()
+    assert.is_truthy(st2110.match(audio_sdp(
+      "a=rtpmap:96 AM824/48000/2")))
+  end)
+
+  it("rejects AM824 rtpmap missing the channels field", function()
+    local doc, ctx = st2110.match(audio_sdp(
+      "a=rtpmap:96 AM824/48000"))
+    assert.is_nil(doc)
+    local f = finding_for(ctx, "st2110-31.a.rtpmap.am824-channels-required")
+    assert.is_not_nil(f)
+    assert.equal("ST 2110-31:2022 §6.1", f.spec_ref)
+  end)
+
+  it("rejects when one block of two omits the channels field", function()
+    -- First block has channels (passes); second omits them.
+    -- Phase 6.F: check is now in-grammar on st2110_rtpmap_am824, so
+    -- field_path no longer carries the media-index prefix (the grammar
+    -- doesn't track which media block it's inside). The byte position
+    -- in the captured Cmt is what locates the failure.
+    local doc, ctx = st2110.match(table.concat({
+      "v=0",
+      "o=- 1 1 IN IP4 192.0.2.1",
+      "s=Test",
+      "t=0 0",
+      "m=audio 30000 RTP/AVP 96",
+      "c=IN IP4 239.0.0.1/64",
+      "a=rtpmap:96 AM824/48000/2",
+      "a=ptime:1",
+      "a=ts-refclk:localmac=00-11-22-33-44-55",
+      "a=mediaclk:sender",
+      "m=audio 30002 RTP/AVP 97",
+      "c=IN IP4 239.0.0.2/64",
+      "a=rtpmap:97 AM824/48000",
+      "a=ptime:1",
+      "a=ts-refclk:localmac=00-11-22-33-44-55",
+      "a=mediaclk:sender",
+    }, "\r\n") .. "\r\n")
+    assert.is_nil(doc)
+    assert.is_not_nil(finding_for(ctx,
+      "st2110-31.a.rtpmap.am824-channels-required"))
+  end)
+
+  -- SPEC: RFC 8866 §6.6 "channels = integer". The AM824 checks wait for
+  -- the end of the value, so a channel count of 0 is base's malformed
+  -- rtpmap and not a missing channel count.
+  it("reports AM824/48000/0 as a malformed rtpmap, not missing channels", function()
+    local _, ctx = st2110.match(audio_sdp("a=rtpmap:96 AM824/48000/0"),
+                                { fail_on_first = false })
+    assert.is_not_nil(finding_for(ctx, "sdp.a.rtpmap.malformed"))
+    assert.is_nil(finding_for(ctx,
+      "st2110-31.a.rtpmap.am824-channels-required"))
+  end)
+
+  -- SPEC: RFC 8866 §6.6 "channels = integer"; the raw clock-rate check
+  -- (ST 2110-20 §7.1) does not run on a value that fails the base ABNF.
+  it("reports raw/48000/0 as a malformed rtpmap only", function()
+    local _, ctx = st2110.match(audio_sdp("a=rtpmap:96 raw/48000/0"),
+                                { fail_on_first = false })
+    assert.is_not_nil(finding_for(ctx, "sdp.a.rtpmap.malformed"))
+    assert.is_nil(finding_for(ctx, "st2110-20.a.rtpmap.raw-clock-rate"))
+  end)
+
+  -- ── INTENTIONAL non-parity with 1.0 ──────────────────────────────────
+  -- ST 2110-30 / AES67-2013 / RFC 3551 §6 do NOT require channels on
+  -- L16 / L24 rtpmaps. The 1.0 parser enforces it citing a "ST 2110-30
+  -- tightens RFC 3551" annotation that is not supported by primary
+  -- text. Grammar tier accepts these.
+  it("does NOT fire on L24 rtpmap missing channels", function()
+    assert.is_truthy(st2110.match(audio_sdp(
+      "a=rtpmap:96 L24/48000")))
+  end)
+
+  it("does NOT fire on L16 rtpmap missing channels", function()
+    assert.is_truthy(st2110.match(audio_sdp(
+      "a=rtpmap:96 L16/48000")))
+  end)
+end)
+
+describe("ST 2110-31 — AM824 a=ptime (§6.1 Table 1)", function()
+  local function am824(rate, ptime_line)
+    local lines = {
+      "v=0", "o=- 1 1 IN IP4 192.0.2.1", "s=Test", "t=0 0",
+      "m=audio 30000 RTP/AVP 96", "c=IN IP4 239.0.0.1/64",
+      "a=rtpmap:96 AM824/" .. rate .. "/2",
+    }
+    if ptime_line then lines[#lines + 1] = ptime_line end
+    lines[#lines + 1] = TIMING_TS_REFCLK
+    lines[#lines + 1] = TIMING_MEDIACLK
+    return sdp_lines(lines)
+  end
+  -- SPEC: "Senders under this standard shall signal a ptime attribute in
+  -- the SDP"
+  it("rejects a missing ptime [st2110-31.a.ptime-required]", function()
+    local doc, ctx = st2110.match(am824(48000))
+    assert.is_nil(doc)
+    local f = finding_for(ctx, "st2110-31.a.ptime-required")
+    assert.is_not_nil(f)
+    assert.equal("ST 2110-31:2022 §6.1", f.spec_ref)
+  end)
+  -- SPEC: "The <packet-time> parameter shall take one of the values from
+  -- the Table 1, based on the prevailing sampling rate"
+  for _, row in ipairs({
+    { 48000, "1" }, { 48000, "0.12" }, { 48000, "0.08" },
+    { 96000, "1" }, { 96000, "0.12" }, { 96000, "0.08" },
+    { 44100, "1.09" }, { 44100, "0.14" }, { 44100, "0.09" },
+  }) do
+    it(("accepts ptime %s at %d"):format(row[2], row[1]), function()
+      local doc, ctx = st2110.match(am824(row[1], "a=ptime:" .. row[2]))
+      assert.is_truthy(doc)
+      assert.same({}, ctx.findings)
+    end)
+  end
+  for _, row in ipairs({ { 48000, "1.09" }, { 44100, "1" }, { 96000, "0.25" } }) do
+    it(("rejects ptime %s at %d [st2110-31.a.ptime-invalid-value]"):format(row[2], row[1]), function()
+      local doc, ctx = st2110.match(am824(row[1], "a=ptime:" .. row[2]))
+      assert.is_nil(doc)
+      assert.is_not_nil(finding_for(ctx, "st2110-31.a.ptime-invalid-value"))
+    end)
+  end
 end)
 
 -- ── Phase 6.E.B — ST 2110-10:2022 §8.5 group:DUP leg coherence ──────────
@@ -3971,294 +4271,5 @@ describe("ST 2110 — in-grammar findings carry line/col (Phase 6.G)", function(
     assert.is_not_nil(f)
     assert.equal(7, f.line)
     assert.is_true(f.col > 0)
-  end)
-end)
-
-
-
-
-local function sdp_lines(lines)
-  return table.concat(lines, "\r\n") .. "\r\n"
-end
-
-describe("ST 2110-10 — timing attribute values (§8.2, §8.3, §7.3)", function()
-
-  local function video_with(ts_refclk, mediaclk)
-    return sdp_lines({
-      "v=0", "o=- 1 1 IN IP4 192.0.2.1", "s=Test", "t=0 0",
-      "m=video 30000 RTP/AVP 96", "c=IN IP4 239.0.0.1/64",
-      "a=rtpmap:96 raw/90000", RAW_FMTP_COMPLETE_PT96, ts_refclk, mediaclk,
-    })
-  end
-  local GM = "a=ts-refclk:ptp=IEEE1588-2008:39-A7-94-FF-FE-07-CB-D0"
-
-  -- SPEC: §8.3 "the direct reference shall be used and the offset shall be
-  -- included" / "the following form shall be used: a=mediaclk:sender";
-  -- §7.3 "In this standard, the offset value shall be zero."
-  describe("a=mediaclk", function()
-    it("accepts direct=0 and sender", function()
-      for _, mc in ipairs({ "a=mediaclk:direct=0", "a=mediaclk:sender" }) do
-        local doc, ctx = st2110.match(video_with(TIMING_TS_REFCLK, mc))
-        assert.is_truthy(doc)
-        assert.same({}, ctx.findings)
-      end
-    end)
-    it("rejects direct without an offset [st2110-10.a.mediaclk.direct-offset-required]", function()
-      local doc, ctx = st2110.match(video_with(TIMING_TS_REFCLK, "a=mediaclk:direct"))
-      assert.is_nil(doc)
-      local f = finding_for(ctx, "st2110-10.a.mediaclk.direct-offset-required")
-      assert.is_not_nil(f)
-      assert.equal("media[0].attributes[mediaclk]", f.field_path)
-      assert.equal("ST 2110-10:2022 §8.3", f.spec_ref)
-    end)
-    it("rejects direct=1000 [st2110-10.a.mediaclk.direct-offset-must-be-zero]", function()
-      local doc, ctx = st2110.match(video_with(TIMING_TS_REFCLK, "a=mediaclk:direct=1000"))
-      assert.is_nil(doc)
-      local f = finding_for(ctx, "st2110-10.a.mediaclk.direct-offset-must-be-zero")
-      assert.is_not_nil(f)
-      assert.equal("ST 2110-10:2022 §7.3", f.spec_ref)
-    end)
-    it("accepts direct=0 with a rate", function()
-      assert.is_truthy(st2110.match(video_with(TIMING_TS_REFCLK, "a=mediaclk:direct=0 rate=90000/1")))
-    end)
-    it("rejects IEEE1722= and an extension form [st2110-10.a.mediaclk.form-invalid-value]", function()
-      for _, mc in ipairs({ "a=mediaclk:IEEE1722=00-11-22-FF-FE-33-44-55", "a=mediaclk:vendor=x" }) do
-        local doc, ctx = st2110.match(video_with(TIMING_TS_REFCLK, mc))
-        assert.is_nil(doc)
-        assert.is_not_nil(finding_for(ctx, "st2110-10.a.mediaclk.form-invalid-value"))
-      end
-    end)
-    it("checks a session-level mediaclk too", function()
-      local _, ctx = st2110.match(sdp_lines({
-        "v=0", "o=- 1 1 IN IP4 192.0.2.1", "s=Test", "t=0 0",
-        "a=mediaclk:direct=7",
-        "m=video 30000 RTP/AVP 96", "c=IN IP4 239.0.0.1/64",
-        "a=rtpmap:96 raw/90000", RAW_FMTP_COMPLETE_PT96, TIMING_TS_REFCLK, TIMING_MEDIACLK,
-      }), { fail_on_first = false })
-      local f = finding_for(ctx, "st2110-10.a.mediaclk.direct-offset-must-be-zero")
-      assert.is_not_nil(f)
-      assert.equal("session.attributes[mediaclk]", f.field_path)
-    end)
-  end)
-
-  -- SPEC: §8.2 "shall use the ts-refclk:ptp form, signaling either the
-  -- grandmaster clockIdentity and domain number, or signaling that the
-  -- PTP is traceable"; NOTE 1 "the PTP domain number is expressed as a
-  -- decimal number"; RFC 7273 §4.8 "allowed number range: 0-127".
-  describe("a=ts-refclk:ptp= domain", function()
-    it("accepts a grandmaster with domain 0 and 127", function()
-      for _, d in ipairs({ "0", "127", "37" }) do
-        local doc, ctx = st2110.match(video_with(GM .. ":" .. d, TIMING_MEDIACLK))
-        assert.is_truthy(doc)
-        assert.same({}, ctx.findings)
-      end
-    end)
-    it("accepts the traceable form with no domain", function()
-      assert.is_truthy(st2110.match(video_with(
-        "a=ts-refclk:ptp=IEEE1588-2008:traceable", TIMING_MEDIACLK)))
-    end)
-    it("rejects a grandmaster with no domain [st2110-10.a.ts-refclk.ptp-domain-required]", function()
-      local doc, ctx = st2110.match(video_with(GM, TIMING_MEDIACLK))
-      assert.is_nil(doc)
-      local f = finding_for(ctx, "st2110-10.a.ts-refclk.ptp-domain-required")
-      assert.is_not_nil(f)
-      assert.equal("media[0].attributes[ts-refclk]", f.field_path)
-      assert.equal("ST 2110-10:2022 §8.2", f.spec_ref)
-    end)
-    for _, d in ipairs({ "128", "domain-nmbr=37", "-1", "07x" }) do
-      it(("rejects domain %s [st2110-10.a.ts-refclk.ptp-domain-invalid-value]"):format(d), function()
-        local doc, ctx = st2110.match(video_with(GM .. ":" .. d, TIMING_MEDIACLK))
-        assert.is_nil(doc)
-        assert.is_not_nil(finding_for(ctx, "st2110-10.a.ts-refclk.ptp-domain-invalid-value"))
-      end)
-    end
-    -- NOT-SPEC: library — the base tier keeps the RFC 7273 optional domain.
-    it("base tier still accepts a grandmaster with no domain", function()
-      assert.is_truthy(base.match(video_with(GM, TIMING_MEDIACLK)))
-    end)
-  end)
-end)
-
-describe("ST 2110-21 §8.2 — TROFF and CMAX on raw video", function()
-  -- SPEC: "may be added to the a=fmtp clause of the SDP for video RTP
-  -- streams conforming to this standard"; TROFF "a positive integer number
-  -- of microseconds"; CMAX "an integer number".
-  it("accepts TROFF=1000 and CMAX=5 on raw", function()
-    assert.is_truthy(st2110.match(build_with_fmtp(
-      "m=video 30000 RTP/AVP 96", "a=rtpmap:96 raw/90000",
-      RAW_FMTP_COMPLETE_PT96 .. "; TROFF=1000; CMAX=5")))
-  end)
-  it("rejects TROFF=0 on raw [st2110-21.a.fmtp.troff-invalid-value]", function()
-    local doc, ctx = st2110.match(build_with_fmtp(
-      "m=video 30000 RTP/AVP 96", "a=rtpmap:96 raw/90000",
-      RAW_FMTP_COMPLETE_PT96 .. "; TROFF=0"))
-    assert.is_nil(doc)
-    local f = finding_for(ctx, "st2110-21.a.fmtp.troff-invalid-value")
-    assert.is_not_nil(f)
-    assert.equal("ST 2110-21:2022 §8.2", f.spec_ref)
-  end)
-  it("rejects CMAX=x on raw [st2110-21.a.fmtp.cmax-invalid-value]", function()
-    local doc, ctx = st2110.match(build_with_fmtp(
-      "m=video 30000 RTP/AVP 96", "a=rtpmap:96 raw/90000",
-      RAW_FMTP_COMPLETE_PT96 .. "; CMAX=x"))
-    assert.is_nil(doc)
-    assert.is_not_nil(finding_for(ctx, "st2110-21.a.fmtp.cmax-invalid-value"))
-  end)
-end)
-
-describe("ST 2110-22 on a non-jxsv stream signaled with SSN (§5.2, §7.2, §7.3, §7.4)", function()
-
-  local function h264_22(fmtp, extra)
-    local lines = {
-      "v=0", "o=- 1 1 IN IP4 192.0.2.1", "s=Test", "t=0 0",
-      "m=video 30000 RTP/AVP 96", "c=IN IP4 239.0.0.1/64",
-    }
-    for _, l in ipairs(extra or { "b=AS:20000", "a=framerate:25" }) do lines[#lines + 1] = l end
-    lines[#lines + 1] = "a=rtpmap:96 H264/90000"
-    lines[#lines + 1] = fmtp
-    lines[#lines + 1] = TIMING_TS_REFCLK
-    lines[#lines + 1] = TIMING_MEDIACLK
-    return sdp_lines(lines)
-  end
-  local FMTP = "a=fmtp:96 width=1920;height=1080;TP=2110TPW;SSN=ST2110-22:2022;packetization-mode=1"
-
-  -- SPEC: §7.2 Table 2 SSN "If present, the value shall be either
-  -- ST2110-22:2019 or ST2110-22:2022"; an SSN=ST2110-22 fmtp is the
-  -- signal that the block is an ST 2110-22 stream.
-  it("accepts an H264 block with width, height, TP, b=AS and a=framerate", function()
-    local doc, ctx = st2110.match(h264_22(FMTP))
-    assert.is_truthy(doc)
-    assert.same({}, ctx.findings)
-  end)
-  -- SPEC: §7.2 Table 1 width, height, TP mandatory.
-  for _, key in ipairs({ "width", "height", "TP" }) do
-    it(("requires %s [st2110-22.a.fmtp.%s-required]"):format(key, key), function()
-      local body = FMTP:gsub(key .. "=[^;]*;", "")
-      local doc, ctx = st2110.match(h264_22(body))
-      assert.is_nil(doc)
-      assert.is_not_nil(finding_for(ctx, "st2110-22.a.fmtp." .. key .. "-required"))
-    end)
-  end
-  it("rejects width=0 and TP=X on the SSN block", function()
-    local _, ctx = st2110.match(h264_22(
-      "a=fmtp:96 width=0;height=1080;TP=X;SSN=ST2110-22:2022"), { fail_on_first = false })
-    assert.is_not_nil(finding_for(ctx, "st2110-22.a.fmtp.width-invalid-value"))
-    assert.is_not_nil(finding_for(ctx, "st2110-22.a.fmtp.TP-invalid-value"))
-  end)
-  -- SPEC: §7.3 Table 3 b=AS.
-  it("requires b=AS [st2110-22.b.as-required]", function()
-    local doc, ctx = st2110.match(h264_22(FMTP, { "a=framerate:25" }))
-    assert.is_nil(doc)
-    assert.is_not_nil(finding_for(ctx, "st2110-22.b.as-required"))
-  end)
-  -- SPEC: §7.4 "The SDP object shall include an indication of frame rate
-  -- via one of the mechanisms listed in Table 4."
-  it("requires a frame-rate indication [st2110-22.framerate-indication-required]", function()
-    local doc, ctx = st2110.match(h264_22(FMTP, { "b=AS:20000" }))
-    assert.is_nil(doc)
-    local f = finding_for(ctx, "st2110-22.framerate-indication-required")
-    assert.is_not_nil(f)
-    assert.equal("media[0]", f.field_path)
-    assert.equal("ST 2110-22:2022 §7.4", f.spec_ref)
-  end)
-  it("accepts exactframerate in the fmtp as the frame-rate indication", function()
-    assert.is_truthy(st2110.match(h264_22(FMTP .. ";exactframerate=25", { "b=AS:20000" })))
-  end)
-  it("requires a frame-rate indication on jxsv too", function()
-    local doc, ctx = st2110.match(sdp_lines({
-      "v=0", "o=- 1 1 IN IP4 192.0.2.1", "s=Test", "t=0 0",
-      "m=video 30000 RTP/AVP 96", "c=IN IP4 239.0.0.1/64", "b=AS:1500000",
-      "a=rtpmap:96 jxsv/90000", JXSV_FMTP_COMPLETE_PT96, TIMING_TS_REFCLK, TIMING_MEDIACLK,
-    }))
-    assert.is_nil(doc)
-    assert.is_not_nil(finding_for(ctx, "st2110-22.framerate-indication-required"))
-  end)
-  -- SPEC: §5.2 "The RTP Timestamp Clock rate shall be 90 kHz."
-  it("rejects a clock rate other than 90000 on the SSN block [st2110-22.a.rtpmap.clock-rate-must-be-90000]", function()
-    local _, ctx = st2110.match(sdp_lines({
-      "v=0", "o=- 1 1 IN IP4 192.0.2.1", "s=Test", "t=0 0",
-      "m=video 30000 RTP/AVP 96", "c=IN IP4 239.0.0.1/64", "b=AS:20000", "a=framerate:25",
-      "a=rtpmap:96 VP8/48000", "a=fmtp:96 width=1920;height=1080;TP=2110TPW;SSN=ST2110-22:2022",
-      TIMING_TS_REFCLK, TIMING_MEDIACLK,
-    }), { fail_on_first = false })
-    assert.is_not_nil(finding_for(ctx, "st2110-22.a.rtpmap.clock-rate-must-be-90000"))
-  end)
-  -- NOT-SPEC: library — without jxsv or SSN the ST 2110 tier cannot tell
-  -- an ST 2110-22 stream from any other compressed stream.
-  it("applies none of this to an H264 block without SSN", function()
-    local doc, ctx = st2110.match(h264_22("a=fmtp:96 packetization-mode=1", {}))
-    assert.is_truthy(doc)
-    assert.same({}, ctx.findings)
-  end)
-end)
-
-describe("ST 2110-31 — AM824 a=ptime (§6.1 Table 1)", function()
-  local function am824(rate, ptime_line)
-    local lines = {
-      "v=0", "o=- 1 1 IN IP4 192.0.2.1", "s=Test", "t=0 0",
-      "m=audio 30000 RTP/AVP 96", "c=IN IP4 239.0.0.1/64",
-      "a=rtpmap:96 AM824/" .. rate .. "/2",
-    }
-    if ptime_line then lines[#lines + 1] = ptime_line end
-    lines[#lines + 1] = TIMING_TS_REFCLK
-    lines[#lines + 1] = TIMING_MEDIACLK
-    return sdp_lines(lines)
-  end
-  -- SPEC: "Senders under this standard shall signal a ptime attribute in
-  -- the SDP"
-  it("rejects a missing ptime [st2110-31.a.ptime-required]", function()
-    local doc, ctx = st2110.match(am824(48000))
-    assert.is_nil(doc)
-    local f = finding_for(ctx, "st2110-31.a.ptime-required")
-    assert.is_not_nil(f)
-    assert.equal("ST 2110-31:2022 §6.1", f.spec_ref)
-  end)
-  -- SPEC: "The <packet-time> parameter shall take one of the values from
-  -- the Table 1, based on the prevailing sampling rate"
-  for _, row in ipairs({
-    { 48000, "1" }, { 48000, "0.12" }, { 48000, "0.08" },
-    { 96000, "1" }, { 96000, "0.12" }, { 96000, "0.08" },
-    { 44100, "1.09" }, { 44100, "0.14" }, { 44100, "0.09" },
-  }) do
-    it(("accepts ptime %s at %d"):format(row[2], row[1]), function()
-      local doc, ctx = st2110.match(am824(row[1], "a=ptime:" .. row[2]))
-      assert.is_truthy(doc)
-      assert.same({}, ctx.findings)
-    end)
-  end
-  for _, row in ipairs({ { 48000, "1.09" }, { 44100, "1" }, { 96000, "0.25" } }) do
-    it(("rejects ptime %s at %d [st2110-31.a.ptime-invalid-value]"):format(row[2], row[1]), function()
-      local doc, ctx = st2110.match(am824(row[1], "a=ptime:" .. row[2]))
-      assert.is_nil(doc)
-      assert.is_not_nil(finding_for(ctx, "st2110-31.a.ptime-invalid-value"))
-    end)
-  end
-end)
-
-describe("ST 2110-30 — a=ptime required (§6.2 via AES67 §8.1)", function()
-  -- SPEC: ST 2110-30:2025 §6.2 "shall conform to AES67, including the
-  -- Session Description Protocol (SDP)"; AES67 §8.1 "Descriptions shall
-  -- include a ptime attribute indicating the desired packet time."
-  it("rejects an L24 stream without ptime [st2110-30.a.ptime-required]", function()
-    local doc, ctx = st2110.match(sdp_lines({
-      "v=0", "o=- 1 1 IN IP4 192.0.2.1", "s=Test", "t=0 0",
-      "m=audio 30000 RTP/AVP 96", "c=IN IP4 239.0.0.1/64",
-      "a=rtpmap:96 L24/48000/2", TIMING_TS_REFCLK, TIMING_MEDIACLK,
-    }))
-    assert.is_nil(doc)
-    local f = finding_for(ctx, "st2110-30.a.ptime-required")
-    assert.is_not_nil(f)
-    assert.equal("media[0].attributes[ptime]", f.field_path)
-  end)
-  -- NOT-SPEC: library — AES67 §8.1 leaves the value open ("Values outside
-  -- those enumerated in table 4 shall be correctly interpreted"), decision
-  -- parse_sdp-wgo.
-  it("accepts any ptime value on L16 / L24", function()
-    assert.is_truthy(st2110.match(build("m=audio 30000 RTP/AVP 96", "a=rtpmap:96 L16/48000/2")))
-    assert.is_truthy(st2110.match(sdp_lines({
-      "v=0", "o=- 1 1 IN IP4 192.0.2.1", "s=Test", "t=0 0",
-      "m=audio 30000 RTP/AVP 96", "c=IN IP4 239.0.0.1/64",
-      "a=rtpmap:96 L24/48000/2", "a=ptime:0.333", TIMING_TS_REFCLK, TIMING_MEDIACLK,
-    })))
   end)
 end)
